@@ -1,0 +1,229 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer base {
+  html {
+    font-size: 17px; /* Increase base font size from default 16px */
+  }
+  
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Crypto-specific typography enhancements */
+  h1 {
+    @apply font-outfit font-medium tracking-tight text-3xl md:text-4xl;
+  }
+
+  h2 {
+    @apply font-outfit font-medium tracking-tight text-2xl md:text-3xl;
+  }
+
+  h3 {
+    @apply font-outfit font-medium tracking-tight text-xl md:text-2xl;
+  }
+
+  h4, h5, h6 {
+    @apply font-outfit font-medium tracking-tight text-lg;
+  }
+
+  /* Paragraph and other text elements */
+  p, span, div, li {
+    @apply text-base leading-relaxed;
+  }
+
+  /* Make small text more readable */
+  .text-xs {
+    font-size: 0.8rem !important;
+  }
+
+  .text-sm {
+    font-size: 0.9rem !important;
+  }
+
+  /* Apply Azeret Mono to crypto-related data */
+  .crypto-address, .crypto-hash, .crypto-amount, .wallet-id {
+    @apply font-azeret tracking-tight;
+  }
+
+  /* Enhance readability of hash displays and addresses */
+  .crypto-hash, .crypto-address, .wallet-id {
+    letter-spacing: 0.02em;
+    font-size: 1.05rem;
+  }
+
+  /* Make financial figures stand out - keeping the enhanced styling */
+  .crypto-amount {
+    @apply font-azeret font-semibold;
+    font-size: 1.1rem;
+  }
+
+  /* Card titles and content */
+  .card-title {
+    @apply text-xl font-medium;
+  }
+
+  /* Buttons and interactive elements */
+  button, .btn, a {
+    @apply text-base;
+  }
+
+  /* Table content */
+  td, th {
+    @apply text-base;
+  }
+}
+
+/* Additional utility classes */
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Transactions table styles */
+.transaction-table td, 
+.transaction-table th {
+  font-size: 0.78125rem !important; /* ~12.5px - smaller than 13px but larger than 12px */
+  padding-top: 0.425rem !important;
+  padding-bottom: 0.425rem !important;
+  line-height: 1.25 !important;
+}
+
+/* Slightly larger and bold for specific columns */
+.transaction-table td.asset-column {
+  font-size: 0.8125rem !important; /* Slightly larger for asset name */
+}
+
+.transaction-table .crypto-amount {
+  font-size: 0.84375rem !important; /* Slightly larger for better readability */
+  @apply font-semibold; /* Increased from font-medium to font-semibold */
+  letter-spacing: 0.01em; /* Slightly increased letter spacing for readability */
+}
+
+/* Bold numeric columns */
+.transaction-table .numeric-column {
+  font-size: 0.84375rem !important; /* Slightly larger */
+  font-weight: 600 !important; /* Bold for numbers */
+}
+
+.transaction-table td .inline-flex {
+  font-size: 0.71875rem !important; /* ~11.5px for badge text */
+  padding: 0.175rem 0.475rem !important;
+}
+
+/* Additional adjustments for transaction icons */
+.transaction-table svg {
+  width: 0.875rem !important;
+  height: 0.875rem !important;
+}
+
+/* General adjustments for transaction table rows */
+.transaction-table tr {
+  height: auto !important;
+}
+
+/* Make transactions page table smaller */
+table.Table th,
+table.Table td {
+  font-size: 0.78125rem !important; /* ~12.5px */
+  padding-top: 0.425rem !important;
+  padding-bottom: 0.425rem !important;
+}
+
+table.Table .crypto-amount {
+  font-size: 0.78125rem !important;
+  @apply font-normal;
+}
+
+table.Table td .inline-flex {
+  font-size: 0.71875rem !important; /* ~11.5px */
+}
+
+/* Additional selector for the specific transactions table */
+[class*="transactions"] table th,
+[class*="transactions"] table td {
+  font-size: 0.78125rem !important;
+  padding-top: 0.425rem !important;
+  padding-bottom: 0.425rem !important;
+}
+
+[class*="transactions"] table .inline-flex {
+  font-size: 0.71875rem !important;
+}
+
+[class*="transactions"] .crypto-amount {
+  font-size: 0.78125rem !important;
+}
+
+/* Transaction table specific font styling - enhanced for Azeret Mono */
+.transaction-table .font-mono {
+  font-family: 'Azeret Mono', monospace !important;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "tnum" 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.005em; /* Slight positive tracking for mono numerals */
+}
