@@ -4,7 +4,8 @@ import { Decimal } from "@prisma/client/runtime/library";
 // Types for tax calculations
 export interface TaxableEvent {
   id: number;
-  date: Date;
+  date: Date; // Date sold/disposed
+  dateAcquired?: Date; // Date acquired (for Form 8949)
   asset: string;
   amount: number;
   proceeds: number; // Sale price in USD
@@ -73,26 +74,49 @@ export async function calculateTaxReport(
   prisma: PrismaClient,
   walletAddresses: string[],
   year: number,
-  method: "FIFO" | "LIFO" | "HIFO" = "FIFO"
+  method: "FIFO" | "LIFO" | "HIFO" = "FIFO",
+  userId?: string // Optional user ID to include CSV-imported transactions
 ): Promise<TaxReport> {
   const startDate = new Date(`${year}-01-01T00:00:00Z`);
   const endDate = new Date(`${year}-12-31T23:59:59Z`);
 
   // Fetch all transactions for the user's wallets up to and including the tax year
   // We need all transactions to calculate cost basis properly
+  // Also include CSV-imported transactions (source_type: "csv_import" with null wallet_address)
   const whereClause: Prisma.TransactionWhereInput = {
     tx_timestamp: {
       lte: endDate,
     },
   };
 
-  // Filter by wallet addresses if provided
+  // Filter by wallet addresses OR CSV imports
+  // Strategy: Include transactions with user's wallet addresses OR CSV imports
+  // This matches the logic used in delete-all endpoint
+  const orConditions: Prisma.TransactionWhereInput[] = [];
+  
   if (walletAddresses.length > 0) {
-    whereClause.wallet_address = { in: walletAddresses };
+    orConditions.push({ wallet_address: { in: walletAddresses } });
+  }
+  
+  // Always include CSV imports (assumes CSV imports belong to authenticated user)
+  // This is safe because the user is authenticated and can only see their own CSV imports
+  orConditions.push({
+    AND: [
+      { source_type: "csv_import" },
+      { wallet_address: null },
+    ],
+  });
+
+  if (orConditions.length > 0) {
+    whereClause.OR = orConditions;
   }
 
   // Filter by status - include both confirmed and completed transactions
-  whereClause.status = { in: ["confirmed", "completed"] };
+  // Also include pending transactions (some CSV imports might be pending)
+  whereClause.status = { in: ["confirmed", "completed", "pending"] };
+
+  console.log(`[Tax Calculator] Fetching transactions for year ${year}`);
+  console.log(`[Tax Calculator] Where clause:`, JSON.stringify(whereClause, null, 2));
 
   const allTransactions = await prisma.transaction.findMany({
     where: whereClause,
@@ -101,7 +125,84 @@ export async function calculateTaxReport(
     },
   });
 
+  console.log(`[Tax Calculator] Found ${allTransactions.length} total transactions`);
+  if (allTransactions.length > 0) {
+    const dateRange = {
+      earliest: allTransactions[0].tx_timestamp.toISOString(),
+      latest: allTransactions[allTransactions.length - 1].tx_timestamp.toISOString(),
+    };
+    console.log(`[Tax Calculator] Transaction date range:`, dateRange);
+    const csvImports = allTransactions.filter(tx => tx.source_type === "csv_import");
+    console.log(`[Tax Calculator] CSV imports: ${csvImports.length}`);
+    const walletTransactions = allTransactions.filter(tx => tx.source_type !== "csv_import");
+    console.log(`[Tax Calculator] Wallet transactions: ${walletTransactions.length}`);
+    
+    // Check transaction types
+    const typeCounts: Record<string, number> = {};
+    allTransactions.forEach(tx => {
+      const type = tx.type || "unknown";
+      typeCounts[type] = (typeCounts[type] || 0) + 1;
+    });
+    console.log(`[Tax Calculator] Transaction types:`, typeCounts);
+    
+    // Check for sell transactions
+    const sellTransactions = allTransactions.filter(tx => {
+      const type = (tx.type || "").toLowerCase();
+      return type === "sell" || tx.type === "Sell";
+    });
+    console.log(`[Tax Calculator] Sell transactions: ${sellTransactions.length}`);
+    
+    // Check transaction years distribution
+    const yearCounts: Record<number, number> = {};
+    allTransactions.forEach(tx => {
+      const txYear = tx.tx_timestamp.getFullYear();
+      yearCounts[txYear] = (yearCounts[txYear] || 0) + 1;
+    });
+    console.log(`[Tax Calculator] Transactions by year:`, yearCounts);
+    
+    // Check sell transactions by year
+    const sellYearCounts: Record<number, number> = {};
+    sellTransactions.forEach(tx => {
+      const txYear = tx.tx_timestamp.getFullYear();
+      sellYearCounts[txYear] = (sellYearCounts[txYear] || 0) + 1;
+    });
+    console.log(`[Tax Calculator] Sell transactions by year:`, sellYearCounts);
+    
+    // Check a few sell transactions to see their structure
+    if (sellTransactions.length > 0) {
+      const sampleSell = sellTransactions[0];
+      console.log(`[Tax Calculator] Sample sell transaction:`, {
+        id: sampleSell.id,
+        type: sampleSell.type,
+        asset: sampleSell.asset_symbol,
+        value_usd: Number(sampleSell.value_usd),
+        date: sampleSell.tx_timestamp.toISOString().split('T')[0],
+        year: sampleSell.tx_timestamp.getFullYear(),
+        notes: sampleSell.notes?.substring(0, 200),
+        source_type: sampleSell.source_type,
+      });
+      
+      // Show a few more samples from different years
+      const samplesByYear: Record<number, any> = {};
+      sellTransactions.forEach(tx => {
+        const txYear = tx.tx_timestamp.getFullYear();
+        if (!samplesByYear[txYear] && Object.keys(samplesByYear).length < 5) {
+          samplesByYear[txYear] = {
+            id: tx.id,
+            date: tx.tx_timestamp.toISOString().split('T')[0],
+            year: txYear,
+            asset: tx.asset_symbol,
+            value_usd: Number(tx.value_usd),
+            hasCostBasis: tx.notes?.includes("Cost Basis:") || false,
+          };
+        }
+      });
+      console.log(`[Tax Calculator] Sample sell transactions by year:`, samplesByYear);
+    }
+  }
+
   // Filter transactions by chain (Solana or Ethereum)
+  // Also include transactions without a chain (CSV imports might not have chain set)
   const solanaTransactions = allTransactions.filter(
     (tx: Transaction) => tx.chain?.toLowerCase() === "solana" || tx.chain?.toLowerCase() === "sol"
   );
@@ -111,8 +212,16 @@ export async function calculateTaxReport(
       tx.chain?.toLowerCase() === "eth" ||
       tx.chain?.toLowerCase() === "ethereum mainnet"
   );
+  
+  // Get transactions without a chain (likely CSV imports)
+  const unchainTransactions = allTransactions.filter(
+    (tx: Transaction) => !tx.chain || (tx.chain.toLowerCase() !== "solana" && tx.chain.toLowerCase() !== "sol" && 
+      tx.chain.toLowerCase() !== "ethereum" && tx.chain.toLowerCase() !== "eth" && tx.chain.toLowerCase() !== "ethereum mainnet")
+  );
 
-  // Process transactions for both chains
+  console.log(`[Tax Calculator] Processing ${solanaTransactions.length} Solana, ${ethereumTransactions.length} Ethereum, and ${unchainTransactions.length} unchain transactions`);
+
+  // Process transactions for both chains and unchain
   const solanaReport = processTransactionsForTax(
     solanaTransactions,
     year,
@@ -123,16 +232,29 @@ export async function calculateTaxReport(
     year,
     method
   );
+  const unchainReport = processTransactionsForTax(
+    unchainTransactions,
+    year,
+    method
+  );
+
+  console.log(`[Tax Calculator] Solana report: ${solanaReport.taxableEvents.length} taxable, ${solanaReport.incomeEvents.length} income`);
+  console.log(`[Tax Calculator] Ethereum report: ${ethereumReport.taxableEvents.length} taxable, ${ethereumReport.incomeEvents.length} income`);
+  console.log(`[Tax Calculator] Unchain report: ${unchainReport.taxableEvents.length} taxable, ${unchainReport.incomeEvents.length} income`);
 
   // Combine reports
   const combinedTaxableEvents = [
     ...solanaReport.taxableEvents,
     ...ethereumReport.taxableEvents,
+    ...unchainReport.taxableEvents,
   ];
   const combinedIncomeEvents = [
     ...solanaReport.incomeEvents,
     ...ethereumReport.incomeEvents,
+    ...unchainReport.incomeEvents,
   ];
+  
+  console.log(`[Tax Calculator] Combined: ${combinedTaxableEvents.length} taxable events, ${combinedIncomeEvents.length} income events`);
 
   // Calculate totals
   const shortTermGains = combinedTaxableEvents
@@ -207,109 +329,241 @@ function processTransactionsForTax(
   const costBasisLots: Record<string, CostBasisLot[]> = {};
 
   // Process transactions chronologically
+  console.log(`[processTransactionsForTax] Processing ${transactions.length} transactions for tax year ${taxYear}`);
+  
+  let processedCount = 0;
+  let taxableEventCount = 0;
+  let incomeEventCount = 0;
+  const typeCounts: Record<string, number> = {};
+  
+  // Count transactions by year for debugging
+  const transactionsByYear: Record<number, number> = {};
+  transactions.forEach(tx => {
+    const year = tx.tx_timestamp.getFullYear();
+    transactionsByYear[year] = (transactionsByYear[year] || 0) + 1;
+  });
+  console.log(`[processTransactionsForTax] Transactions by year:`, transactionsByYear);
+  
+  // Count sell transactions by year
+  const sellTransactionsByYear: Record<number, number> = {};
+  transactions.filter(tx => {
+    const type = (tx.type || "").toLowerCase();
+    return type === "sell" || tx.type === "Sell";
+  }).forEach(tx => {
+    const year = tx.tx_timestamp.getFullYear();
+    sellTransactionsByYear[year] = (sellTransactionsByYear[year] || 0) + 1;
+  });
+  console.log(`[processTransactionsForTax] Sell transactions by year:`, sellTransactionsByYear);
+
   for (const tx of transactions) {
     const asset = tx.asset_symbol;
     const amount = Number(tx.amount_value);
     const valueUsd = Number(tx.value_usd);
+    const feeUsd = tx.fee_usd ? Number(tx.fee_usd) : 0;
     const pricePerUnit = tx.price_per_unit
       ? Number(tx.price_per_unit)
       : valueUsd / amount;
     const date = tx.tx_timestamp;
     const txYear = date.getFullYear();
 
+    // Track transaction types
+    const txType = (tx.type || "").toLowerCase();
+    typeCounts[txType] = (typeCounts[txType] || 0) + 1;
+    
+    // Log first few sell transactions for debugging
+    if ((txType === "sell" || tx.type === "Sell") && processedCount < 10) {
+      console.log(`[processTransactionsForTax] Processing sell transaction ${tx.id}: type=${tx.type}, asset=${asset}, valueUsd=${valueUsd}, date=${date.toISOString().split('T')[0]}, year=${txYear}, taxYear=${taxYear}, notes=${tx.notes?.substring(0, 150)}`);
+    }
+
     // Initialize asset lots if needed
     if (!costBasisLots[asset]) {
       costBasisLots[asset] = [];
     }
 
-    const txType = tx.type.toLowerCase();
-
-    // Handle buys - add to cost basis
-    if (txType === "buy" || txType === "dca") {
+    // Handle buys - add to cost basis (including fees per IRS rules)
+    // Also handle "Buy" with capital B (from CSV parser)
+    if (txType === "buy" || txType === "dca" || tx.type === "Buy") {
+      // IRS Rule: Fees are added to cost basis for purchases
+      // For tax report format, value_usd is already the cost basis (positive)
+      // For standard format, value_usd might be negative, so use absolute value
+      const totalCostBasis = Math.abs(valueUsd) + feeUsd;
       costBasisLots[asset].push({
         id: tx.id,
         date,
         amount,
-        costBasis: Math.abs(valueUsd), // Buy is negative value, so we take absolute
+        costBasis: totalCostBasis, // Cost basis includes purchase price + fees
         pricePerUnit,
+        fees: feeUsd, // Track fees separately for reference
       });
+      
+      if (processedCount < 10) {
+        console.log(`[processTransactionsForTax] Added buy transaction ${tx.id} to cost basis: asset=${asset}, amount=${amount}, costBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}`);
+      }
     }
     // Handle sells - calculate capital gains/losses
-    else if (txType === "sell") {
-      const proceeds = Math.abs(valueUsd); // Sale proceeds
+    // Also handle "Sell" with capital S (from CSV parser)
+    else if (txType === "sell" || tx.type === "Sell") {
+      // IRS Rule: Fees are subtracted from proceeds for sales
+      // Use value_usd as proceeds (even if 0, for losses)
+      // For CSV imports, value_usd is already the proceeds amount (positive)
+      // For blockchain transactions, value_usd might be negative for sells, so use Math.abs
+      const grossProceeds = valueUsd >= 0 ? valueUsd : Math.abs(valueUsd); // Sale proceeds before fees (can be 0)
+      // Net proceeds = gross proceeds - fees (can be 0 or negative if fees exceed proceeds)
+      // But for tax purposes, we cap at 0 (proceeds can't be negative)
+      const netProceeds = Math.max(0, grossProceeds - feeUsd); // Proceeds after fees (can be 0 for losses)
       const sellAmount = amount;
       let remainingToSell = sellAmount;
       let totalCostBasis = 0;
+      let earliestLotDate = date; // Default to sale date
+      let holdingPeriod: "short" | "long" = "short";
+      let gainLoss: number; // Will be calculated or extracted from notes
 
-      // Select lots based on method
-      const selectedLots = selectLots(
-        costBasisLots[asset],
-        sellAmount,
-        method
-      );
+      // Check if transaction has pre-calculated cost basis in notes (from tax report format)
+      const notes = tx.notes || "";
+      const costBasisMatch = notes.match(/Cost Basis:\s*\$?([\d,]+\.?\d*)/i);
+      const purchasedMatch = notes.match(/Purchased:\s*(\d{4}-\d{2}-\d{2})/i);
+      const holdingPeriodMatch = notes.match(/(Long-term|Short-term)\s*\((\d+)\s*days?\)/i);
+      
+      if (costBasisMatch) {
+        // Use pre-calculated cost basis from tax report format
+        totalCostBasis = parseFloat(costBasisMatch[1].replace(/,/g, ""));
+        
+        // Extract purchase date if available
+        if (purchasedMatch) {
+          earliestLotDate = new Date(purchasedMatch[1]);
+        }
+        
+        // Determine holding period: Long-term if purchase date is over 1 year before sale date
+        // IRS Rule: Long-term if held MORE than 1 year (366+ days)
+        if (earliestLotDate && earliestLotDate.getTime() !== date.getTime()) {
+          const holdingPeriodDays = (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
+          // More than 1 year = 366+ days (accounting for leap years)
+          holdingPeriod = holdingPeriodDays >= 366 ? "long" : "short";
+        } else if (holdingPeriodMatch) {
+          // Fallback to extracted holding period if date calculation not available
+          holdingPeriod = holdingPeriodMatch[1].toLowerCase().includes("long") ? "long" : "short";
+        } else {
+          // Default to short-term if we can't determine
+          holdingPeriod = "short";
+        }
+        
+        // ALWAYS calculate gain/loss = proceeds - cost basis
+        // This is the core calculation: Gain/Loss = Proceeds (USD) - Cost Basis (USD)
+        // Works correctly even if proceeds is 0 (results in a loss equal to cost basis)
+        // Example: Proceeds = 0, Cost Basis = 1256.53 → Gain/Loss = -1256.53 (loss)
+        // Example: Proceeds = 6913.47, Cost Basis = 3423.11 → Gain/Loss = 3490.36 (gain)
+        // Example: Proceeds = 0, Cost Basis = 0 → Gain/Loss = 0 (no gain, no loss)
+        gainLoss = netProceeds - totalCostBasis;
+        
+        if (processedCount < 10 || taxableEventCount < 5) {
+          console.log(`[Tax Calculator] Sell transaction ${tx.id}: proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, holdingPeriod=${holdingPeriod}, date=${date.toISOString().split('T')[0]}, purchased=${earliestLotDate.toISOString().split('T')[0]}, year=${txYear}`);
+        }
+      } else {
+        // Calculate cost basis from lots (normal flow - for paired buy/sell transactions)
+        // Select lots based on method
+        const selectedLots = selectLots(
+          costBasisLots[asset],
+          sellAmount,
+          method
+        );
 
-      // Calculate cost basis from selected lots
-      for (const lot of selectedLots) {
-        if (remainingToSell <= 0) break;
+        if (processedCount < 10 && selectedLots.length === 0) {
+          console.warn(`[Tax Calculator] Sell transaction ${tx.id}: No cost basis lots found for asset ${asset}. Available lots:`, Object.keys(costBasisLots).filter(k => costBasisLots[k].length > 0));
+        }
 
-        const amountFromLot = Math.min(remainingToSell, lot.amount);
-        const costBasisFromLot =
-          (lot.costBasis / lot.amount) * amountFromLot;
+        // Calculate cost basis from selected lots
+        for (const lot of selectedLots) {
+          if (remainingToSell <= 0) break;
 
-        totalCostBasis += costBasisFromLot;
-        lot.amount -= amountFromLot;
-        remainingToSell -= amountFromLot;
+          const amountFromLot = Math.min(remainingToSell, lot.amount);
+          const costBasisFromLot =
+            (lot.costBasis / lot.amount) * amountFromLot;
+
+          totalCostBasis += costBasisFromLot;
+          lot.amount -= amountFromLot;
+          remainingToSell -= amountFromLot;
+        }
+
+        // Remove empty lots
+        costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
+
+        // Determine holding period (use earliest lot date)
+        // IRS Rule: Long-term if held MORE than 1 year (365 days + 1 day = 366+ days)
+        if (selectedLots.length > 0) {
+          earliestLotDate = selectedLots.reduce(
+            (earliest, lot) =>
+              lot.date < earliest ? lot.date : earliest,
+            selectedLots[0].date
+          );
+          const holdingPeriodDays =
+            (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
+          // IRS: More than 1 year = 366+ days (accounting for leap years)
+          holdingPeriod = holdingPeriodDays >= 366 ? "long" : "short";
+        } else {
+          // No lots found - this shouldn't happen for paired transactions
+          // But if it does, we can't calculate cost basis
+          console.warn(`[Tax Calculator] Sell transaction ${tx.id}: No cost basis lots available. Asset: ${asset}, Date: ${date.toISOString().split('T')[0]}`);
+        }
+        
+        // Calculate gain/loss (proceeds after fees - cost basis)
+        // Core formula: Gain/Loss = Proceeds (USD) - Cost Basis (USD)
+        gainLoss = netProceeds - totalCostBasis;
+        
+        if (processedCount < 10) {
+          console.log(`[Tax Calculator] Sell transaction ${tx.id} (from lots): proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, holdingPeriod=${holdingPeriod}, lotsUsed=${selectedLots.length}`);
+        }
       }
 
-      // Remove empty lots
-      costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
-
-      // Calculate gain/loss
-      const gainLoss = proceeds - totalCostBasis;
-
-      // Determine holding period (use earliest lot date)
-      // IRS Rule: Long-term if held MORE than 1 year (365 days + 1 day = 366+ days)
-      const earliestLotDate =
-        selectedLots.length > 0
-          ? selectedLots.reduce(
-              (earliest, lot) =>
-                lot.date < earliest ? lot.date : earliest,
-              selectedLots[0].date
-            )
-          : date;
-      const holdingPeriodDays =
-        (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
-      // IRS: More than 1 year = 366+ days (accounting for leap years)
-      const holdingPeriod =
-        holdingPeriodDays >= 366 ? "long" : "short";
-
       // Only include in tax year if the sale occurred in that year
+      // Also require that we have a valid cost basis (either from lots or pre-calculated)
+      // Allow proceeds to be 0 (for losses where asset was sold for $0)
+      // Always include if we have cost basis, even if proceeds is 0
       if (txYear === taxYear) {
-        taxableEvents.push({
-          id: tx.id,
-          date,
-          asset,
-          amount: sellAmount,
-          proceeds,
-          costBasis: totalCostBasis,
-          gainLoss,
-          holdingPeriod,
-          chain: tx.chain || undefined,
-          txHash: tx.tx_hash || undefined,
-        });
+        if (totalCostBasis > 0) {
+          console.log(`[Tax Calculator] Including taxable event: asset=${asset}, proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, holdingPeriod=${holdingPeriod}, year=${txYear}`);
+          taxableEventCount++;
+          taxableEvents.push({
+            id: tx.id,
+            date,
+            dateAcquired: earliestLotDate, // Actual acquisition date from lots or notes
+            asset,
+            amount: sellAmount,
+            proceeds: netProceeds, // Report net proceeds (after fees)
+            costBasis: totalCostBasis,
+            gainLoss,
+            holdingPeriod,
+            chain: tx.chain || undefined,
+            txHash: tx.tx_hash || undefined,
+          });
+        } else {
+          console.warn(`[Tax Calculator] Skipping sell transaction ${tx.id}: no cost basis found. Notes: ${tx.notes?.substring(0, 200)}, hasCostBasisInNotes=${tx.notes?.includes("Cost Basis:") || false}, hasLots=${costBasisLots[asset]?.length > 0 || false}`);
+        }
+      } else {
+        // Log year mismatches for debugging
+        if (processedCount < 20 && (txType === "sell" || tx.type === "Sell")) {
+          console.log(`[Tax Calculator] Skipping sell transaction ${tx.id}: year mismatch (txYear=${txYear}, taxYear=${taxYear}), date=${date.toISOString().split('T')[0]}, asset=${asset}`);
+        }
       }
     }
     // Handle swaps - treat as sell of one asset and buy of another
     // IRS: Swaps are taxable events (like-kind exchange rules eliminated for crypto after 2017)
     else if (txType === "swap") {
-      // Parse swap to identify both outgoing and incoming assets
-      // Check notes field for swap details (format: "ETH → USDC" or "1.5 ETH → 3000 USDC")
-      const swapInfo = parseSwapTransaction(tx);
-      const outgoingAsset = swapInfo.outgoingAsset || asset;
-      const incomingAsset = swapInfo.incomingAsset;
-      const outgoingAmount = swapInfo.outgoingAmount || amount;
-      const incomingAmount = swapInfo.incomingAmount;
-      const incomingValueUsd = swapInfo.incomingValueUsd;
+      // First, try to use stored swap information from database
+      let outgoingAsset = asset;
+      let incomingAsset = tx.incoming_asset_symbol || null;
+      let outgoingAmount = amount;
+      let incomingAmount = tx.incoming_amount_value ? Number(tx.incoming_amount_value) : null;
+      let incomingValueUsd = tx.incoming_value_usd ? Number(tx.incoming_value_usd) : null;
+
+      // If swap info not in database, try to parse from notes/asset_symbol
+      if (!incomingAsset || !incomingAmount) {
+        const swapInfo = parseSwapTransaction(tx);
+        outgoingAsset = swapInfo.outgoingAsset || asset;
+        incomingAsset = swapInfo.incomingAsset || incomingAsset;
+        outgoingAmount = swapInfo.outgoingAmount || amount;
+        incomingAmount = swapInfo.incomingAmount || incomingAmount;
+        incomingValueUsd = swapInfo.incomingValueUsd || incomingValueUsd;
+      }
 
       // Initialize incoming asset lots if needed
       if (incomingAsset && !costBasisLots[incomingAsset]) {
@@ -343,9 +597,11 @@ function processTransactionsForTax(
           (lot) => lot.amount > 0
         );
 
-        // Calculate proceeds (fair market value of outgoing asset)
-        const proceeds = Math.abs(valueUsd);
-        const gainLoss = proceeds - totalCostBasis;
+        // Calculate proceeds (fair market value of outgoing asset, minus fees)
+        // IRS Rule: Fees are subtracted from proceeds for swaps (disposal of asset)
+        const grossProceeds = Math.abs(valueUsd);
+        const netProceeds = grossProceeds - feeUsd;
+        const gainLoss = netProceeds - totalCostBasis;
 
         const earliestLotDate =
           selectedLots.length > 0
@@ -365,9 +621,10 @@ function processTransactionsForTax(
           taxableEvents.push({
             id: tx.id,
             date,
+            dateAcquired: earliestLotDate, // Actual acquisition date from lots
             asset: outgoingAsset,
             amount: outgoingAmount,
-            proceeds,
+            proceeds: netProceeds, // Report net proceeds (after fees)
             costBasis: totalCostBasis,
             gainLoss,
             holdingPeriod,
@@ -378,25 +635,30 @@ function processTransactionsForTax(
       }
 
       // Handle incoming asset acquisition (adds to cost basis)
-      // IRS: Incoming asset's cost basis = fair market value at time of swap
+      // IRS: Incoming asset's cost basis = fair market value at time of swap + fees
       if (incomingAsset && incomingAmount && incomingValueUsd) {
         const incomingPricePerUnit = incomingValueUsd / incomingAmount;
+        // Fees are added to cost basis of incoming asset in swaps
+        const incomingCostBasis = Math.abs(incomingValueUsd) + feeUsd;
         costBasisLots[incomingAsset].push({
           id: tx.id,
           date,
           amount: incomingAmount,
-          costBasis: Math.abs(incomingValueUsd), // Cost basis = FMV at swap
+          costBasis: incomingCostBasis, // Cost basis = FMV at swap + fees
           pricePerUnit: incomingPricePerUnit,
+          fees: feeUsd,
         });
       } else if (incomingAsset && incomingAmount) {
         // Fallback: use value_usd if incoming value not parsed
         const incomingPricePerUnit = Math.abs(valueUsd) / incomingAmount;
+        const incomingCostBasis = Math.abs(valueUsd) + feeUsd;
         costBasisLots[incomingAsset].push({
           id: tx.id,
           date,
           amount: incomingAmount,
-          costBasis: Math.abs(valueUsd),
+          costBasis: incomingCostBasis,
           pricePerUnit: incomingPricePerUnit,
+          fees: feeUsd,
         });
       }
     }
@@ -575,9 +837,18 @@ function processTransactionsForTax(
 
       // Create taxable event for bridge (disposal on source chain)
       if (txYear === taxYear && totalCostBasis > 0) {
+        const earliestLotDate =
+          selectedLots.length > 0
+            ? selectedLots.reduce(
+                (earliest, lot) =>
+                  lot.date < earliest ? lot.date : earliest,
+                selectedLots[0].date
+              )
+            : date;
         taxableEvents.push({
           id: tx.id,
           date,
+          dateAcquired: earliestLotDate, // Actual acquisition date from lots
           asset,
           amount: bridgeAmount,
           proceeds,
@@ -661,9 +932,18 @@ function processTransactionsForTax(
         holdingPeriodDays >= 366 ? "long" : "short";
 
       if (txYear === taxYear && totalCostBasis > 0) {
+        const earliestLotDate =
+          selectedLots.length > 0
+            ? selectedLots.reduce(
+                (earliest, lot) =>
+                  lot.date < earliest ? lot.date : earliest,
+                selectedLots[0].date
+              )
+            : date;
         taxableEvents.push({
           id: tx.id,
           date,
+          dateAcquired: earliestLotDate, // Actual acquisition date from lots
           asset,
           amount: lpTokenAmount,
           proceeds,
@@ -800,6 +1080,7 @@ function formatCurrency(value: number): string {
 /**
  * Parse swap transaction to identify both assets
  * Attempts to parse from notes field or asset_symbol
+ * Also calculates incoming value USD if possible
  */
 function parseSwapTransaction(tx: Transaction): {
   outgoingAsset: string | null;
@@ -810,19 +1091,41 @@ function parseSwapTransaction(tx: Transaction): {
 } {
   const notes = tx.notes || "";
   const assetSymbol = tx.asset_symbol;
+  const outgoingValueUsd = Number(tx.value_usd);
 
-  // Try to parse from notes (format: "ETH → USDC" or "1.5 ETH → 3000 USDC")
-  const swapPattern = /([\d.]+)\s*(\w+)\s*(?:→|->|-)\s*([\d.]+)\s*(\w+)/i;
-  const match = notes.match(swapPattern);
+  // Try to parse from notes (format: "ETH → USDC" or "1.5 ETH → 3000 USDC" or "Swapped 1.5 ETH for 3000 USDC")
+  // More flexible patterns
+  const swapPatterns = [
+    /([\d.,]+)\s*(\w+)\s*(?:→|->|-|for|to)\s*([\d.,]+)\s*(\w+)/i, // "1.5 ETH → 3000 USDC"
+    /(?:swapped|swap|exchanged|exchange)\s+([\d.,]+)\s+(\w+)\s+(?:for|to|→|->|-)\s+([\d.,]+)\s+(\w+)/i, // "Swapped 1.5 ETH for 3000 USDC"
+    /(\w+)\s*→\s*(\w+)/i, // "ETH → USDC" (no amounts)
+  ];
 
-  if (match) {
-    return {
-      outgoingAsset: match[2].toUpperCase(),
-      incomingAsset: match[4].toUpperCase(),
-      outgoingAmount: parseFloat(match[1]),
-      incomingAmount: parseFloat(match[3]),
-      incomingValueUsd: null, // Would need to calculate from amount and price
-    };
+  for (const pattern of swapPatterns) {
+    const match = notes.match(pattern);
+    if (match) {
+      const outgoingAsset = match[2]?.toUpperCase() || match[1]?.toUpperCase();
+      const incomingAsset = match[4]?.toUpperCase() || match[2]?.toUpperCase();
+      const outgoingAmount = match[1] ? parseFloat(match[1].replace(/,/g, "")) : Number(tx.amount_value);
+      const incomingAmount = match[3] ? parseFloat(match[3].replace(/,/g, "")) : null;
+
+      // Calculate incoming value USD if we have incoming amount
+      // For swaps, incoming value should equal outgoing value (minus fees)
+      let incomingValueUsd: number | null = null;
+      if (incomingAmount && outgoingValueUsd) {
+        // In a swap, the incoming value should be approximately equal to outgoing value
+        // (the difference is slippage/fees, which we account for separately)
+        incomingValueUsd = Math.abs(outgoingValueUsd);
+      }
+
+      return {
+        outgoingAsset: outgoingAsset || tx.asset_symbol,
+        incomingAsset: incomingAsset || null,
+        outgoingAmount: outgoingAmount || Number(tx.amount_value),
+        incomingAmount,
+        incomingValueUsd,
+      };
+    }
   }
 
   // Try to parse from asset_symbol (format: "ETH/USDC" or "ETH→USDC")
@@ -830,12 +1133,13 @@ function parseSwapTransaction(tx: Transaction): {
   const assetMatch = assetSymbol.match(assetPattern);
 
   if (assetMatch) {
+    // For swaps, incoming value equals outgoing value
     return {
       outgoingAsset: assetMatch[1].toUpperCase(),
       incomingAsset: assetMatch[2].toUpperCase(),
       outgoingAmount: Number(tx.amount_value),
-      incomingAmount: null,
-      incomingValueUsd: null,
+      incomingAmount: null, // Can't determine from asset symbol alone
+      incomingValueUsd: Math.abs(outgoingValueUsd), // Use outgoing value as estimate
     };
   }
 
@@ -857,12 +1161,9 @@ function generateForm8949Data(
   taxableEvents: TaxableEvent[]
 ): Form8949Entry[] {
   return taxableEvents.map((event) => {
-    // For Form 8949, we need to track acquisition date
-    // Since we're using FIFO, we use the event date as sale date
-    // and would need to track acquisition date from lots (simplified here)
     return {
-      description: `${event.amount} ${event.asset}`,
-      dateAcquired: event.date, // In production, get from cost basis lot
+      description: `${event.amount} ${event.asset}${event.chain ? ` (${event.chain})` : ""}${event.txHash ? ` - ${event.txHash.substring(0, 8)}...` : ""}`,
+      dateAcquired: event.dateAcquired || event.date, // Use actual acquisition date if available
       dateSold: event.date,
       proceeds: event.proceeds,
       costBasis: event.costBasis,

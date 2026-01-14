@@ -8,8 +8,10 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { ArrowUpRight, ArrowDownRight, Coins, Wallet, ExternalLink, TrendingUp, TrendingDown, FileBadge } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowUpRight, ArrowDownRight, Coins, Wallet, ExternalLink, TrendingUp, TrendingDown, FileBadge, Sparkles, X } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { useOnboarding } from "@/components/onboarding/onboarding-provider";
+import { Button } from "@/components/ui/button";
 import {
   LineChart,
   Line,
@@ -23,22 +25,94 @@ import {
   Cell,
 } from "recharts";
 import { useRouter } from "next/navigation";
+import { format } from "date-fns";
 
-// Empty data structures instead of mock data
-const portfolioValueData = [];
-const assetsData = [];
-const transactionsData = [];
-const nftData = [];
-const defiData = [];
+// Color palette for pie chart
+const COLORS = [
+  "hsl(var(--primary))",
+  "hsl(var(--primary)/0.8)",
+  "hsl(var(--primary)/0.6)",
+  "hsl(var(--primary)/0.4)",
+  "#8884d8",
+  "#82ca9d",
+  "#ffc658",
+  "#ff7300",
+  "#8dd1e1",
+  "#d084d0",
+];
+
+interface DashboardStats {
+  totalPortfolioValue: number;
+  unrealizedGains: number;
+  taxableEvents2023: number;
+  assetAllocation: Array<{
+    name: string;
+    value: number;
+    amount: number;
+    costBasis: number;
+    currentPrice: number;
+  }>;
+  portfolioValueOverTime: Array<{
+    date: string;
+    value: number;
+  }>;
+  recentTransactions: Array<{
+    id: number;
+    type: string;
+    asset: string;
+    amount: number;
+    value: number;
+    date: string;
+    status: string;
+  }>;
+}
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
   const [assetType, setAssetType] = useState("coins");
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+  
+  // Get onboarding context (returns safe defaults if not available)
+  const onboarding = useOnboarding();
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Fetch dashboard statistics
+  const fetchStats = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/dashboard/stats");
+      if (!response.ok) {
+        throw new Error("Failed to fetch dashboard statistics");
+      }
+      const data = await response.json();
+      if (data.status === "success" && data.stats) {
+        setStats(data.stats);
+      }
+    } catch (error) {
+      console.error("Error fetching dashboard stats:", error);
+      // Set default empty stats on error
+      setStats({
+        totalPortfolioValue: 0,
+        unrealizedGains: 0,
+        taxableEvents2023: 0,
+        assetAllocation: [],
+        portfolioValueOverTime: [],
+        recentTransactions: [],
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+    fetchStats();
+  }, [mounted, fetchStats]);
 
   if (!mounted) {
     return null;
@@ -48,10 +122,151 @@ export default function Home() {
     router.push(`/coins/${symbol}`);
   };
 
+  // Check if user should see onboarding welcome
+  const shouldShowWelcome = onboarding.isActive && !onboarding.state.completed;
+
+  // Format data for charts
+  const portfolioValueData = stats?.portfolioValueOverTime.map((item) => ({
+    date: format(new Date(item.date), "MMM yyyy"),
+    value: item.value,
+  })) || [];
+
+  const assetsData = stats?.assetAllocation.map((asset, index) => ({
+    name: asset.name,
+    value: asset.value,
+    color: COLORS[index % COLORS.length],
+  })) || [];
+
+  const transactionsData = stats?.recentTransactions.map((tx) => ({
+    id: tx.id,
+    type: tx.type,
+    asset: tx.asset,
+    amount: `${tx.amount.toFixed(6)} ${tx.asset}`,
+    value: `$${Math.abs(tx.value).toFixed(2)}`,
+    date: format(new Date(tx.date), "MMM dd, yyyy"),
+    status: tx.status,
+  })) || [];
+
+  // Format currency values
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  };
+
   return (
     <Layout>
       <div className="space-y-8">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={fetchStats}
+              disabled={isLoading}
+            >
+              {isLoading ? "Refreshing..." : "Refresh"}
+            </Button>
+            {onboarding && onboarding.isActive && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onboarding.startOnboarding()}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                Start Guide
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Onboarding Welcome Card */}
+        {onboarding && onboarding.isActive && onboarding.state.currentStep === 0 && (
+          <Card className="border-2 border-primary bg-primary/5">
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary text-primary-foreground">
+                    <Sparkles className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <CardTitle>Welcome to Crypto Tax Calculator!</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Let's get you started with a quick 4-step guide
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onboarding.skip()}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-bold">
+                    1
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium">Connect Your Wallet or Exchange</p>
+                    <p className="text-sm text-muted-foreground">
+                      Link your crypto accounts to automatically import transactions
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-bold">
+                    2
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium">Import Transactions</p>
+                    <p className="text-sm text-muted-foreground">
+                      Sync transactions from exchanges or upload CSV files
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-bold">
+                    3
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium">Review & Categorize</p>
+                    <p className="text-sm text-muted-foreground">
+                      Review transactions and ensure they're correctly categorized
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-bold">
+                    4
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium">Generate Tax Report</p>
+                    <p className="text-sm text-muted-foreground">
+                      Create IRS Form 8949 and other tax documents
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="mt-6 flex gap-2">
+                <Button onClick={() => onboarding?.startOnboarding()}>
+                  Start Guided Tour
+                </Button>
+                <Button variant="outline" onClick={() => onboarding?.skip()}>
+                  Skip for Now
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <Card>
@@ -62,9 +277,13 @@ export default function Home() {
               <ExternalLink className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">$0.00</div>
+              <div className="text-2xl font-bold">
+                {isLoading ? "..." : formatCurrency(stats?.totalPortfolioValue || 0)}
+              </div>
               <div className="flex items-center text-xs text-muted-foreground">
-                No portfolio data
+                {isLoading ? "Loading..." : stats && stats.totalPortfolioValue > 0 
+                  ? `${stats.assetAllocation.length} asset${stats.assetAllocation.length !== 1 ? "s" : ""}`
+                  : "No portfolio data"}
               </div>
             </CardContent>
           </Card>
@@ -73,12 +292,20 @@ export default function Home() {
               <CardTitle className="text-sm font-medium">
                 Unrealized Gains
               </CardTitle>
-              <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+              {stats && stats.unrealizedGains >= 0 ? (
+                <TrendingUp className="h-4 w-4 text-green-500" />
+              ) : (
+                <TrendingDown className="h-4 w-4 text-red-500" />
+              )}
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">$0.00</div>
+              <div className={`text-2xl font-bold ${stats && stats.unrealizedGains >= 0 ? "text-green-500" : "text-red-500"}`}>
+                {isLoading ? "..." : formatCurrency(stats?.unrealizedGains || 0)}
+              </div>
               <div className="flex items-center text-xs text-muted-foreground">
-                No gains data
+                {isLoading ? "Loading..." : stats && stats.unrealizedGains !== 0
+                  ? `${stats.unrealizedGains >= 0 ? "Gain" : "Loss"} from cost basis`
+                  : "No gains data"}
               </div>
             </CardContent>
           </Card>
@@ -90,9 +317,11 @@ export default function Home() {
               <FileBadge className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">$0.00</div>
+              <div className="text-2xl font-bold">
+                {isLoading ? "..." : stats?.taxableEvents2023 || 0}
+              </div>
               <div className="flex items-center text-xs text-muted-foreground">
-                0 transactions
+                {isLoading ? "Loading..." : `${stats?.taxableEvents2023 || 0} transaction${(stats?.taxableEvents2023 || 0) !== 1 ? "s" : ""}`}
               </div>
             </CardContent>
           </Card>
@@ -201,7 +430,11 @@ export default function Home() {
                           ))}
                         </Pie>
                         <Tooltip
-                          formatter={(value) => [`${value}%`, 'Allocation']}
+                          formatter={(value: number, name: string, props: any) => {
+                            const total = assetsData.reduce((sum, item) => sum + item.value, 0);
+                            const percent = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                            return [`$${value.toLocaleString()} (${percent}%)`, 'Allocation'];
+                          }}
                           contentStyle={{
                             backgroundColor: 'hsl(var(--card))',
                             borderColor: 'hsl(var(--border))',
@@ -336,15 +569,59 @@ export default function Home() {
         {assetType === "coins" && (
           <Card>
             <CardContent className="p-0">
-              <div className="flex items-center justify-center h-[400px]">
-                <div className="text-center">
-                  <Coins className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-lg font-medium mb-2">No coins found</h3>
-                  <p className="text-muted-foreground max-w-md mx-auto">
-                    Connect accounts or add transactions to see your coin holdings.
-                  </p>
+              {isLoading ? (
+                <div className="flex items-center justify-center h-[400px]">
+                  <div className="text-center">
+                    <Coins className="h-12 w-12 mx-auto mb-4 text-muted-foreground animate-pulse" />
+                    <p className="text-muted-foreground">Loading holdings...</p>
+                  </div>
                 </div>
-              </div>
+              ) : stats && stats.assetAllocation.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left font-medium text-muted-foreground p-4">Asset</th>
+                        <th className="text-right font-medium text-muted-foreground p-4">Amount</th>
+                        <th className="text-right font-medium text-muted-foreground p-4">Current Price</th>
+                        <th className="text-right font-medium text-muted-foreground p-4">Current Value</th>
+                        <th className="text-right font-medium text-muted-foreground p-4">Cost Basis</th>
+                        <th className="text-right font-medium text-muted-foreground p-4">Gain/Loss</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stats.assetAllocation.map((asset) => {
+                        const gainLoss = asset.value - asset.costBasis;
+                        const gainLossPercent = asset.costBasis > 0 
+                          ? ((gainLoss / asset.costBasis) * 100).toFixed(2)
+                          : "0.00";
+                        return (
+                          <tr key={asset.name} className="border-b last:border-b-0 hover:bg-muted/50">
+                            <td className="p-4 font-medium">{asset.name}</td>
+                            <td className="p-4 text-right">{asset.amount.toFixed(6)}</td>
+                            <td className="p-4 text-right">{formatCurrency(asset.currentPrice)}</td>
+                            <td className="p-4 text-right font-medium">{formatCurrency(asset.value)}</td>
+                            <td className="p-4 text-right">{formatCurrency(asset.costBasis)}</td>
+                            <td className={`p-4 text-right font-medium ${gainLoss >= 0 ? "text-green-500" : "text-red-500"}`}>
+                              {gainLoss >= 0 ? "+" : ""}{formatCurrency(gainLoss)} ({gainLossPercent}%)
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-[400px]">
+                  <div className="text-center">
+                    <Coins className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                    <h3 className="text-lg font-medium mb-2">No coins found</h3>
+                    <p className="text-muted-foreground max-w-md mx-auto">
+                      Connect accounts or add transactions to see your coin holdings.
+                    </p>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

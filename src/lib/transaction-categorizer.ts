@@ -1,0 +1,238 @@
+import { Decimal } from "@prisma/client/runtime/library";
+
+/**
+ * Transaction categories
+ */
+export type TransactionCategory = 
+  | "buy" 
+  | "sell" 
+  | "transfer" 
+  | "swap" 
+  | "staking" 
+  | "liquidity" 
+  | "nft" 
+  | "dca" 
+  | "zero" 
+  | "spam";
+
+/**
+ * Categorize a transaction based on its type, notes, and other attributes
+ * Returns the category and whether the transaction should be marked as identified
+ */
+export function categorizeTransaction(
+  type: string,
+  notes?: string | null,
+  valueUsd?: Decimal | number | null,
+  assetSymbol?: string | null,
+  incomingAssetSymbol?: string | null
+): {
+  category: TransactionCategory;
+  identified: boolean;
+  finalType: string;
+  subtype?: string;
+} {
+  const typeLower = (type || "").toLowerCase();
+  const notesLower = (notes || "").toLowerCase();
+  const assetLower = (assetSymbol || "").toLowerCase();
+  const combinedText = `${typeLower} ${notesLower} ${assetLower}`.toLowerCase();
+
+  // Zero value transactions
+  const value = valueUsd ? Number(valueUsd) : 0;
+  if (value === 0 || typeLower.includes("zero")) {
+    return {
+      category: "zero",
+      identified: true,
+      finalType: "Zero Transaction",
+    };
+  }
+
+  // Spam transactions
+  if (
+    typeLower.includes("spam") ||
+    assetLower.includes("unknown") ||
+    notesLower.includes("spam") ||
+    combinedText.includes("airdrop spam") ||
+    combinedText.includes("dust")
+  ) {
+    return {
+      category: "spam",
+      identified: true,
+      finalType: "Spam",
+    };
+  }
+
+  // NFT transactions
+  if (
+    typeLower.includes("nft") ||
+    notesLower.includes("nft") ||
+    combinedText.includes("non-fungible") ||
+    typeLower === "nft purchase" ||
+    typeLower === "nft sale"
+  ) {
+    return {
+      category: "nft",
+      identified: true,
+      finalType: typeLower.includes("sale") ? "NFT Sale" : "NFT Purchase",
+    };
+  }
+
+  // Staking transactions
+  if (
+    typeLower.includes("stake") ||
+    typeLower.includes("staking") ||
+    typeLower.includes("reward") ||
+    notesLower.includes("staking") ||
+    notesLower.includes("stake reward") ||
+    notesLower.includes("validator") ||
+    combinedText.includes("delegation reward")
+  ) {
+    return {
+      category: "staking",
+      identified: true,
+      finalType: "Staking",
+      subtype: "Reward",
+    };
+  }
+
+  // Liquidity transactions
+  if (
+    typeLower.includes("liquidity") ||
+    notesLower.includes("liquidity") ||
+    notesLower.includes("lp") ||
+    notesLower.includes("liquidity pool") ||
+    combinedText.includes("add liquidity") ||
+    combinedText.includes("remove liquidity") ||
+    combinedText.includes("liquidity provision")
+  ) {
+    return {
+      category: "liquidity",
+      identified: true,
+      finalType: typeLower.includes("add") || notesLower.includes("add") 
+        ? "Add Liquidity" 
+        : "Remove Liquidity",
+    };
+  }
+
+  // DCA (Dollar Cost Averaging) transactions
+  if (
+    typeLower === "dca" ||
+    notesLower.includes("dca") ||
+    notesLower.includes("dollar cost average") ||
+    combinedText.includes("recurring buy")
+  ) {
+    return {
+      category: "dca",
+      identified: true,
+      finalType: "DCA",
+    };
+  }
+
+  // Swap transactions
+  if (
+    typeLower.includes("swap") ||
+    typeLower.includes("trade") ||
+    notesLower.includes("swap") ||
+    notesLower.includes("jupiter swap") ||
+    notesLower.includes("uniswap") ||
+    notesLower.includes("exchange") ||
+    incomingAssetSymbol ||
+    combinedText.includes("swapped") ||
+    combinedText.includes("traded")
+  ) {
+    return {
+      category: "swap",
+      identified: true,
+      finalType: "Swap",
+    };
+  }
+
+  // Transfer transactions (Send/Receive)
+  if (
+    typeLower.includes("send") ||
+    typeLower.includes("receive") ||
+    typeLower.includes("transfer") ||
+    typeLower.includes("bridge") ||
+    notesLower.includes("transfer") ||
+    notesLower.includes("sent") ||
+    notesLower.includes("received")
+  ) {
+    const isReceive = 
+      typeLower.includes("receive") ||
+      notesLower.includes("received") ||
+      (value > 0 && !typeLower.includes("send"));
+    
+    return {
+      category: "transfer",
+      identified: true,
+      finalType: isReceive ? "Receive" : "Send",
+    };
+  }
+
+  // Buy transactions
+  if (
+    typeLower.includes("buy") ||
+    typeLower.includes("purchase") ||
+    typeLower.includes("acquire") ||
+    notesLower.includes("bought") ||
+    notesLower.includes("purchased") ||
+    (value < 0 && !typeLower.includes("sell")) // Negative value usually means outgoing (buy)
+  ) {
+    return {
+      category: "buy",
+      identified: true,
+      finalType: "Buy",
+    };
+  }
+
+  // Sell transactions
+  if (
+    typeLower.includes("sell") ||
+    typeLower.includes("sale") ||
+    notesLower.includes("sold") ||
+    typeLower.includes("disposal") ||
+    (value > 0 && !typeLower.includes("buy") && !typeLower.includes("receive") && !typeLower.includes("reward") && !typeLower.includes("staking"))
+  ) {
+    return {
+      category: "sell",
+      identified: true,
+      finalType: "Sell",
+    };
+  }
+
+  // Default: not identified, keep original type
+  return {
+    category: "buy", // Default fallback
+    identified: false,
+    finalType: type,
+  };
+}
+
+/**
+ * Categorize and update transaction data
+ */
+export function categorizeTransactionData(data: {
+  type: string;
+  notes?: string | null;
+  value_usd?: Decimal | number | null;
+  asset_symbol?: string | null;
+  incoming_asset_symbol?: string | null;
+  subtype?: string | null;
+}): {
+  type: string;
+  subtype?: string | null;
+  identified: boolean;
+} {
+  const categorization = categorizeTransaction(
+    data.type,
+    data.notes,
+    data.value_usd,
+    data.asset_symbol,
+    data.incoming_asset_symbol
+  );
+
+  return {
+    type: categorization.finalType,
+    subtype: categorization.subtype || data.subtype || null,
+    identified: categorization.identified,
+  };
+}

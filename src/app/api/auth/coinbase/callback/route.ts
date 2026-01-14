@@ -90,10 +90,39 @@ export async function GET(request: NextRequest) {
     }
     
     console.log(`[Coinbase Callback] Stored ${accounts.length} wallets for user ${user.id}`);
+
+    // Store Coinbase exchange connection
+    await prisma.exchange.upsert({
+      where: {
+        name_userId: {
+          name: "coinbase",
+          userId: user.id,
+        },
+      },
+      update: {
+        refreshToken: tokens.refresh_token,
+        accessToken: tokens.access_token,
+        tokenExpiresAt: new Date(tokens.expires_at || Date.now() + tokens.expires_in * 1000),
+        isConnected: true,
+        updatedAt: new Date(),
+      },
+      create: {
+        name: "coinbase",
+        refreshToken: tokens.refresh_token,
+        accessToken: tokens.access_token,
+        tokenExpiresAt: new Date(tokens.expires_at || Date.now() + tokens.expires_in * 1000),
+        isConnected: true,
+        userId: user.id,
+      },
+    });
+
+    console.log(`[Coinbase Callback] Stored Coinbase exchange connection for user ${user.id}`);
     
-    // Create a secure, short-lived cookie with connection info
-    // This is for demonstration - in production, use server-side session storage
-    const response = NextResponse.redirect(new URL('/accounts?success=true', request.nextUrl.origin));
+    // Redirect to accounts page with success
+    // The user will need to sign in via NextAuth to get a session
+    // For now, we'll redirect and they can sign in manually
+    // In the future, we can create a NextAuth session automatically here
+    const response = NextResponse.redirect(new URL('/accounts?success=true&coinbase_connected=true', request.nextUrl.origin));
     
     // Store minimal connection data in secure cookie
     response.cookies.set({

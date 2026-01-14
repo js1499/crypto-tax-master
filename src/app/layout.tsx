@@ -3,7 +3,17 @@ import type { Metadata } from "next";
 import { Outfit, Azeret_Mono } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/theme-provider";
+import { NextAuthSessionProvider } from "@/components/providers/session-provider";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { OnboardingProvider } from "@/components/onboarding/onboarding-provider";
 import { Toaster } from "sonner"; // Added Toaster import
+
+// Initialize Sentry on the client side
+if (typeof window !== "undefined") {
+  import("../../sentry.client.config").catch(() => {
+    // Silently fail if Sentry config doesn't exist
+  });
+}
 
 const outfit = Outfit({ 
   subsets: ["latin"], 
@@ -36,15 +46,21 @@ export default function RootLayout({
           azeretMono.variable
         )}
       >
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="dark"
-          enableSystem={true} // Updated to support both light and dark modes
-          disableTransitionOnChange
-        >
-          {children}
-          <Toaster theme="system" position="top-right" /> {/* Updated Toaster component */}
-        </ThemeProvider>
+        <ErrorBoundary>
+          <NextAuthSessionProvider>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme="dark"
+              enableSystem={true} // Updated to support both light and dark modes
+              disableTransitionOnChange
+            >
+              <OnboardingProvider>
+                {children}
+                <Toaster theme="system" position="top-right" /> {/* Updated Toaster component */}
+              </OnboardingProvider>
+            </ThemeProvider>
+          </NextAuthSessionProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

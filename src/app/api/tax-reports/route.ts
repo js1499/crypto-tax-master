@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { calculateTaxReport, formatTaxReport } from "@/lib/tax-calculator";
-import { CoinbaseUser } from "@/lib/coinbase";
+import { getCurrentUser } from "@/lib/auth-helpers";
+import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
+import * as Sentry from "@sentry/nextjs";
 
 const prisma = new PrismaClient();
 
@@ -11,6 +13,15 @@ const prisma = new PrismaClient();
  */
 export async function GET(request: NextRequest) {
   try {
+    // Rate limiting
+    const rateLimitResult = rateLimitAPI(request, 30); // 30 reports per minute
+    if (!rateLimitResult.success) {
+      return createRateLimitResponse(
+        rateLimitResult.remaining,
+        rateLimitResult.reset
+      );
+    }
+    
     const searchParams = request.nextUrl.searchParams;
     const year = parseInt(searchParams.get("year") || new Date().getFullYear().toString());
     
@@ -21,31 +32,32 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user authentication (similar to wallets route)
-    const tokensCookie = request.cookies.get("coinbase_tokens")?.value;
-    if (!tokensCookie) {
+    // Get user authentication via NextAuth
+    const user = await getCurrentUser();
+    
+    if (!user) {
       return NextResponse.json(
         { error: "Not authenticated" },
         { status: 401 }
       );
     }
-
-    // Get user info from Coinbase
-    const coinbaseUser = await getCoinbaseUserFromTokens(tokensCookie);
-    if (!coinbaseUser || !coinbaseUser.email) {
-      return NextResponse.json(
-        { error: "Could not identify user" },
-        { status: 401 }
+    
+    // Additional rate limiting by user
+    const userRateLimit = rateLimitByUser(user.id, 10); // 10 reports per minute per user
+    if (!userRateLimit.success) {
+      return createRateLimitResponse(
+        userRateLimit.remaining,
+        userRateLimit.reset
       );
     }
 
-    // Find user in database
-    const user = await prisma.user.findUnique({
-      where: { email: coinbaseUser.email },
+    // Get user with wallets
+    const userWithWallets = await prisma.user.findUnique({
+      where: { id: user.id },
       include: { wallets: true },
     });
 
-    if (!user) {
+    if (!userWithWallets) {
       return NextResponse.json(
         { error: "User not found" },
         { status: 404 }
@@ -53,20 +65,34 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user's wallet addresses
-    const walletAddresses = user.wallets.map((w) => w.address);
+    const walletAddresses = userWithWallets.wallets.map((w) => w.address);
+
+    console.log(`[Tax Reports API] Calculating tax report for year ${year}, user ${user.id}`);
+    console.log(`[Tax Reports API] User has ${walletAddresses.length} wallet(s)`);
 
     // Calculate tax report using user's wallet addresses
-    // If user has no wallets, pass empty array (will calculate for all transactions)
-    // In production, you might want to require at least one wallet
+    // Also include CSV-imported transactions (source_type: "csv_import" with null wallet_address)
+    // Pass empty array to include all transactions (both wallet-based and CSV-imported)
+    // The calculateTaxReport function will handle filtering appropriately
     const report = await calculateTaxReport(
       prisma,
-      walletAddresses.length > 0 ? walletAddresses : [],
+      walletAddresses, // Pass wallet addresses, but also need to include CSV imports
       year,
-      "FIFO"
+      "FIFO",
+      user.id // Pass user ID to filter CSV imports by user
     );
+
+    console.log(`[Tax Reports API] Tax report calculated:`);
+    console.log(`  - Taxable events: ${report.taxableEvents.length}`);
+    console.log(`  - Income events: ${report.incomeEvents.length}`);
+    console.log(`  - Short-term gains: $${report.shortTermGains.toFixed(2)}`);
+    console.log(`  - Long-term gains: $${report.longTermGains.toFixed(2)}`);
+    console.log(`  - Total income: $${report.totalIncome.toFixed(2)}`);
 
     // Format the report for frontend
     const formattedReport = formatTaxReport(report);
+    
+    console.log(`[Tax Reports API] Formatted report:`, formattedReport);
 
     return NextResponse.json({
       status: "success",
@@ -110,27 +136,3 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Helper function to get Coinbase user from tokens
-async function getCoinbaseUserFromTokens(
-  tokensCookie: string
-): Promise<CoinbaseUser | null> {
-  try {
-    const { getCoinbaseUser, isTokenExpired, refreshAccessToken } =
-      await import("@/lib/coinbase");
-    const tokens = JSON.parse(tokensCookie);
-
-    let accessToken = tokens.access_token;
-
-    // Refresh token if expired
-    if (isTokenExpired(tokens)) {
-      console.log("[Tax Reports API] Access token expired, refreshing");
-      const newTokens = await refreshAccessToken(tokens.refresh_token);
-      accessToken = newTokens.access_token;
-    }
-
-    return await getCoinbaseUser(accessToken);
-  } catch (error) {
-    console.error("[Tax Reports API] Error getting user from tokens:", error);
-    return null;
-  }
-}

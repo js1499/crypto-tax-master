@@ -51,64 +51,185 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
     toast.info(`Template for ${selectedExchange} downloaded`);
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (!csvFile) {
       toast.error("Please select a CSV file to import");
+      return;
+    }
+
+    if (!selectedExchange) {
+      toast.error("Please select an exchange or platform");
       return;
     }
 
     setIsUploading(true);
     setUploadProgress(0);
 
-    // Simulate upload progress
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        const newProgress = prev + 5;
-        if (newProgress >= 100) {
-          clearInterval(interval);
+    try {
+      // Create FormData to send file
+      const formData = new FormData();
+      formData.append("file", csvFile);
+      formData.append("exchange", selectedExchange);
 
-          // Simulate processing
-          setTimeout(() => {
-            setIsUploading(false);
-            setUploadComplete(true);
+      // Calculate file size for better progress estimation
+      const fileSizeMB = csvFile.size / 1024 / 1024;
+      console.log(`[CSV Import] Uploading file: ${csvFile.name}, size: ${fileSizeMB.toFixed(2)}MB`);
+      console.log(`[CSV Import] File type: ${csvFile.type}, Last modified: ${new Date(csvFile.lastModified).toISOString()}`);
+      
+      // Validate file before upload
+      if (csvFile.size === 0) {
+        throw new Error("The selected file is empty. Please select a valid CSV file.");
+      }
+      
+      if (csvFile.size > 50 * 1024 * 1024) {
+        throw new Error(`File size (${fileSizeMB.toFixed(2)}MB) exceeds the maximum allowed size of 50MB. Please split your CSV into smaller files.`);
+      }
 
-            // Simulate parsed transaction data
-            const mockImportedData: ImportedData = {
-              source: selectedExchange,
-              fileName: csvFile.name,
-              timestamp: new Date().toISOString(),
-              transactions: [
-                {
-                  id: 1,
-                  type: "Buy",
-                  asset: "Bitcoin",
-                  amount: "0.05 BTC",
-                  value: "$2,150.75",
-                  date: "2023-12-15T15:32:41Z",
-                },
-                {
-                  id: 2,
-                  type: "Sell",
-                  asset: "Ethereum",
-                  amount: "1.2 ETH",
-                  value: "$2,880.40",
-                  date: "2023-12-10T09:15:22Z",
-                },
-                // More transactions would be here in a real implementation
-              ],
-              totalTransactions: 24,
-            };
+      let uploadStartTime = Date.now();
+      
+      // Simulate upload progress (0-70%) since fetch doesn't provide upload progress
+      // For large files, this gives user feedback that something is happening
+      const progressStep = fileSizeMB > 10 ? 1 : 2; // Smaller steps for large files
+      const progressIntervalMs = fileSizeMB > 10 ? 800 : 500; // Slower updates for large files
+      
+      let progressInterval: NodeJS.Timeout | null = null;
+      progressInterval = setInterval(() => {
+        setUploadProgress((prev) => {
+          // Cap at 70% during upload (remaining 30% for processing)
+          if (prev >= 70) {
+            if (progressInterval) clearInterval(progressInterval);
+            return 70;
+          }
+          return Math.min(70, prev + progressStep);
+        });
+      }, progressIntervalMs);
 
-            if (onImportComplete) {
-              onImportComplete(mockImportedData);
+      // Make API call with longer timeout for large files
+      const controller = new AbortController();
+      // Timeout based on file size: 1 minute per MB, minimum 5 minutes, maximum 30 minutes
+      const timeoutMs = Math.min(30 * 60 * 1000, Math.max(5 * 60 * 1000, fileSizeMB * 60 * 1000));
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      
+      console.log(`[CSV Import] Request timeout set to ${(timeoutMs / 1000 / 60).toFixed(1)} minutes for ${fileSizeMB.toFixed(2)}MB file`);
+
+      let response: Response;
+      try {
+        // Start the actual upload
+        response = await fetch("/api/transactions/import", {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
+        
+        // Upload complete, clear progress interval and move to processing phase
+        if (progressInterval) clearInterval(progressInterval);
+        setUploadProgress(75); // Upload complete, starting processing
+        
+        console.log(`[CSV Import] Fetch completed, status: ${response.status}`);
+        clearTimeout(timeoutId);
+        
+        const uploadTime = ((Date.now() - uploadStartTime) / 1000).toFixed(1);
+        console.log(`[CSV Import] Upload completed in ${uploadTime}s, now processing...`);
+        
+        // Simulate processing progress (75% to 95%) - server is processing the file
+        const processingInterval = setInterval(() => {
+          setUploadProgress((prev) => {
+            if (prev >= 95) {
+              clearInterval(processingInterval);
+              return 95;
             }
-
-            toast.success(`Successfully imported ${mockImportedData.totalTransactions} transactions from ${csvFile.name}`);
-          }, 1000);
+            return prev + 0.3; // Slowly increase to 95% during processing
+          });
+        }, 2000); // Update every 2 seconds
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+          const elapsed = ((Date.now() - uploadStartTime) / 1000 / 60).toFixed(1);
+          throw new Error(`Request timed out after ${elapsed} minutes. The file might be too large. Please try splitting it into smaller files or contact support.`);
         }
-        return newProgress > 100 ? 100 : newProgress;
-      });
-    }, 100);
+        throw fetchError;
+      }
+
+      // Processing complete, set to 100%
+      setUploadProgress(100);
+
+      // Check if response has content
+      const contentType = response.headers.get("content-type");
+      console.log(`[CSV Import] Response status: ${response.status}, Content-Type: ${contentType}`);
+      
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error(`[CSV Import] Non-JSON response:`, text.substring(0, 500));
+        throw new Error(`Server returned invalid response: ${text.substring(0, 200)}`);
+      }
+
+      // Parse JSON with error handling
+      let data;
+      try {
+        const text = await response.text();
+        if (!text || text.trim() === '') {
+          console.error(`[CSV Import] Empty response from server`);
+          throw new Error("Server returned empty response");
+        }
+        console.log(`[CSV Import] Response text length: ${text.length} characters`);
+        data = JSON.parse(text);
+        console.log(`[CSV Import] Parsed response:`, { status: data.status, error: data.error, details: data.details?.substring(0, 100) });
+      } catch (parseError) {
+        console.error("[CSV Import] JSON parse error:", parseError);
+        throw new Error("Failed to parse server response. The import may have partially completed. Please check your transactions.");
+      }
+
+      if (!response.ok) {
+        // Extract detailed error information
+        const errorMsg = data.error || "Failed to import transactions";
+        const errorDetails = data.details || "";
+        const fullError = errorDetails ? `${errorMsg}: ${errorDetails}` : errorMsg;
+        
+        console.error(`[CSV Import] Server error (${response.status}):`, {
+          error: errorMsg,
+          details: errorDetails,
+          contentType: data.contentType,
+          contentLength: data.contentLength,
+        });
+        
+        throw new Error(fullError);
+      }
+
+      setIsUploading(false);
+      setUploadComplete(true);
+
+      // Transform API response to ImportedData format
+      const importedData: ImportedData = {
+        source: data.source || selectedExchange,
+        fileName: data.fileName || csvFile.name,
+        timestamp: data.timestamp || new Date().toISOString(),
+        transactions: [], // Transactions are stored in DB, not returned in detail
+        totalTransactions: data.totalTransactions || data.transactionsAdded || 0,
+      };
+
+      if (onImportComplete) {
+        onImportComplete(importedData);
+      }
+
+      const message = `Successfully imported ${data.transactionsAdded} transaction${data.transactionsAdded !== 1 ? "s" : ""} from ${csvFile.name}${data.transactionsSkipped > 0 ? ` (${data.transactionsSkipped} skipped as duplicates)` : ""}`;
+      toast.success(message);
+
+      // Reset form after successful import
+      setTimeout(() => {
+        setCsvFile(null);
+        setUploadComplete(false);
+        setUploadProgress(0);
+      }, 2000);
+    } catch (error) {
+      setIsUploading(false);
+      setUploadProgress(0);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "Failed to import transactions. Please try again.";
+      toast.error(errorMessage);
+      console.error("Import error:", error);
+    }
   };
 
   return (

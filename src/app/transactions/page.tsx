@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, Suspense } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { Layout } from "@/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -24,6 +26,15 @@ import {
   Pencil,
   ChevronDown,
   X,
+  FileText,
+  Copy,
+  Trash2,
+  Merge,
+  ExternalLink,
+  MoreVertical,
+  CheckSquare,
+  Square,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -87,23 +98,11 @@ import {
 } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { CalendarIcon } from "@/components/icons/calendar-icon";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 
-// Create an empty array for allTransactions to fix the reference error
-const allTransactions: any[] = [
-  {
-    id: 1,
-    type: "Buy",
-    asset: "BTC",
-    amount: "0.1 BTC",
-    price: "$30,000",
-    value: "$3,000",
-    date: "2023-01-01T12:00:00Z",
-    status: "Completed",
-    exchange: "Coinbase",
-    identified: true,
-    valueIdentified: true
-  }
-];
+// Empty initial transactions - will be loaded from API
+const allTransactions: any[] = [];
 
 interface Transaction {
   id: number;
@@ -117,6 +116,9 @@ interface Transaction {
   exchange: string;
   identified?: boolean;
   valueIdentified?: boolean;
+  notes?: string;
+  chain?: string;
+  txHash?: string;
   [key: string]: any; // Add index signature to allow string-based property access
 }
 
@@ -133,56 +135,16 @@ interface EditableFields {
   identified: boolean;
 }
 
-// Modify transaction values to have more negative values
-const modifiedTransactions = allTransactions.map((tx: any, index: number) => {
-  // Determine value sign based on transaction type
-  let value = tx.value;
-  let type = tx.type;
-  
-  // Format transaction values properly - buys are negative (money flowing out), sells are positive (money coming in)
-  if (tx.type === "Buy" || tx.type === "DCA") {
-    // Make buy transactions negative
-    const numValue = parseFloat(tx.value.replace(/[$,]/g, ""));
-    value = `-$${numValue.toFixed(2)}`;
-  } else if (tx.type === "Sell") {
-    // Keep sell transactions positive
-    const numValue = parseFloat(tx.value.replace(/[$,]/g, ""));
-    
-    // Make some sells negative (losses)
-    if (index % 3 === 0) {
-      value = `-$${numValue.toFixed(2)}`;
-    } else {
-      value = `$${numValue.toFixed(2)}`;
-    }
-  } else if (tx.type === "Swap") {
-    // Make half of swaps negative
-    if (index % 2 === 0) {
-      const numValue = parseFloat(tx.value.replace(/[$,]/g, ""));
-      value = `-$${numValue.toFixed(2)}`;
-    }
-  } else if (tx.type === "Receive" || tx.type === "Send") {
-    // Make some transfers negative
-    if (index % 2 === 1) {
-      const numValue = parseFloat(tx.value.replace(/[$,]/g, ""));
-      value = `-$${numValue.toFixed(2)}`;
-    }
-  }
-  
-  return {
-    ...tx,
-    value,
-    type,
-    identified: index % 3 !== 0, // Every 3rd transaction is unidentified
-    valueIdentified: true, // Set all values as identified for 100%
-  };
-});
+// Transactions will be loaded from API - no need for mock data
 
 // Define transaction type from ImportedData
 function TransactionsContent() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [transactions, setTransactions] = useState<Transaction[]>(modifiedTransactions);
-  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>(modifiedTransactions);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
   const [filter, setFilter] = useState("all");
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [sortOption, setSortOption] = useState("date-desc");
@@ -206,10 +168,35 @@ function TransactionsContent() {
     status: false,
     identified: false
   });
+
+  // Transaction detail sheet state
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [isDetailSheetOpen, setIsDetailSheetOpen] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesValue, setNotesValue] = useState("");
+
+  // Bulk selection state
+  const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<number>>(new Set());
+  const [isBulkMode, setIsBulkMode] = useState(false);
+
+  // Duplicate detection state
+  const [duplicates, setDuplicates] = useState<Array<{ ids: number[]; reason: string; similarity: number }>>([]);
+  const [isDuplicatesOpen, setIsDuplicatesOpen] = useState(false);
+  const [isLoadingDuplicates, setIsLoadingDuplicates] = useState(false);
+  
+  // Delete all transactions state
+  const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  
+  // Categorize transactions state
+  const [isCategorizing, setIsCategorizing] = useState(false);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [itemsPerPage, setItemsPerPage] = useState(50);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   
   // New transaction form state
   const [newTransaction, setNewTransaction] = useState({
@@ -228,135 +215,159 @@ function TransactionsContent() {
     setMounted(true);
   }, []);
 
+  // Redirect to login if not authenticated
   useEffect(() => {
-    let result = transactions;
+    if (status === "unauthenticated") {
+      router.push("/login");
+    }
+  }, [status, router]);
 
-    // Apply filter for unlabelled transactions
-    if (showOnlyUnlabelled) {
-      result = result.filter(tx => !tx.identified);
-    }
-    
-    // Apply filter to hide zero transactions
-    if (hideZeroTransactions) {
-      result = result.filter(tx => 
-        tx.type !== "Zero Transaction" && 
-        !(tx.value === "$0.00" || tx.value === "$0" || parseFloat(tx.value.replace(/[$,]/g, "")) === 0)
-      );
-    }
-    
-    // Apply filter to hide spam transactions
-    if (hideSpamTransactions) {
-      result = result.filter(tx => 
-        tx.type !== "Spam Transaction" && 
-        !tx.asset.toLowerCase().includes("unknown") &&
-        !tx.asset.toLowerCase().includes("spam")
-      );
+  // Fetch transactions from API
+  useEffect(() => {
+    // Don't fetch if not authenticated or still loading
+    if (status !== "authenticated" || !mounted) {
+      return;
     }
 
-    // Apply filter by type
-    if (filter !== "all") {
-      if (filter === "transfer") {
-        result = result.filter(tx => 
-          tx.type === "Send" || 
-          tx.type === "Receive" || 
-          tx.type === "Transfer" || 
-          tx.type === "Bridge"
-        );
-      } else if (filter === "stake") {
-        result = result.filter(tx => 
-          tx.type === "Stake" || 
-          tx.type === "Staking"
-        );
-      } else if (filter === "liquidity") {
-        result = result.filter(tx => 
-          tx.type === "Liquidity Providing"
-        );
-      } else if (filter === "nft") {
-        result = result.filter(tx => 
-          tx.type === "NFT Purchase" || 
-          tx.type.toLowerCase().includes("nft")
-        );
-      } else if (filter === "dca") {
-        result = result.filter(tx => 
-          tx.type === "DCA"
-        );
-      } else if (filter === "zero") {
-        result = result.filter(tx => 
-          tx.type === "Zero Transaction" || 
-          (tx.value === "$0.00" || tx.value === "$0" || parseFloat(tx.value.replace(/[$,]/g, "")) === 0)
-        );
-      } else if (filter === "spam") {
-        result = result.filter(tx => 
-          tx.type === "Spam Transaction" || 
-          tx.asset.toLowerCase().includes("unknown") ||
-          tx.asset.toLowerCase().includes("spam")
-        );
-      } else {
-        // For other simple cases, just match the filter to the type lowercase
-        result = result.filter(tx => 
-          tx.type.toLowerCase().includes(filter.toLowerCase())
-        );
+    const fetchTransactions = async () => {
+      setIsLoadingTransactions(true);
+      try {
+        const params = new URLSearchParams({
+          page: currentPage.toString(),
+          limit: itemsPerPage.toString(),
+          ...(searchTerm && { search: searchTerm }),
+          ...(filter !== "all" && { filter }),
+          ...(sortOption && { sort: sortOption }),
+          ...(showOnlyUnlabelled && { showOnlyUnlabelled: "true" }),
+          ...(hideZeroTransactions && { hideZeroTransactions: "true" }),
+          ...(hideSpamTransactions && { hideSpamTransactions: "true" }),
+        });
+
+        const response = await fetch(`/api/transactions?${params.toString()}`);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          
+          // Handle authentication errors
+          if (response.status === 401) {
+            toast.error("Please log in to view transactions");
+            router.push("/login");
+            return;
+          }
+          
+          throw new Error(errorData.details || errorData.error || "Failed to fetch transactions");
+        }
+
+        const data = await response.json();
+        if (data.status === "success") {
+          // Convert API response to Transaction format
+          const apiTransactions: Transaction[] = data.transactions.map((tx: any) => ({
+            id: tx.id,
+            type: tx.type,
+            asset: tx.asset,
+            amount: tx.amount,
+            price: tx.price,
+            value: tx.value,
+            date: tx.date,
+            status: tx.status,
+            exchange: tx.exchange,
+            identified: tx.identified || false,
+            valueIdentified: tx.valueIdentified || false,
+            notes: tx.notes || "",
+            chain: tx.chain,
+            txHash: tx.txHash,
+          }));
+
+          setTransactions(apiTransactions);
+          setFilteredTransactions(apiTransactions); // Keep for compatibility with existing code
+          setTotalCount(data.pagination.totalCount);
+          setTotalPages(data.pagination.totalPages);
+          
+          // Reset to page 1 if current page is beyond total pages
+          // Use a ref to prevent infinite loop
+          if (currentPage > data.pagination.totalPages && data.pagination.totalPages > 0 && currentPage !== 1) {
+            // Use setTimeout to avoid state update during render
+            setTimeout(() => setCurrentPage(1), 0);
+          }
+        } else {
+          throw new Error(data.error || "Failed to load transactions");
+        }
+      } catch (error) {
+        if (process.env.NODE_ENV === "development") {
+          console.error("Error fetching transactions:", error);
+        }
+        const errorMessage = error instanceof Error ? error.message : "Failed to load transactions";
+        toast.error(errorMessage);
+        // Keep existing transactions on error
+      } finally {
+        setIsLoadingTransactions(false);
       }
-    }
+    };
 
-    // Apply search term
-    if (searchTerm) {
-      const search = searchTerm.toLowerCase();
-      result = result.filter(tx =>
-        tx.asset.toLowerCase().includes(search) ||
-        tx.exchange.toLowerCase().includes(search) ||
-        tx.type.toLowerCase().includes(search)
-      );
-    }
+    fetchTransactions();
+  }, [
+    status,
+    mounted,
+    currentPage,
+    itemsPerPage,
+    searchTerm,
+    filter,
+    sortOption,
+    showOnlyUnlabelled,
+    hideZeroTransactions,
+    hideSpamTransactions,
+    router,
+  ]);
 
-    // Apply sorting
-    const sortedResult = [...result].sort((a, b) => {
-      switch (sortOption) {
-        case "date-asc":
-          return new Date(a.date).getTime() - new Date(b.date).getTime();
-        case "date-desc":
-          return new Date(b.date).getTime() - new Date(a.date).getTime();
-        case "value-asc":
-          return parseFloat(a.value.replace(/[$,]/g, "")) - parseFloat(b.value.replace(/[$,]/g, ""));
-        case "value-desc":
-          return parseFloat(b.value.replace(/[$,]/g, "")) - parseFloat(a.value.replace(/[$,]/g, ""));
-        case "asset-asc":
-          return a.asset.localeCompare(b.asset);
-        case "asset-desc":
-          return b.asset.localeCompare(a.asset);
-        case "type-asc":
-          return a.type.localeCompare(b.type);
-        case "type-desc":
-          return b.type.localeCompare(a.type);
-        default:
-          return 0;
-      }
-    });
+  // Note: Filtering, sorting, and search are now handled server-side via API
+  // The transactions state contains the current page of filtered/sorted results
+  // When filters/search/sort change, the useEffect will refetch from API
 
-    setFilteredTransactions(sortedResult);
-    // Reset to first page when filters change
-    setCurrentPage(1);
-  }, [searchTerm, filter, transactions, sortOption, showOnlyUnlabelled, hideZeroTransactions, hideSpamTransactions]);
+  // Show loading state while checking authentication
+  if (status === "loading" || !mounted) {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
-  // Calculate transaction identification statistics
+  // Show message if not authenticated (will redirect, but show something in the meantime)
+  if (status === "unauthenticated") {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center min-h-[400px]">
+          <div className="text-center">
+            <p className="text-muted-foreground">Redirecting to login...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Calculate transaction identification statistics (from current page)
   const identifiedCount = transactions.filter(tx => tx.identified).length;
-  const totalCount = transactions.length;
-  const needsIdentificationCount = totalCount - identifiedCount;
-  const identificationPercentage = Math.round((identifiedCount / totalCount) * 100);
+  const currentPageCount = transactions.length;
+  // Note: For accurate stats, we'd need a separate API call, but for now use current page data
+  const needsIdentificationCount = currentPageCount - identifiedCount;
+  const identificationPercentage = currentPageCount > 0 
+    ? Math.round((identifiedCount / currentPageCount) * 100) 
+    : 0;
 
-  // Calculate value identification statistics (excluding zero value transactions)
-  const nonZeroTransactions = transactions.filter(tx => 
-    parseFloat(tx.value.replace(/[-$,]/g, "")) > 0
-  );
+  // Calculate value identification statistics
   const valueIdentifiedCount = transactions.filter(tx => tx.valueIdentified).length;
-  // Hardcode to 100% as requested
-  const valueIdentificationPercentage = 100;
+  const valueIdentificationPercentage = currentPageCount > 0
+    ? Math.round((valueIdentifiedCount / currentPageCount) * 100)
+    : 100;
 
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+  // Pagination calculations (now using server-side pagination)
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = Math.min(startIndex + itemsPerPage, filteredTransactions.length);
-  const currentTransactions = filteredTransactions.slice(startIndex, endIndex);
+  const endIndex = Math.min(startIndex + transactions.length, totalCount);
+  const currentTransactions = transactions; // Already paginated from server
 
   // Change page handler
   const handlePageChange = (page: number) => {
@@ -369,33 +380,65 @@ function TransactionsContent() {
     setCurrentPage(1); // Reset to first page when changing items per page
   };
 
-  if (!mounted) {
-    return null;
-  }
-
   // Handle import completion
   const handleImportComplete = (data: ImportedData) => {
-    // Generate some fake transactions from the imported data
-    const newTransactions = data.transactions.map((tx: ImportedTransaction, index: number) => ({
-      id: transactions.length + 1 + index,
-      type: tx.type,
-      asset: tx.asset,
-      amount: tx.amount,
-      price: `${tx.value.replace("$", "")} USD`,
-      value: tx.value,
-      date: tx.date,
-      status: "Completed",
-      exchange: data.source.charAt(0).toUpperCase() + data.source.slice(1),
-      identified: Math.random() > 0.3, // Randomly identify ~70% of imported transactions
-      valueIdentified: Math.random() > 0.3, // Randomly identify ~70% of value
-    }));
-
-    setTransactions([...transactions, ...newTransactions]);
-    toast.success(`Added ${newTransactions.length} new transactions`);
+    toast.success(`Added ${data.transactions.length} new transactions`);
     setIsImportOpen(false);
+    // Refresh transactions from API
+    setCurrentPage(1);
+    // The useEffect will automatically refetch
+    
+    // Complete onboarding step if active
+    try {
+      const { useOnboarding } = require("@/components/onboarding/onboarding-provider");
+      const onboarding = useOnboarding();
+      if (onboarding.isActive) {
+        onboarding.completeCurrentStep();
+      }
+    } catch {
+      // Onboarding not available, ignore
+    }
   };
 
   // Handle export
+  // Delete all transactions
+  const handleDeleteAll = async () => {
+    setIsDeletingAll(true);
+    try {
+      const response = await fetch("/api/transactions/delete-all", {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.details || "Failed to delete all transactions");
+      }
+
+      const data = await response.json();
+      if (data.status === "success") {
+        toast.success(`Successfully deleted ${data.deletedCount} transaction${data.deletedCount !== 1 ? "s" : ""}`);
+        setIsDeleteAllOpen(false);
+        
+        // Reset to page 1 and refresh transactions
+        setCurrentPage(1);
+        setTransactions([]);
+        setFilteredTransactions([]);
+        setTotalCount(0);
+        
+        // Trigger a refresh by updating a dependency
+        // The useEffect will automatically refetch
+      } else {
+        throw new Error(data.error || "Failed to delete transactions");
+      }
+    } catch (error) {
+      console.error("Error deleting all transactions:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to delete all transactions";
+      toast.error(errorMessage);
+    } finally {
+      setIsDeletingAll(false);
+    }
+  };
+
   const handleExport = () => {
     toast.success("Transactions exported successfully!");
   };
@@ -423,51 +466,27 @@ function TransactionsContent() {
   };
 
   // Handle transaction addition
-  const handleAddTransaction = () => {
-    // Create a new transaction object
-    const transactionValue = newTransaction.value.startsWith("$") 
-      ? newTransaction.value 
-      : `$${newTransaction.value}`;
-    
-    // Determine if value should be negative based on transaction type
-    let finalValue = transactionValue;
-    if ((newTransaction.type === "Buy" || newTransaction.type === "DCA") && !transactionValue.startsWith("-")) {
-      const numValue = parseFloat(transactionValue.replace(/[$,]/g, ""));
-      finalValue = `-$${numValue.toFixed(2)}`;
+  const handleAddTransaction = async () => {
+    try {
+      // TODO: Create API endpoint for adding transactions
+      // For now, just show a message
+      toast.success("Transaction addition will be implemented via API endpoint");
+      setIsAddTransactionOpen(false);
+      setNewTransaction({
+        exchange: "",
+        asset: "",
+        amount: "",
+        price: "",
+        date: format(new Date(), "yyyy-MM-dd"),
+        time: format(new Date(), "HH:mm"),
+        value: "",
+        type: "Buy"
+      });
+      // Refresh transactions from API
+      setCurrentPage(1);
+    } catch (error) {
+      toast.error("Failed to add transaction");
     }
-    
-    const newTransactionObj: Transaction = {
-      id: transactions.length + 1,
-      type: newTransaction.type,
-      asset: newTransaction.asset,
-      amount: `${newTransaction.amount} ${newTransaction.asset}`,
-      price: `$${newTransaction.price}`,
-      value: finalValue,
-      date: `${newTransaction.date}T${newTransaction.time}:00Z`,
-      status: "Completed",
-      exchange: newTransaction.exchange,
-      identified: true,
-      valueIdentified: true
-    };
-    
-    // Add to transactions array
-    setTransactions([newTransactionObj, ...transactions]);
-    
-    // Close dialog and reset form
-    setIsAddTransactionOpen(false);
-    setNewTransaction({
-      exchange: "",
-      asset: "",
-      amount: "",
-      price: "",
-      date: format(new Date(), "yyyy-MM-dd"),
-      time: format(new Date(), "HH:mm"),
-      value: "",
-      type: "Buy"
-    });
-    
-    // Show success toast
-    toast.success("Transaction added successfully!");
   };
 
   // Add new handlers for editing transactions
@@ -498,80 +517,126 @@ function TransactionsContent() {
     setEditingValue("");
   };
 
-  const handleSaveEdit = (id: number, field: keyof Transaction) => {
-    const updatedTransactions = transactions.map(tx => {
-      if (tx.id === id) {
-        const updatedTx = { ...tx };
-        
-        // Format the value appropriately based on field type
-        if (field === 'date') {
-          // Preserve the time portion of the original date
-          const originalDate = new Date(tx.date);
-          const newDate = new Date(editingValue);
-          newDate.setHours(originalDate.getHours(), originalDate.getMinutes(), originalDate.getSeconds());
-          updatedTx[field] = newDate.toISOString();
-        } else if (field === 'price') {
-          updatedTx[field] = `$${parseFloat(editingValue).toFixed(2)}`;
-        } else if (field === 'value') {
-          // Determine if value should be negative based on transaction type
-          const isNegative = (tx.type === "Buy" || tx.type === "DCA") || tx.value.startsWith('-');
-          const numValue = parseFloat(editingValue);
-          updatedTx[field] = isNegative ? `-$${numValue.toFixed(2)}` : `$${numValue.toFixed(2)}`;
-        } else if (field === 'amount') {
-          // Preserve the asset symbol
-          const assetSymbol = tx.amount.split(' ')[1] || tx.asset;
-          updatedTx[field] = `${editingValue} ${assetSymbol}`;
-        } else if (field === 'identified') {
-          updatedTx.identified = editingValue === 'true';
-        } else if (field === 'type' || field === 'asset' || field === 'exchange' || field === 'status') {
-          // These fields accept strings directly
-          updatedTx[field] = editingValue;
-        }
-        
-        return updatedTx;
+  const handleSaveEdit = async (id: number, field: keyof Transaction) => {
+    try {
+      const tx = transactions.find(t => t.id === id);
+      if (!tx) return;
+
+      // Prepare update payload
+      let updatePayload: any = {};
+      
+      if (field === 'type') {
+        updatePayload.type = editingValue;
+      } else if (field === 'asset') {
+        updatePayload.asset_symbol = editingValue;
+      } else if (field === 'amount') {
+        const amountValue = parseFloat(editingValue);
+        updatePayload.amount_value = amountValue;
+      } else if (field === 'price') {
+        updatePayload.price_per_unit = parseFloat(editingValue);
+      } else if (field === 'value') {
+        const numValue = parseFloat(editingValue);
+        const isNegative = (tx.type === "Buy" || tx.type === "DCA");
+        updatePayload.value_usd = isNegative ? -numValue : numValue;
+      } else if (field === 'date') {
+        const originalDate = new Date(tx.date);
+        const newDate = new Date(editingValue);
+        newDate.setHours(originalDate.getHours(), originalDate.getMinutes(), originalDate.getSeconds());
+        updatePayload.tx_timestamp = newDate.toISOString();
+      } else if (field === 'exchange') {
+        updatePayload.source = editingValue;
+      } else if (field === 'status') {
+        updatePayload.status = editingValue;
+      } else if (field === 'identified') {
+        updatePayload.identified = editingValue === 'true';
       }
-      return tx;
-    });
-    
-    setTransactions(updatedTransactions);
-    setEditingTransactionId(null);
-    setEditingField(null);
-    setEditingValue("");
-    toast.success(`Transaction ${field} updated successfully!`);
+
+      // Call API to update
+      const response = await fetch(`/api/transactions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatePayload),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to update transaction");
+      }
+
+      const data = await response.json();
+      if (data.status === "success") {
+        // Update local state
+        const updatedTransactions = transactions.map(t => 
+          t.id === id ? data.transaction : t
+        );
+        setTransactions(updatedTransactions);
+        setFilteredTransactions(updatedTransactions);
+        
+        setEditingTransactionId(null);
+        setEditingField(null);
+        setEditingValue("");
+        toast.success(`Transaction ${field} updated successfully!`);
+        
+        // Refresh if detail sheet is open
+        if (selectedTransaction?.id === id) {
+          setSelectedTransaction(data.transaction);
+        }
+      }
+    } catch (error) {
+      console.error("Error updating transaction:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to update transaction");
+    }
   };
 
-  const handleChangeDropdownValue = (id: number, field: string, newValue: string) => {
-    const updatedTransactions = transactions.map(tx => {
-      if (tx.id === id) {
-        const updatedTx = { ...tx };
-        
-        if (field === 'type') {
-          updatedTx.type = newValue;
-          // If changing to Buy or DCA, ensure value is negative
-          if ((newValue === 'Buy' || newValue === 'DCA') && !tx.value.startsWith('-')) {
-            const numValue = parseFloat(tx.value.replace(/[$,]/g, ''));
-            updatedTx.value = `-$${numValue.toFixed(2)}`;
-          }
-          // If changing from Buy or DCA to something else, consider making value positive
-          else if ((tx.type === 'Buy' || tx.type === 'DCA') && 
-                  !(newValue === 'Buy' || newValue === 'DCA') && 
-                  tx.value.startsWith('-')) {
-            const numValue = parseFloat(tx.value.replace(/[-$,]/g, ''));
-            updatedTx.value = `$${numValue.toFixed(2)}`;
-          }
-        } else if (field === 'status') {
-          updatedTx.status = newValue;
-        } else if (field === 'identified') {
-          updatedTx.identified = newValue === 'Identified';
+  const handleChangeDropdownValue = async (id: number, field: string, newValue: string) => {
+    try {
+      const tx = transactions.find(t => t.id === id);
+      if (!tx) return;
+
+      let updatePayload: any = {};
+      
+      if (field === 'type') {
+        updatePayload.type = newValue;
+        // Adjust value sign if needed
+        const currentValue = parseFloat(tx.value.replace(/[-$,]/g, ''));
+        if ((newValue === 'Buy' || newValue === 'DCA')) {
+          updatePayload.value_usd = -Math.abs(currentValue);
+        } else {
+          updatePayload.value_usd = Math.abs(currentValue);
         }
-        
-        return updatedTx;
+      } else if (field === 'status') {
+        updatePayload.status = newValue;
+      } else if (field === 'identified') {
+        updatePayload.identified = newValue === 'Identified';
       }
-      return tx;
-    });
-    
-    setTransactions(updatedTransactions);
-    toast.success(`Transaction ${field} updated to ${newValue}!`);
+
+      const response = await fetch(`/api/transactions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatePayload),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update transaction");
+      }
+
+      const data = await response.json();
+      if (data.status === "success") {
+        const updatedTransactions = transactions.map(t => 
+          t.id === id ? data.transaction : t
+        );
+        setTransactions(updatedTransactions);
+        setFilteredTransactions(updatedTransactions);
+        toast.success(`Transaction ${field} updated to ${newValue}!`);
+        
+        if (selectedTransaction?.id === id) {
+          setSelectedTransaction(data.transaction);
+        }
+      }
+    } catch (error) {
+      console.error("Error updating transaction:", error);
+      toast.error("Failed to update transaction");
+    }
   };
 
   // Toggle hovering state for editable fields
@@ -589,6 +654,265 @@ function TransactionsContent() {
     }));
   };
 
+  // Open transaction detail sheet
+  const handleOpenDetail = (transaction: Transaction) => {
+    setSelectedTransaction(transaction);
+    setNotesValue(transaction.notes || "");
+    setIsDetailSheetOpen(true);
+  };
+
+  // Save notes
+  const handleSaveNotes = async () => {
+    if (!selectedTransaction) return;
+    
+    try {
+      const response = await fetch(`/api/transactions/${selectedTransaction.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: notesValue }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save notes");
+      }
+
+      const data = await response.json();
+      if (data.status === "success") {
+        const updatedTransactions = transactions.map(t => 
+          t.id === selectedTransaction.id ? data.transaction : t
+        );
+        setTransactions(updatedTransactions);
+        setFilteredTransactions(updatedTransactions);
+        setSelectedTransaction(data.transaction);
+        setEditingNotes(false);
+        toast.success("Notes saved successfully!");
+      }
+    } catch (error) {
+      console.error("Error saving notes:", error);
+      toast.error("Failed to save notes");
+    }
+  };
+
+  // Delete transaction
+  const handleDeleteTransaction = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this transaction?")) return;
+
+    try {
+      const response = await fetch(`/api/transactions/${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete transaction");
+      }
+
+      toast.success("Transaction deleted successfully!");
+      setIsDetailSheetOpen(false);
+      setSelectedTransaction(null);
+      
+      // Refresh transactions
+      setCurrentPage(1);
+    } catch (error) {
+      console.error("Error deleting transaction:", error);
+      toast.error("Failed to delete transaction");
+    }
+  };
+
+  // Bulk operations
+  const handleBulkSelect = (id: number, checked: boolean) => {
+    const newSelected = new Set(selectedTransactionIds);
+    if (checked) {
+      newSelected.add(id);
+    } else {
+      newSelected.delete(id);
+    }
+    setSelectedTransactionIds(newSelected);
+  };
+
+  const handleBulkSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedTransactionIds(new Set(transactions.map(t => t.id)));
+    } else {
+      setSelectedTransactionIds(new Set());
+    }
+  };
+
+  const handleBulkUpdate = async (updates: any) => {
+    if (selectedTransactionIds.size === 0) {
+      toast.error("No transactions selected");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/transactions/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operation: "update",
+          transactionIds: Array.from(selectedTransactionIds),
+          updates,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update transactions");
+      }
+
+      const data = await response.json();
+      toast.success(data.message || "Transactions updated successfully!");
+      setSelectedTransactionIds(new Set());
+      setIsBulkMode(false);
+      setCurrentPage(1); // Refresh
+    } catch (error) {
+      console.error("Error updating transactions:", error);
+      toast.error("Failed to update transactions");
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedTransactionIds.size === 0) {
+      toast.error("No transactions selected");
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete ${selectedTransactionIds.size} transaction(s)?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/transactions/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operation: "delete",
+          transactionIds: Array.from(selectedTransactionIds),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete transactions");
+      }
+
+      const data = await response.json();
+      toast.success(data.message || "Transactions deleted successfully!");
+      setSelectedTransactionIds(new Set());
+      setIsBulkMode(false);
+      setCurrentPage(1); // Refresh
+    } catch (error) {
+      console.error("Error deleting transactions:", error);
+      toast.error("Failed to delete transactions");
+    }
+  };
+
+  // Categorize all transactions
+  const handleCategorizeAll = async () => {
+    setIsCategorizing(true);
+    try {
+      const response = await fetch("/api/transactions/categorize", {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.details || "Failed to categorize transactions");
+      }
+
+      const data = await response.json();
+      if (data.status === "success") {
+        toast.success(
+          `Categorized ${data.categorized} out of ${data.total} transactions. ${data.updated} transactions were updated.`
+        );
+        
+        // Refresh transactions to show updated categories
+        setCurrentPage(1);
+      } else {
+        throw new Error(data.error || "Failed to categorize transactions");
+      }
+    } catch (error) {
+      console.error("Error categorizing transactions:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to categorize transactions";
+      toast.error(errorMessage);
+    } finally {
+      setIsCategorizing(false);
+    }
+  };
+
+  // Find duplicates
+  const handleFindDuplicates = async () => {
+    setIsLoadingDuplicates(true);
+    setIsDuplicatesOpen(true);
+    
+    try {
+      const response = await fetch("/api/transactions/duplicates?threshold=0.95&maxResults=50");
+      if (!response.ok) {
+        throw new Error("Failed to find duplicates");
+      }
+
+      const data = await response.json();
+      if (data.status === "success") {
+        setDuplicates(data.duplicates);
+        toast.success(`Found ${data.totalDuplicates} duplicate transaction(s) in ${data.totalGroups} group(s)`);
+      }
+    } catch (error) {
+      console.error("Error finding duplicates:", error);
+      toast.error("Failed to find duplicates");
+    } finally {
+      setIsLoadingDuplicates(false);
+    }
+  };
+
+  // Merge duplicates
+  const handleMergeDuplicates = async (ids: number[], keepId: number) => {
+    try {
+      const response = await fetch("/api/transactions/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          operation: "merge",
+          transactionIds: ids,
+          mergeIntoId: keepId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to merge transactions");
+      }
+
+      const data = await response.json();
+      toast.success(data.message || "Transactions merged successfully!");
+      setIsDuplicatesOpen(false);
+      setCurrentPage(1); // Refresh
+    } catch (error) {
+      console.error("Error merging transactions:", error);
+      toast.error("Failed to merge transactions");
+    }
+  };
+
+  // Transaction type options (comprehensive list)
+  const transactionTypes = [
+    { value: "Buy", label: "Buy" },
+    { value: "Sell", label: "Sell" },
+    { value: "Swap", label: "Swap" },
+    { value: "Send", label: "Send" },
+    { value: "Receive", label: "Receive" },
+    { value: "Transfer", label: "Transfer" },
+    { value: "Stake", label: "Stake" },
+    { value: "Unstake", label: "Unstake" },
+    { value: "Staking Reward", label: "Staking Reward" },
+    { value: "Mining Reward", label: "Mining Reward" },
+    { value: "Airdrop", label: "Airdrop" },
+    { value: "Interest", label: "Interest" },
+    { value: "Payment", label: "Payment" },
+    { value: "DCA", label: "DCA" },
+    { value: "Bridge", label: "Bridge" },
+    { value: "Liquidity Providing", label: "Liquidity Providing" },
+    { value: "Liquidity Removal", label: "Liquidity Removal" },
+    { value: "NFT Purchase", label: "NFT Purchase" },
+    { value: "NFT Sale", label: "NFT Sale" },
+    { value: "Zero Transaction", label: "Zero Transaction" },
+    { value: "Spam Transaction", label: "Spam Transaction" },
+  ];
+
   return (
     <Layout>
       <div className="space-y-8">
@@ -597,14 +921,136 @@ function TransactionsContent() {
             <h1 className="text-2xl font-bold">Transactions</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant={isBulkMode ? "default" : "outline"}
+              onClick={() => {
+                setIsBulkMode(!isBulkMode);
+                setSelectedTransactionIds(new Set());
+              }}
+            >
+              {isBulkMode ? (
+                <>
+                  <CheckSquare className="mr-2 h-4 w-4" />
+                  <span>Bulk Mode</span>
+                </>
+              ) : (
+                <>
+                  <Square className="mr-2 h-4 w-4" />
+                  <span>Select</span>
+                </>
+              )}
+            </Button>
+
+            {isBulkMode && selectedTransactionIds.size > 0 && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleBulkUpdate({ identified: true })}
+                >
+                  <Check className="mr-2 h-4 w-4" />
+                  Mark Identified ({selectedTransactionIds.size})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleBulkDelete}
+                  className="text-destructive"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete ({selectedTransactionIds.size})
+                </Button>
+              </>
+            )}
+
+            <Button variant="outline" onClick={handleFindDuplicates}>
+              <Copy className="mr-2 h-4 w-4" />
+              <span>Find Duplicates</span>
+            </Button>
+
+            <Button 
+              variant="outline" 
+              onClick={handleCategorizeAll}
+              disabled={isCategorizing}
+            >
+              {isCategorizing ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <span>Categorizing...</span>
+                </>
+              ) : (
+                <>
+                  <Tag className="mr-2 h-4 w-4" />
+                  <span>Auto-Categorize</span>
+                </>
+              )}
+            </Button>
+
             <Button variant="outline" onClick={handleExport}>
               <Download className="mr-2 h-4 w-4" />
               <span>Export</span>
             </Button>
 
+            <Dialog open={isDeleteAllOpen} onOpenChange={setIsDeleteAllOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" className="text-destructive hover:text-destructive">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  <span>Delete All</span>
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Delete All Transactions</DialogTitle>
+                  <DialogDescription>
+                    This will permanently delete all transactions associated with your wallets and CSV imports. 
+                    This action cannot be undone.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                  <p className="text-sm text-muted-foreground">
+                    You are about to delete <strong>{totalCount}</strong> transaction{totalCount !== 1 ? "s" : ""}. 
+                    This includes:
+                  </p>
+                  <ul className="mt-2 ml-4 list-disc text-sm text-muted-foreground space-y-1">
+                    <li>All transactions from connected wallets</li>
+                    <li>All transactions imported via CSV files</li>
+                  </ul>
+                  <p className="mt-4 text-sm font-medium text-destructive">
+                    Are you absolutely sure?
+                  </p>
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsDeleteAllOpen(false)}
+                    disabled={isDeletingAll}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={handleDeleteAll}
+                    disabled={isDeletingAll}
+                  >
+                    {isDeletingAll ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete All
+                      </>
+                    )}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
             <Sheet open={isImportOpen} onOpenChange={setIsImportOpen}>
               <SheetTrigger asChild>
-                <Button>
+                <Button data-onboarding="import-transactions">
                   <Upload className="mr-2 h-4 w-4" />
                   <span>Import</span>
                 </Button>
@@ -815,10 +1261,10 @@ function TransactionsContent() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {filteredTransactions.length}
+                {isLoadingTransactions ? "..." : totalCount}
               </div>
               <div className="text-xs text-muted-foreground">
-                {filteredTransactions.length !== transactions.length && `Filtered from ${transactions.length} total`}
+                {isLoadingTransactions ? "Loading..." : "Total transactions"}
               </div>
             </CardContent>
           </Card>
@@ -831,10 +1277,10 @@ function TransactionsContent() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {filteredTransactions.filter(tx => tx.type === "Buy").length}
+                {isLoadingTransactions ? "..." : transactions.filter(tx => tx.type === "Buy").length}
               </div>
               <div className="text-xs text-muted-foreground">
-                In the filtered set
+                {isLoadingTransactions ? "Loading..." : "On current page"}
               </div>
             </CardContent>
           </Card>
@@ -847,10 +1293,10 @@ function TransactionsContent() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {filteredTransactions.filter(tx => tx.type === "Sell").length}
+                {isLoadingTransactions ? "..." : transactions.filter(tx => tx.type === "Sell").length}
               </div>
               <div className="text-xs text-muted-foreground">
-                In the filtered set
+                {isLoadingTransactions ? "Loading..." : "On current page"}
               </div>
             </CardContent>
           </Card>
@@ -863,10 +1309,10 @@ function TransactionsContent() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {filteredTransactions.filter(tx => tx.type === "Send" || tx.type === "Receive").length}
+                {isLoadingTransactions ? "..." : transactions.filter(tx => tx.type === "Send" || tx.type === "Receive").length}
               </div>
               <div className="text-xs text-muted-foreground">
-                In the filtered set
+                {isLoadingTransactions ? "Loading..." : "On current page"}
               </div>
             </CardContent>
           </Card>
@@ -879,10 +1325,10 @@ function TransactionsContent() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {filteredTransactions.filter(tx => !tx.identified).length}
+                {isLoadingTransactions ? "..." : transactions.filter(tx => !tx.identified).length}
               </div>
               <div className="text-xs text-muted-foreground">
-                Require attention
+                {isLoadingTransactions ? "Loading..." : "On current page"}
               </div>
             </CardContent>
           </Card>
@@ -897,7 +1343,9 @@ function TransactionsContent() {
                 <div>
                   <h3 className="text-lg font-semibold">Transaction Labeling</h3>
                   <p className="text-sm text-muted-foreground">
-                    {identifiedCount} of {totalCount} transactions labeled
+                    {isLoadingTransactions 
+                      ? "Loading..." 
+                      : `${identifiedCount} of ${currentPageCount} transactions labeled (page ${currentPage} of ${totalPages})`}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1055,26 +1503,35 @@ function TransactionsContent() {
                     <SelectValue placeholder="10" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="5">5</SelectItem>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="20">20</SelectItem>
                     <SelectItem value="50">50</SelectItem>
                     <SelectItem value="100">100</SelectItem>
+                    <SelectItem value="250">250</SelectItem>
+                    <SelectItem value="500">500</SelectItem>
                   </SelectContent>
                 </Select>
                 <span className="text-xs text-muted-foreground">
-                  Showing {startIndex + 1}-{endIndex} of {filteredTransactions.length}
+                  {isLoadingTransactions 
+                    ? "Loading..." 
+                    : `Showing ${startIndex + 1}-${endIndex} of ${totalCount}`}
                 </span>
               </div>
             </div>
           </div>
 
           <Card>
-            <CardContent className="p-0">
+            <CardContent className="p-0" data-onboarding="review-transactions">
               <div className="overflow-x-auto">
                 <Table className="transaction-table font-mono">
                   <TableHeader>
                     <TableRow className="h-auto">
+                      {isBulkMode && (
+                        <TableHead className="w-12">
+                          <Checkbox
+                            checked={selectedTransactionIds.size === transactions.length && transactions.length > 0}
+                            onCheckedChange={handleBulkSelectAll}
+                          />
+                        </TableHead>
+                      )}
                       <TableHead className="font-medium font-mono">Type</TableHead>
                       <TableHead className="font-medium font-mono">Asset</TableHead>
                       <TableHead className="text-right font-medium font-mono">Amount</TableHead>
@@ -1088,7 +1545,25 @@ function TransactionsContent() {
                   </TableHeader>
                   <TableBody>
                     {currentTransactions.map((transaction) => (
-                      <TableRow key={transaction.id} className="h-auto">
+                      <TableRow 
+                        key={transaction.id} 
+                        className={cn(
+                          "h-auto cursor-pointer hover:bg-muted/50",
+                          selectedTransactionIds.has(transaction.id) && "bg-muted"
+                        )}
+                        onClick={() => !isBulkMode && handleOpenDetail(transaction)}
+                      >
+                        {isBulkMode && (
+                          <TableCell className="w-12">
+                            <Checkbox
+                              checked={selectedTransactionIds.has(transaction.id)}
+                              onCheckedChange={(checked) => 
+                                handleBulkSelect(transaction.id, checked as boolean)
+                              }
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </TableCell>
+                        )}
                         <TableCell className="font-mono">
                           {editingTransactionId === transaction.id && editingField === 'type' ? (
                             <div className="flex items-center space-x-2">
@@ -1100,19 +1575,11 @@ function TransactionsContent() {
                                   <SelectValue placeholder="Select type" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  <SelectItem value="Buy">Buy</SelectItem>
-                                  <SelectItem value="Sell">Sell</SelectItem>
-                                  <SelectItem value="Receive">Receive</SelectItem>
-                                  <SelectItem value="Send">Send</SelectItem>
-                                  <SelectItem value="Swap">Swap</SelectItem>
-                                  <SelectItem value="Stake">Stake</SelectItem>
-                                  <SelectItem value="Bridge">Bridge</SelectItem>
-                                  <SelectItem value="DCA">DCA</SelectItem>
-                                  <SelectItem value="NFT Purchase">NFT Purchase</SelectItem>
-                                  <SelectItem value="Transfer">Transfer</SelectItem>
-                                  <SelectItem value="Liquidity Providing">Liquidity Providing</SelectItem>
-                                  <SelectItem value="Zero Transaction">Zero Transaction</SelectItem>
-                                  <SelectItem value="Spam Transaction">Spam Transaction</SelectItem>
+                                  {transactionTypes.map((type) => (
+                                    <SelectItem key={type.value} value={type.value}>
+                                      {type.label}
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
                               <Button 
@@ -1589,7 +2056,18 @@ function TransactionsContent() {
                     ))}
                   </TableBody>
                 </Table>
-                {filteredTransactions.length === 0 && (
+                {isLoadingTransactions && (
+                  <div className="p-8 text-center">
+                    <div className="flex items-center justify-center gap-2">
+                      <svg className="animate-spin h-5 w-5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <p className="text-muted-foreground">Loading transactions...</p>
+                    </div>
+                  </div>
+                )}
+                {!isLoadingTransactions && transactions.length === 0 && (
                   <div className="p-8 text-center">
                     <p className="text-muted-foreground">No transactions found</p>
                   </div>
@@ -1597,7 +2075,7 @@ function TransactionsContent() {
               </div>
 
               {/* Pagination control at the bottom */}
-              {filteredTransactions.length > 0 && (
+              {!isLoadingTransactions && transactions.length > 0 && (
                 <div className="flex items-center justify-center py-4">
                   <Pagination>
                     <PaginationContent>
@@ -1694,6 +2172,310 @@ function TransactionsContent() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Transaction Detail Sheet */}
+        <Sheet open={isDetailSheetOpen} onOpenChange={setIsDetailSheetOpen}>
+          <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+            {selectedTransaction && (
+              <>
+                <SheetHeader>
+                  <SheetTitle>Transaction Details</SheetTitle>
+                  <SheetDescription>
+                    Review and edit transaction information
+                  </SheetDescription>
+                </SheetHeader>
+
+                <div className="mt-6 space-y-6">
+                  {/* Transaction Type */}
+                  <div className="space-y-2">
+                    <Label>Transaction Type</Label>
+                    <Select
+                      value={selectedTransaction.type}
+                      onValueChange={(value) => handleChangeDropdownValue(selectedTransaction.id, 'type', value)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {transactionTypes.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>
+                            {type.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Basic Info Grid */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Asset</Label>
+                      <Input
+                        value={selectedTransaction.asset}
+                        onChange={(e) => {
+                          const updated = { ...selectedTransaction, asset: e.target.value };
+                          setSelectedTransaction(updated);
+                        }}
+                        onBlur={() => {
+                          if (selectedTransaction.asset !== transactions.find(t => t.id === selectedTransaction.id)?.asset) {
+                            handleSaveEdit(selectedTransaction.id, 'asset');
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Status</Label>
+                      <Select
+                        value={selectedTransaction.status}
+                        onValueChange={(value) => handleChangeDropdownValue(selectedTransaction.id, 'status', value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Completed">Completed</SelectItem>
+                          <SelectItem value="Pending">Pending</SelectItem>
+                          <SelectItem value="Failed">Failed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Amount</Label>
+                      <Input
+                        value={selectedTransaction.amount.split(' ')[0]}
+                        onChange={(e) => {
+                          const assetSymbol = selectedTransaction.amount.split(' ')[1] || selectedTransaction.asset;
+                          const updated = { ...selectedTransaction, amount: `${e.target.value} ${assetSymbol}` };
+                          setSelectedTransaction(updated);
+                        }}
+                        onBlur={() => {
+                          const amountValue = parseFloat(selectedTransaction.amount.split(' ')[0]);
+                          if (!isNaN(amountValue)) {
+                            setEditingValue(amountValue.toString());
+                            handleSaveEdit(selectedTransaction.id, 'amount');
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Value (USD)</Label>
+                      <Input
+                        value={selectedTransaction.value.replace(/[$,]/g, '')}
+                        onChange={(e) => {
+                          const numValue = parseFloat(e.target.value);
+                          const isNegative = selectedTransaction.value.startsWith('-');
+                          const updated = { ...selectedTransaction, value: `${isNegative ? '-' : ''}$${numValue.toFixed(2)}` };
+                          setSelectedTransaction(updated);
+                        }}
+                        onBlur={() => {
+                          const numValue = parseFloat(selectedTransaction.value.replace(/[-$,]/g, ''));
+                          if (!isNaN(numValue)) {
+                            setEditingValue(numValue.toString());
+                            handleSaveEdit(selectedTransaction.id, 'value');
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Exchange/Source</Label>
+                      <Input
+                        value={selectedTransaction.exchange}
+                        onChange={(e) => {
+                          const updated = { ...selectedTransaction, exchange: e.target.value };
+                          setSelectedTransaction(updated);
+                        }}
+                        onBlur={() => {
+                          if (selectedTransaction.exchange !== transactions.find(t => t.id === selectedTransaction.id)?.exchange) {
+                            handleSaveEdit(selectedTransaction.id, 'exchange');
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Date</Label>
+                      <Input
+                        type="datetime-local"
+                        value={format(new Date(selectedTransaction.date), "yyyy-MM-dd'T'HH:mm")}
+                        onChange={(e) => {
+                          const newDate = new Date(e.target.value);
+                          setEditingValue(format(newDate, "yyyy-MM-dd"));
+                          handleSaveEdit(selectedTransaction.id, 'date');
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Notes Section */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>Notes</Label>
+                      {!editingNotes && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingNotes(true)}
+                        >
+                          <Pencil className="mr-2 h-4 w-4" />
+                          Edit
+                        </Button>
+                      )}
+                    </div>
+                    {editingNotes ? (
+                      <div className="space-y-2">
+                        <Textarea
+                          value={notesValue}
+                          onChange={(e) => setNotesValue(e.target.value)}
+                          placeholder="Add notes about this transaction (e.g., 'This was payment for consulting work')"
+                          rows={4}
+                        />
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={handleSaveNotes}>
+                            Save
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setNotesValue(selectedTransaction.notes || "");
+                              setEditingNotes(false);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-3 rounded-md bg-muted min-h-[80px]">
+                        {selectedTransaction.notes ? (
+                          <p className="text-sm whitespace-pre-wrap">{selectedTransaction.notes}</p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No notes added</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Additional Info */}
+                  {selectedTransaction.txHash && (
+                    <div className="space-y-2">
+                      <Label>Transaction Hash</Label>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={selectedTransaction.txHash}
+                          readOnly
+                          className="font-mono text-xs"
+                        />
+                        {selectedTransaction.chain && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const explorerUrl = selectedTransaction.chain === 'ethereum'
+                                ? `https://etherscan.io/tx/${selectedTransaction.txHash}`
+                                : selectedTransaction.chain === 'solana'
+                                ? `https://solscan.io/tx/${selectedTransaction.txHash}`
+                                : '#';
+                              window.open(explorerUrl, '_blank');
+                            }}
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="flex gap-2 pt-4 border-t">
+                    <Button
+                      variant="destructive"
+                      onClick={() => handleDeleteTransaction(selectedTransaction.id)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete Transaction
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        handleChangeDropdownValue(selectedTransaction.id, 'identified', selectedTransaction.identified ? 'Needs Review' : 'Identified');
+                      }}
+                    >
+                      {selectedTransaction.identified ? (
+                        <>
+                          <AlertCircle className="mr-2 h-4 w-4" />
+                          Mark as Unidentified
+                        </>
+                      ) : (
+                        <>
+                          <Check className="mr-2 h-4 w-4" />
+                          Mark as Identified
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
+          </SheetContent>
+        </Sheet>
+
+        {/* Duplicates Dialog */}
+        <Dialog open={isDuplicatesOpen} onOpenChange={setIsDuplicatesOpen}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Duplicate Transactions</DialogTitle>
+              <DialogDescription>
+                Review and merge duplicate transactions
+              </DialogDescription>
+            </DialogHeader>
+
+            {isLoadingDuplicates ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              </div>
+            ) : duplicates.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground">
+                No duplicates found
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {duplicates.map((group, index) => (
+                  <Card key={index}>
+                    <CardHeader>
+                      <CardTitle className="text-sm">{group.reason}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {group.ids.map((id) => {
+                          const tx = transactions.find(t => t.id === id);
+                          if (!tx) return null;
+                          return (
+                            <div key={id} className="flex items-center justify-between p-2 border rounded">
+                              <div className="flex-1">
+                                <div className="font-medium">{tx.type} - {tx.asset}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {tx.amount} • {tx.value} • {format(new Date(tx.date), "MMM dd, yyyy")}
+                                </div>
+                              </div>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleMergeDuplicates(group.ids, id)}
+                              >
+                                <Merge className="mr-2 h-4 w-4" />
+                                Keep This
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </Layout>
   );

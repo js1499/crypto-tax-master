@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { fetchWalletTransactions } from "@/lib/blockchain-apis";
-import { CoinbaseUser } from "@/lib/coinbase";
+import { getCurrentUser } from "@/lib/auth-helpers";
+import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
+import * as Sentry from "@sentry/nextjs";
 
 const prisma = new PrismaClient();
 
@@ -12,33 +14,31 @@ const prisma = new PrismaClient();
  */
 export async function POST(request: NextRequest) {
   try {
-    // Get user authentication
-    const tokensCookie = request.cookies.get("coinbase_tokens")?.value;
-    if (!tokensCookie) {
+    // Rate limiting
+    const rateLimitResult = rateLimitAPI(request, 10); // 10 fetches per minute
+    if (!rateLimitResult.success) {
+      return createRateLimitResponse(
+        rateLimitResult.remaining,
+        rateLimitResult.reset
+      );
+    }
+    
+    // Get user authentication via NextAuth
+    const user = await getCurrentUser();
+    
+    if (!user) {
       return NextResponse.json(
         { error: "Not authenticated" },
         { status: 401 }
       );
     }
-
-    // Get user info from Coinbase
-    const coinbaseUser = await getCoinbaseUserFromTokens(tokensCookie);
-    if (!coinbaseUser || !coinbaseUser.email) {
-      return NextResponse.json(
-        { error: "Could not identify user" },
-        { status: 401 }
-      );
-    }
-
-    // Find user in database
-    const user = await prisma.user.findUnique({
-      where: { email: coinbaseUser.email },
-    });
-
-    if (!user) {
-      return NextResponse.json(
-        { error: "User not found" },
-        { status: 404 }
+    
+    // Additional rate limiting by user
+    const userRateLimit = rateLimitByUser(user.id, 5); // 5 fetches per minute per user
+    if (!userRateLimit.success) {
+      return createRateLimitResponse(
+        userRateLimit.remaining,
+        userRateLimit.reset
       );
     }
 
@@ -116,6 +116,7 @@ export async function POST(request: NextRequest) {
             amount_value: tx.amount_value,
             price_per_unit: tx.price_per_unit,
             value_usd: tx.value_usd,
+            fee_usd: tx.fee_usd || null,
             wallet_address: tx.wallet_address,
             counterparty_address: tx.counterparty_address,
             tx_hash: tx.tx_hash,
@@ -123,6 +124,10 @@ export async function POST(request: NextRequest) {
             block_number: tx.block_number,
             tx_timestamp: tx.tx_timestamp,
             identified: false, // User needs to review and identify
+            // Swap fields (if available from blockchain API parsing)
+            incoming_asset_symbol: (tx as any).incoming_asset_symbol || null,
+            incoming_amount_value: (tx as any).incoming_amount_value || null,
+            incoming_value_usd: (tx as any).incoming_value_usd || null,
           },
         });
 
@@ -162,6 +167,14 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("[Fetch Transactions API] Error:", error);
+    
+    // Capture error in Sentry
+    Sentry.captureException(error, {
+      tags: {
+        endpoint: "/api/transactions/fetch",
+      },
+    });
+    
     return NextResponse.json(
       {
         error: "Failed to fetch transactions",
@@ -174,27 +187,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Helper function to get Coinbase user from tokens
-async function getCoinbaseUserFromTokens(
-  tokensCookie: string
-): Promise<CoinbaseUser | null> {
-  try {
-    const { getCoinbaseUser, isTokenExpired, refreshAccessToken } =
-      await import("@/lib/coinbase");
-    const tokens = JSON.parse(tokensCookie);
-
-    let accessToken = tokens.access_token;
-
-    // Refresh token if expired
-    if (isTokenExpired(tokens)) {
-      console.log("[Fetch Transactions API] Access token expired, refreshing");
-      const newTokens = await refreshAccessToken(tokens.refresh_token);
-      accessToken = newTokens.access_token;
-    }
-
-    return await getCoinbaseUser(accessToken);
-  } catch (error) {
-    console.error("[Fetch Transactions API] Error getting user from tokens:", error);
-    return null;
-  }
-}

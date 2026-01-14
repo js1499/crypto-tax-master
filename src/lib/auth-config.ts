@@ -1,0 +1,99 @@
+import { NextAuthOptions } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import { PrismaClient } from "@prisma/client";
+import { verifyPassword } from "./auth";
+
+const prisma = new PrismaClient();
+
+/**
+ * NextAuth configuration
+ */
+export const authOptions: NextAuthOptions = {
+  // Use PrismaAdapter for OAuth providers, but JWT for credentials
+  adapter: PrismaAdapter(prisma),
+  providers: [
+    CredentialsProvider({
+      name: "Credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error("Email and password are required");
+        }
+
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email.toLowerCase().trim() },
+        });
+
+        if (!user || !user.passwordHash) {
+          throw new Error("Invalid email or password");
+        }
+
+        const isValid = await verifyPassword(
+          credentials.password,
+          user.passwordHash
+        );
+
+        if (!isValid) {
+          throw new Error("Invalid email or password");
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+        };
+      },
+    }),
+    ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+      ? [
+          GoogleProvider({
+            clientId: process.env.GOOGLE_CLIENT_ID,
+            clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            allowDangerousEmailAccountLinking: true, // Allow linking accounts with same email
+          }),
+        ]
+      : []),
+    // Note: Coinbase OAuth is handled separately via /api/auth/coinbase
+    // We can add it here later if needed, but for now we'll keep the existing flow
+  ],
+  callbacks: {
+    async signIn({ user, account, profile }) {
+      // PrismaAdapter automatically handles OAuth account creation and linking
+      // The allowDangerousEmailAccountLinking option allows linking accounts with same email
+      return true;
+    },
+    async session({ session, token }) {
+      // With JWT strategy, user is not available, use token instead
+      if (session.user) {
+        session.user.id = token?.id as string || token?.sub as string || "";
+      }
+      return session;
+    },
+    async jwt({ token, user, account }) {
+      // Initial sign in
+      if (user) {
+        token.id = user.id;
+      }
+      return token;
+    },
+  },
+  pages: {
+    signIn: "/login",
+    signOut: "/login",
+    error: "/login",
+    newUser: "/register",
+  },
+  session: {
+    strategy: "jwt", // JWT required for credentials provider
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+    updateAge: 24 * 60 * 60, // 24 hours
+  },
+  secret: process.env.NEXTAUTH_SECRET,
+  debug: process.env.NODE_ENV === "development",
+};

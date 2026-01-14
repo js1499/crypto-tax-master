@@ -62,13 +62,19 @@ const exchangeProviders: ExchangeProvider[] = [
     id: "kraken",
     name: "Kraken",
     icon: "/images/tokens/ethereum.png",
-    connection: "API/CSV",
+    connection: "API",
   },
   {
     id: "kucoin",
     name: "KuCoin",
     icon: "/images/tokens/bitcoin.png",
-    connection: "CSV",
+    connection: "API",
+  },
+  {
+    id: "gemini",
+    name: "Gemini",
+    icon: "/images/tokens/ethereum.png",
+    connection: "API",
   },
 ];
 
@@ -83,6 +89,7 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
+  const [apiPassphrase, setApiPassphrase] = useState("");
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
   const handleConnect = (provider: string) => {
@@ -138,34 +145,63 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
   const handleCsvSubmit = () => {
     if (!csvFile) return;
 
-    setConnecting(true);
+    // CSV import is handled by the transactions import page
+    // This dialog just triggers the import flow
+    setConnecting(false);
+    setOpen(false);
 
-    // Simulate processing
-    setTimeout(() => {
-      setConnecting(false);
-      setOpen(false);
-
-      if (onConnect) {
-        onConnect("csv", {
-          success: true,
-          provider: "csv",
-          fileName: csvFile.name,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    }, 2500);
+    if (onConnect) {
+      onConnect("csv", {
+        success: true,
+        provider: "csv",
+        fileName: csvFile.name,
+        timestamp: new Date().toISOString(),
+      });
+    }
   };
 
-  const handleApiConnect = () => {
-    if (!apiKey || !apiSecret) return;
+  const handleApiConnect = async () => {
+    if (!apiKey || !apiSecret) {
+      toast.error("Please enter API key and secret");
+      return;
+    }
 
     setConnecting(true);
+    setConnectionError(null);
 
-    // Simulate API connection
-    setTimeout(() => {
+    try {
+      const body: any = {
+        exchange: selectedProvider,
+        apiKey,
+        apiSecret,
+      };
+
+      // KuCoin requires passphrase
+      if (selectedProvider === "kucoin") {
+        if (!apiPassphrase) {
+          setConnecting(false);
+          toast.error("API Passphrase is required for KuCoin");
+          return;
+        }
+        body.apiPassphrase = apiPassphrase;
+      }
+
+      const response = await fetch("/api/exchanges/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to connect exchange");
+      }
+
       setConnecting(false);
       setOpen(false);
-
+      toast.success(`Successfully connected to ${selectedProvider}`);
+      
       if (onConnect) {
         onConnect(selectedProvider, {
           success: true,
@@ -173,7 +209,13 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
           timestamp: new Date().toISOString(),
         });
       }
-    }, 2000);
+    } catch (error) {
+      console.error(`[Exchange Connect] Error connecting to ${selectedProvider}:`, error);
+      setConnecting(false);
+      const errorMessage = error instanceof Error ? error.message : "Failed to connect";
+      setConnectionError(errorMessage);
+      toast.error(errorMessage);
+    }
   };
 
   // Helper to determine connection method based on provider ID
@@ -282,9 +324,14 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
                 </div>
               )}
 
-              {selectedProvider && ["binance", "kraken"].includes(selectedProvider) && (
+              {selectedProvider && ["binance", "kraken", "kucoin", "gemini"].includes(selectedProvider) && (
                 <div className="mt-4 space-y-4 border rounded-lg p-4">
                   <h3 className="text-sm font-medium">API Connection for {selectedProvider.charAt(0).toUpperCase() + selectedProvider.slice(1)}</h3>
+                  <p className="text-xs text-muted-foreground">
+                    {selectedProvider === "kucoin" 
+                      ? "You'll need your API Key, Secret, and Passphrase from KuCoin API settings."
+                      : "Enter your API credentials from your exchange account settings."}
+                  </p>
                   <div className="space-y-3">
                     <div className="space-y-1">
                       <Label htmlFor="api-key">API Key</Label>
@@ -305,12 +352,31 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
                         placeholder="Enter your API secret"
                       />
                     </div>
+                    {selectedProvider === "kucoin" && (
+                      <div className="space-y-1">
+                        <Label htmlFor="api-passphrase">API Passphrase</Label>
+                        <Input
+                          id="api-passphrase"
+                          type="password"
+                          value={apiPassphrase}
+                          onChange={(e) => setApiPassphrase(e.target.value)}
+                          placeholder="Enter your API passphrase"
+                        />
+                      </div>
+                    )}
                     <Button
                       className="w-full"
                       onClick={handleApiConnect}
-                      disabled={!apiKey || !apiSecret}
+                      disabled={!apiKey || !apiSecret || connecting}
                     >
-                      Connect
+                      {connecting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Connecting...
+                        </>
+                      ) : (
+                        "Connect"
+                      )}
                     </Button>
                   </div>
                 </div>

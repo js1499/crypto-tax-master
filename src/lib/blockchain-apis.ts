@@ -1,5 +1,6 @@
 import axios from "axios";
 import { Decimal } from "@prisma/client/runtime/library";
+import { cacheBlockchainTransactions, CacheKeys } from "./cache-helpers";
 
 // API Configuration
 const ETHERSCAN_API_BASE = "https://api.etherscan.io/api";
@@ -82,14 +83,18 @@ interface SolscanResponse {
 /**
  * Fetch Ethereum transactions for a wallet address
  * Handles rate limiting and pagination
+ * Results are cached permanently (blockchain data never changes)
  */
 export async function fetchEthereumTransactions(
   address: string,
   startBlock: number = 0,
   endBlock: number = 99999999
 ): Promise<EtherscanTransaction[]> {
-  try {
-    const allTransactions: EtherscanTransaction[] = [];
+  const cacheKey = CacheKeys.ethereumTransactions(address, startBlock, endBlock);
+
+  return cacheBlockchainTransactions<EtherscanTransaction[]>(cacheKey, async () => {
+    try {
+      const allTransactions: EtherscanTransaction[] = [];
 
     // Fetch normal transactions (with pagination if needed)
     let page = 1;
@@ -198,73 +203,79 @@ export async function fetchEthereumTransactions(
       // Continue even if internal transactions fail
     }
 
-    // Remove duplicates by hash and sort by timestamp
-    const uniqueTransactions = Array.from(
-      new Map(allTransactions.map((tx) => [tx.hash, tx])).values()
-    ).sort((a, b) => parseInt(a.timeStamp) - parseInt(b.timeStamp));
+      // Remove duplicates by hash and sort by timestamp
+      const uniqueTransactions = Array.from(
+        new Map(allTransactions.map((tx) => [tx.hash, tx])).values()
+      ).sort((a, b) => parseInt(a.timeStamp) - parseInt(b.timeStamp));
 
-    return uniqueTransactions;
-  } catch (error) {
-    console.error("Error fetching Ethereum transactions:", error);
-    throw new Error(
-      `Failed to fetch Ethereum transactions: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }`
-    );
-  }
+      return uniqueTransactions;
+    } catch (error) {
+      console.error("Error fetching Ethereum transactions:", error);
+      throw new Error(
+        `Failed to fetch Ethereum transactions: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  });
 }
 
 /**
  * Fetch Solana transactions for a wallet address
  * Note: Solscan public API has rate limits. For production, consider using Pro API.
+ * Results are cached permanently (blockchain data never changes)
  */
 export async function fetchSolanaTransactions(
   address: string,
   limit: number = 1000
 ): Promise<SolscanTransaction[]> {
-  try {
-    // Try Solscan public API first
-    // Note: This endpoint structure may vary - adjust based on actual Solscan API docs
-    const response = await axios.get<any>(
-      `${SOLSCAN_API_BASE}/account/transactions`,
-      {
-        params: {
-          account: address,
-          limit,
-        },
-        headers: SOLSCAN_API_KEY
-          ? {
-              token: SOLSCAN_API_KEY,
-            }
-          : undefined,
-        timeout: 30000, // 30 second timeout
+  const cacheKey = CacheKeys.solanaTransactions(address, limit);
+
+  return cacheBlockchainTransactions<SolscanTransaction[]>(cacheKey, async () => {
+    try {
+      // Try Solscan public API first
+      // Note: This endpoint structure may vary - adjust based on actual Solscan API docs
+      const response = await axios.get<any>(
+        `${SOLSCAN_API_BASE}/account/transactions`,
+        {
+          params: {
+            account: address,
+            limit,
+          },
+          headers: SOLSCAN_API_KEY
+            ? {
+                token: SOLSCAN_API_KEY,
+              }
+            : undefined,
+          timeout: 30000, // 30 second timeout
+        }
+      );
+
+      // Handle different response formats
+      if (response.data?.data && Array.isArray(response.data.data)) {
+        return response.data.data;
+      } else if (Array.isArray(response.data)) {
+        return response.data;
+      } else if (response.data?.success && response.data?.data) {
+        return response.data.data;
       }
-    );
 
-    // Handle different response formats
-    if (response.data?.data && Array.isArray(response.data.data)) {
-      return response.data.data;
-    } else if (Array.isArray(response.data)) {
-      return response.data;
-    } else if (response.data?.success && response.data?.data) {
-      return response.data.data;
+      // If no data found, return empty array
+      console.warn("No transaction data found in Solscan response");
+      return [];
+    } catch (error) {
+      // If public API fails, try alternative endpoint or return empty
+      console.error("Error fetching Solana transactions from Solscan:", error);
+      
+      // Alternative: Try using Solana RPC directly (would need @solana/web3.js)
+      // For now, throw error to let caller handle it
+      throw new Error(
+        `Failed to fetch Solana transactions: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }. Note: You may need a Solscan Pro API key for production use.`
+      );
     }
-
-    // If no data found, return empty array
-    console.warn("No transaction data found in Solscan response");
-    return [];
-  } catch (error) {
-    // If public API fails, try alternative endpoint or return empty
-    console.error("Error fetching Solana transactions from Solscan:", error);
-    
-    // Alternative: Try using Solana RPC directly (would need @solana/web3.js)
-    // For now, throw error to let caller handle it
-    throw new Error(
-      `Failed to fetch Solana transactions: ${
-        error instanceof Error ? error.message : "Unknown error"
-      }. Note: You may need a Solscan Pro API key for production use.`
-    );
-  }
+  });
 }
 
 /**
@@ -282,21 +293,56 @@ function lamportsToSol(lamports: number): number {
 }
 
 /**
- * Get ETH price at a given timestamp (simplified - in production use price API)
+ * Get ETH price at a given timestamp using CoinGecko API
  */
 async function getEthPriceAtTimestamp(timestamp: number): Promise<number> {
-  // This is a placeholder - in production, you'd use a price API like CoinGecko
-  // For now, return a default price
-  // You should implement proper price fetching from historical data
-  return 2000; // Default ETH price
+  try {
+    const { getHistoricalPriceAtTimestamp } = await import("@/lib/coingecko");
+    const price = await getHistoricalPriceAtTimestamp("ETH", timestamp);
+    if (price !== null) {
+      return price;
+    }
+  } catch (error) {
+    console.error("[Blockchain APIs] Error fetching ETH price from CoinGecko:", error);
+  }
+  // Fallback to default price if API fails
+  return 2000;
 }
 
 /**
- * Get SOL price at a given timestamp (simplified - in production use price API)
+ * Get SOL price at a given timestamp using CoinGecko API
  */
 async function getSolPriceAtTimestamp(timestamp: number): Promise<number> {
-  // This is a placeholder - in production, you'd use a price API like CoinGecko
-  return 100; // Default SOL price
+  try {
+    const { getHistoricalPriceAtTimestamp } = await import("@/lib/coingecko");
+    const price = await getHistoricalPriceAtTimestamp("SOL", timestamp);
+    if (price !== null) {
+      return price;
+    }
+  } catch (error) {
+    console.error("[Blockchain APIs] Error fetching SOL price from CoinGecko:", error);
+  }
+  // Fallback to default price if API fails
+  return 100;
+}
+
+/**
+ * Get price for any cryptocurrency at a given timestamp using CoinGecko API
+ */
+async function getPriceAtTimestamp(
+  symbol: string,
+  timestamp: number
+): Promise<number | null> {
+  try {
+    const { getHistoricalPriceAtTimestamp } = await import("@/lib/coingecko");
+    return await getHistoricalPriceAtTimestamp(symbol, timestamp);
+  } catch (error) {
+    console.error(
+      `[Blockchain APIs] Error fetching ${symbol} price from CoinGecko:`,
+      error
+    );
+    return null;
+  }
 }
 
 /**
@@ -311,6 +357,7 @@ export async function parseEthereumTransaction(
   amount_value: Decimal;
   value_usd: Decimal;
   price_per_unit: Decimal | null;
+  fee_usd: Decimal | null;
   tx_timestamp: Date;
   tx_hash: string;
   chain: string;
@@ -343,9 +390,25 @@ export async function parseEthereumTransaction(
     ? parseFloat(tx.value) / Math.pow(10, parseInt(tx.tokenDecimal))
     : weiToEther(tx.value);
 
-  // Get price (simplified - should use historical price API)
-  const price = await getEthPriceAtTimestamp(parseInt(tx.timeStamp));
+  // Get price using CoinGecko API
+  const timestamp = parseInt(tx.timeStamp);
+  const price =
+    assetSymbol === "ETH"
+      ? await getEthPriceAtTimestamp(timestamp)
+      : await getPriceAtTimestamp(assetSymbol, timestamp) ||
+        (await getEthPriceAtTimestamp(timestamp)); // Fallback to ETH price if token not found
   const valueUsd = Math.abs(amount * price);
+
+  // Calculate gas fee in USD
+  // Gas fee = gasUsed * gasPrice (in Wei)
+  let feeUsd = new Decimal(0);
+  if (tx.gasUsed && tx.gasPrice && isOutgoing) {
+    // Only charge fees to the sender
+    const gasFeeWei = BigInt(tx.gasUsed) * BigInt(tx.gasPrice);
+    const gasFeeEth = weiToEther(gasFeeWei.toString());
+    const ethPrice = await getEthPriceAtTimestamp(timestamp);
+    feeUsd = new Decimal(gasFeeEth * ethPrice);
+  }
 
   // Determine value sign (negative for outgoing, positive for incoming)
   const valueUsdSigned = isOutgoing ? -valueUsd : valueUsd;
@@ -356,6 +419,7 @@ export async function parseEthereumTransaction(
     amount_value: new Decimal(Math.abs(amount)),
     value_usd: new Decimal(valueUsdSigned),
     price_per_unit: new Decimal(price),
+    fee_usd: feeUsd,
     tx_timestamp: date,
     tx_hash: tx.hash,
     chain: "ethereum",
@@ -379,6 +443,7 @@ export async function parseSolanaTransaction(
     amount_value: Decimal;
     value_usd: Decimal;
     price_per_unit: Decimal | null;
+    fee_usd: Decimal | null;
     tx_timestamp: Date;
     tx_hash: string;
     chain: string;
@@ -389,12 +454,19 @@ export async function parseSolanaTransaction(
   }>
 > {
   const date = new Date(tx.blockTime * 1000);
+  
+  // Calculate transaction fee in USD (paid by the signer/wallet owner)
+  const solPrice = await getSolPriceAtTimestamp(tx.blockTime);
+  const feeInSol = lamportsToSol(tx.fee);
+  const feeUsd = new Decimal(feeInSol * solPrice);
+  
   const transactions: Array<{
     type: string;
     asset_symbol: string;
     amount_value: Decimal;
     value_usd: Decimal;
     price_per_unit: Decimal | null;
+    fee_usd: Decimal | null;
     tx_timestamp: Date;
     tx_hash: string;
     chain: string;
@@ -426,6 +498,9 @@ export async function parseSolanaTransaction(
           const price = await getSolPriceAtTimestamp(tx.blockTime);
           const valueUsd = Math.abs(amount * price);
           const valueUsdSigned = isOutgoing ? -valueUsd : valueUsd;
+          
+          // Fee is only charged to outgoing transactions (sender pays fee)
+          const transactionFee = isOutgoing ? feeUsd : new Decimal(0);
 
           transactions.push({
             type: isIncoming ? "Receive" : "Send",
@@ -433,6 +508,7 @@ export async function parseSolanaTransaction(
             amount_value: new Decimal(Math.abs(amount)),
             value_usd: new Decimal(valueUsdSigned),
             price_per_unit: new Decimal(price),
+            fee_usd: transactionFee,
             tx_timestamp: date,
             tx_hash: tx.txHash,
             chain: "solana",
@@ -459,10 +535,14 @@ export async function parseSolanaTransaction(
       if (isIncoming || isOutgoing) {
         const amount = transfer.tokenAmount;
         const tokenSymbol = transfer.tokenSymbol || "UNKNOWN";
-        // For tokens, we'd need to fetch token price - simplified here
-        const price = 1; // Placeholder - should fetch actual token price
+        // For tokens, fetch token price from CoinGecko
+        const price =
+          (await getPriceAtTimestamp(tokenSymbol, tx.blockTime)) || 0;
         const valueUsd = Math.abs(amount * price);
         const valueUsdSigned = isOutgoing ? -valueUsd : valueUsd;
+        
+        // Fee is only charged to outgoing transactions (sender pays fee)
+        const transactionFee = isOutgoing ? feeUsd : new Decimal(0);
 
         transactions.push({
           type: isIncoming ? "Receive" : "Send",
@@ -470,6 +550,7 @@ export async function parseSolanaTransaction(
           amount_value: new Decimal(Math.abs(amount)),
           value_usd: new Decimal(valueUsdSigned),
           price_per_unit: new Decimal(price),
+          fee_usd: transactionFee,
           tx_timestamp: date,
           tx_hash: tx.txHash,
           chain: "solana",
@@ -486,16 +567,13 @@ export async function parseSolanaTransaction(
 
   // If no specific transfers found, create a fee transaction
   if (transactions.length === 0 && tx.fee > 0) {
-    const feeInSol = lamportsToSol(tx.fee);
-    const price = await getSolPriceAtTimestamp(tx.blockTime);
-    const valueUsd = feeInSol * price;
-
     transactions.push({
       type: "Fee",
       asset_symbol: "SOL",
       amount_value: new Decimal(feeInSol),
-      value_usd: new Decimal(-valueUsd), // Fees are negative
-      price_per_unit: new Decimal(price),
+      value_usd: new Decimal(-feeUsd.toNumber()), // Fees are negative
+      price_per_unit: new Decimal(solPrice),
+      fee_usd: feeUsd,
       tx_timestamp: date,
       tx_hash: tx.txHash,
       chain: "solana",
@@ -522,6 +600,7 @@ export async function fetchWalletTransactions(
     amount_value: Decimal;
     value_usd: Decimal;
     price_per_unit: Decimal | null;
+    fee_usd: Decimal | null;
     tx_timestamp: Date;
     tx_hash: string;
     chain: string;

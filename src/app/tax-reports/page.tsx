@@ -71,10 +71,11 @@ const taxForms = [
   },
   {
     id: 2,
-    name: "IRS Form 8949",
-    description: "Reports any disposals of capital assets (excluding futures/perpetuals)",
+    name: "IRS Form 8949 (PDF)",
+    description: "Official IRS Form 8949 PDF for reporting capital gains and losses",
     icon: FileText,
-    category: "irs"
+    category: "irs",
+    pdfExport: true, // Flag to indicate PDF export
   },
   {
     id: 3,
@@ -184,31 +185,77 @@ interface TaxReportData {
 
 export default function TaxReportsPage() {
   const [mounted, setMounted] = useState(false);
-  const [selectedYear, setSelectedYear] = useState("2023");
+  // Default to current year - use a fixed value to avoid hydration mismatch
+  // We'll update this after mount, but the initial render must match server
+  const [selectedYear, setSelectedYear] = useState("2024");
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [reportData, setReportData] = useState<TaxReportData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Set mounted and current year after component mounts (client-side only)
+  useEffect(() => {
+    setMounted(true);
+    // Set current year after mount to avoid hydration mismatch
+    const currentYear = new Date().getFullYear().toString();
+    if (currentYear !== selectedYear) {
+      setSelectedYear(currentYear);
+    }
+  }, []);
+
   // Fetch tax report data when year changes
   useEffect(() => {
+    if (!mounted) return; // Don't fetch until mounted
+    
     const fetchTaxReport = async () => {
       setIsLoading(true);
       setError(null);
       try {
+        console.log(`[Tax Reports Page] Fetching tax report for year ${selectedYear}`);
         const response = await fetch(`/api/tax-reports?year=${selectedYear}`);
+        
         if (!response.ok) {
-          throw new Error("Failed to fetch tax report");
+          const errorData = await response.json().catch(() => ({}));
+          console.error(`[Tax Reports Page] API error (${response.status}):`, errorData);
+          throw new Error(errorData.error || errorData.details || "Failed to fetch tax report");
         }
+        
         const data = await response.json();
+        console.log(`[Tax Reports Page] Received data:`, data);
+        console.log(`[Tax Reports Page] Full API response:`, JSON.stringify(data, null, 2));
+        
         if (data.status === "success" && data.report) {
+          console.log(`[Tax Reports Page] Report data:`, data.report);
+          console.log(`[Tax Reports Page] Taxable events: ${data.report.taxableEvents || 0}`);
+          console.log(`[Tax Reports Page] Income events: ${data.report.incomeEvents || 0}`);
+          console.log(`[Tax Reports Page] Short-term gains: ${data.report.shortTermGains}`);
+          console.log(`[Tax Reports Page] Long-term gains: ${data.report.longTermGains}`);
+          console.log(`[Tax Reports Page] Total income: ${data.report.totalIncome}`);
+          
+          // Check if we have detailed data
+          if (data.report.detailed) {
+            console.log(`[Tax Reports Page] Detailed taxable events:`, data.report.detailed.taxableEvents?.length || 0);
+            if (data.report.detailed.taxableEvents && data.report.detailed.taxableEvents.length > 0) {
+              console.log(`[Tax Reports Page] First taxable event:`, data.report.detailed.taxableEvents[0]);
+            }
+          }
+          
           setReportData(data.report);
         } else {
+          console.error(`[Tax Reports Page] Invalid response:`, data);
           throw new Error(data.error || "Failed to load tax report");
         }
       } catch (err) {
         console.error("Error fetching tax report:", err);
-        setError(err instanceof Error ? err.message : "Failed to load tax report");
+        const errorMessage = err instanceof Error ? err.message : "Failed to load tax report";
+        setError(errorMessage);
+        
+        // Log the full error for debugging
+        console.error("Full error details:", err);
+        if (err instanceof Error && err.stack) {
+          console.error("Error stack:", err.stack);
+        }
+        
         // Set default values on error
         setReportData({
           shortTermGains: "$0.00",
@@ -227,24 +274,17 @@ export default function TaxReportsPage() {
       }
     };
 
-    if (mounted) {
-      fetchTaxReport();
-    }
+    fetchTaxReport();
   }, [selectedYear, mounted]);
 
-  // Debug log to verify the component is being loaded
-  useEffect(() => {
-    console.log("Tax Reports page loaded");
-    setMounted(true);
-  }, []);
-
-  // Handle errors in the client-side rendering
-  if (typeof window !== 'undefined' && !mounted) {
-    console.log("Awaiting mount on client");
+  // Show consistent loading state to avoid hydration mismatch
+  if (!mounted) {
     return (
       <Layout>
         <div className="flex items-center justify-center h-screen">
-          <p>Loading Tax Reports...</p>
+          <div className="text-center">
+            <p className="text-lg">Loading Tax Reports...</p>
+          </div>
         </div>
       </Layout>
     );
@@ -257,6 +297,92 @@ export default function TaxReportsPage() {
     setTimeout(() => {
       setIsGeneratingReport(false);
     }, 2000);
+  };
+
+  const handleDownloadForm8949 = async () => {
+    try {
+      const response = await fetch(`/api/tax-reports/form8949?year=${selectedYear}`);
+      if (!response.ok) {
+        throw new Error("Failed to generate Form 8949 PDF");
+      }
+      
+      // Get the PDF blob
+      const blob = await response.blob();
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Form8949-${selectedYear}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Cleanup
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      // Complete onboarding step if active
+      try {
+        const { useOnboarding } = require("@/components/onboarding/onboarding-provider");
+        const onboarding = useOnboarding();
+        if (onboarding.isActive) {
+          onboarding.completeCurrentStep();
+        }
+      } catch {
+        // Onboarding not available, ignore
+      }
+    } catch (error) {
+      console.error("Error downloading Form 8949:", error);
+      alert("Failed to download Form 8949 PDF. Please try again.");
+    }
+  };
+
+  const handleDownloadExport = async (exportType: string, filename: string) => {
+    try {
+      const response = await fetch(`/api/tax-reports/export?year=${selectedYear}&type=${exportType}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to generate export");
+      }
+      
+      // Get the CSV/blob
+      const blob = await response.blob();
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Cleanup
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error(`Error downloading ${exportType}:`, error);
+      alert(`Failed to download ${filename}. Please try again.`);
+    }
+  };
+
+  const handleFormDownload = (form: typeof taxForms[0]) => {
+    // Map form names to export types
+    const formExportMap: Record<string, { type: string; filename: string }> = {
+      "Capital Gains CSV": { type: "capital-gains-csv", filename: `Capital-Gains-${selectedYear}.csv` },
+      "Transaction History": { type: "transaction-history", filename: `Transaction-History-${selectedYear}.csv` },
+      "Income Report": { type: "income-report", filename: `Income-Report-${selectedYear}.csv` },
+      "Capital Gains (Breakdown by Asset)": { type: "capital-gains-by-asset", filename: `Capital-Gains-by-Asset-${selectedYear}.csv` },
+    };
+
+    if (form.pdfExport && form.name.includes("Form 8949")) {
+      handleDownloadForm8949();
+    } else if (formExportMap[form.name]) {
+      const exportInfo = formExportMap[form.name];
+      handleDownloadExport(exportInfo.type, exportInfo.filename);
+    } else {
+      // For forms not yet implemented, show a message
+      alert(`${form.name} export is coming soon. Please check back later.`);
+    }
   };
 
   // Use report data or default to zeros
@@ -322,14 +448,19 @@ export default function TaxReportsPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold">Tax Reports</h1>
           <div className="flex items-center gap-2">
-            <Tabs value={selectedYear} onValueChange={setSelectedYear}>
-              <TabsList>
-                <TabsTrigger value="2021">2021</TabsTrigger>
-                <TabsTrigger value="2022">2022</TabsTrigger>
-                <TabsTrigger value="2023">2023</TabsTrigger>
-                <TabsTrigger value="2024">2024</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <Select value={selectedYear} onValueChange={setSelectedYear}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue placeholder="Select year" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2021">2021</SelectItem>
+                <SelectItem value="2022">2022</SelectItem>
+                <SelectItem value="2023">2023</SelectItem>
+                <SelectItem value="2024">2024</SelectItem>
+                <SelectItem value="2025">2025</SelectItem>
+                <SelectItem value="2026">2026</SelectItem>
+              </SelectContent>
+            </Select>
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="outline" size="icon">
@@ -542,7 +673,11 @@ export default function TaxReportsPage() {
                                   </p>
                                 </div>
                               </div>
-                              <Button size="sm">
+                              <Button
+                                size="sm"
+                                data-onboarding={form.name.includes("Form 8949") ? "generate-report" : undefined}
+                                onClick={() => handleFormDownload(form)}
+                              >
                                 <ArrowDownToLine className="mr-1 h-4 w-4" />
                                 Download
                               </Button>
