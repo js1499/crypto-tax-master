@@ -366,17 +366,7 @@ export async function calculateTaxReport(
     eventsByYear[year] = (eventsByYear[year] || 0) + 1;
   });
   console.log(`[Tax Calculator] Taxable events by year:`, eventsByYear);
-  
-  // Diagnostic: Check total proceeds and cost basis
-  const totalProceeds = combinedTaxableEvents.reduce((sum, e) => sum + e.proceeds, 0);
-  const totalCostBasis = combinedTaxableEvents.reduce((sum, e) => sum + e.costBasis, 0);
-  const totalGainLoss = combinedTaxableEvents.reduce((sum, e) => sum + e.gainLoss, 0);
-  console.log(`[Tax Calculator] DIAGNOSTIC TOTALS:`);
-  console.log(`  - Total Taxable Events: ${combinedTaxableEvents.length}`);
-  console.log(`  - Total Proceeds: $${totalProceeds.toFixed(2)}`);
-  console.log(`  - Total Cost Basis: $${totalCostBasis.toFixed(2)}`);
-  console.log(`  - Total Gain/Loss: $${totalGainLoss.toFixed(2)}`);
-  console.log(`  - Expected Gain (Proceeds - Cost Basis): $${(totalProceeds - totalCostBasis).toFixed(2)}`);
+  console.log(`[Tax Calculator] Total Taxable Events: ${combinedTaxableEvents.length}`);
   
   console.log(`[Tax Calculator] CALCULATED TOTALS:`);
   console.log(`  - Short-term Gains: $${shortTermGains.toFixed(2)}`);
