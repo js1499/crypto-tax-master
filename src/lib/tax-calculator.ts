@@ -337,23 +337,26 @@ export async function calculateTaxReport(
     console.warn(`  This suggests some transactions may have incorrect gain/loss calculations.`);
   }
 
-  // Calculate totals
-  const shortTermGains = combinedTaxableEvents
-    .filter((e) => e.holdingPeriod === "short" && e.gainLoss > 0)
-    .reduce((sum, e) => sum + e.gainLoss, 0);
-  const longTermGains = combinedTaxableEvents
-    .filter((e) => e.holdingPeriod === "long" && e.gainLoss > 0)
-    .reduce((sum, e) => sum + e.gainLoss, 0);
-  const shortTermLosses = Math.abs(
-    combinedTaxableEvents
-      .filter((e) => e.holdingPeriod === "short" && e.gainLoss < 0)
-      .reduce((sum, e) => sum + e.gainLoss, 0)
-  );
-  const longTermLosses = Math.abs(
-    combinedTaxableEvents
-      .filter((e) => e.holdingPeriod === "long" && e.gainLoss < 0)
-      .reduce((sum, e) => sum + e.gainLoss, 0)
-  );
+  // Calculate totals with detailed breakdown
+  const shortTermGainsEvents = combinedTaxableEvents.filter((e) => e.holdingPeriod === "short" && e.gainLoss > 0);
+  const longTermGainsEvents = combinedTaxableEvents.filter((e) => e.holdingPeriod === "long" && e.gainLoss > 0);
+  const shortTermLossEvents = combinedTaxableEvents.filter((e) => e.holdingPeriod === "short" && e.gainLoss < 0);
+  const longTermLossEvents = combinedTaxableEvents.filter((e) => e.holdingPeriod === "long" && e.gainLoss < 0);
+  const zeroGainEvents = combinedTaxableEvents.filter((e) => e.gainLoss === 0);
+  
+  const shortTermGains = shortTermGainsEvents.reduce((sum, e) => sum + e.gainLoss, 0);
+  const longTermGains = longTermGainsEvents.reduce((sum, e) => sum + e.gainLoss, 0);
+  const shortTermLosses = Math.abs(shortTermLossEvents.reduce((sum, e) => sum + e.gainLoss, 0));
+  const longTermLosses = Math.abs(longTermLossEvents.reduce((sum, e) => sum + e.gainLoss, 0));
+  
+  // Diagnostic: Show breakdown of events
+  console.log(`[Tax Calculator] Event breakdown:`);
+  console.log(`  - Short-term gains: ${shortTermGainsEvents.length} events, total: $${shortTermGains.toFixed(2)}`);
+  console.log(`  - Long-term gains: ${longTermGainsEvents.length} events, total: $${longTermGains.toFixed(2)}`);
+  console.log(`  - Short-term losses: ${shortTermLossEvents.length} events, total: $${shortTermLosses.toFixed(2)}`);
+  console.log(`  - Long-term losses: ${longTermLossEvents.length} events, total: $${longTermLosses.toFixed(2)}`);
+  console.log(`  - Zero gain/loss: ${zeroGainEvents.length} events`);
+  console.log(`  - Total events: ${combinedTaxableEvents.length}`);
   const totalIncome = combinedIncomeEvents.reduce(
     (sum, e) => sum + e.valueUsd,
     0
