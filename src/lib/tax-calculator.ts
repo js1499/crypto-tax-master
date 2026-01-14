@@ -337,26 +337,83 @@ export async function calculateTaxReport(
     console.warn(`  This suggests some transactions may have incorrect gain/loss calculations.`);
   }
 
-  // Calculate totals with detailed breakdown
+  // REWRITTEN: Calculate gains/losses directly from proceeds - cost basis
+  // This ensures gains always match proceeds - cost basis exactly
+  // Core formula: Gain/Loss = Proceeds - Cost Basis (for each event)
+  
+  // First, ensure all events have correct gainLoss = proceeds - costBasis
+  let incorrectGainLossCount = 0;
+  combinedTaxableEvents.forEach(e => {
+    const expectedGainLoss = e.proceeds - e.costBasis;
+    const difference = Math.abs(e.gainLoss - expectedGainLoss);
+    if (difference > 0.01) {
+      incorrectGainLossCount++;
+      if (incorrectGainLossCount <= 5) {
+        console.warn(`[Tax Calculator] ⚠️  Event ${e.id} has incorrect gainLoss: expected ${expectedGainLoss.toFixed(2)}, got ${e.gainLoss.toFixed(2)}, proceeds=${e.proceeds.toFixed(2)}, costBasis=${e.costBasis.toFixed(2)}`);
+      }
+      // Fix it: gainLoss must always equal proceeds - costBasis
+      e.gainLoss = expectedGainLoss;
+    }
+  });
+  if (incorrectGainLossCount > 0) {
+    console.warn(`[Tax Calculator] ⚠️  Fixed ${incorrectGainLossCount} events with incorrect gainLoss calculations`);
+  }
+  
+  // Calculate totals by summing gainLoss values, grouped by holding period
+  // Gains: gainLoss > 0, Losses: gainLoss < 0
+  let shortTermGains = 0;
+  let shortTermLosses = 0;
+  let longTermGains = 0;
+  let longTermLosses = 0;
+  let zeroGainCount = 0;
+  
+  combinedTaxableEvents.forEach(e => {
+    // Use the corrected gainLoss value (which equals proceeds - costBasis)
+    const gainLoss = e.gainLoss;
+    
+    if (e.holdingPeriod === "short") {
+      if (gainLoss > 0) {
+        shortTermGains += gainLoss;
+      } else if (gainLoss < 0) {
+        shortTermLosses += Math.abs(gainLoss);
+      } else {
+        zeroGainCount++;
+      }
+    } else if (e.holdingPeriod === "long") {
+      if (gainLoss > 0) {
+        longTermGains += gainLoss;
+      } else if (gainLoss < 0) {
+        longTermLosses += Math.abs(gainLoss);
+      } else {
+        zeroGainCount++;
+      }
+    }
+  });
+  
+  // Verify totals match: (shortTermGains + longTermGains) - (shortTermLosses + longTermLosses) should equal totalGainLoss
+  const calculatedNetGain = shortTermGains + longTermGains - shortTermLosses - longTermLosses;
+  const actualTotalGainLoss = combinedTaxableEvents.reduce((sum, e) => sum + e.gainLoss, 0);
+  const difference = Math.abs(calculatedNetGain - actualTotalGainLoss);
+  
+  if (difference > 0.01) {
+    console.warn(`[Tax Calculator] ⚠️  WARNING: Calculated net gain (${calculatedNetGain.toFixed(2)}) doesn't match sum of gainLoss (${actualTotalGainLoss.toFixed(2)}), difference: ${difference.toFixed(2)}`);
+  }
+  
+  // Diagnostic: Show breakdown of events
   const shortTermGainsEvents = combinedTaxableEvents.filter((e) => e.holdingPeriod === "short" && e.gainLoss > 0);
   const longTermGainsEvents = combinedTaxableEvents.filter((e) => e.holdingPeriod === "long" && e.gainLoss > 0);
   const shortTermLossEvents = combinedTaxableEvents.filter((e) => e.holdingPeriod === "short" && e.gainLoss < 0);
   const longTermLossEvents = combinedTaxableEvents.filter((e) => e.holdingPeriod === "long" && e.gainLoss < 0);
-  const zeroGainEvents = combinedTaxableEvents.filter((e) => e.gainLoss === 0);
   
-  const shortTermGains = shortTermGainsEvents.reduce((sum, e) => sum + e.gainLoss, 0);
-  const longTermGains = longTermGainsEvents.reduce((sum, e) => sum + e.gainLoss, 0);
-  const shortTermLosses = Math.abs(shortTermLossEvents.reduce((sum, e) => sum + e.gainLoss, 0));
-  const longTermLosses = Math.abs(longTermLossEvents.reduce((sum, e) => sum + e.gainLoss, 0));
-  
-  // Diagnostic: Show breakdown of events
-  console.log(`[Tax Calculator] Event breakdown:`);
+  console.log(`[Tax Calculator] Event breakdown (gainLoss = proceeds - costBasis):`);
   console.log(`  - Short-term gains: ${shortTermGainsEvents.length} events, total: $${shortTermGains.toFixed(2)}`);
   console.log(`  - Long-term gains: ${longTermGainsEvents.length} events, total: $${longTermGains.toFixed(2)}`);
   console.log(`  - Short-term losses: ${shortTermLossEvents.length} events, total: $${shortTermLosses.toFixed(2)}`);
   console.log(`  - Long-term losses: ${longTermLossEvents.length} events, total: $${longTermLosses.toFixed(2)}`);
-  console.log(`  - Zero gain/loss: ${zeroGainEvents.length} events`);
+  console.log(`  - Zero gain/loss: ${zeroGainCount} events`);
   console.log(`  - Total events: ${combinedTaxableEvents.length}`);
+  console.log(`  - Net gain (gains - losses): $${calculatedNetGain.toFixed(2)}`);
+  console.log(`  - Sum of all gainLoss: $${actualTotalGainLoss.toFixed(2)}`);
   const totalIncome = combinedIncomeEvents.reduce(
     (sum, e) => sum + e.valueUsd,
     0
