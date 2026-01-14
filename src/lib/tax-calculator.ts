@@ -82,7 +82,12 @@ export async function calculateTaxReport(
 
   // Fetch all transactions for the user's wallets up to and including the tax year
   // We need all transactions to calculate cost basis properly
+  // IMPORTANT: We need transactions from BEFORE the tax year too, because buy transactions
+  // might be in previous years but we still need their cost basis for sells in the tax year
   // Also include CSV-imported transactions (source_type: "csv_import" with null wallet_address)
+  // For now, we'll fetch all transactions up to endDate, but ideally we should fetch all historical
+  // transactions to ensure cost basis is available. However, for performance, we'll limit to
+  // transactions up to the tax year end date.
   const whereClause: Prisma.TransactionWhereInput = {
     tx_timestamp: {
       lte: endDate,
@@ -116,6 +121,8 @@ export async function calculateTaxReport(
   whereClause.status = { in: ["confirmed", "completed", "pending"] };
 
   console.log(`[Tax Calculator] Fetching transactions for year ${year}`);
+  console.log(`[Tax Calculator] Wallet addresses:`, walletAddresses);
+  console.log(`[Tax Calculator] User ID:`, userId);
   console.log(`[Tax Calculator] Where clause:`, JSON.stringify(whereClause, null, 2));
 
   const allTransactions = await prisma.transaction.findMany({
@@ -126,6 +133,57 @@ export async function calculateTaxReport(
   });
 
   console.log(`[Tax Calculator] Found ${allTransactions.length} total transactions`);
+  
+  // Count buy vs sell transactions for debugging
+  const buyTransactions = allTransactions.filter(tx => {
+    const type = (tx.type || "").toLowerCase();
+    return type === "buy" || tx.type === "Buy";
+  });
+  const sellTransactions = allTransactions.filter(tx => {
+    const type = (tx.type || "").toLowerCase();
+    return type === "sell" || tx.type === "Sell";
+  });
+  console.log(`[Tax Calculator] Transaction breakdown: ${buyTransactions.length} buy, ${sellTransactions.length} sell, ${allTransactions.length - buyTransactions.length - sellTransactions.length} other`);
+  
+  // Log first few buy transactions to verify they're included
+  if (buyTransactions.length > 0) {
+    console.log(`[Tax Calculator] First 5 buy transactions:`, buyTransactions.slice(0, 5).map(tx => ({
+      id: tx.id,
+      asset: tx.asset_symbol,
+      amount: Number(tx.amount_value),
+      value_usd: Number(tx.value_usd),
+      date: tx.tx_timestamp.toISOString().split('T')[0],
+      source_type: tx.source_type,
+    })));
+  } else {
+    console.warn(`[Tax Calculator] ⚠️  WARNING: No buy transactions found! This will cause all sells to have 0 cost basis.`);
+  }
+  
+  // If no transactions found, log detailed diagnostic info
+  if (allTransactions.length === 0) {
+    console.warn(`[Tax Calculator] WARNING: No transactions found for year ${year}`);
+    console.warn(`[Tax Calculator] This could mean:`);
+    console.warn(`  1. No transactions exist in the database`);
+    console.warn(`  2. Transactions don't match wallet addresses: ${walletAddresses.join(", ")}`);
+    console.warn(`  3. Transactions don't have source_type: "csv_import" with null wallet_address`);
+    console.warn(`  4. Transactions are outside the date range (before ${endDate.toISOString()})`);
+    console.warn(`  5. Transactions have wrong status (not in: confirmed, completed, pending)`);
+    
+    // Try to find ANY transactions for debugging
+    const anyTransactions = await prisma.transaction.findMany({
+      take: 5,
+      orderBy: { tx_timestamp: "desc" },
+    });
+    console.warn(`[Tax Calculator] Sample of ANY transactions in database (first 5):`, anyTransactions.map(tx => ({
+      id: tx.id,
+      type: tx.type,
+      asset: tx.asset_symbol,
+      date: tx.tx_timestamp.toISOString().split('T')[0],
+      wallet_address: tx.wallet_address,
+      source_type: tx.source_type,
+      status: tx.status,
+    })));
+  }
   if (allTransactions.length > 0) {
     const dateRange = {
       earliest: allTransactions[0].tx_timestamp.toISOString(),
@@ -221,6 +279,11 @@ export async function calculateTaxReport(
 
   console.log(`[Tax Calculator] Processing ${solanaTransactions.length} Solana, ${ethereumTransactions.length} Ethereum, and ${unchainTransactions.length} unchain transactions`);
 
+  // IMPORTANT: Process transactions in chronological order (oldest first)
+  // This ensures buy transactions are processed before sell transactions
+  // so cost basis lots are available when calculating gains/losses
+  console.log(`[Tax Calculator] Processing transactions in chronological order...`);
+  
   // Process transactions for both chains and unchain
   const solanaReport = processTransactionsForTax(
     solanaTransactions,
@@ -256,6 +319,24 @@ export async function calculateTaxReport(
   
   console.log(`[Tax Calculator] Combined: ${combinedTaxableEvents.length} taxable events, ${combinedIncomeEvents.length} income events`);
 
+  // Calculate diagnostic totals for verification
+  const totalProceeds = combinedTaxableEvents.reduce((sum, e) => sum + e.proceeds, 0);
+  const totalCostBasis = combinedTaxableEvents.reduce((sum, e) => sum + e.costBasis, 0);
+  const totalGainLoss = combinedTaxableEvents.reduce((sum, e) => sum + e.gainLoss, 0);
+  const expectedGain = totalProceeds - totalCostBasis;
+  
+  console.log(`[Tax Calculator] DIAGNOSTIC TOTALS:`);
+  console.log(`  - Total Proceeds: $${totalProceeds.toFixed(2)}`);
+  console.log(`  - Total Cost Basis: $${totalCostBasis.toFixed(2)}`);
+  console.log(`  - Expected Gain (Proceeds - Cost Basis): $${expectedGain.toFixed(2)}`);
+  console.log(`  - Actual Total Gain/Loss (sum of all gainLoss): $${totalGainLoss.toFixed(2)}`);
+  console.log(`  - Difference: $${Math.abs(expectedGain - totalGainLoss).toFixed(2)}`);
+  
+  if (Math.abs(expectedGain - totalGainLoss) > 0.01) {
+    console.warn(`[Tax Calculator] ⚠️  WARNING: Expected gain (${expectedGain.toFixed(2)}) does not match actual gain/loss sum (${totalGainLoss.toFixed(2)})`);
+    console.warn(`  This suggests some transactions may have incorrect gain/loss calculations.`);
+  }
+
   // Calculate totals
   const shortTermGains = combinedTaxableEvents
     .filter((e) => e.holdingPeriod === "short" && e.gainLoss > 0)
@@ -277,6 +358,12 @@ export async function calculateTaxReport(
     (sum, e) => sum + e.valueUsd,
     0
   );
+  
+  console.log(`[Tax Calculator] CALCULATED TOTALS:`);
+  console.log(`  - Short-term Gains: $${shortTermGains.toFixed(2)}`);
+  console.log(`  - Long-term Gains: $${longTermGains.toFixed(2)}`);
+  console.log(`  - Short-term Losses: $${shortTermLosses.toFixed(2)}`);
+  console.log(`  - Long-term Losses: $${longTermLosses.toFixed(2)}`);
 
   // Calculate net gains/losses
   const netShortTermGain = shortTermGains - shortTermLosses;
@@ -356,7 +443,10 @@ function processTransactionsForTax(
   console.log(`[processTransactionsForTax] Sell transactions by year:`, sellTransactionsByYear);
 
   for (const tx of transactions) {
-    const asset = tx.asset_symbol;
+    processedCount++;
+    // Normalize asset symbol: trim whitespace and convert to uppercase for consistent matching
+    // This ensures "BTC", "btc", "BTC " all match the same asset
+    const asset = (tx.asset_symbol || "").trim().toUpperCase();
     const amount = Number(tx.amount_value);
     const valueUsd = Number(tx.value_usd);
     const feeUsd = tx.fee_usd ? Number(tx.fee_usd) : 0;
@@ -372,7 +462,7 @@ function processTransactionsForTax(
     
     // Log first few sell transactions for debugging
     if ((txType === "sell" || tx.type === "Sell") && processedCount < 10) {
-      console.log(`[processTransactionsForTax] Processing sell transaction ${tx.id}: type=${tx.type}, asset=${asset}, valueUsd=${valueUsd}, date=${date.toISOString().split('T')[0]}, year=${txYear}, taxYear=${taxYear}, notes=${tx.notes?.substring(0, 150)}`);
+      console.log(`[processTransactionsForTax] Processing sell transaction ${tx.id}: type=${tx.type}, asset=${asset} (original: "${tx.asset_symbol}"), valueUsd=${valueUsd}, date=${date.toISOString().split('T')[0]}, year=${txYear}, taxYear=${taxYear}, notes=${tx.notes?.substring(0, 150) || "none"}`);
     }
 
     // Initialize asset lots if needed
@@ -384,9 +474,15 @@ function processTransactionsForTax(
     // Also handle "Buy" with capital B (from CSV parser)
     if (txType === "buy" || txType === "dca" || tx.type === "Buy") {
       // IRS Rule: Fees are added to cost basis for purchases
-      // For tax report format, value_usd is already the cost basis (positive)
+      // For CSV imports with tax report format, value_usd is NEGATIVE (cost basis as negative value)
       // For standard format, value_usd might be negative, so use absolute value
+      // IMPORTANT: value_usd for buys from CSV is negative (cost.neg()), so we need Math.abs
       const totalCostBasis = Math.abs(valueUsd) + feeUsd;
+      
+      // Log if this is a CSV import buy to verify it's being processed
+      if (tx.source_type === "csv_import" && processedCount < 20) {
+        console.log(`[processTransactionsForTax] Processing CSV buy ${tx.id}: asset=${asset}, value_usd=${valueUsd}, totalCostBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, year=${txYear}`);
+      }
       costBasisLots[asset].push({
         id: tx.id,
         date,
@@ -396,8 +492,8 @@ function processTransactionsForTax(
         fees: feeUsd, // Track fees separately for reference
       });
       
-      if (processedCount < 10) {
-        console.log(`[processTransactionsForTax] Added buy transaction ${tx.id} to cost basis: asset=${asset}, amount=${amount}, costBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}`);
+      if (processedCount < 10 || costBasisLots[asset].length <= 3) {
+        console.log(`[processTransactionsForTax] Added buy transaction ${tx.id} to cost basis: asset=${asset} (original: "${tx.asset_symbol}"), amount=${amount}, costBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, lotsForAsset=${costBasisLots[asset].length}`);
       }
     }
     // Handle sells - calculate capital gains/losses
@@ -405,12 +501,16 @@ function processTransactionsForTax(
     else if (txType === "sell" || tx.type === "Sell") {
       // IRS Rule: Fees are subtracted from proceeds for sales
       // Use value_usd as proceeds (even if 0, for losses)
-      // For CSV imports, value_usd is already the proceeds amount (positive)
+      // For CSV imports, value_usd is already the NET proceeds (after fees) - don't subtract fees again!
       // For blockchain transactions, value_usd might be negative for sells, so use Math.abs
       const grossProceeds = valueUsd >= 0 ? valueUsd : Math.abs(valueUsd); // Sale proceeds before fees (can be 0)
-      // Net proceeds = gross proceeds - fees (can be 0 or negative if fees exceed proceeds)
-      // But for tax purposes, we cap at 0 (proceeds can't be negative)
-      const netProceeds = Math.max(0, grossProceeds - feeUsd); // Proceeds after fees (can be 0 for losses)
+      
+      // For CSV imports, value_usd is already net proceeds, so don't subtract fees again
+      // For blockchain transactions, we need to subtract fees
+      const isCSVImport = tx.source_type === "csv_import";
+      const netProceeds = isCSVImport 
+        ? grossProceeds // CSV imports already have net proceeds
+        : Math.max(0, grossProceeds - feeUsd); // Blockchain: subtract fees from gross proceeds
       const sellAmount = amount;
       let remainingToSell = sellAmount;
       let totalCostBasis = 0;
@@ -467,8 +567,22 @@ function processTransactionsForTax(
           method
         );
 
-        if (processedCount < 10 && selectedLots.length === 0) {
-          console.warn(`[Tax Calculator] Sell transaction ${tx.id}: No cost basis lots found for asset ${asset}. Available lots:`, Object.keys(costBasisLots).filter(k => costBasisLots[k].length > 0));
+        if (selectedLots.length === 0) {
+          const availableAssets = Object.keys(costBasisLots).filter(k => costBasisLots[k].length > 0);
+          console.warn(`[Tax Calculator] Sell transaction ${tx.id}: No cost basis lots found for asset "${asset}" (original: "${tx.asset_symbol}")`);
+          console.warn(`  - Available assets with lots: ${availableAssets.length > 0 ? availableAssets.join(", ") : "NONE"}`);
+          console.warn(`  - Total assets with lots: ${availableAssets.length}`);
+          if (availableAssets.length > 0) {
+            console.warn(`  - Asset symbol comparison: Looking for "${asset}", available: ${availableAssets.map(a => `"${a}"`).join(", ")}`);
+            // Check for case-insensitive matches
+            const caseInsensitiveMatch = availableAssets.find(a => a.toUpperCase() === asset.toUpperCase());
+            if (caseInsensitiveMatch) {
+              console.warn(`  - ⚠️  CASE MISMATCH DETECTED! Found "${caseInsensitiveMatch}" which matches "${asset}" case-insensitively`);
+            }
+          } else {
+            console.warn(`  - ⚠️  NO BUY TRANSACTIONS FOUND! This means there are no buy transactions before this sell.`);
+            console.warn(`  - Check if buy transactions exist and are being processed correctly.`);
+          }
         }
 
         // Calculate cost basis from selected lots
@@ -536,7 +650,39 @@ function processTransactionsForTax(
             txHash: tx.tx_hash || undefined,
           });
         } else {
-          console.warn(`[Tax Calculator] Skipping sell transaction ${tx.id}: no cost basis found. Notes: ${tx.notes?.substring(0, 200)}, hasCostBasisInNotes=${tx.notes?.includes("Cost Basis:") || false}, hasLots=${costBasisLots[asset]?.length > 0 || false}`);
+          // If no cost basis found, check if we have cost basis in notes (from tax report format)
+        // If we have cost basis in notes but it's 0, that's valid (proceeds = 0, cost basis = 0)
+        // But if we don't have cost basis in notes AND no lots, that's a problem
+        const hasCostBasisInNotes = tx.notes?.includes("Cost Basis:") || false;
+        const availableAssets = Object.keys(costBasisLots).filter(k => costBasisLots[k].length > 0);
+        
+        if (!hasCostBasisInNotes && costBasisLots[asset]?.length === 0) {
+          console.error(`[Tax Calculator] ⚠️  CRITICAL: Sell transaction ${tx.id} has NO cost basis and NO matching buy transactions!`);
+          console.error(`  - Asset: "${asset}" (original: "${tx.asset_symbol}")`);
+          console.error(`  - Date: ${date.toISOString().split('T')[0]}`);
+          console.error(`  - Proceeds: $${netProceeds.toFixed(2)}`);
+          console.error(`  - Available assets with lots: ${availableAssets.length > 0 ? availableAssets.join(", ") : "NONE"}`);
+          console.error(`  - This sell will show as 100% gain (proceeds = gain), which is incorrect!`);
+          console.error(`  - Check if buy transactions exist for asset "${asset}" and are being processed.`);
+        }
+        
+        // Include with 0 cost basis - gain/loss equals proceeds (assumes cost basis was 0)
+        // This is not tax-compliant but makes the transaction visible
+        // NOTE: This will cause incorrect tax calculations - the user needs to fix this
+        taxableEventCount++;
+        taxableEvents.push({
+          id: tx.id,
+          date,
+          dateAcquired: earliestLotDate,
+          asset,
+          amount: sellAmount,
+          proceeds: netProceeds,
+          costBasis: 0, // No cost basis available
+          gainLoss: netProceeds, // Gain equals proceeds if cost basis is 0
+          holdingPeriod: "short", // Default to short-term if we can't determine
+          chain: tx.chain || undefined,
+          txHash: tx.tx_hash || undefined,
+        });
         }
       } else {
         // Log year mismatches for debugging
@@ -549,8 +695,8 @@ function processTransactionsForTax(
     // IRS: Swaps are taxable events (like-kind exchange rules eliminated for crypto after 2017)
     else if (txType === "swap") {
       // First, try to use stored swap information from database
-      let outgoingAsset = asset;
-      let incomingAsset = tx.incoming_asset_symbol || null;
+      let outgoingAsset = asset; // Already normalized above
+      let incomingAsset = tx.incoming_asset_symbol ? (tx.incoming_asset_symbol.trim().toUpperCase()) : null;
       let outgoingAmount = amount;
       let incomingAmount = tx.incoming_amount_value ? Number(tx.incoming_amount_value) : null;
       let incomingValueUsd = tx.incoming_value_usd ? Number(tx.incoming_value_usd) : null;
@@ -558,8 +704,8 @@ function processTransactionsForTax(
       // If swap info not in database, try to parse from notes/asset_symbol
       if (!incomingAsset || !incomingAmount) {
         const swapInfo = parseSwapTransaction(tx);
-        outgoingAsset = swapInfo.outgoingAsset || asset;
-        incomingAsset = swapInfo.incomingAsset || incomingAsset;
+        outgoingAsset = swapInfo.outgoingAsset ? (swapInfo.outgoingAsset.trim().toUpperCase()) : asset;
+        incomingAsset = swapInfo.incomingAsset ? (swapInfo.incomingAsset.trim().toUpperCase()) : incomingAsset;
         outgoingAmount = swapInfo.outgoingAmount || amount;
         incomingAmount = swapInfo.incomingAmount || incomingAmount;
         incomingValueUsd = swapInfo.incomingValueUsd || incomingValueUsd;
@@ -999,6 +1145,47 @@ function processTransactionsForTax(
     }
   }
 
+  console.log(`[processTransactionsForTax] Processing complete for tax year ${taxYear}:`);
+  console.log(`  - Processed ${processedCount} transactions (out of ${transactions.length} total)`);
+  console.log(`  - Found ${taxableEventCount} taxable events`);
+  console.log(`  - Found ${incomeEventCount} income events`);
+  console.log(`  - Transaction types processed:`, typeCounts);
+  
+  // Log cost basis lots summary
+  const assetsWithLots = Object.keys(costBasisLots).filter(k => costBasisLots[k].length > 0);
+  console.log(`  - Assets with cost basis lots: ${assetsWithLots.length}`);
+  if (assetsWithLots.length > 0) {
+    console.log(`  - Assets: ${assetsWithLots.join(", ")}`);
+    assetsWithLots.forEach(asset => {
+      const totalAmount = costBasisLots[asset].reduce((sum, lot) => sum + lot.amount, 0);
+      const totalCostBasis = costBasisLots[asset].reduce((sum, lot) => sum + lot.costBasis, 0);
+      console.log(`    - ${asset}: ${costBasisLots[asset].length} lots, ${totalAmount} total amount, $${totalCostBasis.toFixed(2)} total cost basis`);
+    });
+  } else {
+    console.warn(`  - ⚠️  NO COST BASIS LOTS CREATED! This means no buy transactions were processed.`);
+  }
+  
+  if (taxableEventCount === 0 && incomeEventCount === 0) {
+    if (transactions.length === 0) {
+      console.warn(`[processTransactionsForTax] WARNING: No transactions found to process`);
+    } else {
+      console.warn(`[processTransactionsForTax] WARNING: Processed ${transactions.length} transactions but found 0 taxable/income events`);
+      console.warn(`  This could mean:`);
+      console.warn(`  1. Transactions are not in tax year ${taxYear} (check transaction years)`);
+      console.warn(`  2. Transaction types don't match expected types (buy/sell/income)`);
+      console.warn(`  3. Sell transactions don't have matching buy transactions or cost basis in notes`);
+      const yearsInData = Object.keys(transactionsByYear);
+      console.warn(`  4. Transactions found in years: ${yearsInData.join(", ")}`);
+      const sellYears = Object.keys(sellTransactionsByYear);
+      if (sellYears.length > 0) {
+        console.warn(`  5. Sell transactions found in years: ${sellYears.join(", ")}`);
+      }
+      if (assetsWithLots.length === 0) {
+        console.warn(`  6. ⚠️  CRITICAL: No buy transactions found! All sells need matching buys.`);
+      }
+    }
+  }
+  
   return { taxableEvents, incomeEvents };
 }
 
@@ -1119,8 +1306,8 @@ function parseSwapTransaction(tx: Transaction): {
       }
 
       return {
-        outgoingAsset: outgoingAsset || tx.asset_symbol,
-        incomingAsset: incomingAsset || null,
+        outgoingAsset: outgoingAsset ? outgoingAsset.trim().toUpperCase() : (tx.asset_symbol ? tx.asset_symbol.trim().toUpperCase() : null),
+        incomingAsset: incomingAsset ? incomingAsset.trim().toUpperCase() : null,
         outgoingAmount: outgoingAmount || Number(tx.amount_value),
         incomingAmount,
         incomingValueUsd,
@@ -1144,8 +1331,9 @@ function parseSwapTransaction(tx: Transaction): {
   }
 
   // Fallback: use current asset as outgoing, no incoming identified
+  // Normalize asset symbol
   return {
-    outgoingAsset: assetSymbol,
+    outgoingAsset: assetSymbol ? assetSymbol.trim().toUpperCase() : null,
     incomingAsset: null,
     outgoingAmount: Number(tx.amount_value),
     incomingAmount: null,

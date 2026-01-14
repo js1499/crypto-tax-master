@@ -417,12 +417,9 @@ export async function POST(request: NextRequest) {
           subtype: tx.subtype,
         });
 
-        // Log notes for first few transactions to debug - ALWAYS log for Sell transactions
-        if ((tx.type === "Sell" || tx.type === "sell") && i < 20) {
-          logBuffer.log(`[Import] Transaction ${i + 1}: type=${tx.type}, asset=${tx.asset_symbol}, notes=${tx.notes ? tx.notes.substring(0, 200) : "null"}, hasNotes=${!!tx.notes}, notesLength=${tx.notes?.length || 0}`);
-          if (!tx.notes) {
-            logBuffer.error(`[Import] Transaction ${i + 1}: SELL TRANSACTION HAS NO NOTES! This will cause tax calculation to fail!`);
-          }
+        // Log notes for first few transactions to debug
+        if (i < 5 && (tx.type === "Sell" || tx.type === "sell")) {
+          logBuffer.log(`[Import] Transaction ${i + 1}: type=${tx.type}, notes=${tx.notes ? tx.notes.substring(0, 200) : "null"}, hasNotes=${!!tx.notes}`);
         }
 
         transactionsToCreate.push({

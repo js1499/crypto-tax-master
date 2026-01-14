@@ -783,9 +783,14 @@ class CustomParser extends ExchangeCSVParser {
       "timestamp",
       "datetime",
       "date sold",
-      "date purchased",
       "sold date",
+    ]);
+    const datePurchasedIdx = this.findColumnIndex(headers, [
+      "date purchased",
       "purchase date",
+      "date acquired",
+      "acquired date",
+      "buy date",
     ]);
     const typeIdx = this.findColumnIndex(headers, [
       "type",
@@ -816,8 +821,20 @@ class CustomParser extends ExchangeCSVParser {
       "proceeds",
       "proceeds usd",
     ]);
+    const costBasisIdx = this.findColumnIndex(headers, [
+      "cost basis (usd)",
+      "cost basis",
+      "basis",
+      "cost basis usd",
+      "purchase price",
+      "buy price",
+    ]);
     
-    console.log(`[Custom Parser] Column indices - Date: ${dateIdx}, Type: ${typeIdx}, Asset: ${assetIdx}, Amount: ${amountIdx}, Value: ${valueIdx}`);
+    // Detect if this CSV represents transaction pairs (has both buy and sell info)
+    const isTransactionPair = datePurchasedIdx !== -1 && costBasisIdx !== -1 && dateIdx !== -1;
+    
+    console.log(`[Custom Parser] Column indices - Date: ${dateIdx}, Date Purchased: ${datePurchasedIdx}, Type: ${typeIdx}, Asset: ${assetIdx}, Amount: ${amountIdx}, Value: ${valueIdx}, Cost Basis: ${costBasisIdx}`);
+    console.log(`[Custom Parser] Transaction pair detected: ${isTransactionPair}`);
 
     const transactions: ParsedTransaction[] = [];
 
@@ -825,29 +842,71 @@ class CustomParser extends ExchangeCSVParser {
       if (row.length === 0 || row.every((cell) => !cell.trim())) continue;
 
       try {
-        const timestamp = this.parseDate(row[dateIdx] || "");
-        if (!timestamp) continue;
-
-        const type = this.parseTransactionType(row[typeIdx] || "");
         const asset = this.extractAssetSymbol(row[assetIdx] || "");
         if (!asset) continue;
 
         const amount = this.parseDecimal(row[amountIdx] || "");
-        const price = this.parseDecimal(row[priceIdx] || "");
-        const value = this.parseDecimal(row[valueIdx] || "");
-
         if (!amount) continue;
 
-        const valueUsd = value || (price ? amount.mul(price) : amount);
+        // If this is a transaction pair, create both buy and sell transactions
+        if (isTransactionPair) {
+          // Get dates
+          const dateSold = this.parseDate(row[dateIdx] || "");
+          const datePurchased = this.parseDate(row[datePurchasedIdx] || "");
+          
+          // Get values
+          const proceeds = this.parseDecimal(row[valueIdx] || "");
+          const costBasis = this.parseDecimal(row[costBasisIdx] || "");
+          const price = this.parseDecimal(row[priceIdx] || "");
+          
+          // Create BUY transaction if we have purchase date and cost basis
+          if (datePurchased && costBasis && Number(costBasis) > 0) {
+            const buyTransaction: ParsedTransaction = {
+              type: "Buy",
+              asset_symbol: asset,
+              amount_value: amount,
+              price_per_unit: costBasis.div(amount), // Cost basis per unit
+              value_usd: costBasis.neg(), // Negative value for buys (standard convention)
+              tx_timestamp: datePurchased,
+              notes: `CSV import - Purchase for sale on ${dateSold ? dateSold.toISOString().split("T")[0] : "unknown date"}`,
+            };
+            transactions.push(buyTransaction);
+          }
+          
+          // Create SELL transaction if we have sale date and proceeds
+          if (dateSold && proceeds !== null) {
+            const sellPricePerUnit = price || (amount.gt(0) ? proceeds.div(amount) : null);
+            const sellTransaction: ParsedTransaction = {
+              type: "Sell",
+              asset_symbol: asset,
+              amount_value: amount,
+              price_per_unit: sellPricePerUnit || undefined,
+              value_usd: proceeds, // Proceeds is the sale value
+              tx_timestamp: dateSold,
+              notes: costBasis ? `Cost Basis: $${Number(costBasis).toFixed(2)}${datePurchased ? ` | Purchased: ${datePurchased.toISOString().split("T")[0]}` : ""}` : undefined,
+            };
+            transactions.push(sellTransaction);
+          }
+        } else {
+          // Standard single transaction per row
+          const timestamp = this.parseDate(row[dateIdx] || "");
+          if (!timestamp) continue;
 
-        transactions.push({
-          type,
-          asset_symbol: asset,
-          amount_value: amount,
-          price_per_unit: price || undefined,
-          value_usd: valueUsd,
-          tx_timestamp: timestamp,
-        });
+          const type = this.parseTransactionType(row[typeIdx] || "");
+          const price = this.parseDecimal(row[priceIdx] || "");
+          const value = this.parseDecimal(row[valueIdx] || "");
+
+          const valueUsd = value || (price ? amount.mul(price) : amount);
+
+          transactions.push({
+            type,
+            asset_symbol: asset,
+            amount_value: amount,
+            price_per_unit: price || undefined,
+            value_usd: valueUsd,
+            tx_timestamp: timestamp,
+          });
+        }
       } catch (error) {
         console.error("Error parsing custom transaction:", error, row);
         continue;
@@ -1218,17 +1277,13 @@ class CustomParser extends ExchangeCSVParser {
           : "";
         const costBasis = this.parseDecimal(costBasisValue);
         
-        // Debug cost basis parsing for first few rows - ALWAYS log for debugging
-        if (rowIndex < 10) {
-          logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: ===== COST BASIS PARSING =====`);
-          logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: finalCostBasisIdx=${finalCostBasisIdx}, row.length=${row.length}`);
-          logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: costBasisValue="${costBasisValue}"`);
-          logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: parsed costBasis=${costBasis ? Number(costBasis).toFixed(2) : "null"}`);
+        // Debug cost basis parsing for first few rows
+        if (rowIndex < 5) {
+          logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: costBasisValue="${costBasisValue}", parsed costBasis=${costBasis ? Number(costBasis).toFixed(2) : "null"}, finalCostBasisIdx=${finalCostBasisIdx}, row.length=${row.length}`);
           if (finalCostBasisIdx >= 0 && finalCostBasisIdx < row.length) {
             logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: Raw cost basis cell value: "${row[finalCostBasisIdx]}"`);
-            logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: All row values:`, row);
           } else {
-            logBuffer.error(`[Tax Report Parser] Row ${rowIndex + 2}: Cost basis index ${finalCostBasisIdx} is out of bounds! row.length=${row.length}`);
+            logBuffer.warn(`[Tax Report Parser] Row ${rowIndex + 2}: Cost basis index ${finalCostBasisIdx} is out of bounds! row.length=${row.length}`);
           }
         }
 
@@ -1241,18 +1296,11 @@ class CustomParser extends ExchangeCSVParser {
           ? new Decimal(proceedsNum / amountNum)
           : null;
 
-        // Build notes from available information first (needed for type determination)
-        let notes = row[notesIdx] || "";
-        const name = row[nameIdx] || "";
-        if (name && !notes.includes(name)) {
-          notes = notes ? `${name}. ${notes}` : name;
-        }
-
         // Determine transaction type from Sale Type field
         let type = "Sell"; // Default for tax reports (they're all sales/disposals)
         const saleType = (row[saleTypeIdx] || "").trim();
         const saleTypeLower = saleType.toLowerCase();
-
+        
         // Map Sale Type to transaction type
         if (saleTypeLower.includes("swap") || saleTypeLower.includes("trade") || saleTypeLower.includes("exchange")) {
           type = "Swap";
@@ -1272,10 +1320,18 @@ class CustomParser extends ExchangeCSVParser {
           // These are capital gains categories, still a "Sell"
           type = "Sell";
         }
-
+        
         // If no sale type but we have swap indicators, mark as swap
+        // Note: incomingAssetSymbol is not available in tax report format, so we only check notes
         if (type === "Sell" && (notes?.toLowerCase().includes("swap") || notes?.toLowerCase().includes("jupiter") || notes?.toLowerCase().includes("trade"))) {
           type = "Swap";
+        }
+
+        // Build notes from available information
+        let notes = row[notesIdx] || "";
+        const name = row[nameIdx] || "";
+        if (name && !notes.includes(name)) {
+          notes = notes ? `${name}. ${notes}` : name;
         }
 
         // Build initial notes from row data (will be enhanced for sell transaction below)
@@ -1389,16 +1445,6 @@ class CustomParser extends ExchangeCSVParser {
             : `${holdingPeriod} (${days} days)`;
         }
         
-        // CRITICAL: Ensure notes are set even if empty - we need cost basis!
-        // If sellNotes is empty but we should have cost basis, create a minimal note
-        if ((!sellNotes || !sellNotes.trim()) && costBasisNum !== null && !isNaN(costBasisNum)) {
-          // This shouldn't happen, but as a fallback, create notes with just cost basis
-          sellNotes = `Cost Basis: $${costBasisNum.toFixed(2)}`;
-          logBuffer.warn(`[Tax Report Parser] Row ${rowIndex + 2}: sellNotes was empty but costBasis exists! Created fallback notes: ${sellNotes}`);
-        }
-        
-        const finalNotes = sellNotes && sellNotes.trim() ? sellNotes.trim() : undefined;
-        
         const sellTransaction: ParsedTransaction = {
           type,
           asset_symbol: asset,
@@ -1406,19 +1452,15 @@ class CustomParser extends ExchangeCSVParser {
           price_per_unit: pricePerUnit || undefined,
           value_usd: proceeds, // Proceeds is the sale value
           tx_timestamp: dateSold,
-          notes: finalNotes,
+          notes: sellNotes && sellNotes.trim() ? sellNotes.trim() : undefined,
         };
         
-        // Log notes for debugging - ALWAYS log for first 10 rows
-        if (rowIndex < 10) {
-          logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: FINAL NOTES CHECK`);
-          logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: sellNotes="${sellNotes}", finalNotes="${finalNotes}", hasNotes=${!!finalNotes}`);
-          logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: costBasisValue="${costBasisValue}", costBasis=${costBasis ? Number(costBasis).toFixed(2) : "null"}, costBasisNum=${costBasisNum}`);
-          if (!finalNotes) {
-            logBuffer.error(`[Tax Report Parser] Row ${rowIndex + 2}: NO NOTES IN TRANSACTION! This will cause tax calculation to fail!`);
-            logBuffer.error(`[Tax Report Parser] Row ${rowIndex + 2}: sellNotes="${sellNotes}", costBasisNum=${costBasisNum}, datePurchased=${datePurchased ? datePurchased.toISOString().split('T')[0] : "null"}`);
+        // Log notes for debugging
+        if (rowIndex < 5) {
+          if (!sellNotes || !sellNotes.trim()) {
+            logBuffer.error(`[Tax Report Parser] Row ${rowIndex + 2}: NO NOTES GENERATED! costBasis=${costBasis ? Number(costBasis).toFixed(2) : "null"}, datePurchased=${datePurchased ? datePurchased.toISOString().split('T')[0] : "null"}, costBasisValue="${costBasisValue}", finalCostBasisIdx=${finalCostBasisIdx}`);
           } else {
-            logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: Notes generated (${finalNotes.length} chars): ${finalNotes.substring(0, 200)}`);
+            logBuffer.log(`[Tax Report Parser] Row ${rowIndex + 2}: Notes generated (${sellNotes.length} chars): ${sellNotes.substring(0, 200)}`);
           }
         }
 

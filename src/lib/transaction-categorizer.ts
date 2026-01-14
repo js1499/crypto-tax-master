@@ -190,7 +190,8 @@ export function categorizeTransaction(
     typeLower.includes("sale") ||
     notesLower.includes("sold") ||
     typeLower.includes("disposal") ||
-    (value > 0 && !typeLower.includes("buy") && !typeLower.includes("receive") && !typeLower.includes("reward") && !typeLower.includes("staking"))
+    notesLower.includes("proceeds") ||
+    notesLower.includes("cost basis") // Tax report format indicates a sell
   ) {
     return {
       category: "sell",
@@ -200,10 +201,12 @@ export function categorizeTransaction(
   }
 
   // Default: not identified, keep original type
+  // Don't default to "Sell" based on positive value alone - that's too aggressive
+  // Only categorize as sell if there are explicit sell indicators
   return {
     category: "buy", // Default fallback
     identified: false,
-    finalType: type,
+    finalType: type, // Keep original type so user can review
   };
 }
 

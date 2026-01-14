@@ -58,7 +58,6 @@ logs
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
@@ -68,3 +67,6 @@ lerna-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Test data - uncomment the line below if you want to ignore CSV files
+# /test-data/*.csv
