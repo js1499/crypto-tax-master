@@ -1241,11 +1241,18 @@ class CustomParser extends ExchangeCSVParser {
           ? new Decimal(proceedsNum / amountNum)
           : null;
 
+        // Build notes from available information first (needed for type determination)
+        let notes = row[notesIdx] || "";
+        const name = row[nameIdx] || "";
+        if (name && !notes.includes(name)) {
+          notes = notes ? `${name}. ${notes}` : name;
+        }
+
         // Determine transaction type from Sale Type field
         let type = "Sell"; // Default for tax reports (they're all sales/disposals)
         const saleType = (row[saleTypeIdx] || "").trim();
         const saleTypeLower = saleType.toLowerCase();
-        
+
         // Map Sale Type to transaction type
         if (saleTypeLower.includes("swap") || saleTypeLower.includes("trade") || saleTypeLower.includes("exchange")) {
           type = "Swap";
@@ -1265,18 +1272,10 @@ class CustomParser extends ExchangeCSVParser {
           // These are capital gains categories, still a "Sell"
           type = "Sell";
         }
-        
+
         // If no sale type but we have swap indicators, mark as swap
-        // Note: incomingAssetSymbol is not available in tax report format, so we only check notes
         if (type === "Sell" && (notes?.toLowerCase().includes("swap") || notes?.toLowerCase().includes("jupiter") || notes?.toLowerCase().includes("trade"))) {
           type = "Swap";
-        }
-
-        // Build notes from available information
-        let notes = row[notesIdx] || "";
-        const name = row[nameIdx] || "";
-        if (name && !notes.includes(name)) {
-          notes = notes ? `${name}. ${notes}` : name;
         }
 
         // Build initial notes from row data (will be enhanced for sell transaction below)
