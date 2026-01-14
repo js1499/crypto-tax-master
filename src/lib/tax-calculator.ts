@@ -361,12 +361,38 @@ export async function calculateTaxReport(
   
   // Diagnostic: Check taxable events by year
   const eventsByYear: Record<number, number> = {};
+  const eventsByYearWithGains: Record<number, { count: number; totalGain: number }> = {};
   combinedTaxableEvents.forEach(e => {
     const year = e.date.getFullYear();
     eventsByYear[year] = (eventsByYear[year] || 0) + 1;
+    if (!eventsByYearWithGains[year]) {
+      eventsByYearWithGains[year] = { count: 0, totalGain: 0 };
+    }
+    eventsByYearWithGains[year].count++;
+    eventsByYearWithGains[year].totalGain += e.gainLoss;
   });
   console.log(`[Tax Calculator] Taxable events by year:`, eventsByYear);
+  console.log(`[Tax Calculator] Taxable events by year with gains:`, Object.entries(eventsByYearWithGains).map(([year, data]) => ({
+    year: parseInt(year),
+    count: data.count,
+    totalGain: data.totalGain.toFixed(2)
+  })));
   console.log(`[Tax Calculator] Total Taxable Events: ${combinedTaxableEvents.length}`);
+  
+  // Warn if there are events in unexpected years
+  const requestedYear = year;
+  Object.keys(eventsByYear).forEach(y => {
+    const yearNum = parseInt(y);
+    if (yearNum !== requestedYear) {
+      console.warn(`[Tax Calculator] ⚠️  WARNING: Found ${eventsByYear[yearNum]} taxable events in year ${yearNum}, but requested year is ${requestedYear}`);
+      console.warn(`  - This suggests transactions may have incorrect dates or year filtering is wrong`);
+      // Show sample events from unexpected year
+      const sampleEvents = combinedTaxableEvents.filter(e => e.date.getFullYear() === yearNum).slice(0, 3);
+      sampleEvents.forEach(e => {
+        console.warn(`  - Sample event: id=${e.id}, date=${e.date.toISOString().split('T')[0]}, asset=${e.asset}, gainLoss=${e.gainLoss.toFixed(2)}`);
+      });
+    }
+  });
   
   console.log(`[Tax Calculator] CALCULATED TOTALS:`);
   console.log(`  - Short-term Gains: $${shortTermGains.toFixed(2)}`);
