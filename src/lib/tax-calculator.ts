@@ -520,13 +520,31 @@ function processTransactionsForTax(
 
       // Check if transaction has pre-calculated cost basis in notes (from tax report format)
       const notes = tx.notes || "";
-      const costBasisMatch = notes.match(/Cost Basis:\s*\$?([\d,]+\.?\d*)/i);
+      // Updated regex to match cost basis including 0.00: 
+      // Pattern: "Cost Basis: $X.XX" or "Cost Basis: X.XX" where X can be 0
+      // The pattern ([\d,]+(?:\.\d+)?) matches: digits (with optional commas) followed by optional decimal point and digits
+      // This will match: "1256.53", "0", "0.00", "1,234.56", etc.
+      const costBasisMatch = notes.match(/Cost Basis:\s*\$?([\d,]+(?:\.\d+)?)/i);
       const purchasedMatch = notes.match(/Purchased:\s*(\d{4}-\d{2}-\d{2})/i);
       const holdingPeriodMatch = notes.match(/(Long-term|Short-term)\s*\((\d+)\s*days?\)/i);
       
       if (costBasisMatch) {
         // Use pre-calculated cost basis from tax report format
-        totalCostBasis = parseFloat(costBasisMatch[1].replace(/,/g, ""));
+        const costBasisStr = costBasisMatch[1].replace(/,/g, "");
+        totalCostBasis = parseFloat(costBasisStr);
+        
+        // Validate that we got a valid number
+        if (isNaN(totalCostBasis)) {
+          console.warn(`[Tax Calculator] Sell transaction ${tx.id}: Failed to parse cost basis from notes. Matched: "${costBasisMatch[1]}", Parsed: ${costBasisStr}`);
+          totalCostBasis = 0;
+        }
+        
+        // Log if cost basis is 0 to help debug
+        if (totalCostBasis === 0 && processedCount < 10) {
+          console.log(`[Tax Calculator] Sell transaction ${tx.id}: Found cost basis 0 in notes. Notes: ${notes.substring(0, 200)}`);
+        } else if (processedCount < 10 || taxableEventCount < 5) {
+          console.log(`[Tax Calculator] Sell transaction ${tx.id}: Using cost basis from notes: $${totalCostBasis.toFixed(2)}`);
+        }
         
         // Extract purchase date if available
         if (purchasedMatch) {
