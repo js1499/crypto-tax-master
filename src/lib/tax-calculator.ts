@@ -359,11 +359,36 @@ export async function calculateTaxReport(
     0
   );
   
+  // Diagnostic: Check taxable events by year
+  const eventsByYear: Record<number, number> = {};
+  combinedTaxableEvents.forEach(e => {
+    const year = e.date.getFullYear();
+    eventsByYear[year] = (eventsByYear[year] || 0) + 1;
+  });
+  console.log(`[Tax Calculator] Taxable events by year:`, eventsByYear);
+  
+  // Diagnostic: Check total proceeds and cost basis
+  const totalProceeds = combinedTaxableEvents.reduce((sum, e) => sum + e.proceeds, 0);
+  const totalCostBasis = combinedTaxableEvents.reduce((sum, e) => sum + e.costBasis, 0);
+  const totalGainLoss = combinedTaxableEvents.reduce((sum, e) => sum + e.gainLoss, 0);
+  console.log(`[Tax Calculator] DIAGNOSTIC TOTALS:`);
+  console.log(`  - Total Taxable Events: ${combinedTaxableEvents.length}`);
+  console.log(`  - Total Proceeds: $${totalProceeds.toFixed(2)}`);
+  console.log(`  - Total Cost Basis: $${totalCostBasis.toFixed(2)}`);
+  console.log(`  - Total Gain/Loss: $${totalGainLoss.toFixed(2)}`);
+  console.log(`  - Expected Gain (Proceeds - Cost Basis): $${(totalProceeds - totalCostBasis).toFixed(2)}`);
+  
   console.log(`[Tax Calculator] CALCULATED TOTALS:`);
   console.log(`  - Short-term Gains: $${shortTermGains.toFixed(2)}`);
   console.log(`  - Long-term Gains: $${longTermGains.toFixed(2)}`);
   console.log(`  - Short-term Losses: $${shortTermLosses.toFixed(2)}`);
   console.log(`  - Long-term Losses: $${longTermLosses.toFixed(2)}`);
+  
+  // Warn if totals don't match
+  const calculatedTotal = shortTermGains + longTermGains - shortTermLosses - longTermLosses;
+  if (Math.abs(calculatedTotal - totalGainLoss) > 0.01) {
+    console.warn(`[Tax Calculator] ⚠️  WARNING: Calculated total (${calculatedTotal.toFixed(2)}) doesn't match sum of gain/loss (${totalGainLoss.toFixed(2)})`);
+  }
 
   // Calculate net gains/losses
   const netShortTermGain = shortTermGains - shortTermLosses;
@@ -647,61 +672,47 @@ function processTransactionsForTax(
       }
 
       // Only include in tax year if the sale occurred in that year
-      // Also require that we have a valid cost basis (either from lots or pre-calculated)
-      // Allow proceeds to be 0 (for losses where asset was sold for $0)
-      // Always include if we have cost basis, even if proceeds is 0
+      // IMPORTANT: Include ALL sell transactions that occurred in the tax year, regardless of cost basis
+      // Cost basis can be 0 (valid case: proceeds > 0, cost basis = 0 means full gain)
+      // Proceeds can be 0 (valid case: loss where asset was sold for $0)
+      // The key is: if the SALE DATE is in the tax year, include it
       if (txYear === taxYear) {
-        if (totalCostBasis > 0) {
-          console.log(`[Tax Calculator] Including taxable event: asset=${asset}, proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, holdingPeriod=${holdingPeriod}, year=${txYear}`);
-          taxableEventCount++;
-          taxableEvents.push({
-            id: tx.id,
-            date,
-            dateAcquired: earliestLotDate, // Actual acquisition date from lots or notes
-            asset,
-            amount: sellAmount,
-            proceeds: netProceeds, // Report net proceeds (after fees)
-            costBasis: totalCostBasis,
-            gainLoss,
-            holdingPeriod,
-            chain: tx.chain || undefined,
-            txHash: tx.tx_hash || undefined,
-          });
-        } else {
-          // If no cost basis found, check if we have cost basis in notes (from tax report format)
-        // If we have cost basis in notes but it's 0, that's valid (proceeds = 0, cost basis = 0)
-        // But if we don't have cost basis in notes AND no lots, that's a problem
+        // Check if we have cost basis in notes (from tax report format) - even if it's 0
         const hasCostBasisInNotes = tx.notes?.includes("Cost Basis:") || false;
         const availableAssets = Object.keys(costBasisLots).filter(k => costBasisLots[k].length > 0);
         
-        if (!hasCostBasisInNotes && costBasisLots[asset]?.length === 0) {
-          console.error(`[Tax Calculator] ⚠️  CRITICAL: Sell transaction ${tx.id} has NO cost basis and NO matching buy transactions!`);
-          console.error(`  - Asset: "${asset}" (original: "${tx.asset_symbol}")`);
-          console.error(`  - Date: ${date.toISOString().split('T')[0]}`);
-          console.error(`  - Proceeds: $${netProceeds.toFixed(2)}`);
-          console.error(`  - Available assets with lots: ${availableAssets.length > 0 ? availableAssets.join(", ") : "NONE"}`);
-          console.error(`  - This sell will show as 100% gain (proceeds = gain), which is incorrect!`);
-          console.error(`  - Check if buy transactions exist for asset "${asset}" and are being processed.`);
+        // Warn if we don't have cost basis and no matching buy transactions (but still include the transaction)
+        if (totalCostBasis === 0 && !hasCostBasisInNotes && costBasisLots[asset]?.length === 0) {
+          // Only log first few to avoid spam
+          if (taxableEventCount < 20) {
+            console.warn(`[Tax Calculator] ⚠️  Sell transaction ${tx.id} has NO cost basis and NO matching buy transactions!`);
+            console.warn(`  - Asset: "${asset}" (original: "${tx.asset_symbol}")`);
+            console.warn(`  - Date: ${date.toISOString().split('T')[0]}`);
+            console.warn(`  - Proceeds: $${netProceeds.toFixed(2)}`);
+            console.warn(`  - Available assets with lots: ${availableAssets.length > 0 ? availableAssets.join(", ") : "NONE"}`);
+            console.warn(`  - This sell will show as 100% gain (proceeds = gain), which may be incorrect!`);
+          }
         }
         
-        // Include with 0 cost basis - gain/loss equals proceeds (assumes cost basis was 0)
-        // This is not tax-compliant but makes the transaction visible
-        // NOTE: This will cause incorrect tax calculations - the user needs to fix this
+        // ALWAYS include the transaction if sale occurred in tax year
+        // Cost basis can be 0 (means gain = proceeds) or > 0 (means gain = proceeds - cost basis)
+        if (taxableEventCount < 10 || (totalCostBasis === 0 && taxableEventCount < 20)) {
+          console.log(`[Tax Calculator] Including taxable event: asset=${asset}, proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, holdingPeriod=${holdingPeriod}, year=${txYear}`);
+        }
         taxableEventCount++;
         taxableEvents.push({
           id: tx.id,
           date,
-          dateAcquired: earliestLotDate,
+          dateAcquired: earliestLotDate, // Actual acquisition date from lots or notes
           asset,
           amount: sellAmount,
-          proceeds: netProceeds,
-          costBasis: 0, // No cost basis available
-          gainLoss: netProceeds, // Gain equals proceeds if cost basis is 0
-          holdingPeriod: "short", // Default to short-term if we can't determine
+          proceeds: netProceeds, // Report net proceeds (after fees)
+          costBasis: totalCostBasis, // Can be 0 (valid case)
+          gainLoss, // Already calculated above (proceeds - cost basis)
+          holdingPeriod, // Already determined above
           chain: tx.chain || undefined,
           txHash: tx.tx_hash || undefined,
         });
-        }
       } else {
         // Log year mismatches for debugging
         if (processedCount < 20 && (txType === "sell" || tx.type === "Sell")) {
