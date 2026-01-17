@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import {
   getOnboardingState,
   saveOnboardingState,
@@ -59,6 +60,8 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
   const router = useRouter();
   const pathname = usePathname();
+  const { data: session, status } = useSession();
+  const isAuthenticated = status === "authenticated";
 
   // Check if user has wallets/exchanges connected
   // Use ref to prevent infinite loops
@@ -67,6 +70,11 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   const checkStepCompletion = useCallback(async () => {
     // Prevent concurrent execution
     if (checkingRef.current) return;
+    
+    // Don't make API calls if user is not authenticated
+    if (!isAuthenticated) {
+      return;
+    }
     
     // Use current state from localStorage (not state variable to avoid dependency)
     const currentState = getOnboardingState();
@@ -81,8 +89,8 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       // Check if wallet/exchange is connected (Step 1)
       if (!currentState.steps[0]?.completed) {
         const [walletsRes, exchangesRes] = await Promise.all([
-          fetch("/api/wallets").catch(() => ({ ok: false, json: async () => ({ wallets: [] }) })),
-          fetch("/api/exchanges").catch(() => ({ ok: false, json: async () => ({ exchanges: [] }) })),
+          fetch("/api/wallets", { credentials: "include" }).catch(() => ({ ok: false, json: async () => ({ wallets: [] }) })),
+          fetch("/api/exchanges", { credentials: "include" }).catch(() => ({ ok: false, json: async () => ({ exchanges: [] }) })),
         ]);
 
         const hasWallets =
@@ -101,7 +109,8 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       // Check if transactions exist (Step 2)
       if (!currentState.steps[1]?.completed) {
         const transactionsRes = await fetch(
-          "/api/transactions?page=1&limit=1"
+          "/api/transactions?page=1&limit=1",
+          { credentials: "include" }
         ).catch(() => null);
 
         if (transactionsRes?.ok) {
@@ -119,8 +128,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     } finally {
       checkingRef.current = false;
     }
-    // Empty dependency array - we read state directly from localStorage
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     // Load state on mount
@@ -135,24 +143,20 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   }, [checkStepCompletion]);
 
   useEffect(() => {
-    if (!state.isActive || state.completed) return;
+    // Only check if user is authenticated and onboarding is active
+    if (!isAuthenticated || !state.isActive || state.completed) return;
 
-    // Check step completion periodically
-    const interval = setInterval(() => {
-      checkStepCompletionRef.current();
-    }, 2000);
-    
-    // Check immediately (with small delay to avoid immediate state update)
+    // Only check once when onboarding becomes active and user is authenticated
+    // This prevents rate limiting from too many API calls
     const timeout = setTimeout(() => {
       checkStepCompletionRef.current();
-    }, 100);
+    }, 2000); // Wait 2 seconds after authentication to avoid race conditions
 
     return () => {
-      clearInterval(interval);
       clearTimeout(timeout);
     };
-    // Only depend on state flags, not the callback
-  }, [state.isActive, state.completed]);
+    // Only depend on state flags and authentication, not the callback
+  }, [state.isActive, state.completed, isAuthenticated]);
 
   // Find anchor element for current step
   useEffect(() => {

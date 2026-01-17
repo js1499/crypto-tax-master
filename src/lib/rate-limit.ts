@@ -73,6 +73,12 @@ const generalLimiter = new RateLimiter({
   uniqueTokenPerInterval: 500, // Track up to 500 unique IPs
 });
 
+// More lenient limiter for initial page loads (allows burst of requests)
+const initialLoadLimiter = new RateLimiter({
+  interval: 10 * 1000, // 10 seconds
+  uniqueTokenPerInterval: 1000,
+});
+
 const authLimiter = new RateLimiter({
   interval: 15 * 60 * 1000, // 15 minutes
   uniqueTokenPerInterval: 500,
@@ -116,6 +122,24 @@ export function rateLimit(
 } {
   const identifier = getIdentifier(request);
   return generalLimiter.check(identifier, limit);
+}
+
+/**
+ * Rate limit for initial page loads (more lenient)
+ * Allows burst of requests during initial page load
+ * @param request - Next.js request object
+ * @param limit - Maximum requests per 10 seconds (default: 30)
+ */
+export function rateLimitInitialLoad(
+  request: NextRequest,
+  limit: number = 30
+): {
+  success: boolean;
+  remaining: number;
+  reset: number;
+} {
+  const identifier = getIdentifier(request);
+  return initialLoadLimiter.check(identifier, limit);
 }
 
 /**

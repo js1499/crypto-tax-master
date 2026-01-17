@@ -14,8 +14,8 @@ export async function GET(request: NextRequest) {
   console.log("[Wallets API] Fetching wallets");
   
   try {
-    // Rate limiting
-    const rateLimitResult = rateLimitAPI(request, 60); // 60 requests per minute
+    // Rate limiting - more lenient for initial page loads
+    const rateLimitResult = rateLimitAPI(request, 100); // 100 requests per minute
     if (!rateLimitResult.success) {
       return createRateLimitResponse(
         rateLimitResult.remaining,
