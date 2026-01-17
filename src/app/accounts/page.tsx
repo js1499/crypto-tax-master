@@ -70,13 +70,29 @@ function AccountsContent() {
     
     try {
       console.log("[Accounts] Fetching wallets and exchanges from API");
+      
+      // Add timeout to prevent hanging
       const [walletsResponse, exchangesResponse] = await Promise.all([
-        axios.get('/api/wallets'),
-        axios.get('/api/exchanges'),
+        axios.get('/api/wallets', { timeout: 10000 }),
+        axios.get('/api/exchanges', { timeout: 10000 }),
       ]);
       
+      // Check for errors in responses
+      if (walletsResponse.data.error) {
+        throw new Error(walletsResponse.data.error);
+      }
+      if (exchangesResponse.data.error) {
+        throw new Error(exchangesResponse.data.error);
+      }
+      
+      // Handle 401 - redirect to login
+      if (walletsResponse.status === 401 || exchangesResponse.status === 401) {
+        window.location.href = '/login';
+        return;
+      }
+      
       // Map API response to account objects
-      const wallets: WalletAccount[] = walletsResponse.data.wallets.map((wallet: any) => ({
+      const wallets: WalletAccount[] = (walletsResponse.data.wallets || []).map((wallet: any) => ({
         id: wallet.id,
         name: wallet.name,
         type: "wallet",
@@ -86,14 +102,14 @@ function AccountsContent() {
         updatedAt: wallet.updatedAt
       }));
 
-      // Map exchanges
-      const exchangeAccounts: ExchangeAccount[] = exchangesResponse.data.exchanges.map((exchange: any) => ({
+      // Map exchanges - API returns lastSyncAt, not lastRotateCwAt
+      const exchangeAccounts: ExchangeAccount[] = (exchangesResponse.data.exchanges || []).map((exchange: any) => ({
         id: exchange.id,
         name: exchange.name,
         type: "exchange",
         provider: exchange.name,
         isConnected: exchange.isConnected,
-        lastRotateCwAt: exchange.lastRotateCwAt,
+        lastRotateCwAt: exchange.lastSyncAt, // API returns lastSyncAt
         createdAt: exchange.createdAt,
         updatedAt: exchange.updatedAt
       }));
@@ -101,10 +117,25 @@ function AccountsContent() {
       setAccounts(wallets);
       setExchanges(exchangeAccounts);
       console.log("[Accounts] Loaded", wallets.length, "wallets and", exchangeAccounts.length, "exchanges");
-    } catch (err) {
+    } catch (err: any) {
       console.error("[Accounts] Error fetching accounts:", err);
-      setError("Failed to load accounts. Please try again.");
-      toast.error("Failed to load accounts");
+      
+      let errorMessage = "Failed to load accounts. Please try again.";
+      
+      if (err.code === 'ECONNABORTED' || err.message?.includes('timeout')) {
+        errorMessage = "Request timed out. Please check your connection and try again.";
+      } else if (err.response?.status === 401) {
+        errorMessage = "Please log in to view your accounts.";
+        window.location.href = '/login';
+        return;
+      } else if (err.response?.data?.error) {
+        errorMessage = err.response.data.error;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
