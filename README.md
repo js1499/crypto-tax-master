@@ -21,82 +21,42 @@ A comprehensive cryptocurrency tax calculator application built with Next.js and
 
 ## Deploying to Vercel
 
-### Prerequisites
+📖 **For detailed step-by-step instructions, see [VERCEL_DEPLOYMENT_GUIDE.md](./VERCEL_DEPLOYMENT_GUIDE.md)**
 
-1. A [Vercel](https://vercel.com) account
-2. A PostgreSQL database (you can use Vercel Postgres, Supabase, Railway, etc.)
+### Quick Start
 
-### Steps to Deploy
-
-1. **Push your code to GitHub**: Make sure your project is on GitHub.
+1. **Push your code to GitHub**
 
 2. **Connect to Vercel**:
    - Go to [Vercel](https://vercel.com) and sign in
    - Click "Add New" > "Project"
    - Import your GitHub repository
-   - Configure your project settings
 
-3. **Set up environment variables**:
-   In the Vercel project settings, add the following environment variables:
-   
+3. **Set up environment variables** (see `env.example` for all required variables):
    - `DATABASE_URL`: Your PostgreSQL connection string
-   - `COINBASE_CLIENT_ID`: Your Coinbase OAuth client ID
-   - `COINBASE_CLIENT_SECRET`: Your Coinbase OAuth client secret
-   - `COINBASE_REDIRECT_URI`: Your application's redirect URI (e.g., `https://your-app.vercel.app/api/auth/coinbase/callback`)
-   
-   If using Vercel Postgres:
-   1. Go to Storage tab in your Vercel dashboard
-   2. Create a new Postgres database
-   3. Connect it to your project and the environment variables will be automatically set up
+   - `NEXTAUTH_URL`: Your app URL (e.g., `https://your-app.vercel.app`)
+   - `NEXTAUTH_SECRET`: Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`
+   - `ENCRYPTION_KEY`: Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
 
-4. **Deploy**:
-   - Click "Deploy" and Vercel will build and deploy your application
-   - The build process will automatically run `prisma generate` as configured in the package.json
-   - On the first deployment, Prisma will automatically create your database schema
+4. **Deploy**: Click "Deploy" and Vercel will build your application
 
-### Prisma on Vercel
-
-This project is configured to work correctly with Prisma on Vercel by:
-
-1. Including `prisma generate` in the build command:
-   ```json
-   "scripts": {
-     "build": "prisma generate && next build"
-   }
-   ```
-
-2. Adding a `postinstall` script to ensure Prisma Client is generated after dependencies are installed:
-   ```json
-   "scripts": {
-     "postinstall": "prisma generate"
-   }
-   ```
-
-3. Configuring `vercel.json` with the correct build command:
-   ```json
-   {
-     "buildCommand": "prisma generate && next build"
-   }
-   ```
-
-These configurations prevent the "Prisma has detected that this project was built on Vercel" error which happens because Vercel caches dependencies, causing Prisma's auto-generation not to be triggered.
-
-### Post-Deployment
-
-After your project is deployed, you may want to:
-
-1. **Run Prisma Migrations**: If you need to run migrations manually, you can use Vercel's CLI:
+5. **Run migrations** after first deployment:
    ```bash
    npm i -g vercel
    vercel login
    vercel env pull .env.production.local
-   npx prisma migrate deploy
+   npm run prisma:migrate:deploy
    ```
 
-2. **Seed Your Database**: If needed, you can seed your database with initial data:
-   ```bash
-   npx prisma db seed
-   ```
+### Prisma Configuration
+
+This project is configured for Vercel with:
+- ✅ `prisma generate` in build command
+- ✅ `postinstall` script for Prisma Client generation
+- ✅ Proper `vercel.json` configuration
+- ✅ Function timeouts configured for long-running operations
+
+See [VERCEL_DEPLOYMENT_GUIDE.md](./VERCEL_DEPLOYMENT_GUIDE.md) for complete setup instructions.
 
 ## Local Development
 

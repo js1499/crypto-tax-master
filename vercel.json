@@ -3,5 +3,19 @@
   "buildCommand": "prisma generate && next build",
   "devCommand": "next dev",
   "installCommand": "npm install",
-  "outputDirectory": ".next"
+  "outputDirectory": ".next",
+  "functions": {
+    "app/api/transactions/import/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/exchanges/sync/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/transactions/fetch/route.ts": {
+      "maxDuration": 300
+    }
+  },
+  "env": {
+    "PRISMA_GENERATE_DATAPROXY": "false"
+  }
 } 

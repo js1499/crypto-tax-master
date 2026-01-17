@@ -9,11 +9,12 @@ import * as Sentry from "@sentry/nextjs";
 import { logBuffer } from "@/lib/log-buffer";
 
 // Increase body size limit for large CSV uploads (50MB)
-export const maxDuration = 600; // 10 minutes max execution time
+export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
 export const runtime = 'nodejs';
 // Note: Next.js App Router doesn't have a bodyParser config option
 // Form data size is handled by the server infrastructure
 // For Vercel, the limit is 4.5MB by default, but can be increased with serverless function config
+// Vercel Free/Pro: Max 300s, Vercel Enterprise: Max 900s
 
 const prisma = new PrismaClient();
 

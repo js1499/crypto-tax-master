@@ -7,6 +7,10 @@ import * as Sentry from "@sentry/nextjs";
 
 const prisma = new PrismaClient();
 
+// Configure for long-running operations on Vercel
+export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
+export const runtime = 'nodejs';
+
 /**
  * POST /api/transactions/fetch
  * Fetch transactions from blockchain APIs and store them in the database

@@ -9,6 +9,7 @@
     "lint": "next lint && tsc --noEmit",
     "format": "prettier --write .",
     "prisma:seed": "prisma db seed",
+    "prisma:migrate:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate"
   },
   "prisma": {

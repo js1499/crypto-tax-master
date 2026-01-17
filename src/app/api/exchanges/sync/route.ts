@@ -18,6 +18,10 @@ const prisma = new PrismaClient();
 // Encryption key (must match the one used for encryption)
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
 
+// Configure for long-running operations on Vercel
+export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
+export const runtime = 'nodejs';
+
 /**
  * POST /api/exchanges/sync
  * Sync transactions from connected exchanges
