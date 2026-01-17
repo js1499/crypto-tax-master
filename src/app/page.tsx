@@ -107,9 +107,9 @@ export default function Home() {
       
       if (!response.ok) {
         // Handle 401 - redirect to login (but only if session is confirmed unauthenticated)
-        if (response.status === 401 && sessionStatus === "authenticated") {
-          // Session might have expired, redirect
-          router.push("/login");
+        if (response.status === 401) {
+          // Session might have expired, redirect using replace to avoid flickering
+          router.replace("/login");
           return;
         }
         throw new Error(`Failed to fetch dashboard statistics: ${response.status}`);
@@ -156,13 +156,17 @@ export default function Home() {
     }
     
     // If not authenticated, redirect to login (don't make API call)
+    // Use replace to avoid adding to history stack
     if (sessionStatus === "unauthenticated") {
-      router.push("/login");
+      router.replace("/login");
       return;
     }
     
     // Only fetch once when component mounts and session is ready
-    fetchStats();
+    // Add small delay to ensure session is fully established
+    const fetchTimeout = setTimeout(() => {
+      fetchStats();
+    }, 100); // Small delay to prevent race conditions
     
     // Fallback: stop loading after 15 seconds even if API doesn't respond
     const timeoutId = setTimeout(() => {
@@ -184,6 +188,7 @@ export default function Home() {
     }, 15000);
     
     return () => {
+      clearTimeout(fetchTimeout);
       clearTimeout(timeoutId);
       fetchInProgress.current = false; // Reset on unmount
     };
