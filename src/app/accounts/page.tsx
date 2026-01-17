@@ -22,7 +22,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WalletConnectDialog } from "@/components/wallet-connect-dialog";
 import type { ConnectionResult } from "@/types/wallet";
 import { toast } from "sonner";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import axios from "axios";
 import { cn } from "@/lib/utils";
 
@@ -62,6 +63,8 @@ function AccountsContent() {
   const [syncing, setRotateCwing] = useState<string | null>(null);
   
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const { data: session, status: sessionStatus } = useSession();
 
   // Function to fetch wallets from API
   const fetchWallets = async () => {
@@ -85,9 +88,12 @@ function AccountsContent() {
         throw new Error(exchangesResponse.data.error);
       }
       
-      // Handle 401 - redirect to login
+      // Handle 401 - redirect to login (but check session status first to avoid loops)
       if (walletsResponse.status === 401 || exchangesResponse.status === 401) {
-        window.location.href = '/login';
+        // Only redirect if session is confirmed unauthenticated
+        if (sessionStatus === "unauthenticated") {
+          router.replace('/login');
+        }
         return;
       }
       
