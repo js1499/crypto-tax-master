@@ -85,16 +85,41 @@ export default function Home() {
   const fetchStats = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await fetch("/api/dashboard/stats");
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
+      const response = await fetch("/api/dashboard/stats", {
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
-        throw new Error("Failed to fetch dashboard statistics");
+        // Handle 401 - redirect to login
+        if (response.status === 401) {
+          router.push("/login");
+          return;
+        }
+        throw new Error(`Failed to fetch dashboard statistics: ${response.status}`);
       }
+      
       const data = await response.json();
       if (data.status === "success" && data.stats) {
         setStats(data.stats);
+      } else if (data.error) {
+        // Handle API error response
+        console.error("API error:", data.error, data.details);
+        throw new Error(data.details || data.error);
       }
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
+      
+      // Don't redirect if it's just a timeout or network error
+      if (error instanceof Error && error.name === "AbortError") {
+        console.error("Request timed out");
+      }
+      
       // Set default empty stats on error
       setStats({
         totalPortfolioValue: 0,
@@ -107,12 +132,30 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     if (!mounted) return;
     fetchStats();
-  }, [mounted, fetchStats]);
+    
+    // Fallback: stop loading after 15 seconds even if API doesn't respond
+    const timeoutId = setTimeout(() => {
+      if (isLoading) {
+        console.warn("Dashboard stats loading timeout - showing empty state");
+        setIsLoading(false);
+        setStats({
+          totalPortfolioValue: 0,
+          unrealizedGains: 0,
+          taxableEvents2023: 0,
+          assetAllocation: [],
+          portfolioValueOverTime: [],
+          recentTransactions: [],
+        });
+      }
+    }, 15000);
+    
+    return () => clearTimeout(timeoutId);
+  }, [mounted, fetchStats, isLoading]);
 
   if (!mounted) {
     return (
@@ -169,6 +212,16 @@ export default function Home() {
   return (
     <Layout>
       <div className="space-y-8">
+        {isLoading && stats === null && (
+          <div className="flex items-center justify-center py-12 border-b">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-muted-foreground">Loading dashboard...</p>
+              <p className="text-sm text-muted-foreground mt-2">This may take a moment</p>
+            </div>
+          </div>
+        )}
+        
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <div className="flex items-center gap-2">
