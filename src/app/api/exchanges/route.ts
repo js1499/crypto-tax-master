@@ -12,8 +12,8 @@ const prisma = new PrismaClient();
  */
 export async function GET(request: NextRequest) {
   try {
-    // Rate limiting
-    const rateLimitResult = rateLimitAPI(request, 100);
+    // Rate limiting - more lenient for initial page loads
+    const rateLimitResult = rateLimitAPI(request, 100); // 100 requests per minute
     if (!rateLimitResult.success) {
       return createRateLimitResponse(
         rateLimitResult.remaining,
