@@ -11,6 +11,7 @@ import {
 import { ArrowUpRight, ArrowDownRight, Coins, Wallet, ExternalLink, TrendingUp, TrendingDown, FileBadge, Sparkles, X } from "lucide-react";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useOnboarding } from "@/components/onboarding/onboarding-provider";
+import { useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import {
   LineChart,
