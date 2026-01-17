@@ -9,7 +9,7 @@ import {
   TabsTrigger,
 } from "@/components/ui/tabs";
 import { ArrowUpRight, ArrowDownRight, Coins, Wallet, ExternalLink, TrendingUp, TrendingDown, FileBadge, Sparkles, X } from "lucide-react";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useOnboarding } from "@/components/onboarding/onboarding-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,6 +73,7 @@ export default function Home() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
+  const fetchInProgress = useRef(false); // Prevent multiple simultaneous fetches
   
   // Get onboarding context (returns safe defaults if not available)
   const onboarding = useOnboarding();
@@ -83,6 +84,12 @@ export default function Home() {
 
   // Fetch dashboard statistics
   const fetchStats = useCallback(async () => {
+    // Prevent multiple simultaneous fetches
+    if (fetchInProgress.current) {
+      return;
+    }
+    
+    fetchInProgress.current = true;
     setIsLoading(true);
     try {
       // Add timeout to prevent hanging
@@ -91,6 +98,7 @@ export default function Home() {
       
       const response = await fetch("/api/dashboard/stats", {
         signal: controller.signal,
+        credentials: "include", // Include cookies for authentication
       });
       
       clearTimeout(timeoutId);
@@ -131,31 +139,41 @@ export default function Home() {
       });
     } finally {
       setIsLoading(false);
+      fetchInProgress.current = false;
     }
   }, [router]);
 
   useEffect(() => {
     if (!mounted) return;
+    
+    // Only fetch once when component mounts
     fetchStats();
     
     // Fallback: stop loading after 15 seconds even if API doesn't respond
     const timeoutId = setTimeout(() => {
-      if (isLoading) {
-        console.warn("Dashboard stats loading timeout - showing empty state");
-        setIsLoading(false);
-        setStats({
-          totalPortfolioValue: 0,
-          unrealizedGains: 0,
-          taxableEvents2023: 0,
-          assetAllocation: [],
-          portfolioValueOverTime: [],
-          recentTransactions: [],
-        });
-      }
+      setIsLoading((currentLoading) => {
+        if (currentLoading) {
+          console.warn("Dashboard stats loading timeout - showing empty state");
+          setStats({
+            totalPortfolioValue: 0,
+            unrealizedGains: 0,
+            taxableEvents2023: 0,
+            assetAllocation: [],
+            portfolioValueOverTime: [],
+            recentTransactions: [],
+          });
+          return false;
+        }
+        return currentLoading;
+      });
     }, 15000);
     
-    return () => clearTimeout(timeoutId);
-  }, [mounted, fetchStats, isLoading]);
+    return () => {
+      clearTimeout(timeoutId);
+      fetchInProgress.current = false; // Reset on unmount
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted]); // Only depend on mounted, not fetchStats or isLoading
 
   if (!mounted) {
     return (

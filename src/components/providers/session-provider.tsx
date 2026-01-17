@@ -13,8 +13,8 @@ export function NextAuthSessionProvider({
     return (
       <SessionProvider
         basePath="/api/auth"
-        refetchInterval={5 * 60} // Refetch session every 5 minutes
-        refetchOnWindowFocus={true}
+        refetchInterval={0} // Disable automatic refetch to prevent flashing
+        refetchOnWindowFocus={false} // Disable refetch on focus to prevent flashing
       >
         {children}
       </SessionProvider>
