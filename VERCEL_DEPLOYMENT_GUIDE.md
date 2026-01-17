@@ -240,15 +240,25 @@ Long-running functions are configured in `vercel.json`:
 
 ### Prisma Connection Pooling
 
-For production, consider using connection pooling:
-- **Supabase**: Use connection pooler URL (port 6543)
+**⚠️ CRITICAL FOR SUPABASE + VERCEL:** You MUST use connection pooling!
+
+For production, use connection pooling:
+- **Supabase**: **REQUIRED** - Use connection pooler URL (port 6543)
+  - Get from: Supabase Dashboard → Settings → Database → Connection string → **Transaction mode**
+  - Format: `postgresql://postgres:[PASSWORD]@aws-0-us-east-1.pooler.supabase.com:6543/postgres`
+  - **DO NOT use port 5432** - Direct connections are blocked for serverless functions
 - **Neon**: Use pooled connection string
 - **Vercel Postgres**: Automatically handles pooling
 
-Example pooled connection string:
+Example Supabase pooled connection string:
 ```
-postgresql://user:password@host:6543/database?pgbouncer=true
+postgresql://postgres:YOUR_PASSWORD@aws-0-us-east-1.pooler.supabase.com:6543/postgres
 ```
+
+**If you see "Can't reach database server" errors:**
+1. Check you're using port **6543** (not 5432)
+2. Get the connection string from Supabase Dashboard (don't use the direct connection)
+3. See [FIX_SUPABASE_CONNECTION.md](./FIX_SUPABASE_CONNECTION.md) for detailed instructions
 
 ### Environment Variables by Environment
 
