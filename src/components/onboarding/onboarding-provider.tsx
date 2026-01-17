@@ -143,6 +143,9 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   }, [checkStepCompletion]);
 
   useEffect(() => {
+    // Don't check if session is still loading
+    if (status === "loading") return;
+    
     // Only check if user is authenticated and onboarding is active
     if (!isAuthenticated || !state.isActive || state.completed) return;
 
@@ -156,7 +159,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       clearTimeout(timeout);
     };
     // Only depend on state flags and authentication, not the callback
-  }, [state.isActive, state.completed, isAuthenticated]);
+  }, [state.isActive, state.completed, isAuthenticated, status]);
 
   // Find anchor element for current step
   useEffect(() => {

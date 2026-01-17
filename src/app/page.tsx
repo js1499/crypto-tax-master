@@ -74,6 +74,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const fetchInProgress = useRef(false); // Prevent multiple simultaneous fetches
+  const { data: session, status: sessionStatus } = useSession();
   
   // Get onboarding context (returns safe defaults if not available)
   const onboarding = useOnboarding();
@@ -104,8 +105,9 @@ export default function Home() {
       clearTimeout(timeoutId);
       
       if (!response.ok) {
-        // Handle 401 - redirect to login
-        if (response.status === 401) {
+        // Handle 401 - redirect to login (but only if session is confirmed unauthenticated)
+        if (response.status === 401 && sessionStatus === "authenticated") {
+          // Session might have expired, redirect
           router.push("/login");
           return;
         }
@@ -146,7 +148,19 @@ export default function Home() {
   useEffect(() => {
     if (!mounted) return;
     
-    // Only fetch once when component mounts
+    // Wait for session to finish loading before making API calls
+    // This prevents flickering between login and dashboard
+    if (sessionStatus === "loading") {
+      return; // Still loading session, wait
+    }
+    
+    // If not authenticated, redirect to login (don't make API call)
+    if (sessionStatus === "unauthenticated") {
+      router.push("/login");
+      return;
+    }
+    
+    // Only fetch once when component mounts and session is ready
     fetchStats();
     
     // Fallback: stop loading after 15 seconds even if API doesn't respond
@@ -173,15 +187,29 @@ export default function Home() {
       fetchInProgress.current = false; // Reset on unmount
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted]); // Only depend on mounted, not fetchStats or isLoading
+  }, [mounted, sessionStatus]); // Wait for session status
 
-  if (!mounted) {
+  // Show loading state while mounting or session is loading
+  if (!mounted || sessionStatus === "loading") {
     return (
       <Layout>
         <div className="flex items-center justify-center min-h-screen">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
             <p className="text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+  
+  // If not authenticated, show nothing (redirect will happen in useEffect)
+  if (sessionStatus === "unauthenticated") {
+    return (
+      <Layout>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <p className="text-muted-foreground">Redirecting to login...</p>
           </div>
         </div>
       </Layout>
