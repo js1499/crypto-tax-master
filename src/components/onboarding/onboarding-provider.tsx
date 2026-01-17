@@ -81,8 +81,8 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       // Check if wallet/exchange is connected (Step 1)
       if (!currentState.steps[0]?.completed) {
         const [walletsRes, exchangesRes] = await Promise.all([
-          fetch("/api/wallets").catch(() => null),
-          fetch("/api/exchanges").catch(() => null),
+          fetch("/api/wallets").catch(() => ({ ok: false, json: async () => ({ wallets: [] }) })),
+          fetch("/api/exchanges").catch(() => ({ ok: false, json: async () => ({ exchanges: [] }) })),
         ]);
 
         const hasWallets =
