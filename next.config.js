@@ -41,10 +41,6 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  // Enable Sentry instrumentation
-  experimental: {
-    instrumentationHook: true,
-  },
 };
 
 module.exports = withSentryConfig(

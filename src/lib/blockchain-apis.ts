@@ -390,13 +390,13 @@ export async function parseEthereumTransaction(
     ? parseFloat(tx.value) / Math.pow(10, parseInt(tx.tokenDecimal))
     : weiToEther(tx.value);
 
-  // Get price using CoinGecko API
-  const timestamp = parseInt(tx.timeStamp);
+  // Get price using CoinGecko API (timestamp in seconds for price API)
+  const timestampSeconds = parseInt(tx.timeStamp);
   const price =
     assetSymbol === "ETH"
-      ? await getEthPriceAtTimestamp(timestamp)
-      : await getPriceAtTimestamp(assetSymbol, timestamp) ||
-        (await getEthPriceAtTimestamp(timestamp)); // Fallback to ETH price if token not found
+      ? await getEthPriceAtTimestamp(timestampSeconds)
+      : await getPriceAtTimestamp(assetSymbol, timestampSeconds) ||
+        (await getEthPriceAtTimestamp(timestampSeconds)); // Fallback to ETH price if token not found
   const valueUsd = Math.abs(amount * price);
 
   // Calculate gas fee in USD
@@ -406,7 +406,7 @@ export async function parseEthereumTransaction(
     // Only charge fees to the sender
     const gasFeeWei = BigInt(tx.gasUsed) * BigInt(tx.gasPrice);
     const gasFeeEth = weiToEther(gasFeeWei.toString());
-    const ethPrice = await getEthPriceAtTimestamp(timestamp);
+    const ethPrice = await getEthPriceAtTimestamp(timestampSeconds);
     feeUsd = new Decimal(gasFeeEth * ethPrice);
   }
 

@@ -10,7 +10,7 @@ import { Toaster } from "sonner"; // Added Toaster import
 
 // Initialize Sentry on the client side
 if (typeof window !== "undefined") {
-  import("../../sentry.client.config").catch(() => {
+  import("../../instrumentation-client").catch(() => {
     // Silently fail if Sentry config doesn't exist
   });
 }
