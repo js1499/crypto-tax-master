@@ -92,23 +92,28 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
   const [apiPassphrase, setApiPassphrase] = useState("");
   const [connectionError, setConnectionError] = useState<string | null>(null);
 
-  const handleConnect = (provider: string) => {
+  const handleConnect = async (provider: string) => {
     setSelectedProvider(provider);
     setConnecting(true);
+    setConnectionError(null);
 
-    // Simulate connection process
-    setTimeout(() => {
+    try {
+      // For wallet providers, we need an address
+      // In a real app, this would come from wallet extension or manual input
+      // For now, we'll show a message that manual wallet entry is needed
+      toast.info("Please enter your wallet address manually");
       setConnecting(false);
-      setOpen(false);
-
-      if (onConnect) {
-        onConnect(provider, {
-          success: true,
-          provider,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    }, 2000);
+      
+      // TODO: Implement actual wallet connection via browser extension
+      // For now, wallets need to be added via the transactions/fetch route
+      // or manually through an API call with address
+    } catch (error) {
+      console.error(`[Wallet Connect] Error connecting to ${provider}:`, error);
+      setConnecting(false);
+      const errorMessage = error instanceof Error ? error.message : "Failed to connect";
+      setConnectionError(errorMessage);
+      toast.error(errorMessage);
+    }
   };
 
   const handleOAuthConnect = async (provider: string) => {
@@ -276,10 +281,92 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
                 <p className="text-xs text-muted-foreground">Or connect manually</p>
                 <div className="h-px flex-1 bg-border" />
               </div>
-              <Button variant="outline" className="w-full" onClick={() => handleConnect("manual")}>
-                <QrCode className="mr-2 h-4 w-4" />
-                Connect with address
-              </Button>
+              {selectedProvider === "manual" ? (
+                <div className="space-y-3 border rounded-lg p-4">
+                  <h3 className="text-sm font-medium">Add Wallet Manually</h3>
+                  <div className="space-y-2">
+                    <Label htmlFor="wallet-name">Wallet Name</Label>
+                    <Input
+                      id="wallet-name"
+                      placeholder="My Ethereum Wallet"
+                      value={apiKey} // Reuse state for wallet name
+                      onChange={(e) => setApiKey(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="wallet-address">Wallet Address</Label>
+                    <Input
+                      id="wallet-address"
+                      placeholder="0x..."
+                      value={apiSecret} // Reuse state for wallet address
+                      onChange={(e) => setApiSecret(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="wallet-provider">Provider</Label>
+                    <Input
+                      id="wallet-provider"
+                      placeholder="ethereum, solana, etc."
+                      value={apiPassphrase} // Reuse state for provider
+                      onChange={(e) => setApiPassphrase(e.target.value)}
+                    />
+                  </div>
+                  <Button 
+                    className="w-full" 
+                    onClick={async () => {
+                      if (!apiKey || !apiSecret || !apiPassphrase) {
+                        toast.error("Please fill in all fields");
+                        return;
+                      }
+                      setConnecting(true);
+                      try {
+                        const response = await fetch("/api/wallets", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            name: apiKey,
+                            address: apiSecret,
+                            provider: apiPassphrase.toLowerCase(),
+                          }),
+                        });
+                        const data = await response.json();
+                        if (!response.ok) {
+                          throw new Error(data.error || "Failed to create wallet");
+                        }
+                        toast.success("Wallet added successfully");
+                        setOpen(false);
+                        if (onConnect) {
+                          onConnect(apiPassphrase, {
+                            success: true,
+                            provider: apiPassphrase,
+                            timestamp: new Date().toISOString(),
+                          });
+                        }
+                      } catch (error) {
+                        console.error("[Wallet Connect] Error:", error);
+                        toast.error(error instanceof Error ? error.message : "Failed to add wallet");
+                      } finally {
+                        setConnecting(false);
+                      }
+                    }}
+                    disabled={connecting}
+                  >
+                    {connecting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Adding...
+                      </>
+                    ) : (
+                      "Add Wallet"
+                    )}
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="outline" className="w-full" onClick={() => setSelectedProvider("manual")}>
+                  <QrCode className="mr-2 h-4 w-4" />
+                  Connect with address
+                </Button>
+              )}
             </TabsContent>
 
             <TabsContent value="exchanges" className="mt-4 space-y-4">

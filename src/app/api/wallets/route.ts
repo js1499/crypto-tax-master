@@ -72,3 +72,106 @@ export async function GET(request: NextRequest) {
     await prisma.$disconnect();
   }
 }
+
+/**
+ * POST /api/wallets
+ * Create a new wallet for the authenticated user
+ */
+export async function POST(request: NextRequest) {
+  console.log("[Wallets API] Creating wallet");
+  
+  try {
+    // Rate limiting
+    const rateLimitResult = rateLimitAPI(request, 20); // 20 requests per minute
+    if (!rateLimitResult.success) {
+      return createRateLimitResponse(
+        rateLimitResult.remaining,
+        rateLimitResult.reset
+      );
+    }
+    
+    // Get user authentication
+    const user = await getCurrentUser();
+    
+    if (!user) {
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+    
+    // Parse request body
+    const body = await request.json();
+    const { name, address, provider } = body;
+    
+    // Validate required fields
+    if (!name || !address || !provider) {
+      return NextResponse.json(
+        { error: "Missing required fields: name, address, and provider are required" },
+        { status: 400 }
+      );
+    }
+    
+    // Create or update wallet (upsert to avoid duplicates)
+    const wallet = await prisma.wallet.upsert({
+      where: {
+        address_provider: {
+          address: address,
+          provider: provider,
+        },
+      },
+      update: {
+        name: name,
+        userId: user.id,
+      },
+      create: {
+        name: name,
+        address: address,
+        provider: provider,
+        userId: user.id,
+      },
+    });
+    
+    console.log("[Wallets API] Created/updated wallet:", wallet.id);
+    
+    // Return the created wallet
+    return NextResponse.json({
+      status: "success",
+      wallet: {
+        id: wallet.id,
+        name: wallet.name,
+        address: wallet.address,
+        provider: wallet.provider,
+        createdAt: wallet.createdAt,
+        updatedAt: wallet.updatedAt,
+      },
+    });
+  } catch (error: any) {
+    console.error("[Wallets API] Error creating wallet:", error);
+    
+    Sentry.captureException(error, {
+      tags: {
+        endpoint: "/api/wallets",
+        method: "POST",
+      },
+    });
+    
+    // Handle unique constraint violation
+    if (error.code === "P2002") {
+      return NextResponse.json(
+        { error: "Wallet with this address and provider already exists" },
+        { status: 409 }
+      );
+    }
+    
+    return NextResponse.json(
+      {
+        error: "Failed to create wallet",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
+  } finally {
+    await prisma.$disconnect();
+  }
+}
