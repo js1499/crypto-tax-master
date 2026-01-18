@@ -719,9 +719,19 @@ export default function TaxReportsPage() {
                                 size="sm"
                                 data-onboarding={form.name.includes("Form 8949") ? "generate-report" : undefined}
                                 onClick={() => handleFormDownload(form)}
+                                disabled={isGeneratingReport || isLoading}
                               >
-                                <ArrowDownToLine className="mr-1 h-4 w-4" />
-                                Download
+                                {isGeneratingReport ? (
+                                  <>
+                                    <div className="mr-1 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                    Generating...
+                                  </>
+                                ) : (
+                                  <>
+                                    <ArrowDownToLine className="mr-1 h-4 w-4" />
+                                    Download
+                                  </>
+                                )}
                               </Button>
                             </div>
                           ))}
