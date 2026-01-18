@@ -55,6 +55,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 // Empty data instead of mock data
 const taxYears = ["2023", "2022", "2021", "2020"];
@@ -290,24 +291,38 @@ export default function TaxReportsPage() {
     );
   }
 
-  const handleGenerateReport = () => {
+  const handleGenerateReport = async () => {
     setIsGeneratingReport(true);
-
-    // Simulate report generation
-    setTimeout(() => {
+    try {
+      // Generate Form 8949 PDF
+      await handleDownloadForm8949();
+      // Could add more reports here in the future
+    } catch (error) {
+      console.error("Error generating report:", error);
+    } finally {
       setIsGeneratingReport(false);
-    }, 2000);
+    }
   };
 
   const handleDownloadForm8949 = async () => {
     try {
-      const response = await fetch(`/api/tax-reports/form8949?year=${selectedYear}`);
+      setIsGeneratingReport(true);
+      const response = await fetch(`/api/tax-reports/form8949?year=${selectedYear}`, {
+        credentials: "include",
+      });
+      
       if (!response.ok) {
-        throw new Error("Failed to generate Form 8949 PDF");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.details || "Failed to generate Form 8949 PDF");
       }
       
       // Get the PDF blob
       const blob = await response.blob();
+      
+      // Verify it's actually a PDF
+      if (blob.type !== "application/pdf" && blob.size === 0) {
+        throw new Error("Received empty or invalid PDF file");
+      }
       
       // Create download link
       const url = window.URL.createObjectURL(blob);
@@ -321,6 +336,9 @@ export default function TaxReportsPage() {
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
+      // Show success message
+      toast.success(`Form 8949 PDF downloaded successfully!`);
+      
       // Complete onboarding step if active
       try {
         const { useOnboarding } = require("@/components/onboarding/onboarding-provider");
@@ -333,20 +351,33 @@ export default function TaxReportsPage() {
       }
     } catch (error) {
       console.error("Error downloading Form 8949:", error);
-      alert("Failed to download Form 8949 PDF. Please try again.");
+      const errorMessage = error instanceof Error ? error.message : "Failed to download Form 8949 PDF";
+      toast.error(errorMessage);
+      throw error; // Re-throw to allow handleGenerateReport to catch it
+    } finally {
+      setIsGeneratingReport(false);
     }
   };
 
   const handleDownloadExport = async (exportType: string, filename: string) => {
     try {
-      const response = await fetch(`/api/tax-reports/export?year=${selectedYear}&type=${exportType}`);
+      setIsGeneratingReport(true);
+      const response = await fetch(`/api/tax-reports/export?year=${selectedYear}&type=${exportType}`, {
+        credentials: "include",
+      });
+      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to generate export");
+        throw new Error(errorData.error || errorData.details || "Failed to generate export");
       }
       
       // Get the CSV/blob
       const blob = await response.blob();
+      
+      // Verify we got data
+      if (blob.size === 0) {
+        throw new Error("Received empty file");
+      }
       
       // Create download link
       const url = window.URL.createObjectURL(blob);
@@ -359,29 +390,40 @@ export default function TaxReportsPage() {
       // Cleanup
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+      
+      // Show success message
+      toast.success(`${filename} downloaded successfully!`);
     } catch (error) {
       console.error(`Error downloading ${exportType}:`, error);
-      alert(`Failed to download ${filename}. Please try again.`);
+      const errorMessage = error instanceof Error ? error.message : `Failed to download ${filename}`;
+      toast.error(errorMessage);
+    } finally {
+      setIsGeneratingReport(false);
     }
   };
 
-  const handleFormDownload = (form: typeof taxForms[0]) => {
-    // Map form names to export types
-    const formExportMap: Record<string, { type: string; filename: string }> = {
-      "Capital Gains CSV": { type: "capital-gains-csv", filename: `Capital-Gains-${selectedYear}.csv` },
-      "Transaction History": { type: "transaction-history", filename: `Transaction-History-${selectedYear}.csv` },
-      "Income Report": { type: "income-report", filename: `Income-Report-${selectedYear}.csv` },
-      "Capital Gains (Breakdown by Asset)": { type: "capital-gains-by-asset", filename: `Capital-Gains-by-Asset-${selectedYear}.csv` },
-    };
+  const handleFormDownload = async (form: typeof taxForms[0]) => {
+    try {
+      // Map form names to export types
+      const formExportMap: Record<string, { type: string; filename: string }> = {
+        "Capital Gains CSV": { type: "capital-gains-csv", filename: `Capital-Gains-${selectedYear}.csv` },
+        "Transaction History": { type: "transaction-history", filename: `Transaction-History-${selectedYear}.csv` },
+        "Income Report": { type: "income-report", filename: `Income-Report-${selectedYear}.csv` },
+        "Capital Gains (Breakdown by Asset)": { type: "capital-gains-by-asset", filename: `Capital-Gains-by-Asset-${selectedYear}.csv` },
+      };
 
-    if (form.pdfExport && form.name.includes("Form 8949")) {
-      handleDownloadForm8949();
-    } else if (formExportMap[form.name]) {
-      const exportInfo = formExportMap[form.name];
-      handleDownloadExport(exportInfo.type, exportInfo.filename);
-    } else {
-      // For forms not yet implemented, show a message
-      alert(`${form.name} export is coming soon. Please check back later.`);
+      if (form.pdfExport && form.name.includes("Form 8949")) {
+        await handleDownloadForm8949();
+      } else if (formExportMap[form.name]) {
+        const exportInfo = formExportMap[form.name];
+        await handleDownloadExport(exportInfo.type, exportInfo.filename);
+      } else {
+        // For forms not yet implemented, show a message
+        toast.info(`${form.name} export is coming soon. Please check back later.`);
+      }
+    } catch (error) {
+      console.error(`Error downloading ${form.name}:`, error);
+      // Error already handled in individual functions
     }
   };
 
