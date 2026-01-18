@@ -21,12 +21,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  // Redirect authenticated users to dashboard
-  useEffect(() => {
-    if (status === "authenticated" && session) {
-      router.replace("/"); // Use replace instead of push to avoid back button issues
-    }
-  }, [status, session, router]);
+  // Don't automatically redirect authenticated users - let them stay if they want
+  // They can manually navigate to dashboard
   
   // Check if Google OAuth is configured (client-side check)
   // Note: This is a basic check - the actual provider check happens server-side
@@ -65,7 +61,8 @@ export default function LoginPage() {
 
       if (result?.ok) {
         toast.success("Login successful!");
-        router.push("/");
+        // Don't automatically redirect - let user decide
+        // They can click the dashboard link in header or navigate manually
         router.refresh(); // Refresh to update auth state
       }
     } catch (error) {
@@ -91,16 +88,8 @@ export default function LoginPage() {
     );
   }
   
-  // Don't render login form if already authenticated (redirect will happen)
-  if (status === "authenticated") {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-        <div className="text-center">
-          <p className="text-muted-foreground">Redirecting to dashboard...</p>
-        </div>
-      </div>
-    );
-  }
+  // If already authenticated, show a message but allow them to stay
+  // They can manually navigate to dashboard
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-4">

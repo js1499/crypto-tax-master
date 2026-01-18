@@ -26,6 +26,7 @@ import {
   Cell,
 } from "recharts";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { format } from "date-fns";
 
 // Color palette for pie chart
@@ -150,50 +151,55 @@ export default function Home() {
     if (!mounted) return;
     
     // Wait for session to finish loading before making API calls
-    // This prevents flickering between login and dashboard
     if (sessionStatus === "loading") {
       return; // Still loading session, wait
     }
     
-    // If not authenticated, redirect to login (don't make API call)
-    // Use replace to avoid adding to history stack
-    if (sessionStatus === "unauthenticated") {
-      router.replace("/login");
-      return;
-    }
-    
-    // Only fetch once when component mounts and session is ready
-    // Add small delay to ensure session is fully established
-    const fetchTimeout = setTimeout(() => {
-      fetchStats();
-    }, 100); // Small delay to prevent race conditions
-    
-    // Fallback: stop loading after 15 seconds even if API doesn't respond
-    const timeoutId = setTimeout(() => {
-      setIsLoading((currentLoading) => {
-        if (currentLoading) {
-          console.warn("Dashboard stats loading timeout - showing empty state");
-          setStats({
-            totalPortfolioValue: 0,
-            unrealizedGains: 0,
-            taxableEvents2023: 0,
-            assetAllocation: [],
-            portfolioValueOverTime: [],
-            recentTransactions: [],
-          });
-          return false;
-        }
-        return currentLoading;
+    // Only fetch stats if authenticated
+    if (sessionStatus === "authenticated") {
+      // Add small delay to ensure session is fully established
+      const fetchTimeout = setTimeout(() => {
+        fetchStats();
+      }, 100);
+      
+      // Fallback: stop loading after 15 seconds even if API doesn't respond
+      const timeoutId = setTimeout(() => {
+        setIsLoading((currentLoading) => {
+          if (currentLoading) {
+            console.warn("Dashboard stats loading timeout - showing empty state");
+            setStats({
+              totalPortfolioValue: 0,
+              unrealizedGains: 0,
+              taxableEvents2023: 0,
+              assetAllocation: [],
+              portfolioValueOverTime: [],
+              recentTransactions: [],
+            });
+            return false;
+          }
+          return currentLoading;
+        });
+      }, 15000);
+      
+      return () => {
+        clearTimeout(fetchTimeout);
+        clearTimeout(timeoutId);
+        fetchInProgress.current = false;
+      };
+    } else {
+      // Not authenticated - show empty state immediately
+      setIsLoading(false);
+      setStats({
+        totalPortfolioValue: 0,
+        unrealizedGains: 0,
+        taxableEvents2023: 0,
+        assetAllocation: [],
+        portfolioValueOverTime: [],
+        recentTransactions: [],
       });
-    }, 15000);
-    
-    return () => {
-      clearTimeout(fetchTimeout);
-      clearTimeout(timeoutId);
-      fetchInProgress.current = false; // Reset on unmount
-    };
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, sessionStatus]); // Wait for session status
+  }, [mounted, sessionStatus]);
 
   // Show loading state while mounting or session is loading
   if (!mounted || sessionStatus === "loading") {
@@ -203,19 +209,6 @@ export default function Home() {
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
             <p className="text-muted-foreground">Loading...</p>
-          </div>
-        </div>
-      </Layout>
-    );
-  }
-  
-  // If not authenticated, show nothing (redirect will happen in useEffect)
-  if (sessionStatus === "unauthenticated") {
-    return (
-      <Layout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <p className="text-muted-foreground">Redirecting to login...</p>
           </div>
         </div>
       </Layout>
@@ -277,14 +270,16 @@ export default function Home() {
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Dashboard</h1>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={fetchStats}
-              disabled={isLoading}
-            >
-              {isLoading ? "Refreshing..." : "Refresh"}
-            </Button>
+            {sessionStatus === "authenticated" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchStats}
+                disabled={isLoading}
+              >
+                {isLoading ? "Refreshing..." : "Refresh"}
+              </Button>
+            )}
             {onboarding && onboarding.isActive && (
               <Button
                 variant="outline"
@@ -297,6 +292,31 @@ export default function Home() {
             )}
           </div>
         </div>
+
+        {/* Login Prompt - Show when not authenticated */}
+        {sessionStatus === "unauthenticated" && (
+          <Card className="border-2 border-primary/50 bg-primary/5">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Wallet className="h-5 w-5" />
+                Sign in to view your portfolio
+              </CardTitle>
+              <CardDescription>
+                Connect your wallets and exchanges to track your crypto portfolio and calculate taxes
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-3">
+                <Button asChild>
+                  <Link href="/login">Sign In</Link>
+                </Button>
+                <Button variant="outline" asChild>
+                  <Link href="/register">Create Account</Link>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Onboarding Welcome Card */}
         {onboarding && onboarding.isActive && onboarding.state.currentStep === 0 && (
