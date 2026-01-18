@@ -94,6 +94,14 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-4">
       <Card className="w-full max-w-md">
+        {status === "authenticated" && (
+          <div className="m-4 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+            <p className="text-sm text-green-400 font-medium">You're already signed in!</p>
+            <Link href="/" className="text-sm text-green-300 hover:underline mt-1 block">
+              Go to Dashboard →
+            </Link>
+          </div>
+        )}
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">
             Welcome Back
