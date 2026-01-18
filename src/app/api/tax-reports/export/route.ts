@@ -39,10 +39,34 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user authentication
-    const user = await getCurrentUser();
-    if (!user) {
+    let user;
+    try {
+      user = await getCurrentUser();
+    } catch (authError) {
+      console.error("[Tax Reports Export API] Auth error:", authError);
+      const errorMessage = authError instanceof Error ? authError.message : "Unknown error";
+      if (errorMessage.includes("Can't reach database") || errorMessage.includes("P1001")) {
+        return NextResponse.json(
+          {
+            error: "Database connection failed",
+            details: "Please check your database connection.",
+          },
+          { status: 503 }
+        );
+      }
       return NextResponse.json(
-        { error: "Not authenticated" },
+        { error: "Authentication failed", details: errorMessage },
+        { status: 401 }
+      );
+    }
+
+    if (!user) {
+      console.error("[Tax Reports Export API] No user found - session may be expired or invalid");
+      return NextResponse.json(
+        { 
+          error: "Not authenticated",
+          details: "Please log in to export tax reports."
+        },
         { status: 401 }
       );
     }

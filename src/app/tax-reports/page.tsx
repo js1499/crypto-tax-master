@@ -56,6 +56,7 @@ import {
 } from "recharts";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useSession } from "next-auth/react";
 
 // Empty data instead of mock data
 const taxYears = ["2023", "2022", "2021", "2020"];
@@ -193,6 +194,7 @@ export default function TaxReportsPage() {
   const [reportData, setReportData] = useState<TaxReportData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { data: session, status: sessionStatus } = useSession();
 
   // Set mounted and current year after component mounts (client-side only)
   useEffect(() => {
@@ -305,15 +307,39 @@ export default function TaxReportsPage() {
   };
 
   const handleDownloadForm8949 = async () => {
+    // Check if user is authenticated
+    if (sessionStatus === "unauthenticated") {
+      toast.error("Please log in to generate tax reports");
+      return;
+    }
+    
+    if (sessionStatus === "loading") {
+      toast.info("Checking authentication...");
+      return;
+    }
+
     try {
       setIsGeneratingReport(true);
       const response = await fetch(`/api/tax-reports/form8949?year=${selectedYear}`, {
+        method: "GET",
         credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
       });
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.details || "Failed to generate Form 8949 PDF");
+        const errorMessage = errorData.error || errorData.details || "Failed to generate Form 8949 PDF";
+        
+        // If 401, suggest logging in
+        if (response.status === 401) {
+          toast.error("Session expired. Please log in again.");
+          // Could redirect to login here if needed
+          return;
+        }
+        
+        throw new Error(errorMessage);
       }
       
       // Get the PDF blob
@@ -360,15 +386,38 @@ export default function TaxReportsPage() {
   };
 
   const handleDownloadExport = async (exportType: string, filename: string) => {
+    // Check if user is authenticated
+    if (sessionStatus === "unauthenticated") {
+      toast.error("Please log in to export tax reports");
+      return;
+    }
+    
+    if (sessionStatus === "loading") {
+      toast.info("Checking authentication...");
+      return;
+    }
+
     try {
       setIsGeneratingReport(true);
       const response = await fetch(`/api/tax-reports/export?year=${selectedYear}&type=${exportType}`, {
+        method: "GET",
         credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
       });
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.details || "Failed to generate export");
+        const errorMessage = errorData.error || errorData.details || "Failed to generate export";
+        
+        // If 401, suggest logging in
+        if (response.status === 401) {
+          toast.error("Session expired. Please log in again.");
+          return;
+        }
+        
+        throw new Error(errorMessage);
       }
       
       // Get the CSV/blob

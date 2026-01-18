@@ -34,11 +34,34 @@ export async function GET(request: NextRequest) {
     }
 
     // Get user authentication via NextAuth
-    const user = await getCurrentUser();
+    let user;
+    try {
+      user = await getCurrentUser();
+    } catch (authError) {
+      console.error("[Form 8949 API] Auth error:", authError);
+      const errorMessage = authError instanceof Error ? authError.message : "Unknown error";
+      if (errorMessage.includes("Can't reach database") || errorMessage.includes("P1001")) {
+        return NextResponse.json(
+          {
+            error: "Database connection failed",
+            details: "Please check your database connection.",
+          },
+          { status: 503 }
+        );
+      }
+      return NextResponse.json(
+        { error: "Authentication failed", details: errorMessage },
+        { status: 401 }
+      );
+    }
 
     if (!user) {
+      console.error("[Form 8949 API] No user found - session may be expired or invalid");
       return NextResponse.json(
-        { error: "Not authenticated" },
+        { 
+          error: "Not authenticated",
+          details: "Please log in to generate tax reports."
+        },
         { status: 401 }
       );
     }
