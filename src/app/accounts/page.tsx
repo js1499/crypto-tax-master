@@ -196,13 +196,20 @@ function AccountsContent() {
     }
   };
 
+  // Redirect unauthenticated users to login
+  useEffect(() => {
+    if (sessionStatus === "unauthenticated") {
+      router.replace("/login");
+    }
+  }, [sessionStatus, router]);
+
   useEffect(() => {
     setMounted(true);
-    
+
     // Check for OAuth callback parameters
     const success = searchParams.get('success');
     const error = searchParams.get('error');
-    
+
     if (success === 'true') {
       setOauthStatus({ success: true });
       toast.success('Successfully connected to Coinbase');
@@ -212,10 +219,12 @@ function AccountsContent() {
       setOauthStatus({ error });
       toast.error(`Failed to connect: ${error}`);
     } else {
-      // Fetch wallets on initial page load
-      fetchWallets();
+      // Fetch wallets on initial page load (only if authenticated)
+      if (sessionStatus === "authenticated") {
+        fetchWallets();
+      }
     }
-  }, [searchParams]);
+  }, [searchParams, sessionStatus]);
 
   const handleAccountConnect = (provider: string, data: ConnectionResult) => { 
     toast.success(`Connected to ${provider}`);
