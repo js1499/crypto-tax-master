@@ -20,9 +20,13 @@ export default function LoginPage() {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  
-  // Don't automatically redirect authenticated users - let them stay if they want
-  // They can manually navigate to dashboard
+
+  // Auto-redirect authenticated users to dashboard
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace("/");
+    }
+  }, [status, router]);
   
   // Check if Google OAuth is configured (client-side check)
   // Note: This is a basic check - the actual provider check happens server-side
@@ -79,32 +83,23 @@ export default function LoginPage() {
     }
   };
 
-  // Show loading state while checking session
-  if (status === "loading") {
+  // Show loading state while checking session or redirecting
+  if (status === "loading" || status === "authenticated") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading...</p>
+          <p className="text-muted-foreground">
+            {status === "authenticated" ? "Redirecting..." : "Loading..."}
+          </p>
         </div>
       </div>
     );
   }
-  
-  // If already authenticated, show a message but allow them to stay
-  // They can manually navigate to dashboard
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-4">
       <Card className="w-full max-w-md">
-        {status === "authenticated" && (
-          <div className="m-4 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
-            <p className="text-sm text-green-400 font-medium">You're already signed in!</p>
-            <Link href="/" className="text-sm text-green-300 hover:underline mt-1 block">
-              Go to Dashboard →
-            </Link>
-          </div>
-        )}
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">
             Welcome Back
