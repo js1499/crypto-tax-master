@@ -784,11 +784,8 @@ function processTransactionsForTax(
         }
       }
 
-      // Check for wash sale: if this is a loss sale, track it for future wash sale detection
+      // Track loss sales for wash sale detection (before checking tax year)
       const isLoss = gainLoss < 0;
-      let washSaleAdjustment = 0;
-      let isWashSale = false;
-      
       if (isLoss) {
         // Track this loss sale for wash sale detection (30 days before and after)
         lossSales.push({
