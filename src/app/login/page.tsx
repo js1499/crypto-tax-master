@@ -61,9 +61,12 @@ export default function LoginPage() {
 
       if (result?.ok) {
         toast.success("Login successful!");
-        // Don't automatically redirect - let user decide
-        // They can click the dashboard link in header or navigate manually
-        router.refresh(); // Refresh to update auth state
+        // Refresh session and redirect to dashboard
+        router.refresh();
+        // Small delay to ensure session is established before redirect
+        setTimeout(() => {
+          router.push("/");
+        }, 100);
       }
     } catch (error) {
       const errorMessage =

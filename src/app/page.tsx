@@ -107,10 +107,21 @@ export default function Home() {
       clearTimeout(timeoutId);
       
       if (!response.ok) {
-        // Handle 401 - redirect to login (but only if session is confirmed unauthenticated)
+        // Don't redirect on 401 - let the session provider handle authentication state
+        // If user is truly unauthenticated, the login prompt card will be shown
         if (response.status === 401) {
-          // Session might have expired, redirect using replace to avoid flickering
-          router.replace("/login");
+          console.warn("Dashboard stats API returned 401 - session may be syncing");
+          // Return empty stats instead of redirecting to avoid redirect loop
+          setStats({
+            totalPortfolioValue: 0,
+            unrealizedGains: 0,
+            taxableEvents2023: 0,
+            assetAllocation: [],
+            portfolioValueOverTime: [],
+            recentTransactions: [],
+          });
+          setIsLoading(false);
+          fetchInProgress.current = false;
           return;
         }
         throw new Error(`Failed to fetch dashboard statistics: ${response.status}`);
