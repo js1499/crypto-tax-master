@@ -385,7 +385,16 @@ export async function calculateTaxReport(
   
   combinedTaxableEvents.forEach(e => {
     // Use the corrected gainLoss value (which equals proceeds - costBasis)
-    const gainLoss = e.gainLoss;
+    let gainLoss = e.gainLoss;
+    
+    // For wash sales, the loss is disallowed, so we don't count it as a deductible loss
+    // However, the gainLoss value still shows the loss (for Form 8949 reporting)
+    // For tax calculation purposes, wash sale losses are effectively 0 (disallowed)
+    if (e.washSale && gainLoss < 0) {
+      // Wash sale loss is disallowed - don't count it as a deductible loss
+      // The loss was already added to the replacement shares' cost basis
+      gainLoss = 0; // Effectively no loss for tax purposes (it's disallowed)
+    }
     
     if (e.holdingPeriod === "short") {
       if (gainLoss > 0) {
@@ -836,7 +845,7 @@ function processTransactionsForTax(
           holdingPeriod, // Already determined above
           chain: tx.chain || undefined,
           txHash: tx.tx_hash || undefined,
-          washSale: isWashSale, // Will be updated later if wash sale detected
+          washSale: false, // Will be updated later if wash sale detected
           washSaleAdjustment: washSaleAdjustment > 0 ? washSaleAdjustment : undefined,
         });
       } else {
