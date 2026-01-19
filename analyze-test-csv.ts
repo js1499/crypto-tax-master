@@ -103,8 +103,10 @@ async function main() {
   console.log();
 
   // Calculate statistics
-  const shortTermRecords = records.filter(r => r.saleType.toLowerCase().includes('short'));
+  // Note: Records with empty/missing sale type should default to short-term
+  // IRS: If holding period can't be determined, default to short-term (conservative approach)
   const longTermRecords = records.filter(r => r.saleType.toLowerCase().includes('long'));
+  const shortTermRecords = records.filter(r => !r.saleType.toLowerCase().includes('long'));
 
   const shortTermGains = shortTermRecords.filter(r => r.gainLoss > 0).reduce((sum, r) => sum + r.gainLoss, 0);
   const shortTermLosses = Math.abs(shortTermRecords.filter(r => r.gainLoss < 0).reduce((sum, r) => sum + r.gainLoss, 0));
