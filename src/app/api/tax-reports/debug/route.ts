@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth-helpers";
 
 const prisma = new PrismaClient();
 
@@ -10,9 +10,7 @@ const prisma = new PrismaClient();
  */
 export async function GET(request: NextRequest) {
   try {
-    const sessionCookie = request.cookies.get("session_token")?.value;
-
-    const user = await getCurrentUser(sessionCookie);
+    const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }

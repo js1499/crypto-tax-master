@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient, Prisma } from "@prisma/client";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { Decimal } from "@prisma/client/runtime/library";
@@ -29,9 +29,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user authentication
-    const sessionCookie = request.cookies.get("session_token")?.value;
-
-    const user = await getCurrentUser(sessionCookie);
+    const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json(
         { error: "Not authenticated" },

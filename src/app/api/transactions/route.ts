@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient, Prisma } from "@prisma/client";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 
@@ -33,9 +33,7 @@ export async function GET(request: NextRequest) {
     // Get user authentication
     let user;
     try {
-      const sessionCookie = request.cookies.get("session_token")?.value;
-
-      user = await getCurrentUser(sessionCookie);
+      user = await getCurrentUser();
     } catch (authError) {
       // Check if it's a database connection error
       const errorMessage = authError instanceof Error ? authError.message : "Unknown error";
