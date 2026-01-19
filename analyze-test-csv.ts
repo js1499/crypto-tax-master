@@ -103,8 +103,18 @@ async function main() {
   console.log();
 
   // Calculate statistics
-  const shortTermRecords = records.filter(r => r.saleType.toLowerCase().includes('short'));
-  const longTermRecords = records.filter(r => r.saleType.toLowerCase().includes('long'));
+  // FIX: Default to short-term when saleType is empty/missing
+  // This fixes the bug where records with empty Sale Type fields were excluded
+  const shortTermRecords = records.filter(r => {
+    const saleType = (r.saleType || "").trim().toLowerCase();
+    // Include records with "short" in saleType OR empty/missing saleType (default to short-term)
+    return saleType.includes('short') || saleType === "";
+  });
+  const longTermRecords = records.filter(r => {
+    const saleType = (r.saleType || "").trim().toLowerCase();
+    // Only include records explicitly marked as long-term (not empty)
+    return saleType.includes('long') && saleType !== "";
+  });
 
   const shortTermGains = shortTermRecords.filter(r => r.gainLoss > 0).reduce((sum, r) => sum + r.gainLoss, 0);
   const shortTermLosses = Math.abs(shortTermRecords.filter(r => r.gainLoss < 0).reduce((sum, r) => sum + r.gainLoss, 0));
@@ -228,7 +238,7 @@ async function main() {
     const proceeds = fmt(r.proceeds).padStart(10);
     const costBasis = fmt(r.costBasis).padStart(10);
     const gainLoss = fmt(r.gainLoss).padStart(10);
-    const holding = r.saleType.includes('Long') ? 'long  ' : 'short ';
+    const holding = (r.saleType || "").trim().toLowerCase().includes('long') ? 'long  ' : 'short ';
     const days = r.numDaysHeld.replace(' days', '').padStart(4);
 
     console.log(`${dateSold} | ${asset} | ${amount} | ${proceeds} | ${costBasis} | ${gainLoss} | ${holding} | ${days}`);
@@ -253,7 +263,7 @@ async function main() {
     const proceeds = fmt(r.proceeds).padStart(10);
     const costBasis = fmt(r.costBasis).padStart(10);
     const gain = fmt(r.gainLoss).padStart(10);
-    const holding = r.saleType.includes('Long') ? 'long  ' : 'short ';
+    const holding = (r.saleType || "").trim().toLowerCase().includes('long') ? 'long  ' : 'short ';
 
     console.log(`${dateSold} | ${asset} | ${amount} | ${proceeds} | ${costBasis} | ${gain} | ${holding}`);
   });
@@ -272,7 +282,7 @@ async function main() {
     const proceeds = fmt(r.proceeds).padStart(10);
     const costBasis = fmt(r.costBasis).padStart(10);
     const loss = fmt(r.gainLoss).padStart(10);
-    const holding = r.saleType.includes('Long') ? 'long  ' : 'short ';
+    const holding = (r.saleType || "").trim().toLowerCase().includes('long') ? 'long  ' : 'short ';
 
     console.log(`${dateSold} | ${asset} | ${amount} | ${proceeds} | ${costBasis} | ${loss} | ${holding}`);
   });
