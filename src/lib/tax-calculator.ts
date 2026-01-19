@@ -1392,9 +1392,7 @@ function processTransactionsForTax(
             lot.date < earliest ? lot.date : earliest,
           selectedLots[0].date
         );
-        const holdingPeriodDays =
-          (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
-        holdingPeriod = holdingPeriodDays >= 366 ? "long" : "short";
+        holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
       }
 
       const gainLoss = netProceeds - totalCostBasis;
@@ -1504,9 +1502,7 @@ function processTransactionsForTax(
             lot.date < earliest ? lot.date : earliest,
           selectedLots[0].date
         );
-        const holdingPeriodDays =
-          (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
-        holdingPeriod = holdingPeriodDays >= 366 ? "long" : "short";
+        holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
       }
 
       const gainLoss = netProceeds - totalCostBasis;
