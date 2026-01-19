@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient, Prisma } from "@prisma/client";
 import { CoinbaseUser } from "@/lib/coinbase";
 import { parseCSV, ExchangeCSVParser } from "@/lib/csv-parser";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import { categorizeTransactionData } from "@/lib/transaction-categorizer";
 import * as Sentry from "@sentry/nextjs";
@@ -47,11 +47,10 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Get user authentication via custom session token
+    // Get user authentication via NextAuth
     let user;
     try {
-      const sessionCookie = request.cookies.get("session_token")?.value;
-      user = await getCurrentUser(sessionCookie);
+      user = await getCurrentUser(request);
     } catch (authError) {
       console.error("[Import] Auth error:", authError);
       return NextResponse.json(

@@ -411,7 +411,12 @@ function TransactionsContent() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.details || "Failed to delete all transactions");
+        // Handle rate limiting with better error message
+        if (response.status === 429) {
+          const retryAfter = errorData.retryAfter || errorData.message;
+          throw new Error(errorData.message || `Rate limit exceeded. ${retryAfter}`);
+        }
+        throw new Error(errorData.error || errorData.details || errorData.message || "Failed to delete all transactions");
       }
 
       const data = await response.json();
