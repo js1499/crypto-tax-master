@@ -1372,30 +1372,31 @@ function processTransactionsForTax(
           method
         );
 
-      for (const lot of selectedLots) {
-        if (remainingToSell <= 0) break;
+        for (const lot of selectedLots) {
+          if (remainingToSell <= 0) break;
 
-        const amountFromLot = Math.min(remainingToSell, lot.amount);
-        const costBasisFromLot =
-          (lot.costBasis / lot.amount) * amountFromLot;
+          const amountFromLot = Math.min(remainingToSell, lot.amount);
+          const costBasisFromLot =
+            (lot.costBasis / lot.amount) * amountFromLot;
 
-        totalCostBasis += costBasisFromLot;
-        lot.amount -= amountFromLot;
-        remainingToSell -= amountFromLot;
+          totalCostBasis += costBasisFromLot;
+          lot.amount -= amountFromLot;
+          remainingToSell -= amountFromLot;
+        }
+
+        costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
+
+        if (selectedLots.length > 0) {
+          earliestLotDate = selectedLots.reduce(
+            (earliest, lot) =>
+              lot.date < earliest ? lot.date : earliest,
+            selectedLots[0].date
+          );
+          holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
+        }
+
+        gainLoss = netProceeds - totalCostBasis;
       }
-
-      costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
-
-      if (selectedLots.length > 0) {
-        earliestLotDate = selectedLots.reduce(
-          (earliest, lot) =>
-            lot.date < earliest ? lot.date : earliest,
-          selectedLots[0].date
-        );
-        holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
-      }
-
-      const gainLoss = netProceeds - totalCostBasis;
 
       // Track loss sales for wash sale detection
       const isLoss = gainLoss < 0;
@@ -1482,30 +1483,31 @@ function processTransactionsForTax(
           method
         );
 
-      for (const lot of selectedLots) {
-        if (remainingToSell <= 0) break;
+        for (const lot of selectedLots) {
+          if (remainingToSell <= 0) break;
 
-        const amountFromLot = Math.min(remainingToSell, lot.amount);
-        const costBasisFromLot =
-          (lot.costBasis / lot.amount) * amountFromLot;
+          const amountFromLot = Math.min(remainingToSell, lot.amount);
+          const costBasisFromLot =
+            (lot.costBasis / lot.amount) * amountFromLot;
 
-        totalCostBasis += costBasisFromLot;
-        lot.amount -= amountFromLot;
-        remainingToSell -= amountFromLot;
+          totalCostBasis += costBasisFromLot;
+          lot.amount -= amountFromLot;
+          remainingToSell -= amountFromLot;
+        }
+
+        costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
+
+        if (selectedLots.length > 0) {
+          earliestLotDate = selectedLots.reduce(
+            (earliest, lot) =>
+              lot.date < earliest ? lot.date : earliest,
+            selectedLots[0].date
+          );
+          holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
+        }
+
+        gainLoss = netProceeds - totalCostBasis;
       }
-
-      costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
-
-      if (selectedLots.length > 0) {
-        earliestLotDate = selectedLots.reduce(
-          (earliest, lot) =>
-            lot.date < earliest ? lot.date : earliest,
-          selectedLots[0].date
-        );
-        holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
-      }
-
-      const gainLoss = netProceeds - totalCostBasis;
 
       // Track loss sales for wash sale detection
       const isLoss = gainLoss < 0;
