@@ -1306,11 +1306,19 @@ function processTransactionsForTax(
     }
   }
 
+  // Mark wash sales after processing all transactions
+  markWashSales(taxableEvents, lossSales);
+  
   console.log(`[processTransactionsForTax] Processing complete for tax year ${taxYear}:`);
   console.log(`  - Processed ${processedCount} transactions (out of ${transactions.length} total)`);
   console.log(`  - Found ${taxableEventCount} taxable events`);
   console.log(`  - Found ${incomeEventCount} income events`);
   console.log(`  - Transaction types processed:`, typeCounts);
+  console.log(`  - Loss sales tracked: ${lossSales.length}`);
+  const washSaleCount = taxableEvents.filter(e => e.washSale).length;
+  if (washSaleCount > 0) {
+    console.log(`  - Wash sales detected: ${washSaleCount}`);
+  }
   
   // Log cost basis lots summary
   const assetsWithLots = Object.keys(costBasisLots).filter(k => costBasisLots[k].length > 0);
