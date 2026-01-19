@@ -1266,6 +1266,185 @@ function processTransactionsForTax(
         });
       }
     }
+    // Handle margin trades - treat as regular buy/sell for tax purposes
+    // IRS: Margin trading creates taxable events when positions are opened/closed
+    else if (txType === "margin buy" || tx.type === "Margin Buy") {
+      // Margin buy is treated as a regular buy (adds to cost basis)
+      let totalCostBasis = Math.abs(valueUsd) + feeUsd;
+      
+      // Check for wash sale
+      const washSaleAdjustment = checkWashSale(asset, date, lossSales);
+      if (washSaleAdjustment > 0) {
+        totalCostBasis += washSaleAdjustment;
+        console.log(`[Wash Sale] Margin buy transaction ${tx.id}: Added $${washSaleAdjustment.toFixed(2)} wash sale adjustment to cost basis.`);
+      }
+      
+      costBasisLots[asset].push({
+        id: tx.id,
+        date,
+        amount,
+        costBasis: totalCostBasis,
+        pricePerUnit,
+        fees: feeUsd,
+        washSaleAdjustment: washSaleAdjustment > 0 ? washSaleAdjustment : undefined,
+      });
+    }
+    else if (txType === "margin sell" || tx.type === "Margin Sell") {
+      // Margin sell is treated as a regular sell (taxable disposal)
+      const grossProceeds = valueUsd >= 0 ? valueUsd : Math.abs(valueUsd);
+      const netProceeds = Math.max(0, grossProceeds - feeUsd);
+      const sellAmount = amount;
+      let remainingToSell = sellAmount;
+      let totalCostBasis = 0;
+      let earliestLotDate = date;
+      let holdingPeriod: "short" | "long" = "short";
+
+      const selectedLots = selectLots(
+        costBasisLots[asset],
+        sellAmount,
+        method
+      );
+
+      for (const lot of selectedLots) {
+        if (remainingToSell <= 0) break;
+
+        const amountFromLot = Math.min(remainingToSell, lot.amount);
+        const costBasisFromLot =
+          (lot.costBasis / lot.amount) * amountFromLot;
+
+        totalCostBasis += costBasisFromLot;
+        lot.amount -= amountFromLot;
+        remainingToSell -= amountFromLot;
+      }
+
+      costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
+
+      if (selectedLots.length > 0) {
+        earliestLotDate = selectedLots.reduce(
+          (earliest, lot) =>
+            lot.date < earliest ? lot.date : earliest,
+          selectedLots[0].date
+        );
+        const holdingPeriodDays =
+          (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
+        holdingPeriod = holdingPeriodDays >= 366 ? "long" : "short";
+      }
+
+      const gainLoss = netProceeds - totalCostBasis;
+
+      // Track loss sales for wash sale detection
+      const isLoss = gainLoss < 0;
+      if (isLoss) {
+        lossSales.push({
+          id: tx.id,
+          date,
+          asset,
+          amount: sellAmount,
+          lossAmount: Math.abs(gainLoss),
+          costBasis: totalCostBasis,
+          proceeds: netProceeds,
+          holdingPeriod,
+          remainingLoss: Math.abs(gainLoss),
+        });
+      }
+
+      if (txYear === taxYear) {
+        taxableEvents.push({
+          id: tx.id,
+          date,
+          dateAcquired: earliestLotDate,
+          asset,
+          amount: sellAmount,
+          proceeds: netProceeds,
+          costBasis: totalCostBasis,
+          gainLoss,
+          holdingPeriod,
+          chain: tx.chain || undefined,
+          txHash: tx.tx_hash || undefined,
+          washSale: false,
+          washSaleAdjustment: undefined,
+        });
+      }
+    }
+    // Handle liquidations - treated as forced sale at market price
+    // IRS: Liquidations are taxable events (disposal of assets)
+    else if (txType === "liquidation" || tx.type === "Liquidation") {
+      // Liquidation is treated as a sell (forced disposal)
+      const grossProceeds = valueUsd >= 0 ? valueUsd : Math.abs(valueUsd);
+      const netProceeds = Math.max(0, grossProceeds - feeUsd);
+      const sellAmount = amount;
+      let remainingToSell = sellAmount;
+      let totalCostBasis = 0;
+      let earliestLotDate = date;
+      let holdingPeriod: "short" | "long" = "short";
+
+      const selectedLots = selectLots(
+        costBasisLots[asset],
+        sellAmount,
+        method
+      );
+
+      for (const lot of selectedLots) {
+        if (remainingToSell <= 0) break;
+
+        const amountFromLot = Math.min(remainingToSell, lot.amount);
+        const costBasisFromLot =
+          (lot.costBasis / lot.amount) * amountFromLot;
+
+        totalCostBasis += costBasisFromLot;
+        lot.amount -= amountFromLot;
+        remainingToSell -= amountFromLot;
+      }
+
+      costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
+
+      if (selectedLots.length > 0) {
+        earliestLotDate = selectedLots.reduce(
+          (earliest, lot) =>
+            lot.date < earliest ? lot.date : earliest,
+          selectedLots[0].date
+        );
+        const holdingPeriodDays =
+          (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
+        holdingPeriod = holdingPeriodDays >= 366 ? "long" : "short";
+      }
+
+      const gainLoss = netProceeds - totalCostBasis;
+
+      // Track loss sales for wash sale detection
+      const isLoss = gainLoss < 0;
+      if (isLoss) {
+        lossSales.push({
+          id: tx.id,
+          date,
+          asset,
+          amount: sellAmount,
+          lossAmount: Math.abs(gainLoss),
+          costBasis: totalCostBasis,
+          proceeds: netProceeds,
+          holdingPeriod,
+          remainingLoss: Math.abs(gainLoss),
+        });
+      }
+
+      if (txYear === taxYear) {
+        taxableEvents.push({
+          id: tx.id,
+          date,
+          dateAcquired: earliestLotDate,
+          asset,
+          amount: sellAmount,
+          proceeds: netProceeds,
+          costBasis: totalCostBasis,
+          gainLoss,
+          holdingPeriod,
+          chain: tx.chain || undefined,
+          txHash: tx.tx_hash || undefined,
+          washSale: false,
+          washSaleAdjustment: undefined,
+        });
+      }
+    }
     // Handle borrow - not taxable but affects holdings tracking
     else if (txType === "borrow") {
       // Borrowing doesn't create taxable event
