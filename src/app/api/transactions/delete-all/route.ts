@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
+import { rateLimitByUser, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 
 const prisma = new PrismaClient();
@@ -13,16 +13,7 @@ const prisma = new PrismaClient();
  */
 export async function DELETE(request: NextRequest) {
   try {
-    // Rate limiting - very restrictive for destructive operations
-    const rateLimitResult = rateLimitAPI(request, 5); // 5 deletions per hour
-    if (!rateLimitResult.success) {
-      return createRateLimitResponse(
-        rateLimitResult.remaining,
-        rateLimitResult.reset
-      );
-    }
-
-    // Get user authentication
+    // Get user authentication first (needed for user-based rate limiting)
     let user;
     try {
       user = await getCurrentUser();
@@ -44,6 +35,29 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(
         { error: "Not authenticated" },
         { status: 401 }
+      );
+    }
+
+    // Rate limiting - user-based for authenticated destructive operations
+    // Allow 10 deletions per minute per user (more reasonable than IP-based)
+    const rateLimitResult = rateLimitByUser(user.id, 10);
+    if (!rateLimitResult.success) {
+      const retryAfter = Math.ceil((rateLimitResult.reset - Date.now()) / 1000);
+      return NextResponse.json(
+        {
+          error: "Too many requests",
+          message: `Rate limit exceeded. Please wait ${retryAfter} second${retryAfter !== 1 ? "s" : ""} before trying again.`,
+          retryAfter,
+        },
+        {
+          status: 429,
+          headers: {
+            "X-RateLimit-Limit": "10",
+            "X-RateLimit-Remaining": rateLimitResult.remaining.toString(),
+            "X-RateLimit-Reset": new Date(rateLimitResult.reset).toISOString(),
+            "Retry-After": retryAfter.toString(),
+          },
+        }
       );
     }
 

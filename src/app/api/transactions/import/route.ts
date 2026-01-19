@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     // Get user authentication via NextAuth
     let user;
     try {
-      user = await getCurrentUser();
+      user = await getCurrentUser(request);
     } catch (authError) {
       console.error("[Import] Auth error:", authError);
       return NextResponse.json(

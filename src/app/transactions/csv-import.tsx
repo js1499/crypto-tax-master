@@ -119,6 +119,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
           method: "POST",
           body: formData,
           signal: controller.signal,
+          credentials: "include", // Include cookies for authentication
         });
         
         // Upload complete, clear progress interval and move to processing phase
