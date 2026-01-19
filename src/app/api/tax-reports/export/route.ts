@@ -86,13 +86,17 @@ export async function GET(request: NextRequest) {
 
     const walletAddresses = userWithWallets.wallets.map((w) => w.address);
 
+    // Get filing status from query params (default to "single")
+    const filingStatus = (searchParams.get("filingStatus") || "single") as "single" | "married_joint" | "married_separate" | "head_of_household";
+    
     // Calculate tax report
     const report = await calculateTaxReport(
       prisma,
       walletAddresses,
       year,
       "FIFO",
-      user.id
+      user.id,
+      filingStatus
     );
 
     // Generate CSV based on export type

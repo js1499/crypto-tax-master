@@ -74,12 +74,16 @@ export async function GET(request: NextRequest) {
     // Also include CSV-imported transactions (source_type: "csv_import" with null wallet_address)
     // Pass empty array to include all transactions (both wallet-based and CSV-imported)
     // The calculateTaxReport function will handle filtering appropriately
+    // Get filing status from query params (default to "single")
+    const filingStatus = (searchParams.get("filingStatus") || "single") as "single" | "married_joint" | "married_separate" | "head_of_household";
+    
     const report = await calculateTaxReport(
       prisma,
       walletAddresses, // Pass wallet addresses, but also need to include CSV imports
       year,
       "FIFO",
-      user.id // Pass user ID to filter CSV imports by user
+      user.id, // Pass user ID to filter CSV imports by user
+      filingStatus
     );
 
     console.log(`[Tax Reports API] Tax report calculated:`);

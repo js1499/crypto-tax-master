@@ -82,6 +82,9 @@ export async function GET(request: NextRequest) {
     // Get user's wallet addresses
     const walletAddresses = userWithWallets.wallets.map((w) => w.address);
 
+    // Get filing status from query params (default to "single")
+    const filingStatus = (searchParams.get("filingStatus") || "single") as "single" | "married_joint" | "married_separate" | "head_of_household";
+    
     // Calculate tax report
     // Also include CSV-imported transactions
     const report = await calculateTaxReport(
@@ -89,7 +92,8 @@ export async function GET(request: NextRequest) {
       walletAddresses,
       year,
       "FIFO",
-      user.id // Pass user ID to include CSV imports
+      user.id, // Pass user ID to include CSV imports
+      filingStatus
     );
 
     // Optional: Get taxpayer info from request (for future enhancement)

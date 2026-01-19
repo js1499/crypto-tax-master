@@ -83,6 +83,28 @@ interface LossSale {
   remainingLoss: number; // Remaining loss that can be applied to replacement shares
 }
 
+// Track buy transactions for wash sale detection (buys that occur before loss sales)
+interface BuyTransaction {
+  id: number;
+  date: Date;
+  asset: string;
+  amount: number;
+  costBasis: number;
+  lotIndex?: number; // Index in costBasisLots array for adjustment
+}
+
+/**
+ * Determine if holding period is long-term using date-based calculation
+ * IRS Rule: Long-term if held MORE than one year from acquisition date
+ * This is date-based, not day-count based (e.g., Jan 1, 2024 to Jan 1, 2025 = exactly 1 year = short-term)
+ */
+function isLongTerm(dateAcquired: Date, dateSold: Date): boolean {
+  const anniversary = new Date(dateAcquired);
+  anniversary.setFullYear(anniversary.getFullYear() + 1);
+  // Must be MORE than one year, so dateSold must be after the anniversary
+  return dateSold > anniversary;
+}
+
 /**
  * Calculate tax report for a given year
  */
@@ -91,7 +113,8 @@ export async function calculateTaxReport(
   walletAddresses: string[],
   year: number,
   method: "FIFO" | "LIFO" | "HIFO" = "FIFO",
-  userId?: string // Optional user ID to include CSV-imported transactions
+  userId?: string, // Optional user ID to include CSV-imported transactions
+  filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household" = "single"
 ): Promise<TaxReport> {
   const startDate = new Date(`${year}-01-01T00:00:00Z`);
   const endDate = new Date(`${year}-12-31T23:59:59Z`);
@@ -304,17 +327,20 @@ export async function calculateTaxReport(
   const solanaReport = processTransactionsForTax(
     solanaTransactions,
     year,
-    method
+    method,
+    walletAddresses
   );
   const ethereumReport = processTransactionsForTax(
     ethereumTransactions,
     year,
-    method
+    method,
+    walletAddresses
   );
   const unchainReport = processTransactionsForTax(
     unchainTransactions,
     year,
-    method
+    method,
+    walletAddresses
   );
 
   console.log(`[Tax Calculator] Solana report: ${solanaReport.taxableEvents.length} taxable, ${solanaReport.incomeEvents.length} income`);
@@ -496,9 +522,11 @@ export async function calculateTaxReport(
   const netLongTermGain = longTermGains - longTermLosses;
   const totalNetLoss = Math.max(0, -(netShortTermGain + netLongTermGain));
 
-  // US Tax Law: Capital loss deduction limit is $3,000 per year (IRC Section 1211)
-  // Losses can offset gains without limit, but net losses are limited to $3,000 deduction
-  const MAX_CAPITAL_LOSS_DEDUCTION = 3000;
+  // US Tax Law: Capital loss deduction limit varies by filing status (IRC Section 1211)
+  // Single/Married Joint/Head of Household: $3,000 per year
+  // Married Filing Separately: $1,500 per year
+  // Losses can offset gains without limit, but net losses are limited to deduction amount
+  const MAX_CAPITAL_LOSS_DEDUCTION = filingStatus === "married_separate" ? 1500 : 3000;
   const deductibleLosses = Math.min(totalNetLoss, MAX_CAPITAL_LOSS_DEDUCTION);
   const lossCarryover = Math.max(0, totalNetLoss - MAX_CAPITAL_LOSS_DEDUCTION);
 
@@ -530,7 +558,8 @@ export async function calculateTaxReport(
 function processTransactionsForTax(
   transactions: Transaction[],
   taxYear: number,
-  method: "FIFO" | "LIFO" | "HIFO"
+  method: "FIFO" | "LIFO" | "HIFO",
+  walletAddresses: string[] = [] // For detecting self-transfers
 ): {
   taxableEvents: TaxableEvent[];
   incomeEvents: IncomeEvent[];
@@ -543,6 +572,9 @@ function processTransactionsForTax(
   
   // Track loss sales for wash sale detection (30 days before and after sale)
   const lossSales: LossSale[] = [];
+  
+  // Track buy transactions for wash sale detection (buys that occur before loss sales)
+  const buyTransactions: BuyTransaction[] = [];
 
   // Process transactions chronologically
   console.log(`[processTransactionsForTax] Processing ${transactions.length} transactions for tax year ${taxYear}`);
@@ -622,6 +654,7 @@ function processTransactionsForTax(
       if (tx.source_type === "csv_import" && processedCount < 20) {
         console.log(`[processTransactionsForTax] Processing CSV buy ${tx.id}: asset=${asset}, value_usd=${valueUsd}, totalCostBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, year=${txYear}`);
       }
+      const lotIndex = costBasisLots[asset].length;
       costBasisLots[asset].push({
         id: tx.id,
         date,
@@ -630,6 +663,16 @@ function processTransactionsForTax(
         pricePerUnit,
         fees: feeUsd, // Track fees separately for reference
         washSaleAdjustment: washSaleAdjustment > 0 ? washSaleAdjustment : undefined,
+      });
+      
+      // Track buy transaction for wash sale detection (buys before loss sales)
+      buyTransactions.push({
+        id: tx.id,
+        date,
+        asset,
+        amount,
+        costBasis: totalCostBasis,
+        lotIndex,
       });
       
       if (processedCount < 10 || costBasisLots[asset].length <= 3) {
@@ -693,12 +736,10 @@ function processTransactionsForTax(
           earliestLotDate = new Date(purchasedMatch[1]);
         }
         
-        // Determine holding period: Long-term if purchase date is over 1 year before sale date
-        // IRS Rule: Long-term if held MORE than 1 year (366+ days)
+        // Determine holding period using date-based calculation
+        // IRS Rule: Long-term if held MORE than one year from acquisition date
         if (earliestLotDate && earliestLotDate.getTime() !== date.getTime()) {
-          const holdingPeriodDays = (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
-          // More than 1 year = 366+ days (accounting for leap years)
-          holdingPeriod = holdingPeriodDays >= 366 ? "long" : "short";
+          holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
         } else if (holdingPeriodMatch) {
           // Fallback to extracted holding period if date calculation not available
           holdingPeriod = holdingPeriodMatch[1].toLowerCase().includes("long") ? "long" : "short";
@@ -761,18 +802,15 @@ function processTransactionsForTax(
         // Remove empty lots
         costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
 
-        // Determine holding period (use earliest lot date)
-        // IRS Rule: Long-term if held MORE than 1 year (365 days + 1 day = 366+ days)
+        // Determine holding period using date-based calculation
+        // IRS Rule: Long-term if held MORE than one year from acquisition date
         if (selectedLots.length > 0) {
           earliestLotDate = selectedLots.reduce(
             (earliest, lot) =>
               lot.date < earliest ? lot.date : earliest,
             selectedLots[0].date
           );
-          const holdingPeriodDays =
-            (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
-          // IRS: More than 1 year = 366+ days (accounting for leap years)
-          holdingPeriod = holdingPeriodDays >= 366 ? "long" : "short";
+          holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
         } else {
           // No lots found - this shouldn't happen for paired transactions
           // But if it does, we can't calculate cost basis
@@ -922,13 +960,11 @@ function processTransactionsForTax(
                 selectedLots[0].date
               )
             : date;
-        const holdingPeriodDays =
-          (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
-        const holdingPeriod =
-          holdingPeriodDays >= 366 ? "long" : "short";
+        const holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
 
         // Create taxable event for outgoing asset disposal
-        if (txYear === taxYear && totalCostBasis > 0) {
+        // Include even if cost basis is 0 (e.g., airdrop swapped = 100% gain)
+        if (txYear === taxYear) {
           taxableEvents.push({
             id: tx.id,
             date,
@@ -1006,7 +1042,17 @@ function processTransactionsForTax(
         incomeType = "reward"; // DeFi yield, lending interest, yield farming
       } else if (txType === "receive" && valueUsd > 0) {
         // Receives with positive value might be income (need to distinguish from transfers)
-        incomeType = "other";
+        // Check if this is a self-transfer (sender address is in user's wallets)
+        // For now, we'll be conservative and only count as income if explicitly marked
+        // In production, you'd check tx.from_address against walletAddresses
+        const isSelfTransfer = tx.notes?.toLowerCase().includes("self transfer") || 
+                               tx.notes?.toLowerCase().includes("internal transfer") ||
+                               false; // Default to false if we can't determine
+        
+        if (!isSelfTransfer) {
+          incomeType = "other";
+        }
+        // If it's a self-transfer, don't count as income (it's just movement between wallets)
       }
 
       // Only count as income if it occurred in the tax year and has positive value
@@ -1141,13 +1187,11 @@ function processTransactionsForTax(
               selectedLots[0].date
             )
           : date;
-      const holdingPeriodDays =
-        (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
-      const holdingPeriod =
-        holdingPeriodDays >= 366 ? "long" : "short";
+      const holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
 
       // Create taxable event for bridge (disposal on source chain)
-      if (txYear === taxYear && totalCostBasis > 0) {
+      // Include even if cost basis is 0 (e.g., airdrop bridged = 100% gain)
+      if (txYear === taxYear) {
         const earliestLotDate =
           selectedLots.length > 0
             ? selectedLots.reduce(
@@ -1237,20 +1281,10 @@ function processTransactionsForTax(
               selectedLots[0].date
             )
           : date;
-      const holdingPeriodDays =
-        (date.getTime() - earliestLotDate.getTime()) / (1000 * 60 * 60 * 24);
-      const holdingPeriod =
-        holdingPeriodDays >= 366 ? "long" : "short";
+      const holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
 
-      if (txYear === taxYear && totalCostBasis > 0) {
-        const earliestLotDate =
-          selectedLots.length > 0
-            ? selectedLots.reduce(
-                (earliest, lot) =>
-                  lot.date < earliest ? lot.date : earliest,
-                selectedLots[0].date
-              )
-            : date;
+      // Include even if cost basis is 0 (e.g., airdrop removed from liquidity = 100% gain)
+      if (txYear === taxYear) {
         taxableEvents.push({
           id: tx.id,
           date,
@@ -1291,19 +1325,52 @@ function processTransactionsForTax(
     }
     else if (txType === "margin sell" || tx.type === "Margin Sell") {
       // Margin sell is treated as a regular sell (taxable disposal)
+      // Check for cost basis in notes (from tax report format) - same as regular sells
+      const notes = tx.notes || "";
+      const costBasisMatch = notes.match(/Cost Basis:\s*\$?([\d,]+(?:\.\d+)?)/i);
+      const purchasedMatch = notes.match(/Purchased:\s*(\d{4}-\d{2}-\d{2})/i);
+      const holdingPeriodMatch = notes.match(/(Long-term|Short-term)\s*\((\d+)\s*days?\)/i);
+      
       const grossProceeds = valueUsd >= 0 ? valueUsd : Math.abs(valueUsd);
-      const netProceeds = Math.max(0, grossProceeds - feeUsd);
+      const isCSVImport = tx.source_type === "csv_import";
+      const netProceeds = isCSVImport 
+        ? grossProceeds
+        : Math.max(0, grossProceeds - feeUsd);
       const sellAmount = amount;
       let remainingToSell = sellAmount;
       let totalCostBasis = 0;
       let earliestLotDate = date;
       let holdingPeriod: "short" | "long" = "short";
+      let gainLoss: number;
 
-      const selectedLots = selectLots(
-        costBasisLots[asset],
-        sellAmount,
-        method
-      );
+      if (costBasisMatch) {
+        // Use pre-calculated cost basis from notes
+        const costBasisStr = costBasisMatch[1].replace(/,/g, "");
+        totalCostBasis = parseFloat(costBasisStr);
+        if (isNaN(totalCostBasis)) {
+          totalCostBasis = 0;
+        }
+        
+        if (purchasedMatch) {
+          earliestLotDate = new Date(purchasedMatch[1]);
+        }
+        
+        if (earliestLotDate && earliestLotDate.getTime() !== date.getTime()) {
+          holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
+        } else if (holdingPeriodMatch) {
+          holdingPeriod = holdingPeriodMatch[1].toLowerCase().includes("long") ? "long" : "short";
+        } else {
+          holdingPeriod = "short";
+        }
+        
+        gainLoss = netProceeds - totalCostBasis;
+      } else {
+        // Calculate cost basis from lots
+        const selectedLots = selectLots(
+          costBasisLots[asset],
+          sellAmount,
+          method
+        );
 
       for (const lot of selectedLots) {
         if (remainingToSell <= 0) break;
@@ -1370,19 +1437,52 @@ function processTransactionsForTax(
     // IRS: Liquidations are taxable events (disposal of assets)
     else if (txType === "liquidation" || tx.type === "Liquidation") {
       // Liquidation is treated as a sell (forced disposal)
+      // Check for cost basis in notes (from tax report format) - same as regular sells
+      const notes = tx.notes || "";
+      const costBasisMatch = notes.match(/Cost Basis:\s*\$?([\d,]+(?:\.\d+)?)/i);
+      const purchasedMatch = notes.match(/Purchased:\s*(\d{4}-\d{2}-\d{2})/i);
+      const holdingPeriodMatch = notes.match(/(Long-term|Short-term)\s*\((\d+)\s*days?\)/i);
+      
       const grossProceeds = valueUsd >= 0 ? valueUsd : Math.abs(valueUsd);
-      const netProceeds = Math.max(0, grossProceeds - feeUsd);
+      const isCSVImport = tx.source_type === "csv_import";
+      const netProceeds = isCSVImport 
+        ? grossProceeds
+        : Math.max(0, grossProceeds - feeUsd);
       const sellAmount = amount;
       let remainingToSell = sellAmount;
       let totalCostBasis = 0;
       let earliestLotDate = date;
       let holdingPeriod: "short" | "long" = "short";
+      let gainLoss: number;
 
-      const selectedLots = selectLots(
-        costBasisLots[asset],
-        sellAmount,
-        method
-      );
+      if (costBasisMatch) {
+        // Use pre-calculated cost basis from notes
+        const costBasisStr = costBasisMatch[1].replace(/,/g, "");
+        totalCostBasis = parseFloat(costBasisStr);
+        if (isNaN(totalCostBasis)) {
+          totalCostBasis = 0;
+        }
+        
+        if (purchasedMatch) {
+          earliestLotDate = new Date(purchasedMatch[1]);
+        }
+        
+        if (earliestLotDate && earliestLotDate.getTime() !== date.getTime()) {
+          holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
+        } else if (holdingPeriodMatch) {
+          holdingPeriod = holdingPeriodMatch[1].toLowerCase().includes("long") ? "long" : "short";
+        } else {
+          holdingPeriod = "short";
+        }
+        
+        gainLoss = netProceeds - totalCostBasis;
+      } else {
+        // Calculate cost basis from lots
+        const selectedLots = selectLots(
+          costBasisLots[asset],
+          sellAmount,
+          method
+        );
 
       for (const lot of selectedLots) {
         if (remainingToSell <= 0) break;
@@ -1490,7 +1590,8 @@ function processTransactionsForTax(
   }
 
   // Mark wash sales after processing all transactions
-  markWashSales(taxableEvents, lossSales);
+  // This includes checking buys that occurred BEFORE loss sales (two-pass approach)
+  markWashSales(taxableEvents, lossSales, buyTransactions, costBasisLots);
   
   console.log(`[processTransactionsForTax] Processing complete for tax year ${taxYear}:`);
   console.log(`  - Processed ${processedCount} transactions (out of ${transactions.length} total)`);
