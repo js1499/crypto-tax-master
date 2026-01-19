@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { calculateTaxReport } from "@/lib/tax-calculator";
 import { generateForm8949PDF } from "@/lib/form8949-pdf";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser } from "@/lib/auth";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 
@@ -33,10 +33,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user authentication via NextAuth
+    // Get user authentication via custom session token
     let user;
     try {
-      user = await getCurrentUser();
+      const sessionCookie = request.cookies.get("session_token")?.value;
+
+      user = await getCurrentUser(sessionCookie);
     } catch (authError) {
       console.error("[Form 8949 API] Auth error:", authError);
       const errorMessage = authError instanceof Error ? authError.message : "Unknown error";

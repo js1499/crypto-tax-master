@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser } from "@/lib/auth";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 
@@ -25,7 +25,9 @@ export async function DELETE(request: NextRequest) {
     // Get user authentication
     let user;
     try {
-      user = await getCurrentUser();
+      const sessionCookie = request.cookies.get("session_token")?.value;
+
+      user = await getCurrentUser(sessionCookie);
     } catch (authError) {
       const errorMessage = authError instanceof Error ? authError.message : "Unknown error";
       if (errorMessage.includes("Can't reach database") || errorMessage.includes("P1001")) {

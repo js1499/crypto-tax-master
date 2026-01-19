@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { calculateTaxReport, formatTaxReport } from "@/lib/tax-calculator";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser } from "@/lib/auth";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 
@@ -32,8 +32,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user authentication via NextAuth
-    const user = await getCurrentUser();
+    // Get user authentication via custom session token
+    const sessionCookie = request.cookies.get("session_token")?.value;
+
+    const user = await getCurrentUser(sessionCookie);
     
     if (!user) {
       return NextResponse.json(

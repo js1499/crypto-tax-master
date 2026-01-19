@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { calculateTaxReport, TaxReport } from "@/lib/tax-calculator";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser } from "@/lib/auth";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 
 const prisma = new PrismaClient();
@@ -41,7 +41,9 @@ export async function GET(request: NextRequest) {
     // Get user authentication
     let user;
     try {
-      user = await getCurrentUser();
+      const sessionCookie = request.cookies.get("session_token")?.value;
+
+      user = await getCurrentUser(sessionCookie);
     } catch (authError) {
       console.error("[Tax Reports Export API] Auth error:", authError);
       const errorMessage = authError instanceof Error ? authError.message : "Unknown error";

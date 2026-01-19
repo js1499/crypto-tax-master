@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth-helpers";
+import { getCurrentUser } from "@/lib/auth";
 import { logBuffer } from "@/lib/log-buffer";
 
 /**
@@ -8,7 +8,9 @@ import { logBuffer } from "@/lib/log-buffer";
  */
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser();
+    const sessionCookie = request.cookies.get("session_token")?.value;
+
+    const user = await getCurrentUser(sessionCookie);
     if (!user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
