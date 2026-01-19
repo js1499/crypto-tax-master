@@ -843,7 +843,7 @@ function processTransactionsForTax(
           chain: tx.chain || undefined,
           txHash: tx.tx_hash || undefined,
           washSale: false, // Will be updated later if wash sale detected
-          washSaleAdjustment: washSaleAdjustment > 0 ? washSaleAdjustment : undefined,
+          washSaleAdjustment: undefined, // Will be updated if wash sale detected
         });
       } else {
         // Log year mismatches for debugging
