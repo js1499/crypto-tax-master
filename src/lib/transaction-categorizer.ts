@@ -61,6 +61,48 @@ export function categorizeTransaction(
     };
   }
 
+  // Margin and liquidation transactions
+  if (
+    typeLower.includes("liquidation") ||
+    notesLower.includes("liquidation") ||
+    notesLower.includes("liquidated") ||
+    combinedText.includes("margin call") ||
+    combinedText.includes("forced liquidation") ||
+    combinedText.includes("position liquidated")
+  ) {
+    return {
+      category: "liquidation",
+      identified: true,
+      finalType: "Liquidation",
+    };
+  }
+
+  // Margin trading transactions
+  if (
+    typeLower.includes("margin") ||
+    notesLower.includes("margin") ||
+    notesLower.includes("margin trade") ||
+    notesLower.includes("margin position") ||
+    combinedText.includes("leveraged trade") ||
+    combinedText.includes("margin buy") ||
+    combinedText.includes("margin sell") ||
+    combinedText.includes("short position") ||
+    combinedText.includes("long position")
+  ) {
+    // Determine if it's a margin buy or sell
+    const isMarginSell = 
+      typeLower.includes("sell") ||
+      notesLower.includes("margin sell") ||
+      notesLower.includes("short") ||
+      (value > 0 && !typeLower.includes("buy"));
+    
+    return {
+      category: "margin",
+      identified: true,
+      finalType: isMarginSell ? "Margin Sell" : "Margin Buy",
+    };
+  }
+
   // NFT transactions
   if (
     typeLower.includes("nft") ||

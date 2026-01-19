@@ -601,7 +601,9 @@ function processTransactionsForTax(
 
     // Handle buys - add to cost basis (including fees per IRS rules)
     // Also handle "Buy" with capital B (from CSV parser)
-    if (txType === "buy" || txType === "dca" || tx.type === "Buy") {
+    // NFT Purchase is treated as a buy (cost basis for future sale)
+    if (txType === "buy" || txType === "dca" || tx.type === "Buy" || 
+        txType === "nft purchase" || tx.type === "NFT Purchase") {
       // IRS Rule: Fees are added to cost basis for purchases
       // For CSV imports with tax report format, value_usd is NEGATIVE (cost basis as negative value)
       // For standard format, value_usd might be negative, so use absolute value
@@ -636,7 +638,9 @@ function processTransactionsForTax(
     }
     // Handle sells - calculate capital gains/losses
     // Also handle "Sell" with capital S (from CSV parser)
-    else if (txType === "sell" || tx.type === "Sell") {
+    // NFT Sale is treated as a sell (taxable disposal event)
+    else if (txType === "sell" || tx.type === "Sell" || 
+             txType === "nft sale" || tx.type === "NFT Sale") {
       // IRS Rule: Fees are subtracted from proceeds for sales
       // Use value_usd as proceeds (even if 0, for losses)
       // For CSV imports, value_usd is already the NET proceeds (after fees) - don't subtract fees again!

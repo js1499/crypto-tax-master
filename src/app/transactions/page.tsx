@@ -909,6 +909,9 @@ function TransactionsContent() {
     { value: "Liquidity Removal", label: "Liquidity Removal" },
     { value: "NFT Purchase", label: "NFT Purchase" },
     { value: "NFT Sale", label: "NFT Sale" },
+    { value: "Margin Buy", label: "Margin Buy" },
+    { value: "Margin Sell", label: "Margin Sell" },
+    { value: "Liquidation", label: "Liquidation" },
     { value: "Zero Transaction", label: "Zero Transaction" },
     { value: "Spam Transaction", label: "Spam Transaction" },
   ];
