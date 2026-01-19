@@ -14,6 +14,8 @@ export interface TaxableEvent {
   holdingPeriod: "short" | "long"; // Short-term: < 1 year, Long-term: >= 1 year
   chain?: string;
   txHash?: string;
+  washSale?: boolean; // True if this is a wash sale (loss disallowed)
+  washSaleAdjustment?: number; // Amount of disallowed loss added to replacement shares
 }
 
 export interface IncomeEvent {
@@ -65,6 +67,20 @@ interface CostBasisLot {
   costBasis: number; // Total cost basis for this lot (including fees)
   pricePerUnit: number;
   fees?: number; // Transaction fees (added to cost basis per IRS rules)
+  washSaleAdjustment?: number; // Wash sale loss adjustment added to this lot
+}
+
+// Track loss sales for wash sale detection
+interface LossSale {
+  id: number;
+  date: Date;
+  asset: string;
+  amount: number;
+  lossAmount: number; // The disallowed loss amount
+  costBasis: number;
+  proceeds: number;
+  holdingPeriod: "short" | "long";
+  remainingLoss: number; // Remaining loss that can be applied to replacement shares
 }
 
 /**
@@ -515,6 +531,9 @@ function processTransactionsForTax(
 
   // Track cost basis lots per asset
   const costBasisLots: Record<string, CostBasisLot[]> = {};
+  
+  // Track loss sales for wash sale detection (30 days before and after sale)
+  const lossSales: LossSale[] = [];
 
   // Process transactions chronologically
   console.log(`[processTransactionsForTax] Processing ${transactions.length} transactions for tax year ${taxYear}`);
@@ -578,7 +597,15 @@ function processTransactionsForTax(
       // For CSV imports with tax report format, value_usd is NEGATIVE (cost basis as negative value)
       // For standard format, value_usd might be negative, so use absolute value
       // IMPORTANT: value_usd for buys from CSV is negative (cost.neg()), so we need Math.abs
-      const totalCostBasis = Math.abs(valueUsd) + feeUsd;
+      let totalCostBasis = Math.abs(valueUsd) + feeUsd;
+      
+      // Check for wash sale: if this buy is within 30 days of a previous loss sale, apply wash sale rules
+      const washSaleAdjustment = checkWashSale(asset, date, lossSales);
+      if (washSaleAdjustment > 0) {
+        // Add disallowed loss to cost basis of replacement shares
+        totalCostBasis += washSaleAdjustment;
+        console.log(`[Wash Sale] Buy transaction ${tx.id}: Added $${washSaleAdjustment.toFixed(2)} wash sale adjustment to cost basis. New cost basis: $${totalCostBasis.toFixed(2)}`);
+      }
       
       // Log if this is a CSV import buy to verify it's being processed
       if (tx.source_type === "csv_import" && processedCount < 20) {
@@ -588,9 +615,10 @@ function processTransactionsForTax(
         id: tx.id,
         date,
         amount,
-        costBasis: totalCostBasis, // Cost basis includes purchase price + fees
+        costBasis: totalCostBasis, // Cost basis includes purchase price + fees + wash sale adjustment
         pricePerUnit,
         fees: feeUsd, // Track fees separately for reference
+        washSaleAdjustment: washSaleAdjustment > 0 ? washSaleAdjustment : undefined,
       });
       
       if (processedCount < 10 || costBasisLots[asset].length <= 3) {
@@ -747,6 +775,26 @@ function processTransactionsForTax(
         }
       }
 
+      // Check for wash sale: if this is a loss sale, track it for future wash sale detection
+      const isLoss = gainLoss < 0;
+      let washSaleAdjustment = 0;
+      let isWashSale = false;
+      
+      if (isLoss) {
+        // Track this loss sale for wash sale detection (30 days before and after)
+        lossSales.push({
+          id: tx.id,
+          date,
+          asset,
+          amount: sellAmount,
+          lossAmount: Math.abs(gainLoss), // Store as positive value
+          costBasis: totalCostBasis,
+          proceeds: netProceeds,
+          holdingPeriod,
+          remainingLoss: Math.abs(gainLoss), // Initially, all loss is available for wash sale adjustment
+        });
+      }
+      
       // Only include in tax year if the sale occurred in that year
       // IMPORTANT: Include ALL sell transactions that occurred in the tax year, regardless of cost basis
       // Cost basis can be 0 (valid case: proceeds > 0, cost basis = 0 means full gain)
@@ -788,6 +836,8 @@ function processTransactionsForTax(
           holdingPeriod, // Already determined above
           chain: tx.chain || undefined,
           txHash: tx.tx_hash || undefined,
+          washSale: isWashSale, // Will be updated later if wash sale detected
+          washSaleAdjustment: washSaleAdjustment > 0 ? washSaleAdjustment : undefined,
         });
       } else {
         // Log year mismatches for debugging
@@ -1447,6 +1497,76 @@ function parseSwapTransaction(tx: Transaction): {
 }
 
 /**
+ * Check for wash sale and return adjustment amount
+ * Wash sale: If a loss sale is followed by a buy of the same asset within 30 days
+ * The disallowed loss is added to the cost basis of the replacement shares
+ */
+function checkWashSale(
+  asset: string,
+  buyDate: Date,
+  lossSales: LossSale[]
+): number {
+  let totalAdjustment = 0;
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  
+  // Check each loss sale to see if this buy is within the wash sale window
+  // Since we process chronologically, we only check loss sales that happened BEFORE this buy
+  for (const lossSale of lossSales) {
+    // Must be same asset
+    if (lossSale.asset.toUpperCase() !== asset.toUpperCase()) {
+      continue;
+    }
+    
+    // Must have remaining loss to apply
+    if (lossSale.remainingLoss <= 0) {
+      continue;
+    }
+    
+    // Check if buy is within 30 days AFTER the loss sale (or 30 days before, but we process chronologically)
+    // Wash sale window: 30 days before sale to 30 days after sale (61 days total)
+    const daysDifference = (buyDate.getTime() - lossSale.date.getTime());
+    
+    // Buy must be within 30 days after the loss sale (or 30 days before, but we process chronologically so this is less common)
+    if (daysDifference >= -thirtyDaysMs && daysDifference <= thirtyDaysMs) {
+      // This is a wash sale - apply the loss to this buy's cost basis
+      const adjustment = Math.min(lossSale.remainingLoss, lossSale.lossAmount);
+      lossSale.remainingLoss -= adjustment;
+      totalAdjustment += adjustment;
+      
+      console.log(`[Wash Sale] Detected wash sale: Buy on ${buyDate.toISOString().split('T')[0]} is within 30 days of loss sale on ${lossSale.date.toISOString().split('T')[0]}. Applying $${adjustment.toFixed(2)} adjustment.`);
+    }
+  }
+  
+  return totalAdjustment;
+}
+
+/**
+ * Mark wash sales in taxable events after processing all transactions
+ * This updates events that had their loss disallowed due to wash sale rules
+ */
+function markWashSales(
+  taxableEvents: TaxableEvent[],
+  lossSales: LossSale[]
+): void {
+  // Mark events as wash sales if their loss was fully or partially disallowed
+  for (const lossSale of lossSales) {
+    if (lossSale.remainingLoss < lossSale.lossAmount) {
+      // Some or all of the loss was disallowed (applied to replacement shares)
+      const disallowedAmount = lossSale.lossAmount - lossSale.remainingLoss;
+      
+      // Find the corresponding taxable event
+      const event = taxableEvents.find(e => e.id === lossSale.id);
+      if (event) {
+        event.washSale = true;
+        event.washSaleAdjustment = disallowedAmount;
+        // Note: The gainLoss remains negative (loss), but it will be marked with code "W" in Form 8949
+        console.log(`[Wash Sale] Marked event ${event.id} as wash sale. Disallowed loss: $${disallowedAmount.toFixed(2)}`);
+      }
+    }
+  }
+}
+
+/**
  * Generate Form 8949 data for IRS reporting
  * Form 8949 is required for reporting capital gains and losses
  */
@@ -1454,14 +1574,17 @@ function generateForm8949Data(
   taxableEvents: TaxableEvent[]
 ): Form8949Entry[] {
   return taxableEvents.map((event) => {
+    // IRS Code "W" indicates a wash sale
+    const code = event.washSale ? "W" : "";
+    
     return {
-      description: `${event.amount} ${event.asset}${event.chain ? ` (${event.chain})` : ""}${event.txHash ? ` - ${event.txHash.substring(0, 8)}...` : ""}`,
+      description: `${event.amount} ${event.asset}${event.chain ? ` (${event.chain})` : ""}${event.txHash ? ` - ${event.txHash.substring(0, 8)}...` : ""}${event.washSale ? " [Wash Sale]" : ""}`,
       dateAcquired: event.dateAcquired || event.date, // Use actual acquisition date if available
       dateSold: event.date,
       proceeds: event.proceeds,
       costBasis: event.costBasis,
-      code: "", // Adjustment code if needed (e.g., "W" for wash sale)
-      gainLoss: event.gainLoss,
+      code, // "W" for wash sale
+      gainLoss: event.gainLoss, // Still shows as loss, but code "W" indicates it's disallowed
       holdingPeriod: event.holdingPeriod,
     };
   });
