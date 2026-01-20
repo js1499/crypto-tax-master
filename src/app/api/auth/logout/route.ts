@@ -11,7 +11,29 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
 
-    // Clear session cookie
+    // Clear NextAuth session cookie (primary authentication system)
+    response.cookies.set({
+      name: "next-auth.session-token",
+      value: "",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      expires: new Date(0),
+      path: "/",
+    });
+
+    // Also clear secure variant if used in production
+    response.cookies.set({
+      name: "__Secure-next-auth.session-token",
+      value: "",
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      expires: new Date(0),
+      path: "/",
+    });
+
+    // Clear legacy session_token cookie (if it exists from old sessions)
     response.cookies.set({
       name: "session_token",
       value: "",

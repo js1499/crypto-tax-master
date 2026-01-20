@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/auth-helpers";
 
 /**
  * GET /api/auth/me
  * Get the current authenticated user
+ * Uses NextAuth session (consistent with rest of application)
  */
 export async function GET(request: NextRequest) {
   try {
-    const sessionCookie = request.cookies.get("session_token")?.value;
-    const user = await getCurrentUser(sessionCookie);
+    // Use NextAuth's getCurrentUser (same as all other API routes)
+    const user = await getCurrentUser();
 
     if (!user) {
       return NextResponse.json(

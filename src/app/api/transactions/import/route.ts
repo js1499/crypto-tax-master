@@ -48,6 +48,7 @@ export async function POST(request: NextRequest) {
     }
     
     // Get user authentication via NextAuth
+    // Pass request to ensure cookies are properly extracted on Vercel
     let user;
     try {
       user = await getCurrentUser(request);
