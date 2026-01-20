@@ -2,46 +2,20 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth-config";
 import { PrismaClient } from "@prisma/client";
 import { NextRequest } from "next/server";
-import { headers } from "next/headers";
 
 const prisma = new PrismaClient();
 
 /**
  * Get the current authenticated user from NextAuth session
  * Use this in API routes and server components
- * @param request - Optional NextRequest object (required for API routes in App Router)
+ * @param request - Optional NextRequest object (not used, kept for API compatibility)
  */
 export async function getCurrentUser(request?: NextRequest) {
   try {
-    // In Next.js 13+ App Router, getServerSession needs to access cookies
-    // We need to pass the request headers to getServerSession
-    let session;
-    
-    if (request) {
-      // For API routes, create a mock request object with headers
-      const req = {
-        headers: {
-          cookie: request.headers.get("cookie") || "",
-        },
-      } as any;
-      session = await getServerSession(authOptions, req);
-    } else {
-      // For server components, try to get headers from next/headers
-      try {
-        const headersList = await headers();
-        const cookie = headersList.get("cookie") || "";
-        const req = {
-          headers: {
-            cookie,
-          },
-        } as any;
-        session = await getServerSession(authOptions, req);
-      } catch (e) {
-        // If headers() fails, try without request (fallback for compatibility)
-        session = await getServerSession(authOptions);
-      }
-    }
-    
+    // In Next.js 13+ App Router, getServerSession automatically accesses
+    // the request context, so we don't need to pass request manually
+    const session = await getServerSession(authOptions);
+
     if (!session?.user?.email) {
       return null;
     }
