@@ -62,12 +62,33 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
-    
+
     if (!user) {
+      // Provide more helpful error message
+      const cookieHeader = request.headers.get("cookie");
+      const hasAuthCookie = cookieHeader?.includes("next-auth.session-token") ||
+                           cookieHeader?.includes("__Secure-next-auth.session-token");
+
+      console.error("[Import] Authentication failed - no user found");
+      console.error("[Import] Cookie header present:", !!cookieHeader);
+      console.error("[Import] Has NextAuth cookie:", hasAuthCookie);
+      console.error("[Import] NEXTAUTH_SECRET set:", !!process.env.NEXTAUTH_SECRET);
+
+      let errorDetails = "You must be signed in to upload CSV files. Please sign in and try again.";
+
+      if (!process.env.NEXTAUTH_SECRET) {
+        errorDetails += " (Server configuration error: NEXTAUTH_SECRET not set)";
+      } else if (!hasAuthCookie) {
+        errorDetails += " (No session cookie found - please try signing out and signing in again)";
+      } else {
+        errorDetails += " (Session validation failed - please try signing out and signing in again)";
+      }
+
       return NextResponse.json(
         {
           status: "error",
           error: "Not authenticated",
+          details: errorDetails,
         },
         { status: 401 }
       );
