@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { Decimal } from "@prisma/client/runtime/library";
-
-const prisma = new PrismaClient();
 
 /**
  * PATCH /api/transactions/:id
@@ -197,8 +196,6 @@ export async function PATCH(
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -220,8 +217,8 @@ export async function DELETE(
       );
     }
 
-    // Get user authentication
-    const user = await getCurrentUser();
+    // Get user authentication - pass request for proper Vercel session handling
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json(
         { error: "Not authenticated" },
@@ -294,7 +291,5 @@ export async function DELETE(
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

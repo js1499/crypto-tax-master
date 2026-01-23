@@ -1,7 +1,5 @@
 import bcrypt from "bcryptjs";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import prisma from "./prisma";
 
 /**
  * Hash a password using bcrypt
@@ -22,16 +20,25 @@ export async function verifyPassword(
 }
 
 /**
- * Create a session for a user
+ * @deprecated This function is not used with NextAuth.
+ * Use NextAuth's built-in session management instead.
+ * Kept for reference only - DO NOT USE IN PRODUCTION.
+ *
+ * Create a session for a user (DEPRECATED)
  */
 export function createSession(userId: string): string {
+  console.warn("[Auth] createSession is deprecated. Use NextAuth session management instead.");
   // Generate a simple session token (in production, use JWT or a more secure method)
   const sessionToken = `${userId}-${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
   return Buffer.from(sessionToken).toString("base64");
 }
 
 /**
- * Get the current user from session cookie value
+ * @deprecated This function is not used with NextAuth.
+ * Use getCurrentUser from '@/lib/auth-helpers' instead.
+ * Kept for reference only - DO NOT USE IN PRODUCTION.
+ *
+ * Get the current user from legacy session cookie value (DEPRECATED)
  * @param sessionCookieValue - The value of the session_token cookie
  */
 export async function getCurrentUser(sessionCookieValue?: string): Promise<{
@@ -39,6 +46,7 @@ export async function getCurrentUser(sessionCookieValue?: string): Promise<{
   email: string;
   name: string | null;
 } | null> {
+  console.warn("[Auth] getCurrentUser from auth.ts is deprecated. Use getCurrentUser from auth-helpers.ts instead.");
   try {
     // If no cookie value provided, try to get from cookies() (for server components)
     let sessionCookie = sessionCookieValue;
@@ -80,8 +88,6 @@ export async function getCurrentUser(sessionCookieValue?: string): Promise<{
   } catch (error) {
     console.error("[Auth] Error getting current user:", error);
     return null;
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
@@ -97,8 +103,6 @@ export async function getUserByEmail(email: string) {
   } catch (error) {
     console.error("[Auth] Error getting user by email:", error);
     return null;
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

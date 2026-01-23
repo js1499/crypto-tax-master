@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitByUser, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
-
-const prisma = new PrismaClient();
 
 /**
  * DELETE /api/transactions/delete-all
@@ -14,9 +12,10 @@ const prisma = new PrismaClient();
 export async function DELETE(request: NextRequest) {
   try {
     // Get user authentication first (needed for user-based rate limiting)
+    // Pass request for proper Vercel session handling
     let user;
     try {
-      user = await getCurrentUser();
+      user = await getCurrentUser(request);
     } catch (authError) {
       const errorMessage = authError instanceof Error ? authError.message : "Unknown error";
       if (errorMessage.includes("Can't reach database") || errorMessage.includes("P1001")) {
@@ -154,7 +153,5 @@ export async function DELETE(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

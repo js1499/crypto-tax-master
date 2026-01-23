@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { fetchWalletTransactions } from "@/lib/blockchain-apis";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
-
-const prisma = new PrismaClient();
 
 // Configure for long-running operations on Vercel
 export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
@@ -26,17 +24,17 @@ export async function POST(request: NextRequest) {
         rateLimitResult.reset
       );
     }
-    
-    // Get user authentication via NextAuth
-    const user = await getCurrentUser();
-    
+
+    // Get user authentication via NextAuth - pass request for proper Vercel session handling
+    const user = await getCurrentUser(request);
+
     if (!user) {
       return NextResponse.json(
         { error: "Not authenticated" },
         { status: 401 }
       );
     }
-    
+
     // Additional rate limiting by user
     const userRateLimit = rateLimitByUser(user.id, 5); // 5 fetches per minute per user
     if (!userRateLimit.success) {
@@ -186,8 +184,5 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
-

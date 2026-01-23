@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { calculateTaxReport } from "@/lib/tax-calculator";
 import { generateForm8949PDF } from "@/lib/form8949-pdf";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
-
-const prisma = new PrismaClient();
 
 /**
  * GET /api/tax-reports/form8949?year=2023
@@ -33,10 +31,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user authentication via NextAuth
+    // Get user authentication via NextAuth - pass request for proper Vercel session handling
     let user;
     try {
-      user = await getCurrentUser();
+      user = await getCurrentUser(request);
     } catch (authError) {
       console.error("[Form 8949 API] Auth error:", authError);
       const errorMessage = authError instanceof Error ? authError.message : "Unknown error";
@@ -134,7 +132,5 @@ export async function GET(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

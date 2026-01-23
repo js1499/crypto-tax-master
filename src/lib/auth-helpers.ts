@@ -1,9 +1,7 @@
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth-config";
-import { PrismaClient } from "@prisma/client";
+import prisma from "./prisma";
 import type { NextRequest } from "next/server";
-
-const prisma = new PrismaClient();
 
 /**
  * Get the current authenticated user from NextAuth session
@@ -114,8 +112,6 @@ export async function getCurrentUser(request?: NextRequest) {
     }
 
     return null;
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

@@ -8,8 +8,8 @@ import { getCurrentUser } from "@/lib/auth-helpers";
  */
 export async function GET(request: NextRequest) {
   try {
-    // Use NextAuth's getCurrentUser (same as all other API routes)
-    const user = await getCurrentUser();
+    // Use NextAuth's getCurrentUser with request for proper Vercel session handling
+    const user = await getCurrentUser(request);
 
     if (!user) {
       return NextResponse.json(
