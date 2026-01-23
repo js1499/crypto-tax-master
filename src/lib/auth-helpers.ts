@@ -39,9 +39,16 @@ export async function getCurrentUser(request?: NextRequest) {
         // For API routes on Vercel: Use getToken which directly decodes JWT from request
         // This is more reliable than getServerSession in serverless environments
         // because it doesn't require a mock req/res object
+        const isProduction = process.env.NODE_ENV === "production";
         const token = await getToken({
           req: request,
           secret: process.env.NEXTAUTH_SECRET,
+          // In production (HTTPS), NextAuth uses __Secure- prefixed cookies
+          // We must explicitly tell getToken to look for secure cookies on Vercel
+          secureCookie: isProduction,
+          cookieName: isProduction
+            ? "__Secure-next-auth.session-token"
+            : "next-auth.session-token",
         });
 
         if (token?.email) {
