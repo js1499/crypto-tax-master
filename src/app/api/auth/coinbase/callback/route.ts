@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exchangeCodeForTokens, getCoinbaseUser, getCoinbaseAccounts } from "@/lib/coinbase";
-import { PrismaClient } from "@prisma/client";
-
-// Initialize Prisma client
-const prisma = new PrismaClient();
+import prisma from "@/lib/prisma";
+import { encode } from "next-auth/jwt";
+import { authOptions } from "@/lib/auth-config";
 
 /**
  * Handles the OAuth callback from Coinbase
@@ -117,59 +116,76 @@ export async function GET(request: NextRequest) {
     });
 
     console.log(`[Coinbase Callback] Stored Coinbase exchange connection for user ${user.id}`);
-    
+
+    // Create a NextAuth session for the user by generating a JWT token
+    // This allows users to be logged in automatically after Coinbase OAuth
+    const secret = process.env.NEXTAUTH_SECRET;
+    if (!secret) {
+      console.error("[Coinbase Callback] NEXTAUTH_SECRET not set, cannot create session");
+      return NextResponse.redirect(new URL('/login?error=config_error&message=Missing+NEXTAUTH_SECRET', request.nextUrl.origin));
+    }
+
+    // Create JWT token for NextAuth session
+    const sessionToken = await encode({
+      token: {
+        id: user.id,
+        sub: user.id,
+        email: user.email,
+        name: user.name,
+        picture: user.image || null,
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60), // 30 days
+      },
+      secret,
+      maxAge: 30 * 24 * 60 * 60, // 30 days
+    });
+
+    console.log(`[Coinbase Callback] Created NextAuth session for user ${user.id}`);
+
     // Redirect to accounts page with success
-    // The user will need to sign in via NextAuth to get a session
-    // For now, we'll redirect and they can sign in manually
-    // In the future, we can create a NextAuth session automatically here
     const response = NextResponse.redirect(new URL('/accounts?success=true&coinbase_connected=true', request.nextUrl.origin));
-    
-    // Store minimal connection data in secure cookie
+
+    // Set NextAuth session cookie
+    // Use __Secure- prefix in production for enhanced security
+    const isProduction = process.env.NODE_ENV === 'production';
+    const cookieName = isProduction
+      ? '__Secure-next-auth.session-token'
+      : 'next-auth.session-token';
+
     response.cookies.set({
-      name: 'coinbase_connection',
-      value: JSON.stringify({
-        user_id: userData.id,
-        username: userData.username,
-        connected_at: new Date().toISOString(),
-        accounts_count: accounts.length
-      }),
+      name: cookieName,
+      value: sessionToken,
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 30, // 30 minutes
+      secure: isProduction,
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60, // 30 days
       path: '/'
     });
-    
-    // Store tokens securely
-    // Warning: In production, NEVER store tokens in cookies
-    // This is only for demo purposes - use a secure database instead
-    response.cookies.set({
-      name: 'coinbase_tokens',
-      value: JSON.stringify({
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token,
-        expires_at: tokens.expires_at
-      }),
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
-      path: '/'
-    });
-    
+
     // Clear the state cookie
     response.cookies.set({
       name: 'coinbase_oauth_state',
       value: '',
       expires: new Date(0)
     });
-    
+
+    // Clear any legacy cookies that might exist
+    response.cookies.set({
+      name: 'coinbase_tokens',
+      value: '',
+      expires: new Date(0)
+    });
+    response.cookies.set({
+      name: 'coinbase_connection',
+      value: '',
+      expires: new Date(0)
+    });
+
     return response;
   } catch (error) {
     console.error("[Coinbase Callback] Error processing callback:", error);
     
     // Redirect back to accounts page with error
     return NextResponse.redirect(new URL('/accounts?error=token_exchange', request.nextUrl.origin));
-  } finally {
-    // Disconnect from Prisma to avoid connection leaking
-    await prisma.$disconnect();
   }
 } 

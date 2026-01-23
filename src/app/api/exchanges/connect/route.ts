@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { encryptApiKey } from "@/lib/exchange-clients";
 import { BinanceClient, KrakenClient, KuCoinClient, GeminiClient } from "@/lib/exchange-clients";
 import crypto from "crypto";
-
-const prisma = new PrismaClient();
 
 // Encryption key (in production, use environment variable)
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
@@ -34,8 +32,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user authentication
-    const user = await getCurrentUser();
+    // Get user authentication - pass request for proper Vercel session handling
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json(
         { error: "Not authenticated" },
@@ -187,7 +185,5 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

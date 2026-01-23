@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
-
-// Initialize Prisma client
-const prisma = new PrismaClient();
 
 /**
  * API route to fetch user wallets from the database
@@ -22,9 +19,9 @@ export async function GET(request: NextRequest) {
         rateLimitResult.reset
       );
     }
-    // Get user authentication via NextAuth
-    const user = await getCurrentUser();
-    
+    // Get user authentication via NextAuth - pass request for proper Vercel session handling
+    const user = await getCurrentUser(request);
+
     if (!user) {
       return NextResponse.json(
         { error: "Not authenticated" },
@@ -67,9 +64,6 @@ export async function GET(request: NextRequest) {
       { error: "Failed to fetch wallets" },
       { status: 500 }
     );
-  } finally {
-    // Disconnect from Prisma to avoid connection leaking
-    await prisma.$disconnect();
   }
 }
 
@@ -89,17 +83,17 @@ export async function POST(request: NextRequest) {
         rateLimitResult.reset
       );
     }
-    
-    // Get user authentication
-    const user = await getCurrentUser();
-    
+
+    // Get user authentication - pass request for proper Vercel session handling
+    const user = await getCurrentUser(request);
+
     if (!user) {
       return NextResponse.json(
         { error: "Not authenticated" },
         { status: 401 }
       );
     }
-    
+
     // Parse request body
     const body = await request.json();
     const { name, address, provider } = body;
@@ -171,7 +165,5 @@ export async function POST(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

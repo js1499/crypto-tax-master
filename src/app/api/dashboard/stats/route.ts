@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { Decimal } from "@prisma/client/runtime/library";
-
-const prisma = new PrismaClient();
 
 /**
  * GET /api/dashboard/stats
@@ -22,10 +21,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user authentication
+    // Get user authentication - pass request for proper Vercel session handling
     let user;
     try {
-      user = await getCurrentUser();
+      user = await getCurrentUser(request);
     } catch (authError) {
       const errorMessage = authError instanceof Error ? authError.message : "Unknown error";
       if (errorMessage.includes("Can't reach database") || errorMessage.includes("P1001")) {
@@ -381,7 +380,5 @@ export async function GET(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

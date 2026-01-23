@@ -65,12 +65,9 @@ export default function LoginPage() {
 
       if (result?.ok) {
         toast.success("Login successful!");
-        // Refresh session and redirect to dashboard
-        router.refresh();
-        // Small delay to ensure session is established before redirect
-        setTimeout(() => {
-          router.push("/");
-        }, 100);
+        // Redirect to dashboard - NextAuth will handle session establishment
+        // Using replace to prevent back-button returning to login
+        router.replace("/");
       }
     } catch (error) {
       const errorMessage =

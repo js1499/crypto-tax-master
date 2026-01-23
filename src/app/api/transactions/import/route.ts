@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { CoinbaseUser } from "@/lib/coinbase";
 import { parseCSV, ExchangeCSVParser } from "@/lib/csv-parser";
 import { getCurrentUser } from "@/lib/auth-helpers";
@@ -15,8 +16,6 @@ export const runtime = 'nodejs';
 // Form data size is handled by the server infrastructure
 // For Vercel, the limit is 4.5MB by default, but can be increased with serverless function config
 // Vercel Free/Pro: Max 300s, Vercel Enterprise: Max 900s
-
-const prisma = new PrismaClient();
 
 /**
  * POST /api/transactions/import
@@ -643,12 +642,6 @@ export async function POST(request: NextRequest) {
           },
         }
       );
-    }
-  } finally {
-    try {
-      await prisma.$disconnect();
-    } catch (disconnectError) {
-      console.error("[Import] Error disconnecting Prisma:", disconnectError);
     }
   }
 }

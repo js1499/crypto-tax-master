@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
 
 /**
  * Initiates the Coinbase OAuth2 authorization flow
@@ -36,8 +37,8 @@ export async function GET(request: NextRequest) {
   authUrl.searchParams.append("response_type", "code");
   authUrl.searchParams.append("scope", scopes.join(" "));
   
-  // Generate a state parameter to prevent CSRF
-  const state = Math.random().toString(36).substring(2, 15);
+  // Generate a cryptographically secure state parameter to prevent CSRF
+  const state = crypto.randomBytes(32).toString("hex");
   authUrl.searchParams.append("state", state);
   
   console.log("[Coinbase Auth] Generated state parameter:", state);

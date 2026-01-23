@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { calculateTaxReport, formatTaxReport } from "@/lib/tax-calculator";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
-
-const prisma = new PrismaClient();
 
 /**
  * GET /api/tax-reports?year=2023
@@ -32,9 +30,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user authentication via NextAuth
-    const user = await getCurrentUser();
-    
+    // Get user authentication via NextAuth - pass request for proper Vercel session handling
+    const user = await getCurrentUser(request);
+
     if (!user) {
       return NextResponse.json(
         { error: "Not authenticated" },
@@ -135,8 +133,5 @@ export async function GET(request: NextRequest) {
       { error: "Failed to calculate tax report", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
-

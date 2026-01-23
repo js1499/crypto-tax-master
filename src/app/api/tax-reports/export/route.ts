@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { calculateTaxReport, TaxReport } from "@/lib/tax-calculator";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
-
-const prisma = new PrismaClient();
 
 /**
  * GET /api/tax-reports/export?year=2023&type=capital-gains-csv
@@ -38,10 +37,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user authentication
+    // Get user authentication - pass request for proper Vercel session handling
     let user;
     try {
-      user = await getCurrentUser();
+      user = await getCurrentUser(request);
     } catch (authError) {
       console.error("[Tax Reports Export API] Auth error:", authError);
       const errorMessage = authError instanceof Error ? authError.message : "Unknown error";
@@ -144,8 +143,6 @@ export async function GET(request: NextRequest) {
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
 

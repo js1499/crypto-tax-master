@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
-
-const prisma = new PrismaClient();
 
 /**
  * GET /api/tax-reports/debug?year=2024
@@ -10,7 +8,8 @@ const prisma = new PrismaClient();
  */
 export async function GET(request: NextRequest) {
   try {
-    const user = await getCurrentUser();
+    // Pass request for proper Vercel session handling
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
@@ -125,7 +124,5 @@ export async function GET(request: NextRequest) {
       { error: "Failed to debug", details: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }
