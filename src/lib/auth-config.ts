@@ -19,33 +19,52 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
+        console.log("[Auth] Credentials authorize called");
+
         if (!credentials?.email || !credentials?.password) {
+          console.log("[Auth] Missing email or password");
           return null;
         }
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email.toLowerCase().trim() },
-        });
+        const normalizedEmail = credentials.email.toLowerCase().trim();
+        console.log(`[Auth] Looking up user: ${normalizedEmail}`);
 
-        if (!user || !user.passwordHash) {
+        try {
+          const user = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
+          });
+
+          if (!user) {
+            console.log("[Auth] User not found in database");
+            return null;
+          }
+
+          if (!user.passwordHash) {
+            console.log("[Auth] User has no password (OAuth-only account)");
+            return null;
+          }
+
+          const isValid = await verifyPassword(
+            credentials.password,
+            user.passwordHash
+          );
+
+          if (!isValid) {
+            console.log("[Auth] Invalid password");
+            return null;
+          }
+
+          console.log(`[Auth] Login successful for: ${user.email}`);
+          return {
+            id: user.id,
+            email: user.email || "",
+            name: user.name,
+            image: user.image,
+          };
+        } catch (error) {
+          console.error("[Auth] Error during authorization:", error);
           return null;
         }
-
-        const isValid = await verifyPassword(
-          credentials.password,
-          user.passwordHash
-        );
-
-        if (!isValid) {
-          return null;
-        }
-
-        return {
-          id: user.id,
-          email: user.email || "",
-          name: user.name,
-          image: user.image,
-        };
       },
     }),
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET

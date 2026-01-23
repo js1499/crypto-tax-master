@@ -60,7 +60,16 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        throw new Error(result.error);
+        // Map NextAuth error codes to user-friendly messages
+        const errorMessages: Record<string, string> = {
+          CredentialsSignin: "Invalid email or password. Please try again.",
+          Configuration: "There is a problem with the server configuration.",
+          AccessDenied: "Access denied. You do not have permission to sign in.",
+          Verification: "The verification link has expired or has already been used.",
+          Default: "An error occurred during sign in. Please try again.",
+        };
+        const friendlyMessage = errorMessages[result.error] || errorMessages.Default;
+        throw new Error(friendlyMessage);
       }
 
       if (result?.ok) {
