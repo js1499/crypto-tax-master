@@ -1,4 +1,5 @@
 import { getServerSession } from "next-auth/next";
+import { getToken } from "next-auth/jwt";
 import { authOptions } from "./auth-config";
 import prisma from "./prisma";
 import type { NextRequest } from "next/server";
@@ -8,8 +9,8 @@ import type { NextRequest } from "next/server";
  * Works in both API routes and server components in App Router
  *
  * @param request - Optional NextRequest object from API route handlers
- *                  If provided, cookies will be extracted from request headers
- *                  This is required for proper session handling on Vercel
+ *                  If provided, uses getToken for reliable JWT extraction on Vercel
+ *                  This is required for proper session handling in serverless environments
  */
 export async function getCurrentUser(request?: NextRequest) {
   try {
@@ -31,35 +32,42 @@ export async function getCurrentUser(request?: NextRequest) {
       return null;
     }
 
-    // Get session from NextAuth
-    // In App Router API routes on Vercel, we need to explicitly pass request headers
-    let session;
+    let userEmail: string | null = null;
+
     try {
       if (request) {
-        // For API routes: Extract cookies from request and create request-like object
-        // NextAuth's getServerSession needs req and res objects for API routes
-        const cookieHeader = request.headers.get("cookie") || "";
-        const req = {
-          headers: {
-            cookie: cookieHeader,
-            "user-agent": request.headers.get("user-agent") || "",
-            "x-forwarded-for": request.headers.get("x-forwarded-for") || "",
-            "x-forwarded-host": request.headers.get("x-forwarded-host") || "",
-            "x-forwarded-proto": request.headers.get("x-forwarded-proto") || "https",
-          },
-        } as any;
-        const res = {
-          setHeader: () => {},
-          getHeader: () => {},
-        } as any;
-        // getServerSession(req, res, authOptions) for API routes
-        session = await getServerSession(req, res, authOptions);
+        // For API routes on Vercel: Use getToken which directly decodes JWT from request
+        // This is more reliable than getServerSession in serverless environments
+        // because it doesn't require a mock req/res object
+        const token = await getToken({
+          req: request,
+          secret: process.env.NEXTAUTH_SECRET,
+        });
+
+        if (token?.email) {
+          userEmail = token.email as string;
+          if (process.env.NODE_ENV === "development") {
+            console.log(`[Auth] Token found for: ${userEmail}`);
+          }
+        } else if (process.env.NODE_ENV === "development") {
+          console.log("[Auth] No token found in request");
+          // Log cookie info for debugging
+          const cookieHeader = request.headers.get("cookie") || "";
+          const hasSessionToken = cookieHeader.includes("next-auth.session-token") ||
+                                  cookieHeader.includes("__Secure-next-auth.session-token");
+          console.log(`[Auth] Session token cookie present: ${hasSessionToken}`);
+        }
       } else {
         // For server components: getServerSession automatically accesses cookies via Next.js context
-        session = await getServerSession(authOptions);
+        const session = await getServerSession(authOptions);
+        if (session?.user?.email) {
+          userEmail = session.user.email;
+        } else if (process.env.NODE_ENV === "development") {
+          console.log("[Auth] No session found - user may not be logged in");
+        }
       }
     } catch (sessionError) {
-      console.error("[Auth] Error getting session:", sessionError);
+      console.error("[Auth] Error getting session/token:", sessionError);
       const errorMsg = sessionError instanceof Error ? sessionError.message : "Unknown error";
       if (errorMsg.includes("NEXTAUTH_SECRET") || errorMsg.includes("secret")) {
         console.error("[Auth] NEXTAUTH_SECRET might be invalid or missing");
@@ -67,24 +75,16 @@ export async function getCurrentUser(request?: NextRequest) {
       return null;
     }
 
-    if (!session) {
+    if (!userEmail) {
       if (process.env.NODE_ENV === "development") {
-        console.log("[Auth] No session found - user may not be logged in");
-        console.log("[Auth] Check browser cookies for 'next-auth.session-token'");
-      }
-      return null;
-    }
-
-    if (!session.user?.email) {
-      if (process.env.NODE_ENV === "development") {
-        console.log("[Auth] Session exists but no user email");
+        console.log("[Auth] No user email found in session/token");
       }
       return null;
     }
 
     // Look up full user record in database
     const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
+      where: { email: userEmail },
       select: {
         id: true,
         email: true,
@@ -93,7 +93,7 @@ export async function getCurrentUser(request?: NextRequest) {
     });
 
     if (!user) {
-      console.warn(`[Auth] Session exists for ${session.user.email} but user not found in database`);
+      console.warn(`[Auth] Session exists for ${userEmail} but user not found in database`);
       return null;
     }
 

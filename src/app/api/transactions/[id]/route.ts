@@ -24,8 +24,8 @@ export async function PATCH(
       );
     }
 
-    // Get user authentication
-    const user = await getCurrentUser();
+    // Get user authentication - pass request for proper Vercel session handling
+    const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json(
         { error: "Not authenticated" },
