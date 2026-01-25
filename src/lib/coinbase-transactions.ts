@@ -120,6 +120,7 @@ export async function getCoinbaseTransactionsWithApiKey(
     }
 
     const transactions: ExchangeTransaction[] = [];
+    const seenTransactionIds = new Set<string>(); // Track seen transaction IDs to prevent duplicates
 
     // Get ALL accounts with pagination (default limit is 25, we need all)
     let allAccounts: any[] = [];
@@ -201,6 +202,14 @@ export async function getCoinbaseTransactionsWithApiKey(
         console.log(`[Coinbase Transactions] Found ${accountTxs.length} total transactions for account ${account.name}`);
 
         for (const tx of accountTxs) {
+          // Skip if we've already seen this transaction (prevents duplicates across accounts)
+          // This can happen when the same transaction appears in multiple accounts
+          // (e.g., a swap appears in both the source and destination asset accounts)
+          if (seenTransactionIds.has(tx.id)) {
+            continue;
+          }
+          seenTransactionIds.add(tx.id);
+
           // Filter by time if specified
           const txTime = new Date(tx.created_at).getTime();
           if (startTime && txTime < startTime) continue;
@@ -247,7 +256,7 @@ export async function getCoinbaseTransactionsWithApiKey(
       }
     }
 
-    console.log(`[Coinbase Transactions] Total transactions fetched: ${transactions.length}`);
+    console.log(`[Coinbase Transactions] Total unique transactions: ${transactions.length} (${seenTransactionIds.size} unique IDs, duplicates filtered)`);
     return transactions;
   } catch (error) {
     console.error("[Coinbase Transactions] Error:", error);
@@ -327,6 +336,7 @@ export async function getCoinbaseTransactions(
     }
 
     const transactions: ExchangeTransaction[] = [];
+    const seenTransactionIds = new Set<string>(); // Track seen transaction IDs to prevent duplicates
 
     // Get ALL accounts with pagination (default limit is 25, we need all)
     let allAccounts: any[] = [];
@@ -415,6 +425,12 @@ export async function getCoinbaseTransactions(
         console.log(`[Coinbase Transactions] Found ${accountTxs.length} total transactions for account ${account.name}`);
 
         for (const tx of accountTxs) {
+          // Skip if we've already seen this transaction (prevents duplicates across accounts)
+          if (seenTransactionIds.has(tx.id)) {
+            continue;
+          }
+          seenTransactionIds.add(tx.id);
+
           const amount = parseFloat(tx.amount.amount);
           const currency = tx.amount.currency;
           const nativeAmount = tx.native_amount
@@ -455,6 +471,7 @@ export async function getCoinbaseTransactions(
       }
     }
 
+    console.log(`[Coinbase Transactions] Total unique transactions: ${transactions.length} (${seenTransactionIds.size} unique IDs)`);
     return transactions;
   } catch (error) {
     console.error("[Coinbase Transactions] Error:", error);
