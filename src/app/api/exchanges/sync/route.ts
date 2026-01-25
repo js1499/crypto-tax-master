@@ -258,9 +258,18 @@ export async function POST(request: NextRequest) {
 
             totalAdded++;
           } catch (error) {
-            // Log error only in development
-            if (process.env.NODE_ENV === "development") {
-              console.error(`[Exchange Sync] Error saving transaction:`, error);
+            // Check if this is a unique constraint violation (duplicate tx_hash)
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            if (errorMessage.includes("Unique constraint") || errorMessage.includes("P2002")) {
+              // This is a duplicate that wasn't caught by findFirst
+              // (can happen if tx_hash already exists from previous import)
+              totalSkipped++;
+              console.log(`[Exchange Sync] Skipped duplicate transaction (unique constraint): ${tx.tx_hash}`);
+            } else {
+              // Log other errors only in development
+              if (process.env.NODE_ENV === "development") {
+                console.error(`[Exchange Sync] Error saving transaction:`, error);
+              }
             }
             // Don't add to errors array for individual transaction failures
             // to avoid cluttering the response
