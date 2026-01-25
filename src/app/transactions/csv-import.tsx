@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,9 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Download, Upload, FileText, Check } from "lucide-react";
+import { Download, Upload, FileText, Check, Link2, RefreshCw, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import type { ImportedData } from "@/types/wallet"; // Updated import
+import axios from "axios";
 
 const exchangeTemplates = [
   { id: "coinbase", name: "Coinbase" },
@@ -36,8 +37,102 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadComplete, setUploadComplete] = useState(false);
 
+  // Coinbase OAuth state
+  const [coinbaseConnected, setCoinbaseConnected] = useState(false);
+  const [coinbaseLoading, setCoinbaseLoading] = useState(false);
+  const [isSyncingCoinbase, setIsSyncingCoinbase] = useState(false);
+  const [syncProgress, setSyncProgress] = useState(0);
+
+  // Check if Coinbase is already connected when component mounts
+  useEffect(() => {
+    if (selectedExchange === "coinbase") {
+      checkCoinbaseConnection();
+    }
+  }, [selectedExchange]);
+
+  const checkCoinbaseConnection = async () => {
+    setCoinbaseLoading(true);
+    try {
+      const response = await axios.get("/api/exchanges");
+      const exchanges = response.data.exchanges || [];
+      const coinbase = exchanges.find((e: any) => e.name.toLowerCase() === "coinbase");
+      setCoinbaseConnected(coinbase?.isConnected || false);
+    } catch (error) {
+      console.error("[CSVImport] Error checking Coinbase connection:", error);
+      setCoinbaseConnected(false);
+    } finally {
+      setCoinbaseLoading(false);
+    }
+  };
+
+  const handleCoinbaseConnect = () => {
+    // Redirect to Coinbase OAuth flow
+    window.location.href = "/api/auth/coinbase";
+  };
+
+  const handleCoinbaseSync = async () => {
+    setIsSyncingCoinbase(true);
+    setSyncProgress(0);
+
+    try {
+      // Simulate progress while syncing
+      const progressInterval = setInterval(() => {
+        setSyncProgress((prev) => Math.min(prev + 5, 90));
+      }, 500);
+
+      // Call the sync API with fullSync to get all historical transactions
+      const response = await axios.post("/api/exchanges/sync", {
+        fullSync: true, // Get all historical transactions
+      });
+
+      clearInterval(progressInterval);
+      setSyncProgress(100);
+
+      if (response.data.status === "success") {
+        const count = response.data.transactionsAdded || 0;
+        const skipped = response.data.transactionsSkipped || 0;
+
+        toast.success(
+          `Successfully imported ${count} transaction${count !== 1 ? "s" : ""} from Coinbase${skipped > 0 ? ` (${skipped} duplicates skipped)` : ""}`
+        );
+
+        // Call onImportComplete with the result
+        if (onImportComplete) {
+          onImportComplete({
+            source: "Coinbase (OAuth)",
+            fileName: "coinbase-api-sync",
+            timestamp: new Date().toISOString(),
+            transactions: [],
+            totalTransactions: count,
+          });
+        }
+      } else {
+        throw new Error(response.data.error || "Failed to sync");
+      }
+    } catch (error) {
+      console.error("[CSVImport] Coinbase sync error:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.errors?.[0] || error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to sync Coinbase transactions";
+
+      // Check if it's a reconnect error
+      if (errorMessage.includes("reconnect") || errorMessage.includes("expired")) {
+        setCoinbaseConnected(false);
+        toast.error("Coinbase connection expired. Please reconnect your account.");
+      } else {
+        toast.error(errorMessage);
+      }
+    } finally {
+      setIsSyncingCoinbase(false);
+      setSyncProgress(0);
+    }
+  };
+
   const handleExchangeSelect = (value: string) => {
     setSelectedExchange(value);
+    // Reset file selection when changing exchange
+    setCsvFile(null);
+    setUploadComplete(false);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -257,7 +352,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
             </SelectContent>
           </Select>
 
-          {selectedExchange && (
+          {selectedExchange && selectedExchange !== "coinbase" && (
             <div className="mt-1 text-xs text-muted-foreground">
               {selectedExchange === "custom"
                 ? "Custom format requires mapping columns"
@@ -265,6 +360,83 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
             </div>
           )}
         </div>
+
+        {/* Coinbase OAuth Section - Show when Coinbase is selected */}
+        {selectedExchange === "coinbase" && (
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-gradient-to-r from-blue-500/10 to-blue-600/10 p-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#0052FF]">
+                  <svg className="h-6 w-6" viewBox="0 0 1024 1024" fill="none">
+                    <path fillRule="evenodd" clipRule="evenodd" d="M512 872C710.823 872 872 710.823 872 512C872 313.177 710.823 152 512 152C313.177 152 152 313.177 152 512C152 710.823 313.177 872 512 872ZM420 396C406.745 396 396 406.745 396 420V604C396 617.255 406.745 628 420 628H604C617.255 628 628 617.255 628 604V420C628 406.745 617.255 396 604 396H420Z" fill="white"/>
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">Connect Coinbase Account</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Connect your Coinbase account to automatically download all your historical transactions.
+                  </p>
+
+                  {coinbaseLoading ? (
+                    <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Checking connection status...
+                    </div>
+                  ) : coinbaseConnected ? (
+                    <div className="mt-4 space-y-3">
+                      <div className="flex items-center gap-2 text-sm text-green-500">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Coinbase account connected
+                      </div>
+
+                      {isSyncingCoinbase ? (
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs">
+                            <span>Downloading transactions...</span>
+                            <span>{syncProgress}%</span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                            <div
+                              className="h-full bg-[#0052FF] transition-all"
+                              style={{ width: `${syncProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <Button
+                          onClick={handleCoinbaseSync}
+                          className="bg-[#0052FF] hover:bg-[#0052FF]/90"
+                        >
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                          Download All Transactions
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={handleCoinbaseConnect}
+                      className="mt-4 bg-[#0052FF] hover:bg-[#0052FF]/90"
+                    >
+                      <Link2 className="mr-2 h-4 w-4" />
+                      Connect Coinbase Account
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">
+                  Or upload CSV manually
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
