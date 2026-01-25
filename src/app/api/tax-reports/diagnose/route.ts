@@ -42,6 +42,8 @@ export async function GET(request: NextRequest) {
             { wallet_address: null },
           ],
         },
+        // Also include exchange API imports
+        { source_type: "exchange_api" },
       ],
       status: { in: ["confirmed", "completed", "pending"] },
     };

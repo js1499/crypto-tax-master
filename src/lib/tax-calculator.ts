@@ -290,6 +290,12 @@ export async function calculateTaxReport(
     ],
   });
 
+  // Also include exchange API imports (Coinbase, Binance, etc.)
+  // These are transactions synced from connected exchanges
+  orConditions.push({
+    source_type: "exchange_api",
+  });
+
   if (orConditions.length > 0) {
     whereClause.OR = orConditions;
   }

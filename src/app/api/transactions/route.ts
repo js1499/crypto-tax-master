@@ -82,13 +82,13 @@ export async function GET(request: NextRequest) {
 
     const walletAddresses = userWithWallets?.wallets.map((w) => w.address) || [];
     
-    // Build OR conditions for wallet transactions and CSV imports
+    // Build OR conditions for wallet transactions, CSV imports, and exchange API imports
     const userTransactionConditions: Prisma.TransactionWhereInput[] = [];
-    
+
     if (walletAddresses.length > 0) {
       userTransactionConditions.push({ wallet_address: { in: walletAddresses } });
     }
-    
+
     // Always include CSV imports (assumes CSV imports belong to authenticated user)
     // This is safe because the user is authenticated and can only see their own CSV imports
     userTransactionConditions.push({
@@ -96,6 +96,12 @@ export async function GET(request: NextRequest) {
         { source_type: "csv_import" },
         { wallet_address: null },
       ],
+    });
+
+    // Also include exchange API imports (Coinbase, Binance, etc.)
+    // These are transactions synced from connected exchanges
+    userTransactionConditions.push({
+      source_type: "exchange_api",
     });
 
     if (userTransactionConditions.length > 0) {

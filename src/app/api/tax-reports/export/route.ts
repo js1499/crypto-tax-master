@@ -200,6 +200,10 @@ async function generateTransactionHistoryCSV(
       { wallet_address: null },
     ],
   });
+  // Also include exchange API imports (Coinbase, Binance, etc.)
+  orConditions.push({
+    source_type: "exchange_api",
+  });
 
   const transactions = await prisma.transaction.findMany({
     where: {

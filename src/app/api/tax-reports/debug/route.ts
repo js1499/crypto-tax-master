@@ -36,6 +36,10 @@ export async function GET(request: NextRequest) {
         { wallet_address: null },
       ],
     });
+    // Also include exchange API imports
+    orConditions.push({
+      source_type: "exchange_api",
+    });
 
     // Get all transactions
     const allTransactions = await prisma.transaction.findMany({

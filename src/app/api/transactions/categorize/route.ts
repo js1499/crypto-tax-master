@@ -72,6 +72,11 @@ export async function POST(request: NextRequest) {
       ],
     });
 
+    // Also include exchange API imports
+    whereClause.OR.push({
+      source_type: "exchange_api",
+    });
+
     if (whereClause.OR.length === 0) {
       return NextResponse.json(
         {
