@@ -92,13 +92,11 @@ export async function DELETE(request: NextRequest) {
       ],
     });
 
-    // Also delete exchange API imports with null wallet_address
-    // Exchange-synced transactions don't have wallet_address set
+    // Also delete exchange API imports
+    // Exchange-synced transactions typically don't have wallet_address set
+    // Use simpler condition to ensure all exchange_api transactions are deleted
     whereClause.OR.push({
-      AND: [
-        { source_type: "exchange_api" },
-        { wallet_address: null },
-      ],
+      source_type: "exchange_api",
     });
 
     // If no conditions, return error
