@@ -121,17 +121,42 @@ export async function getCoinbaseTransactionsWithApiKey(
 
     const transactions: ExchangeTransaction[] = [];
 
-    // Get accounts first using CDP JWT authentication
-    const accountsPath = "/v2/accounts";
-    const accountsHeaders = createCoinbaseCDPHeaders(apiKeyName, privateKey, "GET", accountsPath);
+    // Get ALL accounts with pagination (default limit is 25, we need all)
+    let allAccounts: any[] = [];
+    let accountsNextUri: string | null = "/v2/accounts";
+    let accountPageCount = 0;
+    const maxAccountPages = 20; // Safety limit (20 pages * 100 accounts = 2000 accounts max)
 
-    const accountsResponse = await axios.get(
-      `https://api.coinbase.com${accountsPath}`,
-      { headers: accountsHeaders }
-    );
+    while (accountsNextUri && accountPageCount < maxAccountPages) {
+      accountPageCount++;
 
-    const accounts = accountsResponse.data.data;
-    console.log(`[Coinbase Transactions] Found ${accounts.length} accounts`);
+      const accountsPath = accountsNextUri.startsWith("http")
+        ? new URL(accountsNextUri).pathname + new URL(accountsNextUri).search
+        : accountsNextUri;
+
+      const accountsHeaders = createCoinbaseCDPHeaders(apiKeyName, privateKey, "GET", accountsPath.split("?")[0]);
+
+      const accountsResponse = await axios.get(
+        accountsNextUri.startsWith("http") ? accountsNextUri : `https://api.coinbase.com${accountsPath}`,
+        {
+          headers: accountsHeaders,
+          params: accountsNextUri.includes("?") ? undefined : { limit: 100 }
+        }
+      );
+
+      const pageAccounts = accountsResponse.data.data || [];
+      allAccounts = allAccounts.concat(pageAccounts);
+
+      // Get next page of accounts
+      accountsNextUri = accountsResponse.data.pagination?.next_uri || null;
+
+      if (pageAccounts.length > 0) {
+        console.log(`[Coinbase Transactions] Accounts page ${accountPageCount}: found ${pageAccounts.length} accounts (total: ${allAccounts.length})`);
+      }
+    }
+
+    const accounts = allAccounts;
+    console.log(`[Coinbase Transactions] Found ${accounts.length} total accounts`);
 
     // Get transactions for each account with pagination
     for (const account of accounts) {
@@ -303,17 +328,39 @@ export async function getCoinbaseTransactions(
 
     const transactions: ExchangeTransaction[] = [];
 
-    // Get accounts first
-    const accountsResponse = await axios.get(
-      "https://api.coinbase.com/v2/accounts",
-      {
+    // Get ALL accounts with pagination (default limit is 25, we need all)
+    let allAccounts: any[] = [];
+    let accountsNextUri: string | null = "/v2/accounts";
+    let accountPageCount = 0;
+    const maxAccountPages = 20; // Safety limit
+
+    while (accountsNextUri && accountPageCount < maxAccountPages) {
+      accountPageCount++;
+
+      const accountsPath = accountsNextUri.startsWith("http")
+        ? accountsNextUri
+        : `https://api.coinbase.com${accountsNextUri}`;
+
+      const accountsResponse = await axios.get(accountsPath, {
         headers: {
           Authorization: `Bearer ${tokens.access_token}`,
         },
-      }
-    );
+        params: accountsNextUri.includes("?") ? undefined : { limit: 100 }
+      });
 
-    const accounts = accountsResponse.data.data;
+      const pageAccounts = accountsResponse.data.data || [];
+      allAccounts = allAccounts.concat(pageAccounts);
+
+      // Get next page of accounts
+      accountsNextUri = accountsResponse.data.pagination?.next_uri || null;
+
+      if (pageAccounts.length > 0) {
+        console.log(`[Coinbase Transactions] Accounts page ${accountPageCount}: found ${pageAccounts.length} accounts (total: ${allAccounts.length})`);
+      }
+    }
+
+    const accounts = allAccounts;
+    console.log(`[Coinbase Transactions] Found ${accounts.length} total accounts`);
 
     // Get transactions for each account with pagination
     for (const account of accounts) {
