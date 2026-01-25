@@ -1,70 +1,103 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCoinbaseAccounts, isTokenExpired, refreshAccessToken, CoinbaseTokens } from "@/lib/coinbase";
+import { getCoinbaseAccounts, refreshAccessToken, CoinbaseTokens } from "@/lib/coinbase";
+import { getCurrentUser } from "@/lib/auth-helpers";
+import { decryptApiKey, encryptApiKey } from "@/lib/exchange-clients";
+import prisma from "@/lib/prisma";
+import crypto from "crypto";
+
+// Encryption key for OAuth tokens
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
 
 /**
- * API route to fetch Coinbase accounts 
- * Uses the stored tokens to authenticate with Coinbase API
+ * API route to fetch Coinbase accounts
+ * Uses tokens from database (not cookies) for proper authentication
+ * PRD Requirement: GET /api/coinbase/accounts returns Coinbase accounts for current user
  */
 export async function GET(request: NextRequest) {
   console.log("[Coinbase Accounts API] Fetching accounts");
-  
+
   try {
-    // Get tokens from cookies
-    const tokensCookie = request.cookies.get('coinbase_tokens')?.value;
-    
-    if (!tokensCookie) {
-      console.error("[Coinbase Accounts API] No tokens found");
+    // Get authenticated user
+    const user = await getCurrentUser(request);
+    if (!user) {
       return NextResponse.json(
-        { error: "Not authenticated with Coinbase" },
+        { error: "Not authenticated", code: "AUTH_REQUIRED" },
         { status: 401 }
       );
     }
-    
-    // Parse tokens
+
+    // Get Coinbase exchange connection from database
+    const exchange = await prisma.exchange.findUnique({
+      where: {
+        name_userId: {
+          name: "coinbase",
+          userId: user.id,
+        },
+      },
+    });
+
+    if (!exchange || !exchange.refreshToken) {
+      return NextResponse.json(
+        { error: "Coinbase not connected", code: "NOT_CONNECTED" },
+        { status: 401 }
+      );
+    }
+
+    if (!exchange.isConnected) {
+      return NextResponse.json(
+        { error: "Coinbase connection expired. Please reconnect.", code: "RECONNECT_REQUIRED" },
+        { status: 401 }
+      );
+    }
+
+    // Decrypt the refresh token
+    let refreshToken: string;
+    try {
+      refreshToken = decryptApiKey(exchange.refreshToken, ENCRYPTION_KEY);
+    } catch (error) {
+      console.error("[Coinbase Accounts API] Failed to decrypt token:", error);
+      return NextResponse.json(
+        { error: "Unable to access credentials. Please reconnect.", code: "DECRYPT_FAILED" },
+        { status: 401 }
+      );
+    }
+
+    // Refresh token to get new access token
     let tokens: CoinbaseTokens;
     try {
-      tokens = JSON.parse(tokensCookie);
-    } catch (e) {
-      console.error("[Coinbase Accounts API] Failed to parse tokens", e);
+      tokens = await refreshAccessToken(refreshToken);
+
+      // Persist refreshed tokens back to database
+      const encryptedNewRefreshToken = encryptApiKey(tokens.refresh_token, ENCRYPTION_KEY);
+      const encryptedNewAccessToken = encryptApiKey(tokens.access_token, ENCRYPTION_KEY);
+
+      await prisma.exchange.update({
+        where: { id: exchange.id },
+        data: {
+          refreshToken: encryptedNewRefreshToken,
+          accessToken: encryptedNewAccessToken,
+          tokenExpiresAt: new Date(tokens.expires_at || Date.now() + tokens.expires_in * 1000),
+          isConnected: true,
+        },
+      });
+    } catch (error) {
+      console.error("[Coinbase Accounts API] Failed to refresh token:", error);
+
+      // Mark connection as needing re-auth
+      await prisma.exchange.update({
+        where: { id: exchange.id },
+        data: { isConnected: false },
+      });
+
       return NextResponse.json(
-        { error: "Invalid token format" },
+        { error: "Coinbase connection expired. Please reconnect.", code: "TOKEN_REFRESH_FAILED" },
         { status: 401 }
       );
     }
-    
-    // Check if token is expired
-    if (isTokenExpired(tokens)) {
-      console.log("[Coinbase Accounts API] Access token expired, refreshing");
-      try {
-        // Refresh the token
-        tokens = await refreshAccessToken(tokens.refresh_token);
-        
-        // Update the tokens cookie
-        const response = NextResponse.next();
-        response.cookies.set({
-          name: 'coinbase_tokens',
-          value: JSON.stringify({
-            access_token: tokens.access_token,
-            refresh_token: tokens.refresh_token,
-            expires_at: tokens.expires_at
-          }),
-          httpOnly: true,
-          secure: process.env.NODE_ENV === 'production',
-          maxAge: 60 * 60 * 24 * 7, // 7 days
-          path: '/'
-        });
-      } catch (error) {
-        console.error("[Coinbase Accounts API] Failed to refresh token:", error);
-        return NextResponse.json(
-          { error: "Failed to refresh authentication" },
-          { status: 401 }
-        );
-      }
-    }
-    
-    // Fetch accounts
+
+    // Fetch accounts from Coinbase API
     const accounts = await getCoinbaseAccounts(tokens.access_token);
-    
+
     // Process and format account data for the frontend
     const formattedAccounts = accounts.map(account => ({
       id: account.id,
@@ -79,7 +112,7 @@ export async function GET(request: NextRequest) {
       created_at: account.created_at,
       updated_at: account.updated_at
     }));
-    
+
     // Return the accounts
     return NextResponse.json({
       status: "success",
@@ -88,7 +121,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("[Coinbase Accounts API] Error fetching accounts:", error);
     return NextResponse.json(
-      { error: "Failed to fetch Coinbase accounts" },
+      { error: "Failed to fetch Coinbase accounts", code: "FETCH_FAILED" },
       { status: 500 }
     );
   }

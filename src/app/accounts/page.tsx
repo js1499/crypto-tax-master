@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PlusCircle, Wallet, Building, ExternalLink, AlertCircle, CheckCircle, RefreshCw, RotateCw, Trash2 } from "lucide-react";
+import { PlusCircle, Wallet, Building, ExternalLink, AlertCircle, CheckCircle, RefreshCw, RotateCw, Trash2, Link2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -45,7 +45,7 @@ interface WalletAccount extends BaseAccount {
 interface ExchangeAccount extends BaseAccount {
   type: "exchange";
   isConnected?: boolean;
-  lastRotateCwAt?: string;
+  lastSyncAt?: string;
 }
 
 type Account = WalletAccount | ExchangeAccount;
@@ -60,7 +60,7 @@ function AccountsContent() {
   const [exchanges, setExchanges] = useState<ExchangeAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [syncing, setRotateCwing] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<string | null>(null);
   
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -108,14 +108,14 @@ function AccountsContent() {
         updatedAt: wallet.updatedAt
       }));
 
-      // Map exchanges - API returns lastSyncAt, not lastRotateCwAt
+      // Map exchanges from API response
       const exchangeAccounts: ExchangeAccount[] = (exchangesResponse.data.exchanges || []).map((exchange: any) => ({
         id: exchange.id,
         name: exchange.name,
         type: "exchange",
         provider: exchange.name,
         isConnected: exchange.isConnected,
-        lastRotateCwAt: exchange.lastSyncAt, // API returns lastSyncAt
+        lastSyncAt: exchange.lastSyncAt,
         createdAt: exchange.createdAt,
         updatedAt: exchange.updatedAt
       }));
@@ -148,8 +148,8 @@ function AccountsContent() {
   };
 
   // Function to sync exchange transactions
-  const handleRotateCwExchange = async (exchangeId: string) => {
-    setRotateCwing(exchangeId);
+  const handleSyncExchange = async (exchangeId: string) => {
+    setSyncing(exchangeId);
     try {
       const response = await axios.post('/api/exchanges/sync', {
         exchangeId,
@@ -157,9 +157,9 @@ function AccountsContent() {
 
       if (response.data.status === "success") {
         toast.success(
-          `RotateCwed ${response.data.transactionsAdded} transaction(s) from exchange`
+          `Synced ${response.data.transactionsAdded} transaction(s) from exchange`
         );
-        fetchWallets(); // Refresh to update lastRotateCwAt
+        fetchWallets(); // Refresh to update lastSyncAt
       } else {
         throw new Error(response.data.error || "Failed to sync");
       }
@@ -169,7 +169,7 @@ function AccountsContent() {
         error instanceof Error ? error.message : "Failed to sync exchange"
       );
     } finally {
-      setRotateCwing(null);
+      setSyncing(null);
     }
   };
 
@@ -434,26 +434,26 @@ function AccountsContent() {
                               "px-2 py-1 rounded-full text-xs",
                               exchangeAccount?.isConnected
                                 ? "bg-green-500/10 text-green-500"
-                                : "bg-gray-500/10 text-gray-500"
+                                : "bg-amber-500/10 text-amber-500"
                             )}>
-                              {exchangeAccount?.isConnected ? "Connected" : "Disconnected"}
+                              {exchangeAccount?.isConnected ? "Connected" : "Needs Reconnect"}
                             </span>
                           </div>
-                          {exchangeAccount?.lastRotateCwAt && (
+                          {exchangeAccount?.lastSyncAt && (
                             <div className="flex justify-between">
-                              <span className="text-muted-foreground">Last RotateCw</span>
+                              <span className="text-muted-foreground">Last Sync</span>
                               <span>
-                                {new Date(exchangeAccount.lastRotateCwAt).toLocaleDateString()}
+                                {new Date(exchangeAccount.lastSyncAt).toLocaleDateString()}
                               </span>
                             </div>
                           )}
                           <div className="flex gap-2 pt-2">
-                            {exchangeAccount?.isConnected && (
+                            {exchangeAccount?.isConnected ? (
                               <Button
                                 size="sm"
                                 variant="outline"
                                 className="flex-1"
-                                onClick={() => handleRotateCwExchange(account.id)}
+                                onClick={() => handleSyncExchange(account.id)}
                                 disabled={syncing === account.id}
                               >
                                 {syncing === account.id ? (
@@ -461,16 +461,32 @@ function AccountsContent() {
                                 ) : (
                                   <RotateCw className="mr-2 h-4 w-4" />
                                 )}
-                                RotateCw
+                                Sync
+                              </Button>
+                            ) : (
+                              // PRD UX Requirement: Show "Reconnect" if tokens invalid
+                              <Button
+                                size="sm"
+                                variant="default"
+                                className="flex-1"
+                                onClick={() => {
+                                  // For Coinbase, redirect to OAuth flow
+                                  if (account.provider.toLowerCase() === "coinbase") {
+                                    window.location.href = "/api/auth/coinbase";
+                                  } else {
+                                    // For other exchanges, open the connect dialog
+                                    setIsAddDialogOpen(true);
+                                  }
+                                }}
+                              >
+                                <Link2 className="mr-2 h-4 w-4" />
+                                Reconnect
                               </Button>
                             )}
                             <Button
                               size="sm"
                               variant="outline"
-                              className={cn(
-                                "flex-1",
-                                !exchangeAccount?.isConnected && "flex-1"
-                              )}
+                              className="flex-1"
                               onClick={() => handleDisconnectExchange(account.id)}
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
@@ -513,19 +529,19 @@ function AccountsContent() {
                   variant="outline"
                   size="sm"
                   onClick={async () => {
-                    setRotateCwing("all");
+                    setSyncing("all");
                     try {
                       const response = await axios.post('/api/exchanges/sync', {});
                       if (response.data.status === "success") {
                         toast.success(
-                          `RotateCwed ${response.data.transactionsAdded} transaction(s) from ${exchanges.filter(e => e.isConnected).length} exchange(s)`
+                          `Synced ${response.data.transactionsAdded} transaction(s) from ${exchanges.filter(e => e.isConnected).length} exchange(s)`
                         );
                         fetchWallets();
                       }
                     } catch (error) {
                       toast.error("Failed to sync exchanges");
                     } finally {
-                      setRotateCwing(null);
+                      setSyncing(null);
                     }
                   }}
                   disabled={syncing === "all"}
@@ -533,12 +549,12 @@ function AccountsContent() {
                   {syncing === "all" ? (
                     <>
                       <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      RotateCwing...
+                      Syncing...
                     </>
                   ) : (
                     <>
                       <RotateCw className="mr-2 h-4 w-4" />
-                      RotateCw All Exchanges
+                      Sync All Exchanges
                     </>
                   )}
                 </Button>

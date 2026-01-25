@@ -2,23 +2,72 @@ import axios from "axios";
 import { Decimal } from "@prisma/client/runtime/library";
 import { refreshAccessToken, isTokenExpired, CoinbaseTokens } from "./coinbase";
 import type { ExchangeTransaction } from "./exchange-clients";
+import { encryptApiKey, decryptApiKey } from "./exchange-clients";
+import prisma from "./prisma";
+import crypto from "crypto";
+
+// Encryption key for OAuth tokens
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
 
 /**
  * Get transactions from Coinbase using OAuth tokens
+ * @param encryptedRefreshToken - Encrypted refresh token from database
+ * @param exchangeId - Exchange ID to update tokens after refresh
+ * @param startTime - Optional start time filter
+ * @param endTime - Optional end time filter
  */
 export async function getCoinbaseTransactions(
-  refreshToken: string,
+  encryptedRefreshToken: string,
   startTime?: number,
-  endTime?: number
+  endTime?: number,
+  exchangeId?: string
 ): Promise<ExchangeTransaction[]> {
   try {
-    // Refresh token if needed
+    // Decrypt the refresh token
+    let refreshToken: string;
+    try {
+      refreshToken = decryptApiKey(encryptedRefreshToken, ENCRYPTION_KEY);
+    } catch (error) {
+      console.error("[Coinbase Transactions] Failed to decrypt refresh token:", error);
+      throw new Error("TOKEN_DECRYPT_FAILED");
+    }
+
+    // Refresh token to get new access token
     let tokens: CoinbaseTokens;
     try {
       tokens = await refreshAccessToken(refreshToken);
+
+      // PRD Requirement: Persist refreshed tokens back to database
+      if (exchangeId) {
+        const encryptedNewRefreshToken = encryptApiKey(tokens.refresh_token, ENCRYPTION_KEY);
+        const encryptedNewAccessToken = encryptApiKey(tokens.access_token, ENCRYPTION_KEY);
+
+        await prisma.exchange.update({
+          where: { id: exchangeId },
+          data: {
+            refreshToken: encryptedNewRefreshToken,
+            accessToken: encryptedNewAccessToken,
+            tokenExpiresAt: new Date(tokens.expires_at || Date.now() + tokens.expires_in * 1000),
+            isConnected: true,
+          },
+        });
+        console.log("[Coinbase Transactions] Persisted refreshed tokens to database");
+      }
     } catch (error) {
       console.error("[Coinbase Transactions] Failed to refresh token:", error);
-      throw new Error("Failed to authenticate with Coinbase");
+
+      // PRD Requirement: Mark connection as "Needs re-auth" if refresh fails
+      if (exchangeId) {
+        await prisma.exchange.update({
+          where: { id: exchangeId },
+          data: {
+            isConnected: false,
+          },
+        });
+        console.log("[Coinbase Transactions] Marked exchange as disconnected due to token refresh failure");
+      }
+
+      throw new Error("TOKEN_REFRESH_FAILED");
     }
 
     const transactions: ExchangeTransaction[] = [];

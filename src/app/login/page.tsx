@@ -230,19 +230,21 @@ export default function LoginPage() {
               variant="outline"
               className="w-full"
               onClick={() => {
-                // Keep existing Coinbase OAuth flow
+                setIsLoading(true);
+                // Redirect to Coinbase OAuth flow
                 window.location.href = "/api/auth/coinbase";
               }}
               disabled={isLoading}
             >
               <svg
                 className="mr-2 h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="currentColor"
+                viewBox="0 0 1024 1024"
+                fill="none"
               >
-                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 2.4c5.302 0 9.6 4.298 9.6 9.6S17.302 21.6 12 21.6 2.4 17.302 2.4 12 6.698 2.4 12 2.4zm-1.2 4.8v9.6h2.4V7.2h-2.4zm4.8 0v9.6h2.4V7.2h-2.4z" />
+                <rect width="1024" height="1024" rx="512" fill="#0052FF"/>
+                <path fillRule="evenodd" clipRule="evenodd" d="M152 512C152 710.823 313.177 872 512 872C710.823 872 872 710.823 872 512C872 313.177 710.823 152 512 152C313.177 152 152 313.177 152 512ZM420 396C406.745 396 396 406.745 396 420V604C396 617.255 406.745 628 420 628H604C617.255 628 628 617.255 628 604V420C628 406.745 617.255 396 604 396H420Z" fill="white"/>
               </svg>
-              Coinbase
+              Continue with Coinbase
             </Button>
           </div>
 

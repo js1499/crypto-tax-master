@@ -60,7 +60,11 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { exchangeId, startTime, endTime } = body;
+    let { exchangeId, startTime, endTime, fullSync } = body;
+
+    // PRD: Support incremental sync using last sync timestamp
+    // If fullSync is not explicitly requested and no startTime provided,
+    // use lastSyncAt for incremental syncing
 
     // Get exchanges to sync
     const where: any = {
@@ -89,6 +93,14 @@ export async function POST(request: NextRequest) {
       try {
         let transactions: any[] = [];
 
+        // PRD: Incremental sync uses last sync timestamp
+        // Use lastSyncAt as startTime for incremental sync if not doing full sync
+        let effectiveStartTime = startTime;
+        if (!fullSync && !startTime && exchange.lastSyncAt) {
+          effectiveStartTime = exchange.lastSyncAt.getTime();
+          console.log(`[Exchange Sync] Using incremental sync from ${exchange.lastSyncAt} for ${exchange.name}`);
+        }
+
         // Decrypt credentials
         const apiKey = exchange.apiKey
           ? decryptApiKey(exchange.apiKey, ENCRYPTION_KEY)
@@ -105,48 +117,59 @@ export async function POST(request: NextRequest) {
           case "binance":
             if (apiKey && apiSecret) {
               const client = new BinanceClient(apiKey, apiSecret);
-              transactions = await client.getAllTrades(startTime, endTime);
+              transactions = await client.getAllTrades(effectiveStartTime, endTime);
             }
             break;
 
           case "kraken":
             if (apiKey && apiSecret) {
               const client = new KrakenClient(apiKey, apiSecret);
-              transactions = await client.getTradesHistory(startTime, endTime);
+              transactions = await client.getTradesHistory(effectiveStartTime, endTime);
             }
             break;
 
           case "kucoin":
             if (apiKey && apiSecret && apiPassphrase) {
               const client = new KuCoinClient(apiKey, apiSecret, apiPassphrase);
-              transactions = await client.getTrades(undefined, startTime, endTime);
+              transactions = await client.getTrades(undefined, effectiveStartTime, endTime);
             }
             break;
 
           case "gemini":
             if (apiKey && apiSecret) {
               const client = new GeminiClient(apiKey, apiSecret);
-              transactions = await client.getTrades(undefined, startTime, endTime);
+              transactions = await client.getTrades(undefined, effectiveStartTime, endTime);
             }
             break;
 
           case "coinbase":
             if (exchange.refreshToken) {
               try {
-                // Use Coinbase OAuth flow
+                // Use Coinbase OAuth flow with encrypted tokens
+                // Pass exchangeId so tokens can be persisted after refresh
                 transactions = await getCoinbaseTransactions(
                   exchange.refreshToken,
-                  startTime,
-                  endTime
+                  effectiveStartTime, // Use incremental sync start time
+                  endTime,
+                  exchange.id // Pass exchange ID for token persistence
                 );
               } catch (error) {
                 // Log error only in development
                 if (process.env.NODE_ENV === "development") {
                   console.error("[Exchange Sync] Coinbase error:", error);
                 }
-                errors.push(
-                  `Coinbase: ${error instanceof Error ? error.message : "Failed to fetch transactions"}`
-                );
+
+                // PRD: Structured error codes for UI messaging
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                let userMessage = "Failed to fetch transactions";
+
+                if (errorMessage === "TOKEN_REFRESH_FAILED") {
+                  userMessage = "Coinbase connection expired. Please reconnect your account.";
+                } else if (errorMessage === "TOKEN_DECRYPT_FAILED") {
+                  userMessage = "Unable to access Coinbase credentials. Please reconnect.";
+                }
+
+                errors.push(`Coinbase: ${userMessage}`);
                 continue;
               }
             }
@@ -234,13 +257,33 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    // PRD Observability: Structured response with metrics
+    const response = {
       status: "success",
       message: `Synced ${exchanges.length} exchange(s)`,
       transactionsAdded: totalAdded,
       transactionsSkipped: totalSkipped,
       errors: errors.length > 0 ? errors : undefined,
-    });
+      // PRD: Metrics for observability
+      metrics: {
+        exchangesSynced: exchanges.length,
+        transactionsAdded: totalAdded,
+        transactionsSkipped: totalSkipped,
+        errorCount: errors.length,
+        syncDurationMs: Date.now() - (request.headers.get("x-request-start") ? parseInt(request.headers.get("x-request-start") || "0") : Date.now()),
+      },
+    };
+
+    // Log sync completion for observability
+    console.log("[Exchange Sync] Completed:", JSON.stringify({
+      userId: user.id,
+      exchangeCount: exchanges.length,
+      transactionsAdded: totalAdded,
+      transactionsSkipped: totalSkipped,
+      errorCount: errors.length,
+    }));
+
+    return NextResponse.json(response);
   } catch (error) {
     // Always capture in Sentry for production monitoring
     Sentry.captureException(error, {

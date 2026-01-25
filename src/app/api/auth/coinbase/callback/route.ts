@@ -3,6 +3,11 @@ import { exchangeCodeForTokens, getCoinbaseUser, getCoinbaseAccounts } from "@/l
 import prisma from "@/lib/prisma";
 import { encode } from "next-auth/jwt";
 import { authOptions } from "@/lib/auth-config";
+import { encryptApiKey } from "@/lib/exchange-clients";
+import crypto from "crypto";
+
+// Encryption key for OAuth tokens (PRD requires AES-256-GCM encryption at rest)
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
 
 /**
  * Handles the OAuth callback from Coinbase
@@ -90,7 +95,11 @@ export async function GET(request: NextRequest) {
     
     console.log(`[Coinbase Callback] Stored ${accounts.length} wallets for user ${user.id}`);
 
-    // Store Coinbase exchange connection
+    // Encrypt tokens before storing (PRD Security requirement: AES-256-GCM encryption at rest)
+    const encryptedRefreshToken = encryptApiKey(tokens.refresh_token, ENCRYPTION_KEY);
+    const encryptedAccessToken = encryptApiKey(tokens.access_token, ENCRYPTION_KEY);
+
+    // Store Coinbase exchange connection with encrypted tokens
     await prisma.exchange.upsert({
       where: {
         name_userId: {
@@ -99,16 +108,16 @@ export async function GET(request: NextRequest) {
         },
       },
       update: {
-        refreshToken: tokens.refresh_token,
-        accessToken: tokens.access_token,
+        refreshToken: encryptedRefreshToken,
+        accessToken: encryptedAccessToken,
         tokenExpiresAt: new Date(tokens.expires_at || Date.now() + tokens.expires_in * 1000),
         isConnected: true,
         updatedAt: new Date(),
       },
       create: {
         name: "coinbase",
-        refreshToken: tokens.refresh_token,
-        accessToken: tokens.access_token,
+        refreshToken: encryptedRefreshToken,
+        accessToken: encryptedAccessToken,
         tokenExpiresAt: new Date(tokens.expires_at || Date.now() + tokens.expires_in * 1000),
         isConnected: true,
         userId: user.id,

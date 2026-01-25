@@ -4,7 +4,7 @@
  * so we'll handle Coinbase OAuth separately and link accounts
  */
 
-import { OAuthConfig, OAuthUserConfig } from "next-auth/providers";
+import type { OAuthConfig, OAuthUserConfig } from "next-auth/providers/oauth";
 
 export interface CoinbaseProfile {
   data: {
@@ -34,10 +34,11 @@ export function CoinbaseProvider(
       },
     },
     token: {
-      url: "https://api.coinbase.com/oauth/token",
-      async request(context) {
+      url: "https://login.coinbase.com/oauth2/token",
+      async request(context: { provider: OAuthConfig<CoinbaseProfile>; params: { code?: string } }) {
         const { provider, params } = context;
-        const response = await fetch(provider.token?.url as string, {
+        const tokenUrl = typeof provider.token === 'string' ? provider.token : provider.token?.url;
+        const response = await fetch(tokenUrl as string, {
           method: "POST",
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
@@ -47,7 +48,7 @@ export function CoinbaseProvider(
             code: params.code as string,
             client_id: provider.clientId as string,
             client_secret: provider.clientSecret as string,
-            redirect_uri: provider.callbackUrl,
+            redirect_uri: provider.callbackUrl as string,
           }),
         });
 
@@ -56,9 +57,10 @@ export function CoinbaseProvider(
     },
     userinfo: {
       url: "https://api.coinbase.com/v2/user",
-      async request(context) {
+      async request(context: { tokens: { access_token?: string }; provider: OAuthConfig<CoinbaseProfile> }) {
         const { tokens, provider } = context;
-        const response = await fetch(provider.userinfo?.url as string, {
+        const userinfoUrl = typeof provider.userinfo === 'string' ? provider.userinfo : (provider.userinfo as { url: string })?.url;
+        const response = await fetch(userinfoUrl as string, {
           headers: {
             Authorization: `Bearer ${tokens.access_token}`,
           },
@@ -66,7 +68,7 @@ export function CoinbaseProvider(
         return await response.json();
       },
     },
-    profile(profile) {
+    profile(profile: CoinbaseProfile) {
       return {
         id: profile.data.id,
         name: profile.data.name || profile.data.username || "Coinbase User",
