@@ -37,11 +37,17 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadComplete, setUploadComplete] = useState(false);
 
-  // Coinbase OAuth state
+  // Coinbase connection state
   const [coinbaseConnected, setCoinbaseConnected] = useState(false);
   const [coinbaseLoading, setCoinbaseLoading] = useState(false);
   const [isSyncingCoinbase, setIsSyncingCoinbase] = useState(false);
   const [syncProgress, setSyncProgress] = useState(0);
+
+  // Coinbase API Key form state
+  const [showApiKeyForm, setShowApiKeyForm] = useState(false);
+  const [coinbaseApiKey, setCoinbaseApiKey] = useState("");
+  const [coinbaseApiSecret, setCoinbaseApiSecret] = useState("");
+  const [isConnecting, setIsConnecting] = useState(false);
 
   // Check if Coinbase is already connected when component mounts
   useEffect(() => {
@@ -65,9 +71,38 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
     }
   };
 
-  const handleCoinbaseConnect = () => {
-    // Redirect to Coinbase OAuth flow
-    window.location.href = "/api/auth/coinbase";
+  const handleCoinbaseApiKeyConnect = async () => {
+    if (!coinbaseApiKey || !coinbaseApiSecret) {
+      toast.error("Please enter both API Key and API Secret");
+      return;
+    }
+
+    setIsConnecting(true);
+    try {
+      const response = await axios.post("/api/exchanges/connect", {
+        exchange: "coinbase",
+        apiKey: coinbaseApiKey,
+        apiSecret: coinbaseApiSecret,
+      });
+
+      if (response.data.status === "success") {
+        toast.success("Coinbase account connected successfully!");
+        setCoinbaseConnected(true);
+        setShowApiKeyForm(false);
+        setCoinbaseApiKey("");
+        setCoinbaseApiSecret("");
+      } else {
+        throw new Error(response.data.error || "Failed to connect");
+      }
+    } catch (error) {
+      console.error("[CSVImport] Coinbase connect error:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to connect Coinbase";
+      toast.error(errorMessage);
+    } finally {
+      setIsConnecting(false);
+    }
   };
 
   const handleCoinbaseSync = async () => {
@@ -99,7 +134,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
         // Call onImportComplete with the result
         if (onImportComplete) {
           onImportComplete({
-            source: "Coinbase (OAuth)",
+            source: "Coinbase (API)",
             fileName: "coinbase-api-sync",
             timestamp: new Date().toISOString(),
             transactions: [],
@@ -116,9 +151,9 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
         : error instanceof Error ? error.message : "Failed to sync Coinbase transactions";
 
       // Check if it's a reconnect error
-      if (errorMessage.includes("reconnect") || errorMessage.includes("expired")) {
+      if (errorMessage.includes("reconnect") || errorMessage.includes("expired") || errorMessage.includes("Invalid")) {
         setCoinbaseConnected(false);
-        toast.error("Coinbase connection expired. Please reconnect your account.");
+        toast.error("Coinbase connection failed. Please reconnect your account.");
       } else {
         toast.error(errorMessage);
       }
@@ -361,7 +396,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
           )}
         </div>
 
-        {/* Coinbase OAuth Section - Show when Coinbase is selected */}
+        {/* Coinbase API Key Section - Show when Coinbase is selected */}
         {selectedExchange === "coinbase" && (
           <div className="space-y-4">
             <div className="rounded-lg border bg-gradient-to-r from-blue-500/10 to-blue-600/10 p-4">
@@ -374,7 +409,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
                 <div className="flex-1">
                   <h3 className="font-semibold">Connect Coinbase Account</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Connect your Coinbase account to automatically download all your historical transactions.
+                    Connect your Coinbase account using API keys to automatically download all your historical transactions.
                   </p>
 
                   {coinbaseLoading ? (
@@ -403,22 +438,94 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
                           </div>
                         </div>
                       ) : (
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleCoinbaseSync}
+                            className="bg-[#0052FF] hover:bg-[#0052FF]/90"
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Download All Transactions
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowApiKeyForm(true);
+                              setCoinbaseConnected(false);
+                            }}
+                          >
+                            Reconnect
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : showApiKeyForm ? (
+                    <div className="mt-4 space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="coinbase-api-key">API Key</Label>
+                        <Input
+                          id="coinbase-api-key"
+                          type="text"
+                          placeholder="Enter your Coinbase API Key"
+                          value={coinbaseApiKey}
+                          onChange={(e) => setCoinbaseApiKey(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="coinbase-api-secret">API Secret</Label>
+                        <Input
+                          id="coinbase-api-secret"
+                          type="password"
+                          placeholder="Enter your Coinbase API Secret"
+                          value={coinbaseApiSecret}
+                          onChange={(e) => setCoinbaseApiSecret(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex gap-2">
                         <Button
-                          onClick={handleCoinbaseSync}
+                          onClick={handleCoinbaseApiKeyConnect}
+                          disabled={isConnecting || !coinbaseApiKey || !coinbaseApiSecret}
                           className="bg-[#0052FF] hover:bg-[#0052FF]/90"
                         >
-                          <RefreshCw className="mr-2 h-4 w-4" />
-                          Download All Transactions
+                          {isConnecting ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Connecting...
+                            </>
+                          ) : (
+                            <>
+                              <Link2 className="mr-2 h-4 w-4" />
+                              Connect
+                            </>
+                          )}
                         </Button>
-                      )}
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setShowApiKeyForm(false);
+                            setCoinbaseApiKey("");
+                            setCoinbaseApiSecret("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                      <div className="rounded-md bg-amber-900/20 p-3 text-xs text-amber-500">
+                        <p className="font-medium">How to get API keys:</p>
+                        <ol className="mt-1 list-inside list-decimal space-y-1">
+                          <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank" rel="noopener noreferrer" className="underline">coinbase.com/settings/api</a></li>
+                          <li>Click "New API Key"</li>
+                          <li>Select permissions: <strong>wallet:accounts:read</strong> and <strong>wallet:transactions:read</strong></li>
+                          <li>Complete verification and copy the keys</li>
+                        </ol>
+                      </div>
                     </div>
                   ) : (
                     <Button
-                      onClick={handleCoinbaseConnect}
+                      onClick={() => setShowApiKeyForm(true)}
                       className="mt-4 bg-[#0052FF] hover:bg-[#0052FF]/90"
                     >
                       <Link2 className="mr-2 h-4 w-4" />
-                      Connect Coinbase Account
+                      Connect with API Key
                     </Button>
                   )}
                 </div>

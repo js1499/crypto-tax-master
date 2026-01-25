@@ -73,11 +73,55 @@ export async function POST(request: NextRequest) {
 
     // Validate credentials based on exchange
     if (exchangeName === "coinbase") {
-      if (!refreshToken) {
+      // Coinbase supports both OAuth (refreshToken) and API Key authentication
+      if (!refreshToken && (!apiKey || !apiSecret)) {
         return NextResponse.json(
-          { error: "Coinbase requires OAuth refresh token" },
+          { error: "Coinbase requires either OAuth refresh token or API key/secret" },
           { status: 400 }
         );
+      }
+
+      // If API key is provided, validate it by making a test request
+      if (apiKey && apiSecret) {
+        try {
+          const axios = (await import("axios")).default;
+          const timestamp = Math.floor(Date.now() / 1000).toString();
+          const method = "GET";
+          const path = "/v2/user";
+          const body = "";
+
+          // Create signature for Coinbase API v2
+          const crypto = await import("crypto");
+          const message = timestamp + method + path + body;
+          const signature = crypto
+            .createHmac("sha256", apiSecret)
+            .update(message)
+            .digest("hex");
+
+          const response = await axios.get("https://api.coinbase.com/v2/user", {
+            headers: {
+              "CB-ACCESS-KEY": apiKey,
+              "CB-ACCESS-SIGN": signature,
+              "CB-ACCESS-TIMESTAMP": timestamp,
+              "CB-VERSION": "2021-03-05",
+            },
+          });
+
+          if (!response.data || !response.data.data) {
+            throw new Error("Invalid API response");
+          }
+
+          console.log(`[Exchange Connect] Coinbase API key validated for user: ${response.data.data.email || response.data.data.name}`);
+        } catch (error) {
+          console.error(`[Exchange Connect] Coinbase API key validation failed:`, error);
+          return NextResponse.json(
+            {
+              error: "Invalid Coinbase API credentials. Please check your API key and secret.",
+              details: error instanceof Error ? error.message : "Unknown error",
+            },
+            { status: 400 }
+          );
+        }
       }
     } else {
       if (!apiKey || !apiSecret) {

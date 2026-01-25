@@ -10,7 +10,7 @@ import {
   KuCoinClient,
   GeminiClient,
 } from "@/lib/exchange-clients";
-import { getCoinbaseTransactions } from "@/lib/coinbase-transactions";
+import { getCoinbaseTransactions, getCoinbaseTransactionsWithApiKey } from "@/lib/coinbase-transactions";
 import crypto from "crypto";
 
 // Encryption key (must match the one used for encryption)
@@ -143,23 +143,46 @@ export async function POST(request: NextRequest) {
             break;
 
           case "coinbase":
-            if (exchange.refreshToken) {
+            // Support both OAuth (refreshToken) and API Key authentication
+            if (exchange.apiKey && exchange.apiSecret) {
+              // Use API Key authentication
               try {
-                // Use Coinbase OAuth flow with encrypted tokens
-                // Pass exchangeId so tokens can be persisted after refresh
-                transactions = await getCoinbaseTransactions(
-                  exchange.refreshToken,
-                  effectiveStartTime, // Use incremental sync start time
+                transactions = await getCoinbaseTransactionsWithApiKey(
+                  exchange.apiKey,
+                  exchange.apiSecret,
+                  effectiveStartTime,
                   endTime,
-                  exchange.id // Pass exchange ID for token persistence
+                  exchange.id
                 );
               } catch (error) {
-                // Log error only in development
                 if (process.env.NODE_ENV === "development") {
-                  console.error("[Exchange Sync] Coinbase error:", error);
+                  console.error("[Exchange Sync] Coinbase API Key error:", error);
+                }
+                const errorMessage = error instanceof Error ? error.message : "Unknown error";
+                let userMessage = "Failed to fetch transactions";
+
+                if (errorMessage === "CREDENTIALS_DECRYPT_FAILED") {
+                  userMessage = "Unable to access Coinbase credentials. Please reconnect.";
+                } else if (errorMessage.includes("401") || errorMessage.includes("Invalid")) {
+                  userMessage = "Coinbase API key is invalid. Please reconnect with new credentials.";
                 }
 
-                // PRD: Structured error codes for UI messaging
+                errors.push(`Coinbase: ${userMessage}`);
+                continue;
+              }
+            } else if (exchange.refreshToken) {
+              // Use OAuth flow with encrypted tokens
+              try {
+                transactions = await getCoinbaseTransactions(
+                  exchange.refreshToken,
+                  effectiveStartTime,
+                  endTime,
+                  exchange.id
+                );
+              } catch (error) {
+                if (process.env.NODE_ENV === "development") {
+                  console.error("[Exchange Sync] Coinbase OAuth error:", error);
+                }
                 const errorMessage = error instanceof Error ? error.message : "Unknown error";
                 let userMessage = "Failed to fetch transactions";
 
@@ -172,6 +195,9 @@ export async function POST(request: NextRequest) {
                 errors.push(`Coinbase: ${userMessage}`);
                 continue;
               }
+            } else {
+              errors.push("Coinbase: No credentials found. Please connect your account.");
+              continue;
             }
             break;
 

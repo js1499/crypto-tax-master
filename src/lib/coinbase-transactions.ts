@@ -10,6 +10,149 @@ import crypto from "crypto";
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
 
 /**
+ * Create signed headers for Coinbase API Key authentication
+ */
+function createCoinbaseApiHeaders(
+  apiKey: string,
+  apiSecret: string,
+  method: string,
+  path: string,
+  body: string = ""
+): Record<string, string> {
+  const timestamp = Math.floor(Date.now() / 1000).toString();
+  const message = timestamp + method + path + body;
+  const signature = crypto
+    .createHmac("sha256", apiSecret)
+    .update(message)
+    .digest("hex");
+
+  return {
+    "CB-ACCESS-KEY": apiKey,
+    "CB-ACCESS-SIGN": signature,
+    "CB-ACCESS-TIMESTAMP": timestamp,
+    "CB-VERSION": "2021-03-05",
+  };
+}
+
+/**
+ * Get transactions from Coinbase using API Key authentication
+ */
+export async function getCoinbaseTransactionsWithApiKey(
+  encryptedApiKey: string,
+  encryptedApiSecret: string,
+  startTime?: number,
+  endTime?: number,
+  exchangeId?: string
+): Promise<ExchangeTransaction[]> {
+  try {
+    // Decrypt the API credentials
+    let apiKey: string;
+    let apiSecret: string;
+    try {
+      apiKey = decryptApiKey(encryptedApiKey, ENCRYPTION_KEY);
+      apiSecret = decryptApiKey(encryptedApiSecret, ENCRYPTION_KEY);
+    } catch (error) {
+      console.error("[Coinbase Transactions] Failed to decrypt API credentials:", error);
+      throw new Error("CREDENTIALS_DECRYPT_FAILED");
+    }
+
+    const transactions: ExchangeTransaction[] = [];
+
+    // Get accounts first
+    const accountsPath = "/v2/accounts";
+    const accountsHeaders = createCoinbaseApiHeaders(apiKey, apiSecret, "GET", accountsPath);
+
+    const accountsResponse = await axios.get(
+      `https://api.coinbase.com${accountsPath}`,
+      { headers: accountsHeaders }
+    );
+
+    const accounts = accountsResponse.data.data;
+    console.log(`[Coinbase Transactions] Found ${accounts.length} accounts`);
+
+    // Get transactions for each account
+    for (const account of accounts) {
+      try {
+        const txPath = `/v2/accounts/${account.id}/transactions`;
+        const txHeaders = createCoinbaseApiHeaders(apiKey, apiSecret, "GET", txPath);
+
+        const txResponse = await axios.get(
+          `https://api.coinbase.com${txPath}`,
+          {
+            headers: txHeaders,
+            params: { limit: 100 }
+          }
+        );
+
+        const accountTxs = txResponse.data.data || [];
+        console.log(`[Coinbase Transactions] Found ${accountTxs.length} transactions for account ${account.name}`);
+
+        for (const tx of accountTxs) {
+          // Filter by time if specified
+          const txTime = new Date(tx.created_at).getTime();
+          if (startTime && txTime < startTime) continue;
+          if (endTime && txTime > endTime) continue;
+
+          const amount = parseFloat(tx.amount?.amount || "0");
+          const currency = tx.amount?.currency || "UNKNOWN";
+          const nativeAmount = tx.native_amount
+            ? parseFloat(tx.native_amount.amount)
+            : 0;
+
+          // Determine transaction type
+          let type = "Transfer";
+          if (tx.type === "buy") type = "Buy";
+          else if (tx.type === "sell") type = "Sell";
+          else if (tx.type === "send") type = "Send";
+          else if (tx.type === "receive") type = "Receive";
+          else if (tx.type === "exchange" || tx.type === "trade") type = "Swap";
+          else if (tx.type === "fiat_deposit" || tx.type === "fiat_withdrawal") type = "Transfer";
+
+          transactions.push({
+            id: tx.id,
+            type,
+            asset_symbol: currency,
+            amount_value: new Decimal(Math.abs(amount)),
+            price_per_unit: nativeAmount && amount
+              ? new Decimal(Math.abs(nativeAmount / amount))
+              : null,
+            value_usd: new Decimal(Math.abs(nativeAmount)),
+            fee_usd: null,
+            tx_timestamp: new Date(tx.created_at),
+            source: "Coinbase",
+            source_type: "exchange_api",
+            tx_hash: tx.id,
+            notes: tx.description || undefined,
+          });
+        }
+      } catch (error) {
+        console.error(
+          `[Coinbase Transactions] Error fetching transactions for account ${account.id}:`,
+          error
+        );
+        // Continue with other accounts
+      }
+    }
+
+    console.log(`[Coinbase Transactions] Total transactions fetched: ${transactions.length}`);
+    return transactions;
+  } catch (error) {
+    console.error("[Coinbase Transactions] Error:", error);
+
+    // Mark exchange as disconnected if auth fails
+    if (exchangeId && error instanceof Error &&
+        (error.message.includes("401") || error.message.includes("authentication"))) {
+      await prisma.exchange.update({
+        where: { id: exchangeId },
+        data: { isConnected: false },
+      });
+    }
+
+    throw error;
+  }
+}
+
+/**
  * Get transactions from Coinbase using OAuth tokens
  * @param encryptedRefreshToken - Encrypted refresh token from database
  * @param exchangeId - Exchange ID to update tokens after refresh
