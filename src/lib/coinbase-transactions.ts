@@ -5,52 +5,115 @@ import type { ExchangeTransaction } from "./exchange-clients";
 import { encryptApiKey, decryptApiKey } from "./exchange-clients";
 import prisma from "./prisma";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 
 // Encryption key for OAuth tokens
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
 
 /**
- * Create signed headers for Coinbase API Key authentication
+ * Generate a JWT for Coinbase CDP API authentication
+ * As of Feb 2025, Coinbase requires JWT-based auth with ES256 for all API keys
+ *
+ * @param apiKeyName - The API key name (format: organizations/{org_id}/apiKeys/{key_id})
+ * @param privateKey - The EC private key in PEM format
+ * @param method - HTTP method (GET, POST, etc.)
+ * @param host - API host (e.g., api.coinbase.com)
+ * @param path - API path (e.g., /v2/accounts)
  */
-function createCoinbaseApiHeaders(
-  apiKey: string,
-  apiSecret: string,
+function generateCoinbaseJWT(
+  apiKeyName: string,
+  privateKey: string,
   method: string,
-  path: string,
-  body: string = ""
+  host: string,
+  path: string
+): string {
+  const now = Math.floor(Date.now() / 1000);
+  const nonce = crypto.randomBytes(16).toString("hex");
+
+  // Construct the URI claim: "METHOD HOST/PATH"
+  const uri = `${method} ${host}${path}`;
+
+  const payload = {
+    sub: apiKeyName,
+    iss: "cdp",
+    aud: ["cdp_service"],
+    nbf: now,
+    exp: now + 120, // JWT expires in 2 minutes
+    uri: uri,
+  };
+
+  const options: jwt.SignOptions = {
+    algorithm: "ES256",
+    header: {
+      alg: "ES256",
+      typ: "JWT",
+      kid: apiKeyName,
+      nonce: nonce,
+    },
+  };
+
+  return jwt.sign(payload, privateKey, options);
+}
+
+/**
+ * Format the private key to ensure it's in proper PEM format
+ * Coinbase CDP keys come in EC PRIVATE KEY format
+ */
+function formatPrivateKey(privateKey: string): string {
+  // If it already has the PEM header, return as-is but ensure proper newlines
+  if (privateKey.includes("-----BEGIN")) {
+    // Normalize newlines and ensure proper format
+    return privateKey
+      .replace(/\\n/g, "\n")
+      .replace(/\r\n/g, "\n")
+      .trim();
+  }
+
+  // If it's raw base64, wrap it in PEM format
+  const cleanKey = privateKey.replace(/\s+/g, "");
+  return `-----BEGIN EC PRIVATE KEY-----\n${cleanKey}\n-----END EC PRIVATE KEY-----`;
+}
+
+/**
+ * Create authorization headers for Coinbase CDP API
+ * Uses JWT Bearer token authentication (required since Feb 2025)
+ */
+function createCoinbaseCDPHeaders(
+  apiKeyName: string,
+  privateKey: string,
+  method: string,
+  path: string
 ): Record<string, string> {
-  const timestamp = Math.floor(Date.now() / 1000).toString();
-  const message = timestamp + method + path + body;
-  const signature = crypto
-    .createHmac("sha256", apiSecret)
-    .update(message)
-    .digest("hex");
+  const formattedKey = formatPrivateKey(privateKey);
+  const token = generateCoinbaseJWT(apiKeyName, formattedKey, method, "api.coinbase.com", path);
 
   return {
-    "CB-ACCESS-KEY": apiKey,
-    "CB-ACCESS-SIGN": signature,
-    "CB-ACCESS-TIMESTAMP": timestamp,
-    "CB-VERSION": "2021-03-05",
+    "Authorization": `Bearer ${token}`,
+    "Content-Type": "application/json",
   };
 }
 
 /**
- * Get transactions from Coinbase using API Key authentication
+ * Get transactions from Coinbase using CDP API Key authentication (JWT-based)
+ * As of Feb 2025, this is the only supported authentication method
+ *
+ * @param encryptedApiKeyName - Encrypted API Key Name (format: organizations/{org_id}/apiKeys/{key_id})
+ * @param encryptedPrivateKey - Encrypted EC Private Key in PEM format
  */
 export async function getCoinbaseTransactionsWithApiKey(
-  encryptedApiKey: string,
-  encryptedApiSecret: string,
+  encryptedApiKeyName: string,
+  encryptedPrivateKey: string,
   startTime?: number,
   endTime?: number,
   exchangeId?: string
 ): Promise<ExchangeTransaction[]> {
   try {
     // Decrypt the API credentials
-    let apiKey: string;
-    let apiSecret: string;
+    let apiKeyName: string;
+    let privateKey: string;
     try {
-      apiKey = decryptApiKey(encryptedApiKey, ENCRYPTION_KEY);
-      apiSecret = decryptApiKey(encryptedApiSecret, ENCRYPTION_KEY);
+      apiKeyName = decryptApiKey(encryptedApiKeyName, ENCRYPTION_KEY);
+      privateKey = decryptApiKey(encryptedPrivateKey, ENCRYPTION_KEY);
     } catch (error) {
       console.error("[Coinbase Transactions] Failed to decrypt API credentials:", error);
       throw new Error("CREDENTIALS_DECRYPT_FAILED");
@@ -58,9 +121,9 @@ export async function getCoinbaseTransactionsWithApiKey(
 
     const transactions: ExchangeTransaction[] = [];
 
-    // Get accounts first
+    // Get accounts first using CDP JWT authentication
     const accountsPath = "/v2/accounts";
-    const accountsHeaders = createCoinbaseApiHeaders(apiKey, apiSecret, "GET", accountsPath);
+    const accountsHeaders = createCoinbaseCDPHeaders(apiKeyName, privateKey, "GET", accountsPath);
 
     const accountsResponse = await axios.get(
       `https://api.coinbase.com${accountsPath}`,
@@ -74,7 +137,8 @@ export async function getCoinbaseTransactionsWithApiKey(
     for (const account of accounts) {
       try {
         const txPath = `/v2/accounts/${account.id}/transactions`;
-        const txHeaders = createCoinbaseApiHeaders(apiKey, apiSecret, "GET", txPath);
+        // Generate a new JWT for each request (they expire after 2 minutes)
+        const txHeaders = createCoinbaseCDPHeaders(apiKeyName, privateKey, "GET", txPath);
 
         const txResponse = await axios.get(
           `https://api.coinbase.com${txPath}`,

@@ -461,24 +461,30 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
                   ) : showApiKeyForm ? (
                     <div className="mt-4 space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="coinbase-api-key">API Key</Label>
+                        <Label htmlFor="coinbase-api-key">API Key Name</Label>
                         <Input
                           id="coinbase-api-key"
                           type="text"
-                          placeholder="Enter your Coinbase API Key"
+                          placeholder="organizations/xxx/apiKeys/xxx"
                           value={coinbaseApiKey}
                           onChange={(e) => setCoinbaseApiKey(e.target.value)}
                         />
+                        <p className="text-xs text-muted-foreground">
+                          Format: organizations/&#123;org_id&#125;/apiKeys/&#123;key_id&#125;
+                        </p>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="coinbase-api-secret">API Secret</Label>
-                        <Input
+                        <Label htmlFor="coinbase-api-secret">Private Key</Label>
+                        <textarea
                           id="coinbase-api-secret"
-                          type="password"
-                          placeholder="Enter your Coinbase API Secret"
+                          className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+                          placeholder="-----BEGIN EC PRIVATE KEY-----&#10;...&#10;-----END EC PRIVATE KEY-----"
                           value={coinbaseApiSecret}
                           onChange={(e) => setCoinbaseApiSecret(e.target.value)}
                         />
+                        <p className="text-xs text-muted-foreground">
+                          Paste the full EC Private Key including BEGIN/END lines
+                        </p>
                       </div>
                       <div className="flex gap-2">
                         <Button
@@ -510,13 +516,15 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
                         </Button>
                       </div>
                       <div className="rounded-md bg-amber-900/20 p-3 text-xs text-amber-500">
-                        <p className="font-medium">How to get API keys:</p>
+                        <p className="font-medium">How to get CDP API keys (new method required since Feb 2025):</p>
                         <ol className="mt-1 list-inside list-decimal space-y-1">
-                          <li>Go to <a href="https://www.coinbase.com/settings/api" target="_blank" rel="noopener noreferrer" className="underline">coinbase.com/settings/api</a></li>
-                          <li>Click "New API Key"</li>
-                          <li>Select permissions: <strong>wallet:accounts:read</strong> and <strong>wallet:transactions:read</strong></li>
-                          <li>Complete verification and copy the keys</li>
+                          <li>Go to <a href="https://portal.cdp.coinbase.com/access/api" target="_blank" rel="noopener noreferrer" className="underline">portal.cdp.coinbase.com/access/api</a></li>
+                          <li>Click &quot;Create API Key&quot;</li>
+                          <li>Select &quot;ECDSA&quot; as the key type (Ed25519 is not supported)</li>
+                          <li>Download the JSON file containing your API Key Name and Private Key</li>
+                          <li>Copy the &quot;name&quot; field as API Key Name and &quot;privateKey&quot; as Private Key</li>
                         </ol>
+                        <p className="mt-2 text-amber-400 font-medium">Note: Legacy API keys (from coinbase.com/settings/api) were deprecated in February 2025.</p>
                       </div>
                     </div>
                   ) : (

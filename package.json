@@ -37,6 +37,7 @@
     "date-fns": "^4.1.0",
     "ioredis": "^5.9.1",
     "jotai": "^2.12.3",
+    "jsonwebtoken": "^9.0.3",
     "lru-cache": "^11.2.4",
     "lucide-react": "^0.488.0",
     "next": "15.5.9",
@@ -54,6 +55,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",

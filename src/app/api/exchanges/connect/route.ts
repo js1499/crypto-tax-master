@@ -6,6 +6,7 @@ import * as Sentry from "@sentry/nextjs";
 import { encryptApiKey } from "@/lib/exchange-clients";
 import { BinanceClient, KrakenClient, KuCoinClient, GeminiClient } from "@/lib/exchange-clients";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 
 // Encryption key (in production, use environment variable)
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
@@ -81,29 +82,50 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // If API key is provided, validate it by making a test request
+      // If API key is provided, validate it by making a test request using CDP JWT auth
       if (apiKey && apiSecret) {
         try {
           const axios = (await import("axios")).default;
-          const timestamp = Math.floor(Date.now() / 1000).toString();
-          const method = "GET";
-          const path = "/v2/user";
-          const body = "";
 
-          // Create signature for Coinbase API v2
-          const crypto = await import("crypto");
-          const message = timestamp + method + path + body;
-          const signature = crypto
-            .createHmac("sha256", apiSecret)
-            .update(message)
-            .digest("hex");
+          // Format the private key if needed
+          let privateKey = apiSecret;
+          if (!privateKey.includes("-----BEGIN")) {
+            // If it's raw base64, wrap it in PEM format
+            const cleanKey = privateKey.replace(/\s+/g, "");
+            privateKey = `-----BEGIN EC PRIVATE KEY-----\n${cleanKey}\n-----END EC PRIVATE KEY-----`;
+          } else {
+            // Normalize newlines
+            privateKey = privateKey.replace(/\\n/g, "\n").replace(/\r\n/g, "\n").trim();
+          }
+
+          // Generate JWT for Coinbase CDP API
+          const now = Math.floor(Date.now() / 1000);
+          const nonce = crypto.randomBytes(16).toString("hex");
+          const path = "/v2/user";
+
+          const payload = {
+            sub: apiKey, // API Key Name
+            iss: "cdp",
+            aud: ["cdp_service"],
+            nbf: now,
+            exp: now + 120,
+            uri: `GET api.coinbase.com${path}`,
+          };
+
+          const token = jwt.sign(payload, privateKey, {
+            algorithm: "ES256",
+            header: {
+              alg: "ES256",
+              typ: "JWT",
+              kid: apiKey,
+              nonce: nonce,
+            },
+          });
 
           const response = await axios.get("https://api.coinbase.com/v2/user", {
             headers: {
-              "CB-ACCESS-KEY": apiKey,
-              "CB-ACCESS-SIGN": signature,
-              "CB-ACCESS-TIMESTAMP": timestamp,
-              "CB-VERSION": "2021-03-05",
+              "Authorization": `Bearer ${token}`,
+              "Content-Type": "application/json",
             },
           });
 
@@ -111,13 +133,24 @@ export async function POST(request: NextRequest) {
             throw new Error("Invalid API response");
           }
 
-          console.log(`[Exchange Connect] Coinbase API key validated for user: ${response.data.data.email || response.data.data.name}`);
+          console.log(`[Exchange Connect] Coinbase CDP API key validated for user: ${response.data.data.email || response.data.data.name}`);
         } catch (error) {
           console.error(`[Exchange Connect] Coinbase API key validation failed:`, error);
+
+          // Provide helpful error messages
+          let errorMessage = "Invalid Coinbase API credentials.";
+          const errorDetails = error instanceof Error ? error.message : "Unknown error";
+
+          if (errorDetails.includes("secretOrPrivateKey")) {
+            errorMessage = "Invalid private key format. Please paste the complete EC Private Key including -----BEGIN EC PRIVATE KEY----- and -----END EC PRIVATE KEY-----.";
+          } else if (errorDetails.includes("401")) {
+            errorMessage = "Authentication failed. Please ensure you're using a valid CDP API Key Name and Private Key from the Coinbase Developer Platform.";
+          }
+
           return NextResponse.json(
             {
-              error: "Invalid Coinbase API credentials. Please check your API key and secret.",
-              details: error instanceof Error ? error.message : "Unknown error",
+              error: errorMessage,
+              details: errorDetails,
             },
             { status: 400 }
           );
