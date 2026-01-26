@@ -602,9 +602,12 @@ function TransactionsContent() {
       
       if (field === 'type') {
         updatePayload.type = newValue;
-        // Adjust value sign if needed
+        // Adjust value sign if needed based on transaction type
+        // OUTFLOWS (money/crypto leaving): Buy, DCA, Send, Withdraw, Bridge, Swap - stored as negative
+        // INFLOWS (money/crypto coming in): Sell, Receive - stored as positive
         const currentValue = parseFloat(tx.value.replace(/[-$,]/g, ''));
-        if ((newValue === 'Buy' || newValue === 'DCA')) {
+        const outflowTypes = ['Buy', 'DCA', 'Send', 'Withdraw', 'Bridge', 'Swap'];
+        if (outflowTypes.includes(newValue)) {
           updatePayload.value_usd = -Math.abs(currentValue);
         } else {
           updatePayload.value_usd = Math.abs(currentValue);

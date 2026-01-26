@@ -252,13 +252,25 @@ export async function GET(request: NextRequest) {
       // Format price
       const price = `$${pricePerUnit.toFixed(2)}`;
 
-      // Format value (negative for buys/DCA)
+      // Format value with correct sign based on transaction type
+      // OUTFLOWS (money/crypto leaving): Buy, DCA, Send, Withdraw - NEGATIVE
+      // INFLOWS (money/crypto coming in): Sell, Receive - POSITIVE
+      // NEUTRAL (no net flow): Swap, Transfer - show absolute value
       let value = `$${Math.abs(valueUsd).toFixed(2)}`;
-      if (tx.type === "Buy" || tx.type === "DCA") {
+      const outflowTypes = ["Buy", "DCA", "Send", "Withdraw", "Bridge"];
+      const inflowTypes = ["Sell", "Receive"];
+
+      if (outflowTypes.includes(tx.type)) {
+        // Outflows are negative (spending money or sending crypto out)
         value = `-${value}`;
-      } else if (tx.type === "Sell" && valueUsd < 0) {
+      } else if (inflowTypes.includes(tx.type)) {
+        // Inflows stay positive (receiving money or crypto)
+        // value is already positive
+      } else if (tx.type === "Swap") {
+        // Swaps: show the outgoing value as negative (you're disposing of assets)
         value = `-${value}`;
       }
+      // For Transfer and other types, keep as positive (neutral display)
 
       return {
         id: tx.id,
