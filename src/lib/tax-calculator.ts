@@ -748,6 +748,10 @@ function processTransactionsForTax(
   });
   console.log(`[processTransactionsForTax] Sell transactions by year:`, sellTransactionsByYear);
 
+  // List of fiat currencies to exclude from tax calculations
+  // Bank transfers and fiat currency movements are not taxable crypto events
+  const FIAT_CURRENCIES = new Set(["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "CNY", "INR", "KRW", "BRL", "MXN"]);
+
   for (const tx of transactions) {
     processedCount++;
     // Normalize asset symbol: trim whitespace and convert to uppercase for consistent matching
@@ -765,7 +769,25 @@ function processTransactionsForTax(
     // Track transaction types
     const txType = (tx.type || "").toLowerCase();
     typeCounts[txType] = (typeCounts[txType] || 0) + 1;
-    
+
+    // Skip fiat currency transactions (bank transfers)
+    // These are not crypto transactions and should not be included in tax calculations
+    if (FIAT_CURRENCIES.has(asset)) {
+      if (processedCount < 20) {
+        console.log(`[Tax Calculator] Skipping fiat currency transaction: ${tx.type} ${amount} ${asset}`);
+      }
+      continue;
+    }
+
+    // Skip "Transfer" type transactions - these are internal transfers or bank transfers
+    // that don't create taxable events
+    if (txType === "transfer") {
+      if (processedCount < 20) {
+        console.log(`[Tax Calculator] Skipping transfer transaction: ${tx.id} ${amount} ${asset}`);
+      }
+      continue;
+    }
+
     // Log first few sell transactions for debugging
     if ((txType === "sell" || tx.type === "Sell") && processedCount < 10) {
       console.log(`[processTransactionsForTax] Processing sell transaction ${tx.id}: type=${tx.type}, asset=${asset} (original: "${tx.asset_symbol}"), valueUsd=${valueUsd}, date=${date.toISOString().split('T')[0]}, year=${txYear}, taxYear=${taxYear}, notes=${tx.notes?.substring(0, 150) || "none"}`);

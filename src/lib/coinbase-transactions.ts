@@ -221,6 +221,22 @@ export async function getCoinbaseTransactionsWithApiKey(
             ? parseFloat(tx.native_amount.amount)
             : 0;
 
+          // Skip fiat currency transactions (bank transfers)
+          // These are not crypto transactions and should not be included in tax calculations
+          // Common fiat currencies: USD, EUR, GBP, CAD, AUD, JPY, etc.
+          const fiatCurrencies = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "CNY", "INR", "KRW", "BRL", "MXN"];
+          if (fiatCurrencies.includes(currency.toUpperCase())) {
+            console.log(`[Coinbase Transactions] Skipping fiat transaction: ${tx.type} ${amount} ${currency}`);
+            continue;
+          }
+
+          // Skip fiat_deposit and fiat_withdrawal transactions entirely
+          // These represent bank transfers, not crypto activity
+          if (tx.type === "fiat_deposit" || tx.type === "fiat_withdrawal") {
+            console.log(`[Coinbase Transactions] Skipping bank transfer: ${tx.type} ${amount} ${currency}`);
+            continue;
+          }
+
           // Determine transaction type
           let type = "Transfer";
           if (tx.type === "buy") type = "Buy";
@@ -228,8 +244,10 @@ export async function getCoinbaseTransactionsWithApiKey(
           else if (tx.type === "send") type = "Send";
           else if (tx.type === "receive") type = "Receive";
           else if (tx.type === "exchange" || tx.type === "trade") type = "Swap";
-          else if (tx.type === "fiat_deposit" || tx.type === "fiat_withdrawal") type = "Transfer";
 
+          // For sends, the value should be stored as the outgoing value
+          // Sends reduce holdings but don't create taxable events (treated as gifts/transfers)
+          // The value_usd represents the fair market value at time of send
           transactions.push({
             id: tx.id,
             type,
@@ -436,6 +454,21 @@ export async function getCoinbaseTransactions(
           const nativeAmount = tx.native_amount
             ? parseFloat(tx.native_amount.amount)
             : 0;
+
+          // Skip fiat currency transactions (bank transfers)
+          // These are not crypto transactions and should not be included in tax calculations
+          const fiatCurrencies = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "CNY", "INR", "KRW", "BRL", "MXN"];
+          if (fiatCurrencies.includes(currency.toUpperCase())) {
+            console.log(`[Coinbase Transactions] Skipping fiat transaction: ${tx.type} ${amount} ${currency}`);
+            continue;
+          }
+
+          // Skip fiat_deposit and fiat_withdrawal transactions entirely
+          // These represent bank transfers, not crypto activity
+          if (tx.type === "fiat_deposit" || tx.type === "fiat_withdrawal") {
+            console.log(`[Coinbase Transactions] Skipping bank transfer: ${tx.type} ${amount} ${currency}`);
+            continue;
+          }
 
           // Determine transaction type
           let type = "Transfer";
