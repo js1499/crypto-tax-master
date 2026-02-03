@@ -271,11 +271,21 @@ export abstract class ExchangeCSVParser {
 
       // If outgoing asset matches current asset, we found the swap
       if (outgoingAsset === assetSymbol.toUpperCase() && incomingAsset && incomingAmount) {
-        // For swaps, incoming value should equal outgoing value (minus fees)
+        // BUG-013 fix: Try to extract incoming value from notes
+        // Pattern: "received $3000" or "received 3000 USD" or "value: $3000"
+        const receivedValuePattern = /(?:received|got|value)[:\s]*\$?([\d,]+(?:\.\d+)?)/i;
+        const receivedMatch = notesStr.match(receivedValuePattern);
+        let incomingValueUsd: Decimal;
+        if (receivedMatch) {
+          incomingValueUsd = new Decimal(parseFloat(receivedMatch[1].replace(/,/g, "")));
+        } else {
+          // Fallback: assume fair market value equals outgoing value
+          incomingValueUsd = new Decimal(Math.abs(Number(valueUsd)));
+        }
         return {
           incomingAsset,
           incomingAmount,
-          incomingValueUsd: new Decimal(Math.abs(Number(valueUsd))),
+          incomingValueUsd,
         };
       }
     }
@@ -568,9 +578,12 @@ class KrakenParser extends ExchangeCSVParser {
 
         if (!amount) continue;
 
-        // For Kraken, we need to estimate USD value (this might need price lookup)
-        // For now, use amount as value_usd if it's already in USD, otherwise use amount
-        const valueUsd = amount;
+        // BUG-009 fix: Check if asset is USD-denominated, otherwise flag for price enrichment
+        const usdAssets = ["USD", "ZUSD", "USDT", "USDC", "DAI", "BUSD", "UST"];
+        const isUsdDenominated = usdAssets.includes(asset.toUpperCase());
+        // For non-USD assets, use amount as placeholder (will need price lookup later)
+        // Setting to 0 signals that this transaction needs price enrichment
+        const valueUsd = isUsdDenominated ? amount : new Decimal(0);
 
         transactions.push({
           type,
@@ -610,6 +623,8 @@ class KuCoinParser extends ExchangeCSVParser {
     const volumeIdx = this.findColumnIndex(headers, ["volume", "total"]);
     const feeIdx = this.findColumnIndex(headers, ["fee"]);
     const remarkIdx = this.findColumnIndex(headers, ["remark", "notes"]);
+    // BUG-008 fix: Add pair/symbol column detection
+    const pairIdx = this.findColumnIndex(headers, ["pair", "symbol", "market", "trading pair"]);
 
     const transactions: ParsedTransaction[] = [];
 
@@ -630,8 +645,17 @@ class KuCoinParser extends ExchangeCSVParser {
 
         if (!amount) continue;
 
-        // Extract asset from type or use a default (KuCoin format varies)
-        const asset = "BTC"; // This would need to be extracted from the pair or type
+        // BUG-008 fix: Extract asset from trading pair instead of hardcoding
+        const pair = pairIdx >= 0 ? (row[pairIdx] || "") : typeStr;
+        // Parse trading pair like "BTC-USDT", "ETH/USD", "BTC_USDT"
+        const pairParts = pair.split(/[-\/\_]/).map(s => s.trim().toUpperCase()).filter(s => s);
+        // For buy orders, the base asset is what you're buying; for sell, it's what you're selling
+        // In "BTC-USDT": BTC is base, USDT is quote
+        const baseAsset = pairParts[0] || "UNKNOWN";
+        const quoteAsset = pairParts[1] || "";
+        // Determine which asset based on side: buy = getting base, sell = selling base
+        const isBuy = type.toLowerCase() === "buy";
+        const asset = baseAsset || "UNKNOWN";
         const valueUsd = volume || (price ? amount.mul(price) : amount);
 
         transactions.push({
@@ -1321,14 +1345,14 @@ class CustomParser extends ExchangeCSVParser {
           type = "Sell";
         }
         
+        // Build notes from available information
+        let notes = row[notesIdx] || "";
+
         // If no sale type but we have swap indicators, mark as swap
         // Note: incomingAssetSymbol is not available in tax report format, so we only check notes
         if (type === "Sell" && (notes?.toLowerCase().includes("swap") || notes?.toLowerCase().includes("jupiter") || notes?.toLowerCase().includes("trade"))) {
           type = "Swap";
         }
-
-        // Build notes from available information
-        let notes = row[notesIdx] || "";
         const name = row[nameIdx] || "";
         if (name && !notes.includes(name)) {
           notes = notes ? `${name}. ${notes}` : name;

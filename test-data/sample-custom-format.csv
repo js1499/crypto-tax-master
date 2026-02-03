@@ -1,0 +1,9 @@
+Date,Type,Asset,Amount,Price,Value,Notes
+01/15/2024,Buy,BTC,0.5,42000,21000,Monthly DCA
+01/20/2024,Buy,ETH,5,2500,12500,
+02/01/2024,Sell,BTC,0.25,45000,11250,Taking profits
+02/15/2024,Buy,SOL,100,95,9500,
+03/01/2024,Swap,ETH,2,2800,5600,Swapped for USDC
+03/15/2024,Receive,BTC,0.1,48000,4800,Mining reward
+04/01/2024,Staking,ETH,0.05,2900,145,Staking yield
+04/15/2024,Sell,SOL,50,120,6000,

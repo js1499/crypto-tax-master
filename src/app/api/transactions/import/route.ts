@@ -422,8 +422,9 @@ export async function POST(request: NextRequest) {
 
       // Filter out existing transactions and prepare new ones
       for (const tx of batch) {
-        const key = `${tx.tx_timestamp.toISOString()}_${tx.amount_value}_${tx.asset_symbol}`;
-        
+        // BUG-011 fix: Use more fields for uniqueness to avoid false positives/negatives
+        const key = `${tx.tx_timestamp.toISOString()}_${tx.amount_value}_${tx.asset_symbol}_${tx.type}_${tx.tx_hash || ""}_${tx.value_usd || 0}`;
+
         if (existingKeys.has(key)) {
           skipped++;
           continue;
@@ -477,6 +478,7 @@ export async function POST(request: NextRequest) {
       if (transactionsToCreate.length > 0) {
         try {
           // Convert to Prisma.TransactionCreateManyInput format
+          // BUG-003 fix: Include userId for transaction ownership
           const createManyData: Prisma.TransactionCreateManyInput[] = transactionsToCreate.map((data) => ({
             type: data.type as string,
             subtype: data.subtype as string | null,
@@ -502,6 +504,7 @@ export async function POST(request: NextRequest) {
             incoming_asset_symbol: data.incoming_asset_symbol as string | null,
             incoming_amount_value: data.incoming_amount_value as any,
             incoming_value_usd: data.incoming_value_usd as any,
+            userId: user.id, // BUG-003 fix: Set owner for CSV imports
           }));
 
           // Use createMany with skipDuplicates for better performance

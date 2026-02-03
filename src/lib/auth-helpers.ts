@@ -14,8 +14,9 @@ import type { NextRequest } from "next/server";
  */
 export async function getCurrentUser(request?: NextRequest) {
   try {
-    // Critical: Validate NEXTAUTH_SECRET is set
+    // BUG-006 fix: Validate NEXTAUTH_SECRET is set - throw in production
     if (!process.env.NEXTAUTH_SECRET) {
+      const errorMsg = "NEXTAUTH_SECRET is not configured";
       console.error("=" + "=".repeat(70));
       console.error("CRITICAL ERROR: NEXTAUTH_SECRET is not set!");
       console.error("=" + "=".repeat(70));
@@ -29,6 +30,11 @@ export async function getCurrentUser(request?: NextRequest) {
       console.error("Generate a new secret with:");
       console.error('   node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64\'))"');
       console.error("=" + "=".repeat(70));
+
+      // In production, throw an error to make the issue obvious
+      if (process.env.NODE_ENV === "production") {
+        throw new Error(errorMsg);
+      }
       return null;
     }
 

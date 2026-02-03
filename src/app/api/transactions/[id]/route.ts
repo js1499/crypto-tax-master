@@ -58,18 +58,21 @@ export async function PATCH(
       );
     }
 
-    // Check if transaction belongs to user (via wallet)
-    if (userWithWallets && userWithWallets.wallets.length > 0) {
-      const walletAddresses = userWithWallets.wallets.map((w) => w.address);
-      if (
-        transaction.wallet_address &&
-        !walletAddresses.includes(transaction.wallet_address)
-      ) {
-        return NextResponse.json(
-          { error: "Unauthorized" },
-          { status: 403 }
-        );
-      }
+    // BUG-003 fix: Check if transaction belongs to user (via wallet OR userId)
+    const walletAddresses = userWithWallets?.wallets.map((w) => w.address) || [];
+    const isWalletOwned = transaction.wallet_address && walletAddresses.includes(transaction.wallet_address);
+    const isUserOwned = transaction.userId === user.id;
+    const isCsvImportWithoutOwner = transaction.source_type === "csv_import" && !transaction.userId && !transaction.wallet_address;
+
+    // Allow access if:
+    // 1. Transaction belongs to user's wallet, OR
+    // 2. Transaction has userId matching current user, OR
+    // 3. Transaction is a legacy CSV import without owner (for backward compatibility)
+    if (!isWalletOwned && !isUserOwned && !isCsvImportWithoutOwner) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 403 }
+      );
     }
 
     // Parse request body
@@ -251,18 +254,21 @@ export async function DELETE(
       );
     }
 
-    // Check if transaction belongs to user (via wallet)
-    if (userWithWallets && userWithWallets.wallets.length > 0) {
-      const walletAddresses = userWithWallets.wallets.map((w) => w.address);
-      if (
-        transaction.wallet_address &&
-        !walletAddresses.includes(transaction.wallet_address)
-      ) {
-        return NextResponse.json(
-          { error: "Unauthorized" },
-          { status: 403 }
-        );
-      }
+    // BUG-003 fix: Check if transaction belongs to user (via wallet OR userId)
+    const walletAddresses = userWithWallets?.wallets.map((w) => w.address) || [];
+    const isWalletOwned = transaction.wallet_address && walletAddresses.includes(transaction.wallet_address);
+    const isUserOwned = transaction.userId === user.id;
+    const isCsvImportWithoutOwner = transaction.source_type === "csv_import" && !transaction.userId && !transaction.wallet_address;
+
+    // Allow access if:
+    // 1. Transaction belongs to user's wallet, OR
+    // 2. Transaction has userId matching current user, OR
+    // 3. Transaction is a legacy CSV import without owner (for backward compatibility)
+    if (!isWalletOwned && !isUserOwned && !isCsvImportWithoutOwner) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 403 }
+      );
     }
 
     // Delete transaction

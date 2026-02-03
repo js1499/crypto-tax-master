@@ -58,12 +58,26 @@ export async function POST(request: NextRequest) {
         ? userWithWallets.wallets.map((w) => w.address)
         : [];
 
+    // BUG-026 fix: Check ownership via wallet_address OR userId for CSV imports
+    const orConditions: Prisma.TransactionWhereInput[] = [];
+    if (walletAddresses.length > 0) {
+      orConditions.push({ wallet_address: { in: walletAddresses } });
+    }
+    // Include transactions owned by user (CSV imports with userId)
+    orConditions.push({ userId: user.id });
+    // Legacy support: CSV imports without userId but with source_type
+    orConditions.push({
+      AND: [
+        { source_type: "csv_import" },
+        { wallet_address: null },
+        { userId: null },
+      ],
+    });
+
     const transactions = await prisma.transaction.findMany({
       where: {
         id: { in: transactionIds },
-        ...(walletAddresses.length > 0 && {
-          wallet_address: { in: walletAddresses },
-        }),
+        OR: orConditions,
       },
     });
 

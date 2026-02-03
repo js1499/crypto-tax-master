@@ -305,10 +305,8 @@ export function generateForm8949PDF(
         }
       };
 
-      // Add footer after all content is written
-      doc.on("end", () => {
-        addFooter();
-      });
+      // BUG-012 fix: Add footer BEFORE doc.end() since "end" event fires after finalization
+      addFooter();
 
       doc.end();
     } catch (error) {

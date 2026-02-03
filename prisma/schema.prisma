@@ -25,6 +25,7 @@ model User {
   sessions      Session[]
   wallets       Wallet[]
   exchanges     Exchange[]
+  transactions  Transaction[] // BUG-003 fix: Add relation for user-owned transactions
 }
 
 // NextAuth Account model (for OAuth providers)
@@ -149,12 +150,18 @@ model Transaction {
   identified         Boolean   @default(false)
   notes              String?   @db.Text
 
+  // BUG-003 fix: Add userId for transaction ownership (especially CSV imports)
+  userId             String?
+  user               User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // Indexes
   @@index([wallet_address])
   @@index([tx_timestamp])
   @@index([type])
   @@index([identified])
   @@index([chain])
+  @@index([source_type]) // BUG-022 fix: Add index for source_type
+  @@index([userId]) // BUG-003 fix: Add index for userId
 
   // Map model name to table name
   @@map("transactions")

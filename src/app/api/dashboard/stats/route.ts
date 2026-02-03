@@ -54,24 +54,21 @@ export async function GET(request: NextRequest) {
 
     const walletAddresses = userWithWallets?.wallets.map((w) => w.address) || [];
 
-    // Build where clause for transactions
+    // Build where clause for transactions - include CSV imports and exchange API imports
     const whereClause: Prisma.TransactionWhereInput = {};
+    const orConditions: Prisma.TransactionWhereInput[] = [];
+
     if (walletAddresses.length > 0) {
-      whereClause.wallet_address = { in: walletAddresses };
-    } else {
-      // If no wallets, return empty stats
-      return NextResponse.json({
-        status: "success",
-        stats: {
-          totalPortfolioValue: 0,
-          unrealizedGains: 0,
-          taxableEvents2023: 0,
-          assetAllocation: [],
-          portfolioValueOverTime: [],
-          recentTransactions: [],
-        },
-      });
+      orConditions.push({ wallet_address: { in: walletAddresses } });
     }
+    // Include CSV-imported transactions (source_type: "csv_import" with null wallet_address)
+    orConditions.push({
+      AND: [{ source_type: "csv_import" }, { wallet_address: null }],
+    });
+    // Include exchange API imports
+    orConditions.push({ source_type: "exchange_api" });
+
+    whereClause.OR = orConditions;
 
     // Fetch all transactions
     const allTransactions = await prisma.transaction.findMany({
@@ -120,7 +117,9 @@ export async function GET(request: NextRequest) {
         for (const lot of costBasisLots[asset]) {
           if (remainingToSell <= 0) break;
           const amountFromLot = Math.min(remainingToSell, lot.amount);
-          const costBasisFromLot = (lot.costBasis / lot.amount) * amountFromLot;
+          // BUG-015 fix: Prevent division by zero
+          const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
+          const costBasisFromLot = costBasisPerUnit * amountFromLot;
           soldCostBasis += costBasisFromLot;
           lot.amount -= amountFromLot;
           remainingToSell -= amountFromLot;
@@ -129,8 +128,13 @@ export async function GET(request: NextRequest) {
         // Remove empty lots
         costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
 
-        holdings[asset].amount -= sellAmount;
-        holdings[asset].costBasis -= soldCostBasis;
+        // BUG-016 fix: Prevent negative holdings
+        const previousAmount = holdings[asset].amount;
+        holdings[asset].amount = Math.max(0, holdings[asset].amount - sellAmount);
+        holdings[asset].costBasis = Math.max(0, holdings[asset].costBasis - soldCostBasis);
+        if (holdings[asset].amount === 0 && previousAmount < sellAmount) {
+          console.warn(`[Dashboard] Potential data issue: sold more ${asset} than purchased`);
+        }
       }
 
       // Handle swaps - incoming asset
@@ -189,13 +193,14 @@ export async function GET(request: NextRequest) {
 
     const unrealizedGains = totalPortfolioValue - totalCostBasis;
 
-    // Calculate taxable events for 2023
-    const year2023Start = new Date("2023-01-01T00:00:00Z");
-    const year2023End = new Date("2023-12-31T23:59:59Z");
-    const taxableEvents2023 = allTransactions.filter(
+    // BUG-014 fix: Calculate taxable events for current year instead of hardcoded 2023
+    const currentYear = new Date().getFullYear();
+    const yearStart = new Date(`${currentYear}-01-01T00:00:00Z`);
+    const yearEnd = new Date(`${currentYear}-12-31T23:59:59Z`);
+    const taxableEventsCurrentYear = allTransactions.filter(
       (tx) =>
-        tx.tx_timestamp >= year2023Start &&
-        tx.tx_timestamp <= year2023End &&
+        tx.tx_timestamp >= yearStart &&
+        tx.tx_timestamp <= yearEnd &&
         ["sell", "swap"].includes(tx.type.toLowerCase())
     ).length;
 
@@ -230,8 +235,8 @@ export async function GET(request: NextRequest) {
 
     // Process transactions chronologically month by month
     const sortedMonths = Object.keys(transactionsByMonth).sort();
-    let runningHoldings: Record<string, { amount: number; costBasis: number }> = {};
-    let runningCostBasisLots: Record<string, Array<{ date: Date; amount: number; costBasis: number }>> = {};
+    const runningHoldings: Record<string, { amount: number; costBasis: number }> = {};
+    const runningCostBasisLots: Record<string, Array<{ date: Date; amount: number; costBasis: number }>> = {};
 
     for (const monthKey of sortedMonths) {
       const monthTransactions = transactionsByMonth[monthKey].sort(
@@ -272,15 +277,18 @@ export async function GET(request: NextRequest) {
           for (const lot of runningCostBasisLots[asset]) {
             if (remainingToSell <= 0) break;
             const amountFromLot = Math.min(remainingToSell, lot.amount);
-            const costBasisFromLot = (lot.costBasis / lot.amount) * amountFromLot;
+            // BUG-015 fix: Prevent division by zero
+            const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
+            const costBasisFromLot = costBasisPerUnit * amountFromLot;
             soldCostBasis += costBasisFromLot;
             lot.amount -= amountFromLot;
             remainingToSell -= amountFromLot;
           }
 
           runningCostBasisLots[asset] = runningCostBasisLots[asset].filter((lot) => lot.amount > 0);
-          runningHoldings[asset].amount -= sellAmount;
-          runningHoldings[asset].costBasis -= soldCostBasis;
+          // BUG-016 fix: Prevent negative holdings
+          runningHoldings[asset].amount = Math.max(0, runningHoldings[asset].amount - sellAmount);
+          runningHoldings[asset].costBasis = Math.max(0, runningHoldings[asset].costBasis - soldCostBasis);
         }
 
         // Handle swaps - incoming asset
@@ -349,7 +357,8 @@ export async function GET(request: NextRequest) {
       stats: {
         totalPortfolioValue,
         unrealizedGains,
-        taxableEvents2023,
+        taxableEventsCurrentYear,
+        currentYear,
         assetAllocation,
         portfolioValueOverTime,
         recentTransactions,

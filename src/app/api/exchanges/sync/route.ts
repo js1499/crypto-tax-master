@@ -11,10 +11,12 @@ import {
   GeminiClient,
 } from "@/lib/exchange-clients";
 import { getCoinbaseTransactions, getCoinbaseTransactionsWithApiKey } from "@/lib/coinbase-transactions";
-import crypto from "crypto";
 
-// Encryption key (must match the one used for encryption)
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
+// Encryption key - REQUIRED for decrypting exchange credentials
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+if (!ENCRYPTION_KEY) {
+  console.error("[CRITICAL] ENCRYPTION_KEY environment variable is not set!");
+}
 
 // Configure for long-running operations on Vercel
 export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
@@ -30,7 +32,18 @@ export const runtime = 'nodejs';
  * }
  */
 export async function POST(request: NextRequest) {
+  const startTime = Date.now(); // Track request start time for metrics
+
   try {
+    // Verify encryption key is available
+    if (!ENCRYPTION_KEY) {
+      console.error("[Exchange Sync] ENCRYPTION_KEY not configured");
+      return NextResponse.json(
+        { error: "Server configuration error. Please contact support." },
+        { status: 500 }
+      );
+    }
+
     // Rate limiting
     const rateLimitResult = rateLimitAPI(request, 10); // 10 syncs per minute
     if (!rateLimitResult.success) {
@@ -124,7 +137,7 @@ export async function POST(request: NextRequest) {
           case "kraken":
             if (apiKey && apiSecret) {
               const client = new KrakenClient(apiKey, apiSecret);
-              transactions = await client.getTradesHistory(effectiveStartTime, endTime);
+              transactions = await client.getAllTransactions(effectiveStartTime, endTime);
             }
             break;
 
@@ -144,12 +157,12 @@ export async function POST(request: NextRequest) {
 
           case "coinbase":
             // Support both OAuth (refreshToken) and API Key authentication
-            if (exchange.apiKey && exchange.apiSecret) {
-              // Use API Key authentication
+            if (apiKey && apiSecret) {
+              // Use API Key authentication (using decrypted credentials)
               try {
                 transactions = await getCoinbaseTransactionsWithApiKey(
-                  exchange.apiKey,
-                  exchange.apiSecret,
+                  apiKey,
+                  apiSecret,
                   effectiveStartTime,
                   endTime,
                   exchange.id
@@ -305,7 +318,7 @@ export async function POST(request: NextRequest) {
         transactionsAdded: totalAdded,
         transactionsSkipped: totalSkipped,
         errorCount: errors.length,
-        syncDurationMs: Date.now() - (request.headers.get("x-request-start") ? parseInt(request.headers.get("x-request-start") || "0") : Date.now()),
+        syncDurationMs: Date.now() - startTime,
       },
     };
 

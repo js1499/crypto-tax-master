@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { verifyPassword, createSession, isValidEmail } from "@/lib/auth";
 import { rateLimitAuth, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
-
-const prisma = new PrismaClient();
 
 /**
  * POST /api/auth/login
@@ -110,11 +108,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: "Failed to login",
-        details: error instanceof Error ? error.message : "Unknown error",
+        ...(process.env.NODE_ENV === "development" && {
+          details: error instanceof Error ? error.message : "Unknown error",
+        }),
       },
       { status: 500 }
     );
-  } finally {
-    await prisma.$disconnect();
   }
 }

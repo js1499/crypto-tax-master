@@ -1,0 +1,11 @@
+Timestamp,Transaction Type,Asset,Quantity Transacted,Spot Price at Transaction,Subtotal,Total (inclusive of fees),Fees,Notes
+2024-01-15T10:30:00Z,Buy,BTC,0.5,42000.00,21000.00,21050.00,50.00,Purchased Bitcoin
+2024-01-20T14:45:00Z,Buy,ETH,5.0,2500.00,12500.00,12525.00,25.00,Purchased Ethereum
+2024-02-01T09:00:00Z,Sell,BTC,0.25,45000.00,11250.00,11225.00,25.00,Sold half Bitcoin position
+2024-02-15T16:20:00Z,Buy,SOL,100.0,95.00,9500.00,9519.00,19.00,Purchased Solana
+2024-03-01T11:00:00Z,Swap,ETH,2.0,2800.00,5600.00,5600.00,0.00,Swapped 2 ETH for 5600 USDC
+2024-03-15T08:30:00Z,Receive,BTC,0.1,48000.00,4800.00,4800.00,0.00,Received from friend
+2024-04-01T12:00:00Z,Staking,ETH,0.05,2900.00,145.00,145.00,0.00,Staking rewards
+2024-04-15T15:00:00Z,Sell,SOL,50.0,120.00,6000.00,5988.00,12.00,Sold half Solana
+2024-05-01T10:00:00Z,Buy,DOGE,10000.0,0.15,1500.00,1503.00,3.00,Purchased Dogecoin
+2024-05-15T14:30:00Z,Send,BTC,0.05,52000.00,2600.00,2600.00,0.00,Sent to cold storage

@@ -8,8 +8,11 @@ import { BinanceClient, KrakenClient, KuCoinClient, GeminiClient } from "@/lib/e
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 
-// Encryption key (in production, use environment variable)
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
+// Encryption key - REQUIRED in production
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+if (!ENCRYPTION_KEY) {
+  console.error("[CRITICAL] ENCRYPTION_KEY environment variable is not set!");
+}
 
 /**
  * POST /api/exchanges/connect
@@ -24,6 +27,15 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toSt
  */
 export async function POST(request: NextRequest) {
   try {
+    // Verify encryption key is available
+    if (!ENCRYPTION_KEY) {
+      console.error("[Exchange Connect] ENCRYPTION_KEY not configured");
+      return NextResponse.json(
+        { error: "Server configuration error. Please contact support." },
+        { status: 500 }
+      );
+    }
+
     // Rate limiting
     const rateLimitResult = rateLimitAPI(request, 20); // 20 connections per minute
     if (!rateLimitResult.success) {
@@ -172,8 +184,8 @@ export async function POST(request: NextRequest) {
             await binanceClient.getAccountInfo();
             break;
           case "kraken":
-            // Kraken doesn't have a simple test endpoint, skip validation for now
-            // In production, you might want to make a minimal API call
+            const krakenClient = new KrakenClient(apiKey, apiSecret);
+            await krakenClient.getBalance();
             break;
           case "kucoin":
             if (!apiPassphrase) {

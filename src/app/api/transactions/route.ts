@@ -161,22 +161,28 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply zero transactions filter
+    // BUG-019 fix: Use correct NOT with OR logic to filter out matching records
     if (hideZeroTransactions) {
       whereConditions.push({
-        NOT: [
-          { type: "Zero Transaction" },
-          { value_usd: 0 },
-        ],
+        NOT: {
+          OR: [
+            { type: "Zero Transaction" },
+            { value_usd: 0 },
+          ],
+        },
       });
     }
 
     // Apply spam transactions filter
+    // BUG-019 fix: Use correct NOT with OR logic to filter out matching records
     if (hideSpamTransactions) {
       whereConditions.push({
-        NOT: [
-          { type: { contains: "Spam", mode: "insensitive" } },
-          { asset_symbol: { contains: "unknown", mode: "insensitive" } },
-        ],
+        NOT: {
+          OR: [
+            { type: { contains: "Spam", mode: "insensitive" } },
+            { asset_symbol: { contains: "unknown", mode: "insensitive" } },
+          ],
+        },
       });
     }
 
@@ -235,6 +241,7 @@ export async function GET(request: NextRequest) {
           identified: true,
           chain: true,
           tx_hash: true,
+          notes: true, // BUG-010/BUG-017 fix: Include notes in select
         },
       }),
       prisma.transaction.count({ where }),
@@ -244,7 +251,10 @@ export async function GET(request: NextRequest) {
     const formattedTransactions = transactions.map((tx) => {
       const amountValue = Number(tx.amount_value);
       const valueUsd = Number(tx.value_usd);
-      const pricePerUnit = tx.price_per_unit ? Number(tx.price_per_unit) : valueUsd / amountValue;
+      // BUG-018 fix: Prevent NaN/Infinity when amountValue is zero
+      const pricePerUnit = tx.price_per_unit
+        ? Number(tx.price_per_unit)
+        : (amountValue > 0 ? valueUsd / amountValue : 0);
 
       // Format amount
       const amount = `${amountValue} ${tx.asset_symbol}`;
