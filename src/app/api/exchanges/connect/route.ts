@@ -231,7 +231,13 @@ export async function POST(request: NextRequest) {
       : null;
 
     if (exchangeName === "coinbase" && formattedCoinbasePrivateKey) {
-      console.log("[Exchange Connect] Storing formatted PEM private key for Coinbase");
+      const hasPemHeader = formattedCoinbasePrivateKey.includes("-----BEGIN");
+      const keyLength = formattedCoinbasePrivateKey.length;
+      console.log("[Exchange Connect] Storing formatted PEM private key for Coinbase:", {
+        hasPemHeader,
+        keyLength,
+        hasNewlines: formattedCoinbasePrivateKey.includes("\n"),
+      });
     }
 
     // Create or update exchange connection

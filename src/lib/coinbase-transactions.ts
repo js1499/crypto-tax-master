@@ -129,6 +129,18 @@ export async function getCoinbaseTransactionsWithApiKey(
         ? `${apiKeyName.substring(0, 15)}...${apiKeyName.substring(apiKeyName.length - 10)}`
         : "***";
       console.log("[Coinbase Transactions] Step 1 SUCCESS: Decrypted API key:", maskedKey);
+
+      // Debug: Check private key format
+      const hasPemHeader = privateKey.includes("-----BEGIN");
+      const keyLength = privateKey.length;
+      const first30 = privateKey.substring(0, 30).replace(/\n/g, "\\n");
+      console.log("[Coinbase Transactions] Private key debug:", {
+        hasPemHeader,
+        keyLength,
+        first30Chars: first30,
+        hasNewlines: privateKey.includes("\n"),
+        hasEscapedNewlines: privateKey.includes("\\n"),
+      });
     } catch (error) {
       console.error("[Coinbase Transactions] Step 1 FAILED: Could not decrypt API credentials:", error);
       throw new Error("CREDENTIALS_DECRYPT_FAILED");
