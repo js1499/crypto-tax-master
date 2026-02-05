@@ -223,6 +223,7 @@ export async function POST(request: NextRequest) {
       : null;
 
     // Create or update exchange connection
+    // Clear OAuth tokens when using API key auth, and vice versa
     const exchangeRecord = await prisma.exchange.upsert({
       where: {
         name_userId: {
@@ -234,7 +235,10 @@ export async function POST(request: NextRequest) {
         apiKey: encryptedApiKey,
         apiSecret: encryptedApiSecret,
         apiPassphrase: encryptedApiPassphrase,
-        refreshToken: refreshToken || undefined,
+        // Clear OAuth tokens if using API key auth to prevent auth method conflicts
+        refreshToken: refreshToken || (encryptedApiKey ? null : undefined),
+        accessToken: encryptedApiKey ? null : undefined,
+        tokenExpiresAt: encryptedApiKey ? null : undefined,
         isConnected: true,
         updatedAt: new Date(),
       },

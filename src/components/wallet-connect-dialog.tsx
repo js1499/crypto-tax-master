@@ -50,7 +50,7 @@ const exchangeProviders: ExchangeProvider[] = [
     id: "coinbase",
     name: "Coinbase",
     icon: "/images/tokens/coinbase.png",
-    connection: "OAuth",
+    connection: "API", // CDP API Key authentication
   },
   {
     id: "binance",
@@ -411,33 +411,61 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
                 </div>
               )}
 
-              {selectedProvider && ["binance", "kraken", "kucoin", "gemini"].includes(selectedProvider) && (
+              {selectedProvider && ["binance", "kraken", "kucoin", "gemini", "coinbase"].includes(selectedProvider) && (
                 <div className="mt-4 space-y-4 border rounded-lg p-4">
                   <h3 className="text-sm font-medium">API Connection for {selectedProvider.charAt(0).toUpperCase() + selectedProvider.slice(1)}</h3>
                   <p className="text-xs text-muted-foreground">
-                    {selectedProvider === "kucoin" 
+                    {selectedProvider === "kucoin"
                       ? "You'll need your API Key, Secret, and Passphrase from KuCoin API settings."
+                      : selectedProvider === "coinbase"
+                      ? "Enter your CDP API Key Name and Private Key from the Coinbase Developer Platform."
                       : "Enter your API credentials from your exchange account settings."}
                   </p>
                   <div className="space-y-3">
                     <div className="space-y-1">
-                      <Label htmlFor="api-key">API Key</Label>
+                      <Label htmlFor="api-key">
+                        {selectedProvider === "coinbase" ? "API Key Name" : "API Key"}
+                      </Label>
                       <Input
                         id="api-key"
                         value={apiKey}
                         onChange={(e) => setApiKey(e.target.value)}
-                        placeholder="Enter your API key"
+                        placeholder={selectedProvider === "coinbase"
+                          ? "organizations/{org_id}/apiKeys/{key_id}"
+                          : "Enter your API key"}
                       />
+                      {selectedProvider === "coinbase" && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Format: organizations/&#123;org_id&#125;/apiKeys/&#123;key_id&#125;
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-1">
-                      <Label htmlFor="api-secret">API Secret</Label>
-                      <Input
-                        id="api-secret"
-                        type="password"
-                        value={apiSecret}
-                        onChange={(e) => setApiSecret(e.target.value)}
-                        placeholder="Enter your API secret"
-                      />
+                      <Label htmlFor="api-secret">
+                        {selectedProvider === "coinbase" ? "EC Private Key" : "API Secret"}
+                      </Label>
+                      {selectedProvider === "coinbase" ? (
+                        <textarea
+                          id="api-secret"
+                          className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
+                          value={apiSecret}
+                          onChange={(e) => setApiSecret(e.target.value)}
+                          placeholder="-----BEGIN EC PRIVATE KEY-----&#10;...&#10;-----END EC PRIVATE KEY-----"
+                        />
+                      ) : (
+                        <Input
+                          id="api-secret"
+                          type="password"
+                          value={apiSecret}
+                          onChange={(e) => setApiSecret(e.target.value)}
+                          placeholder="Enter your API secret"
+                        />
+                      )}
+                      {selectedProvider === "coinbase" && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Paste the complete private key including BEGIN and END lines
+                        </p>
+                      )}
                     </div>
                     {selectedProvider === "kucoin" && (
                       <div className="space-y-1">
