@@ -100,6 +100,7 @@ export async function GET(request: NextRequest) {
     const encryptedAccessToken = encryptApiKey(tokens.access_token, ENCRYPTION_KEY);
 
     // Store Coinbase exchange connection with encrypted tokens
+    // Clear any previous API key credentials to ensure OAuth flow is used
     await prisma.exchange.upsert({
       where: {
         name_userId: {
@@ -113,6 +114,10 @@ export async function GET(request: NextRequest) {
         tokenExpiresAt: new Date(tokens.expires_at || Date.now() + tokens.expires_in * 1000),
         isConnected: true,
         updatedAt: new Date(),
+        // Clear any previous API key auth to ensure OAuth is used
+        apiKey: null,
+        apiSecret: null,
+        apiPassphrase: null,
       },
       create: {
         name: "coinbase",
