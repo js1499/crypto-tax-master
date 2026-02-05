@@ -189,23 +189,24 @@ export async function getCoinbaseTransactionsWithApiKey(
     const accounts = allAccounts;
     console.log(`[Coinbase Transactions] Step 2 SUCCESS: Found ${accounts.length} total accounts`);
 
-    // Log account summary
-    if (accounts.length > 0) {
-      console.log("[Coinbase Transactions] Account summary:");
-      accounts.forEach((acc: any, i: number) => {
-        console.log(`  ${i + 1}. ${acc.name} (${acc.currency?.code || 'unknown'}) - Balance: ${acc.balance?.amount || '0'}`);
-      });
-    } else {
+    // Log condensed account summary (only accounts with balance > 0)
+    const accountsWithBalance = accounts.filter((acc: any) => parseFloat(acc.balance?.amount || '0') > 0);
+    if (accountsWithBalance.length > 0) {
+      console.log(`[Coinbase Transactions] Accounts with balance: ${accountsWithBalance.map((a: any) => `${a.currency?.code}:${a.balance?.amount}`).join(', ')}`);
+    }
+    if (accounts.length === 0) {
       console.log("[Coinbase Transactions] WARNING: No accounts found!");
     }
 
     // Get transactions for each account with pagination
     console.log("[Coinbase Transactions] Step 3: Fetching transactions for each account...");
     let totalRawTxCount = 0;
+    let accountsProcessed = 0;
+    let accountsWithTx = 0;
 
     for (const account of accounts) {
       try {
-        console.log(`[Coinbase Transactions] --- Processing account: ${account.name} (${account.currency?.code || 'unknown'}) ---`);
+        accountsProcessed++;
         let allAccountTxs: any[] = [];
         let nextUri: string | null = `/v2/accounts/${account.id}/transactions`;
         let pageCount = 0;
@@ -223,7 +224,6 @@ export async function getCoinbaseTransactionsWithApiKey(
           // Generate a new JWT for each request (they expire after 2 minutes)
           const txHeaders = createCoinbaseCDPHeaders(apiKeyName, privateKey, "GET", txPath.split("?")[0]);
 
-          console.log(`[Coinbase Transactions] Fetching tx page ${pageCount} for ${account.name}...`);
           const txResponse = await axios.get(
             nextUri.startsWith("http") ? nextUri : `https://api.coinbase.com${txPath}`,
             {
@@ -237,20 +237,15 @@ export async function getCoinbaseTransactionsWithApiKey(
 
           // Get next page URI from pagination info
           nextUri = txResponse.data.pagination?.next_uri || null;
-
-          console.log(`[Coinbase Transactions] Page ${pageCount}: fetched ${pageTxs.length} transactions for ${account.name} (total: ${allAccountTxs.length}), hasNextPage: ${!!nextUri}`);
         }
 
         const accountTxs = allAccountTxs;
         totalRawTxCount += accountTxs.length;
-        console.log(`[Coinbase Transactions] Found ${accountTxs.length} raw transactions for account ${account.name}`);
 
-        // Log first few raw transactions for debugging
+        // Only log accounts that have transactions
         if (accountTxs.length > 0) {
-          console.log(`[Coinbase Transactions] Sample raw transactions for ${account.name}:`);
-          accountTxs.slice(0, 3).forEach((tx: any, i: number) => {
-            console.log(`  ${i + 1}. type=${tx.type}, amount=${tx.amount?.amount} ${tx.amount?.currency}, native=${tx.native_amount?.amount}, date=${tx.created_at}`);
-          });
+          accountsWithTx++;
+          console.log(`[Coinbase Transactions] ${account.name} (${account.currency?.code}): ${accountTxs.length} transactions`);
         }
 
         for (const tx of accountTxs) {
@@ -304,9 +299,6 @@ export async function getCoinbaseTransactionsWithApiKey(
           else if (tx.type === "receive") type = "Receive";
           else if (tx.type === "exchange" || tx.type === "trade") type = "Swap";
 
-          // Log each transaction being added
-          console.log(`[Coinbase Transactions] + Adding: ${type} ${Math.abs(amount)} ${currency} ($${Math.abs(nativeAmount).toFixed(2)}) on ${tx.created_at}`);
-
           // For sends, the value should be stored as the outgoing value
           // Sends reduce holdings but don't create taxable events (treated as gifts/transfers)
           // The value_usd represents the fair market value at time of send
@@ -336,15 +328,7 @@ export async function getCoinbaseTransactionsWithApiKey(
       }
     }
 
-    console.log("[Coinbase Transactions] ========== SYNC COMPLETE ==========");
-    console.log("[Coinbase Transactions] Summary:");
-    console.log(`  - Total accounts processed: ${accounts.length}`);
-    console.log(`  - Total raw transactions found: ${totalRawTxCount}`);
-    console.log(`  - Skipped (duplicates): ${skippedDuplicates}`);
-    console.log(`  - Skipped (time filter): ${skippedTimeFilter}`);
-    console.log(`  - Skipped (fiat/bank): ${skippedFiat}`);
-    console.log(`  - Final transactions to save: ${transactions.length}`);
-    console.log("[Coinbase Transactions] =====================================");
+    console.log(`[Coinbase Transactions] COMPLETE: ${accountsProcessed} accounts, ${accountsWithTx} with txs, ${totalRawTxCount} raw -> ${transactions.length} final (skipped: ${skippedDuplicates} dups, ${skippedTimeFilter} time, ${skippedFiat} fiat)`);
     return transactions;
   } catch (error) {
     console.error("[Coinbase Transactions] Error:", error);

@@ -264,7 +264,6 @@ export async function POST(request: NextRequest) {
             }
 
             // Create transaction
-            console.log(`[Exchange Sync] DB INSERT: ${tx.type} ${tx.amount_value} ${tx.asset_symbol} on ${tx.tx_timestamp}`);
             await prisma.transaction.create({
               data: {
                 type: tx.type,
@@ -294,13 +293,10 @@ export async function POST(request: NextRequest) {
             // Check if this is a unique constraint violation (duplicate tx_hash)
             const errorMessage = error instanceof Error ? error.message : String(error);
             if (errorMessage.includes("Unique constraint") || errorMessage.includes("P2002")) {
-              // This is a duplicate that wasn't caught by findFirst
-              // (can happen if tx_hash already exists from previous import)
               totalSkipped++;
-              console.log(`[Exchange Sync] DB SKIP (unique constraint): ${tx.tx_hash}`);
             } else {
-              // Log all errors for debugging
-              console.error(`[Exchange Sync] DB ERROR saving transaction:`, errorMessage);
+              // Log only non-duplicate errors
+              console.error(`[Exchange Sync] DB ERROR:`, errorMessage);
             }
             // Don't add to errors array for individual transaction failures
             // to avoid cluttering the response
