@@ -49,10 +49,22 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   const [coinbaseApiSecret, setCoinbaseApiSecret] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
 
-  // Check if Coinbase is already connected when component mounts
+  // Gemini connection state
+  const [geminiConnected, setGeminiConnected] = useState(false);
+  const [geminiLoading, setGeminiLoading] = useState(false);
+  const [isSyncingGemini, setIsSyncingGemini] = useState(false);
+  const [geminiSyncProgress, setGeminiSyncProgress] = useState(0);
+  const [showGeminiApiKeyForm, setShowGeminiApiKeyForm] = useState(false);
+  const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [geminiApiSecret, setGeminiApiSecret] = useState("");
+  const [isConnectingGemini, setIsConnectingGemini] = useState(false);
+
+  // Check if exchange is already connected when component mounts
   useEffect(() => {
     if (selectedExchange === "coinbase") {
       checkCoinbaseConnection();
+    } else if (selectedExchange === "gemini") {
+      checkGeminiConnection();
     }
   }, [selectedExchange]);
 
@@ -160,6 +172,110 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
     } finally {
       setIsSyncingCoinbase(false);
       setSyncProgress(0);
+    }
+  };
+
+  // Gemini connection functions
+  const checkGeminiConnection = async () => {
+    setGeminiLoading(true);
+    try {
+      const response = await axios.get("/api/exchanges");
+      const exchanges = response.data.exchanges || [];
+      const gemini = exchanges.find((e: any) => e.name.toLowerCase() === "gemini");
+      setGeminiConnected(gemini?.isConnected || false);
+    } catch (error) {
+      console.error("[CSVImport] Error checking Gemini connection:", error);
+      setGeminiConnected(false);
+    } finally {
+      setGeminiLoading(false);
+    }
+  };
+
+  const handleGeminiApiKeyConnect = async () => {
+    if (!geminiApiKey || !geminiApiSecret) {
+      toast.error("Please enter both API Key and API Secret");
+      return;
+    }
+
+    setIsConnectingGemini(true);
+    try {
+      const response = await axios.post("/api/exchanges/connect", {
+        exchange: "gemini",
+        apiKey: geminiApiKey,
+        apiSecret: geminiApiSecret,
+      });
+
+      if (response.data.status === "success") {
+        toast.success("Gemini account connected successfully!");
+        setGeminiConnected(true);
+        setShowGeminiApiKeyForm(false);
+        setGeminiApiKey("");
+        setGeminiApiSecret("");
+      } else {
+        throw new Error(response.data.error || "Failed to connect");
+      }
+    } catch (error) {
+      console.error("[CSVImport] Gemini connect error:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to connect Gemini";
+      toast.error(errorMessage);
+    } finally {
+      setIsConnectingGemini(false);
+    }
+  };
+
+  const handleGeminiSync = async () => {
+    setIsSyncingGemini(true);
+    setGeminiSyncProgress(0);
+
+    try {
+      const progressInterval = setInterval(() => {
+        setGeminiSyncProgress((prev) => Math.min(prev + 5, 90));
+      }, 500);
+
+      const response = await axios.post("/api/exchanges/sync", {
+        fullSync: true,
+      });
+
+      clearInterval(progressInterval);
+      setGeminiSyncProgress(100);
+
+      if (response.data.status === "success") {
+        const count = response.data.transactionsAdded || 0;
+        const skipped = response.data.transactionsSkipped || 0;
+
+        toast.success(
+          `Successfully imported ${count} transaction${count !== 1 ? "s" : ""} from Gemini${skipped > 0 ? ` (${skipped} duplicates skipped)` : ""}`
+        );
+
+        if (onImportComplete) {
+          onImportComplete({
+            source: "Gemini (API)",
+            fileName: "gemini-api-sync",
+            timestamp: new Date().toISOString(),
+            transactions: [],
+            totalTransactions: count,
+          });
+        }
+      } else {
+        throw new Error(response.data.error || "Failed to sync");
+      }
+    } catch (error) {
+      console.error("[CSVImport] Gemini sync error:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.errors?.[0] || error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to sync Gemini transactions";
+
+      if (errorMessage.includes("reconnect") || errorMessage.includes("expired") || errorMessage.includes("Invalid")) {
+        setGeminiConnected(false);
+        toast.error("Gemini connection failed. Please reconnect your account.");
+      } else {
+        toast.error(errorMessage);
+      }
+    } finally {
+      setIsSyncingGemini(false);
+      setGeminiSyncProgress(0);
     }
   };
 
@@ -531,6 +647,159 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
                     <Button
                       onClick={() => setShowApiKeyForm(true)}
                       className="mt-4 bg-[#0052FF] hover:bg-[#0052FF]/90"
+                    >
+                      <Link2 className="mr-2 h-4 w-4" />
+                      Connect with API Key
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">
+                  Or upload CSV manually
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Gemini API Key Section - Show when Gemini is selected */}
+        {selectedExchange === "gemini" && (
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-gradient-to-r from-cyan-500/10 to-teal-600/10 p-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#00DCFA]">
+                  <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="white"/>
+                    <path d="M2 17L12 22L22 17" stroke="white" strokeWidth="2"/>
+                    <path d="M2 12L12 17L22 12" stroke="white" strokeWidth="2"/>
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">Connect Gemini Account</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Connect your Gemini account using API keys to automatically download all your historical transactions.
+                  </p>
+
+                  {geminiLoading ? (
+                    <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Checking connection status...
+                    </div>
+                  ) : geminiConnected ? (
+                    <div className="mt-4 space-y-3">
+                      <div className="flex items-center gap-2 text-sm text-green-500">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Gemini account connected
+                      </div>
+
+                      {isSyncingGemini ? (
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs">
+                            <span>Downloading transactions...</span>
+                            <span>{geminiSyncProgress}%</span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                            <div
+                              className="h-full bg-[#00DCFA] transition-all"
+                              style={{ width: `${geminiSyncProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleGeminiSync}
+                            className="bg-[#00DCFA] hover:bg-[#00DCFA]/90 text-black"
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Download All Transactions
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowGeminiApiKeyForm(true);
+                              setGeminiConnected(false);
+                            }}
+                          >
+                            Reconnect
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : showGeminiApiKeyForm ? (
+                    <div className="mt-4 space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="gemini-api-key">API Key</Label>
+                        <Input
+                          id="gemini-api-key"
+                          type="text"
+                          placeholder="Enter your Gemini API key"
+                          value={geminiApiKey}
+                          onChange={(e) => setGeminiApiKey(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="gemini-api-secret">API Secret</Label>
+                        <Input
+                          id="gemini-api-secret"
+                          type="password"
+                          placeholder="Enter your Gemini API secret"
+                          value={geminiApiSecret}
+                          onChange={(e) => setGeminiApiSecret(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleGeminiApiKeyConnect}
+                          disabled={isConnectingGemini || !geminiApiKey || !geminiApiSecret}
+                          className="bg-[#00DCFA] hover:bg-[#00DCFA]/90 text-black"
+                        >
+                          {isConnectingGemini ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Connecting...
+                            </>
+                          ) : (
+                            <>
+                              <Link2 className="mr-2 h-4 w-4" />
+                              Connect
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setShowGeminiApiKeyForm(false);
+                            setGeminiApiKey("");
+                            setGeminiApiSecret("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                      <div className="rounded-md bg-cyan-900/20 p-3 text-xs text-cyan-500">
+                        <p className="font-medium">How to get Gemini API keys:</p>
+                        <ol className="mt-1 list-inside list-decimal space-y-1">
+                          <li>Log in to your Gemini account</li>
+                          <li>Go to Account → Settings → API</li>
+                          <li>Click &quot;Create a New API Key&quot;</li>
+                          <li>Select &quot;Primary&quot; scope and enable &quot;Fund Management&quot; permissions</li>
+                          <li>Copy the API Key and Secret (Secret is only shown once!)</li>
+                        </ol>
+                        <p className="mt-2 text-cyan-400 font-medium">For testing: Use sandbox.gemini.com for test API keys.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={() => setShowGeminiApiKeyForm(true)}
+                      className="mt-4 bg-[#00DCFA] hover:bg-[#00DCFA]/90 text-black"
                     >
                       <Link2 className="mr-2 h-4 w-4" />
                       Connect with API Key
