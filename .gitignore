@@ -70,3 +70,6 @@ next-env.d.ts
 
 # Test data - uncomment the line below if you want to ignore CSV files
 # /test-data/*.csv
+
+# Data dumps
+/public/dumps/
