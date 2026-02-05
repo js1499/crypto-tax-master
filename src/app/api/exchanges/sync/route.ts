@@ -158,20 +158,21 @@ export async function POST(request: NextRequest) {
           case "coinbase":
             console.log("[Exchange Sync] ========== COINBASE SYNC START ==========");
             console.log("[Exchange Sync] Coinbase credentials check:", {
-              hasApiKey: !!apiKey,
-              hasApiSecret: !!apiSecret,
+              hasApiKey: !!exchange.apiKey,
+              hasApiSecret: !!exchange.apiSecret,
               hasRefreshToken: !!exchange.refreshToken,
               exchangeId: exchange.id,
             });
 
             // Support both OAuth (refreshToken) and API Key authentication
-            if (apiKey && apiSecret) {
-              // Use API Key authentication (using decrypted credentials)
+            // Note: Coinbase functions expect ENCRYPTED credentials (they decrypt internally)
+            if (exchange.apiKey && exchange.apiSecret) {
+              // Use API Key authentication (pass encrypted credentials - function decrypts them)
               console.log("[Exchange Sync] Using API Key authentication for Coinbase");
               try {
                 transactions = await getCoinbaseTransactionsWithApiKey(
-                  apiKey,
-                  apiSecret,
+                  exchange.apiKey,  // Pass encrypted, not decrypted
+                  exchange.apiSecret,  // Pass encrypted, not decrypted
                   effectiveStartTime,
                   endTime,
                   exchange.id
