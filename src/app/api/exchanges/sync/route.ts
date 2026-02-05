@@ -156,9 +156,18 @@ export async function POST(request: NextRequest) {
             break;
 
           case "coinbase":
+            console.log("[Exchange Sync] ========== COINBASE SYNC START ==========");
+            console.log("[Exchange Sync] Coinbase credentials check:", {
+              hasApiKey: !!apiKey,
+              hasApiSecret: !!apiSecret,
+              hasRefreshToken: !!exchange.refreshToken,
+              exchangeId: exchange.id,
+            });
+
             // Support both OAuth (refreshToken) and API Key authentication
             if (apiKey && apiSecret) {
               // Use API Key authentication (using decrypted credentials)
+              console.log("[Exchange Sync] Using API Key authentication for Coinbase");
               try {
                 transactions = await getCoinbaseTransactionsWithApiKey(
                   apiKey,
@@ -167,10 +176,9 @@ export async function POST(request: NextRequest) {
                   endTime,
                   exchange.id
                 );
+                console.log(`[Exchange Sync] Coinbase API Key returned ${transactions.length} transactions`);
               } catch (error) {
-                if (process.env.NODE_ENV === "development") {
-                  console.error("[Exchange Sync] Coinbase API Key error:", error);
-                }
+                console.error("[Exchange Sync] Coinbase API Key error:", error instanceof Error ? error.message : error);
                 const errorMessage = error instanceof Error ? error.message : "Unknown error";
                 let userMessage = "Failed to fetch transactions";
 
@@ -185,6 +193,7 @@ export async function POST(request: NextRequest) {
               }
             } else if (exchange.refreshToken) {
               // Use OAuth flow with encrypted tokens
+              console.log("[Exchange Sync] Using OAuth authentication for Coinbase");
               try {
                 transactions = await getCoinbaseTransactions(
                   exchange.refreshToken,
@@ -192,10 +201,9 @@ export async function POST(request: NextRequest) {
                   endTime,
                   exchange.id
                 );
+                console.log(`[Exchange Sync] Coinbase OAuth returned ${transactions.length} transactions`);
               } catch (error) {
-                if (process.env.NODE_ENV === "development") {
-                  console.error("[Exchange Sync] Coinbase OAuth error:", error);
-                }
+                console.error("[Exchange Sync] Coinbase OAuth error:", error instanceof Error ? error.message : error);
                 const errorMessage = error instanceof Error ? error.message : "Unknown error";
                 let userMessage = "Failed to fetch transactions";
 
@@ -209,9 +217,11 @@ export async function POST(request: NextRequest) {
                 continue;
               }
             } else {
+              console.log("[Exchange Sync] ERROR: No Coinbase credentials found");
               errors.push("Coinbase: No credentials found. Please connect your account.");
               continue;
             }
+            console.log("[Exchange Sync] ========== COINBASE SYNC END ==========");
             break;
 
           default:
@@ -220,6 +230,11 @@ export async function POST(request: NextRequest) {
         }
 
         // Store transactions in database
+        console.log(`[Exchange Sync] Saving ${transactions.length} transactions to database for ${exchange.name}...`);
+        let dbSaveCount = 0;
+        let dbSkipCount = 0;
+        let dbErrorCount = 0;
+
         for (const tx of transactions) {
           try {
             // Check if transaction already exists
@@ -242,11 +257,13 @@ export async function POST(request: NextRequest) {
             });
 
             if (existing) {
+              dbSkipCount++;
               totalSkipped++;
               continue;
             }
 
             // Create transaction
+            console.log(`[Exchange Sync] DB INSERT: ${tx.type} ${tx.amount_value} ${tx.asset_symbol} on ${tx.tx_timestamp}`);
             await prisma.transaction.create({
               data: {
                 type: tx.type,
@@ -269,25 +286,32 @@ export async function POST(request: NextRequest) {
               },
             });
 
+            dbSaveCount++;
             totalAdded++;
           } catch (error) {
+            dbErrorCount++;
             // Check if this is a unique constraint violation (duplicate tx_hash)
             const errorMessage = error instanceof Error ? error.message : String(error);
             if (errorMessage.includes("Unique constraint") || errorMessage.includes("P2002")) {
               // This is a duplicate that wasn't caught by findFirst
               // (can happen if tx_hash already exists from previous import)
               totalSkipped++;
-              console.log(`[Exchange Sync] Skipped duplicate transaction (unique constraint): ${tx.tx_hash}`);
+              console.log(`[Exchange Sync] DB SKIP (unique constraint): ${tx.tx_hash}`);
             } else {
-              // Log other errors only in development
-              if (process.env.NODE_ENV === "development") {
-                console.error(`[Exchange Sync] Error saving transaction:`, error);
-              }
+              // Log all errors for debugging
+              console.error(`[Exchange Sync] DB ERROR saving transaction:`, errorMessage);
             }
             // Don't add to errors array for individual transaction failures
             // to avoid cluttering the response
           }
         }
+
+        console.log(`[Exchange Sync] Database save complete for ${exchange.name}:`, {
+          attempted: transactions.length,
+          saved: dbSaveCount,
+          skipped: dbSkipCount,
+          errors: dbErrorCount,
+        });
 
         // Update exchange lastSyncAt
         await prisma.exchange.update({
