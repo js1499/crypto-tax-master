@@ -349,79 +349,247 @@ export class KuCoinClient {
 export class GeminiClient {
   private apiKey: string;
   private apiSecret: string;
-  private baseURL: string = "https://api.gemini.com";
+  private baseURL: string;
+  private isSandbox: boolean;
 
-  constructor(apiKey: string, apiSecret: string) {
+  constructor(apiKey: string, apiSecret: string, sandbox: boolean = false) {
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
+    this.isSandbox = sandbox;
+    this.baseURL = sandbox
+      ? "https://api.sandbox.gemini.com"
+      : "https://api.gemini.com";
   }
 
-  private generateSignature(
-    payload: string,
-    secret: string
-  ): string {
+  /**
+   * Generate proper Gemini API signature
+   * Signature is HMAC-SHA384 of the BASE64-encoded payload
+   */
+  private generateSignature(base64Payload: string): string {
     return crypto
-      .createHmac("sha384", secret)
-      .update(payload)
+      .createHmac("sha384", this.apiSecret)
+      .update(base64Payload)
       .digest("hex");
   }
 
+  /**
+   * Make authenticated request to Gemini API
+   * Gemini requires:
+   * 1. Payload with `request` (endpoint), `nonce`, and `account` fields
+   * 2. Payload JSON stringified and BASE64 encoded
+   * 3. Signature is HMAC-SHA384 of the BASE64 payload
+   */
   private async makeRequest(
     endpoint: string,
     params: Record<string, any> = {}
   ): Promise<any> {
-    const payload = JSON.stringify(params);
-    const signature = this.generateSignature(payload, this.apiSecret);
+    // Build payload with required fields
+    const payload = {
+      request: endpoint,
+      nonce: Date.now().toString(),
+      account: "primary", // Required for all authenticated endpoints
+      ...params,
+    };
 
-    const response = await axios.post(`${this.baseURL}${endpoint}`, payload, {
+    // JSON stringify and BASE64 encode
+    const jsonPayload = JSON.stringify(payload);
+    const base64Payload = Buffer.from(jsonPayload).toString("base64");
+
+    // Generate signature from BASE64 payload
+    const signature = this.generateSignature(base64Payload);
+
+    const response = await axios.post(`${this.baseURL}${endpoint}`, null, {
       headers: {
         "Content-Type": "text/plain",
+        "Content-Length": "0",
         "X-GEMINI-APIKEY": this.apiKey,
-        "X-GEMINI-PAYLOAD": payload,
+        "X-GEMINI-PAYLOAD": base64Payload,
         "X-GEMINI-SIGNATURE": signature,
+        "Cache-Control": "no-cache",
       },
     });
 
     return response.data;
   }
 
-  async getTrades(symbol?: string, startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
-    const params: Record<string, any> = {
-      limit_trades: 500,
+  /**
+   * Test API connection by fetching account balances
+   */
+  async testConnection(): Promise<boolean> {
+    try {
+      const balances = await this.makeRequest("/v1/balances");
+      console.log(`[Gemini] Connection test successful, found ${balances.length} balances`);
+      return true;
+    } catch (error) {
+      console.error("[Gemini] Connection test failed:", error instanceof Error ? error.message : error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get account balances
+   */
+  async getBalances(): Promise<any[]> {
+    return this.makeRequest("/v1/balances");
+  }
+
+  /**
+   * Parse symbol to extract base and quote currencies
+   * Handles formats like: btcusd, ethusd, ethbtc, etc.
+   */
+  private parseSymbol(symbol: string): { base: string; quote: string } {
+    const s = symbol.toUpperCase();
+    // Common quote currencies in order of preference
+    const quoteCurrencies = ["USD", "USDT", "BTC", "ETH", "DAI", "GBP", "EUR", "SGD"];
+
+    for (const quote of quoteCurrencies) {
+      if (s.endsWith(quote)) {
+        return {
+          base: s.slice(0, -quote.length),
+          quote: quote,
+        };
+      }
+    }
+    // Fallback: assume last 3 chars are quote
+    return {
+      base: s.slice(0, -3),
+      quote: s.slice(-3),
     };
-    if (symbol) params.symbol = symbol;
-    if (startTime) params.timestamp = startTime;
+  }
+
+  /**
+   * Get all trades with pagination
+   */
+  async getTrades(symbol?: string, startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
+    const allTrades: ExchangeTransaction[] = [];
 
     try {
+      const params: Record<string, any> = {
+        limit_trades: 500, // Max allowed
+      };
+      if (symbol) params.symbol = symbol;
+      if (startTime) params.timestamp = Math.floor(startTime / 1000); // Convert ms to seconds
+
       const response = await this.makeRequest("/v1/mytrades", params);
-      const trades: ExchangeTransaction[] = [];
 
       if (Array.isArray(response)) {
         for (const trade of response) {
-          const [base, quote] = trade.symbol.split("USD");
-          const isBuy = trade.type === "buy";
+          // Filter by endTime if specified
+          if (endTime && trade.timestampms > endTime) {
+            continue;
+          }
 
-          trades.push({
-            id: trade.tid?.toString() || trade.timestamp.toString(),
+          const { base, quote } = this.parseSymbol(trade.symbol);
+          const isBuy = trade.type === "Buy";
+          const amount = parseFloat(trade.amount);
+          const price = parseFloat(trade.price);
+
+          // Calculate USD value - if quote is USD, use directly; otherwise need conversion
+          let valueUsd = Math.abs(amount * price);
+          if (quote !== "USD" && quote !== "USDT") {
+            // For non-USD pairs, we'd need price conversion
+            // For now, store the quote currency value (will need enhancement)
+            console.log(`[Gemini] Non-USD pair ${trade.symbol}, value in ${quote}: ${valueUsd}`);
+          }
+
+          allTrades.push({
+            id: trade.tid?.toString() || trade.timestampms.toString(),
             type: isBuy ? "Buy" : "Sell",
             asset_symbol: base,
-            amount_value: new Decimal(Math.abs(parseFloat(trade.amount))),
-            price_per_unit: new Decimal(trade.price),
-            value_usd: new Decimal(Math.abs(parseFloat(trade.price) * parseFloat(trade.amount))),
-            fee_usd: trade.fee_amount ? new Decimal(trade.fee_amount) : null,
-            tx_timestamp: new Date(trade.timestamp * 1000),
+            amount_value: new Decimal(Math.abs(amount)),
+            price_per_unit: new Decimal(price),
+            value_usd: new Decimal(valueUsd),
+            fee_usd: trade.fee_amount ? new Decimal(parseFloat(trade.fee_amount)) : null,
+            tx_timestamp: new Date(trade.timestampms),
             source: "Gemini",
             source_type: "exchange_api",
             tx_hash: trade.tid?.toString(),
+            notes: `${trade.symbol} @ ${price}`,
           });
         }
       }
 
-      return trades;
+      console.log(`[Gemini] Fetched ${allTrades.length} trades`);
+      return allTrades;
     } catch (error) {
-      log.error("[Gemini] Error fetching trades:", error);
+      console.error("[Gemini] Error fetching trades:", error instanceof Error ? error.message : error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get transfers (deposits and withdrawals)
+   */
+  async getTransfers(startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
+    const transfers: ExchangeTransaction[] = [];
+
+    try {
+      const params: Record<string, any> = {
+        limit_transfers: 50, // Max allowed per request
+      };
+      if (startTime) params.timestamp = Math.floor(startTime / 1000);
+
+      const response = await this.makeRequest("/v1/transfers", params);
+
+      if (Array.isArray(response)) {
+        for (const transfer of response) {
+          // Filter by endTime if specified
+          if (endTime && transfer.timestampms > endTime) {
+            continue;
+          }
+
+          // Skip pending transfers
+          if (transfer.status !== "Complete" && transfer.status !== "Advanced") {
+            continue;
+          }
+
+          // Determine if this is a deposit or withdrawal
+          // Types: Deposit, Withdrawal, AdminCredit, AdminDebit, Reward
+          const depositTypes = ["Deposit", "AdminCredit", "Reward"];
+          const isDeposit = depositTypes.includes(transfer.type);
+          const amount = parseFloat(transfer.amount);
+
+          transfers.push({
+            id: transfer.eid?.toString() || transfer.timestampms.toString(),
+            type: isDeposit ? "Receive" : "Send",
+            asset_symbol: transfer.currency.toUpperCase(),
+            amount_value: new Decimal(Math.abs(amount)),
+            price_per_unit: null, // Would need price lookup
+            value_usd: new Decimal(0), // Would need price lookup
+            fee_usd: transfer.feeAmount ? new Decimal(parseFloat(transfer.feeAmount)) : null,
+            tx_timestamp: new Date(transfer.timestampms),
+            source: "Gemini",
+            source_type: "exchange_api",
+            tx_hash: transfer.txHash || transfer.eid?.toString(),
+            notes: `${transfer.type}: ${transfer.method || ""}`,
+          });
+        }
+      }
+
+      console.log(`[Gemini] Fetched ${transfers.length} transfers`);
+      return transfers;
+    } catch (error) {
+      console.error("[Gemini] Error fetching transfers:", error instanceof Error ? error.message : error);
+      // Don't throw - transfers endpoint might not be available
       return [];
     }
+  }
+
+  /**
+   * Get all transactions (trades + transfers)
+   */
+  async getAllTransactions(startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
+    const [trades, transfers] = await Promise.all([
+      this.getTrades(undefined, startTime, endTime),
+      this.getTransfers(startTime, endTime),
+    ]);
+
+    const all = [...trades, ...transfers];
+    // Sort by timestamp
+    all.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
+
+    console.log(`[Gemini] Total transactions: ${all.length} (${trades.length} trades, ${transfers.length} transfers)`);
+    return all;
   }
 }
 

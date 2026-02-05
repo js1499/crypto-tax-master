@@ -150,8 +150,10 @@ export async function POST(request: NextRequest) {
 
           case "gemini":
             if (apiKey && apiSecret) {
-              const client = new GeminiClient(apiKey, apiSecret);
-              transactions = await client.getTrades(undefined, effectiveStartTime, endTime);
+              // Detect sandbox keys
+              const isSandbox = apiKey.startsWith("master-") || apiKey.includes("sandbox");
+              const client = new GeminiClient(apiKey, apiSecret, isSandbox);
+              transactions = await client.getAllTransactions(effectiveStartTime, endTime);
             }
             break;
 

@@ -203,7 +203,13 @@ export async function POST(request: NextRequest) {
             // KuCoin validation would go here
             break;
           case "gemini":
-            // Gemini validation would go here
+            // Detect sandbox keys (they start with "master-" or from sandbox domain)
+            const isSandbox = apiKey.startsWith("master-") || apiKey.includes("sandbox");
+            const geminiClient = new GeminiClient(apiKey, apiSecret, isSandbox);
+            await geminiClient.testConnection();
+            if (isSandbox) {
+              console.log("[Exchange Connect] Gemini SANDBOX connection validated");
+            }
             break;
         }
       } catch (error) {
