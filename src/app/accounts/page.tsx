@@ -334,7 +334,7 @@ function AccountsContent() {
           <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center gap-3">
             <AlertCircle className="h-5 w-5 text-red-500" />
             <p>Failed to connect to Coinbase: {oauthStatus.error}</p>
-            <Button variant="outline" size="sm" className="ml-auto" onClick={() => window.location.href = '/api/auth/coinbase'}>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setIsAddDialogOpen(true)}>
               Try Again
             </Button>
           </div>
@@ -464,19 +464,14 @@ function AccountsContent() {
                                 Sync
                               </Button>
                             ) : (
-                              // PRD UX Requirement: Show "Reconnect" if tokens invalid
+                              // Show "Reconnect" if connection needs re-auth
                               <Button
                                 size="sm"
                                 variant="default"
                                 className="flex-1"
                                 onClick={() => {
-                                  // For Coinbase, redirect to OAuth flow
-                                  if (account.provider.toLowerCase() === "coinbase") {
-                                    window.location.href = "/api/auth/coinbase";
-                                  } else {
-                                    // For other exchanges, open the connect dialog
-                                    setIsAddDialogOpen(true);
-                                  }
+                                  // Open the connect dialog for all exchanges (including Coinbase)
+                                  setIsAddDialogOpen(true);
                                 }}
                               >
                                 <Link2 className="mr-2 h-4 w-4" />
