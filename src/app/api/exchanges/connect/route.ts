@@ -84,6 +84,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Track formatted Coinbase private key (needs to be stored in PEM format)
+    let formattedCoinbasePrivateKey: string | null = null;
+
     // Validate credentials based on exchange
     if (exchangeName === "coinbase") {
       // Coinbase supports both OAuth (refreshToken) and API Key authentication
@@ -109,6 +112,9 @@ export async function POST(request: NextRequest) {
             // Normalize newlines
             privateKey = privateKey.replace(/\\n/g, "\n").replace(/\r\n/g, "\n").trim();
           }
+
+          // Store the formatted key to save later (this is the key fix!)
+          formattedCoinbasePrivateKey = privateKey;
 
           // Generate JWT for Coinbase CDP API
           const now = Math.floor(Date.now() / 1000);
@@ -216,11 +222,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Encrypt credentials
+    // For Coinbase, use the formatted PEM private key (not the raw input)
     const encryptedApiKey = apiKey ? encryptApiKey(apiKey, ENCRYPTION_KEY) : null;
-    const encryptedApiSecret = apiSecret ? encryptApiKey(apiSecret, ENCRYPTION_KEY) : null;
+    const secretToEncrypt = formattedCoinbasePrivateKey || apiSecret;
+    const encryptedApiSecret = secretToEncrypt ? encryptApiKey(secretToEncrypt, ENCRYPTION_KEY) : null;
     const encryptedApiPassphrase = apiPassphrase
       ? encryptApiKey(apiPassphrase, ENCRYPTION_KEY)
       : null;
+
+    if (exchangeName === "coinbase" && formattedCoinbasePrivateKey) {
+      console.log("[Exchange Connect] Storing formatted PEM private key for Coinbase");
+    }
 
     // Create or update exchange connection
     // Clear OAuth tokens when using API key auth, and vice versa
