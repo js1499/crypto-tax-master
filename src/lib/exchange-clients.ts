@@ -177,9 +177,13 @@ export class KrakenClient {
   }
 
   private generateNonce(): string {
-    return Date.now().toString();
+    return (Date.now() * 1000).toString(); // Microseconds for uniqueness
   }
 
+  /**
+   * Generate Kraken API signature
+   * Signature = HMAC-SHA512(path + SHA256(nonce + postData), base64_decode(secret))
+   */
   private generateSignature(
     path: string,
     nonce: string,
@@ -187,12 +191,20 @@ export class KrakenClient {
   ): string {
     const message = nonce + postData;
     const secret = Buffer.from(this.apiSecret, "base64");
-    const hash = crypto.createHash("sha256").update(path + message).digest();
+    // SHA256 hash of nonce + postData
+    const sha256Hash = crypto.createHash("sha256").update(message).digest();
+    // Concatenate path (as buffer) with the hash
+    const pathBuffer = Buffer.from(path);
+    const combined = Buffer.concat([pathBuffer, sha256Hash]);
+    // HMAC-SHA512 with secret
     const hmac = crypto.createHmac("sha512", secret);
-    hmac.update(hash);
+    hmac.update(combined);
     return hmac.digest("base64");
   }
 
+  /**
+   * Make authenticated request to Kraken API
+   */
   private async makeRequest(
     endpoint: string,
     params: Record<string, any> = {}
@@ -213,44 +225,277 @@ export class KrakenClient {
       },
     });
 
+    // Check for Kraken API errors
+    if (response.data.error && response.data.error.length > 0) {
+      throw new Error(`Kraken API error: ${response.data.error.join(", ")}`);
+    }
+
     return response.data;
   }
 
+  /**
+   * Test API connection by fetching account balance
+   */
+  async testConnection(): Promise<boolean> {
+    try {
+      const response = await this.makeRequest("/0/private/Balance");
+      const assetCount = Object.keys(response.result || {}).length;
+      console.log(`[Kraken] Connection test successful, found ${assetCount} assets`);
+      return true;
+    } catch (error) {
+      console.error("[Kraken] Connection test failed:", error instanceof Error ? error.message : error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get account balance
+   */
+  async getBalance(): Promise<Record<string, string>> {
+    const response = await this.makeRequest("/0/private/Balance");
+    return response.result || {};
+  }
+
+  /**
+   * Normalize Kraken asset symbols
+   * Kraken uses X prefix for crypto (XXBT, XETH) and Z prefix for fiat (ZUSD, ZEUR)
+   */
+  private normalizeAsset(asset: string): string {
+    // Remove X or Z prefix for standard assets
+    if (asset.length === 4 && (asset.startsWith("X") || asset.startsWith("Z"))) {
+      asset = asset.substring(1);
+    }
+    // Handle special cases
+    if (asset === "XBT") return "BTC";
+    return asset.toUpperCase();
+  }
+
+  /**
+   * Parse Kraken trading pair to extract base and quote
+   * Kraken formats: XXBTZUSD, XETHZEUR, BTCUSD, ETH/USD, etc.
+   */
+  private parsePair(pair: string): { base: string; quote: string } {
+    // If contains slash, split on it
+    if (pair.includes("/")) {
+      const [base, quote] = pair.split("/");
+      return { base: this.normalizeAsset(base), quote: this.normalizeAsset(quote) };
+    }
+
+    // Common quote currencies (check longest first)
+    const quoteCurrencies = ["ZUSD", "ZEUR", "ZGBP", "ZCAD", "ZJPY", "USD", "EUR", "GBP", "CAD", "JPY", "USDT", "USDC", "DAI"];
+
+    for (const quote of quoteCurrencies) {
+      if (pair.endsWith(quote)) {
+        const base = pair.slice(0, -quote.length);
+        return {
+          base: this.normalizeAsset(base),
+          quote: this.normalizeAsset(quote),
+        };
+      }
+    }
+
+    // Fallback: assume last 3-4 chars are quote
+    const base = pair.slice(0, -3);
+    const quote = pair.slice(-3);
+    return {
+      base: this.normalizeAsset(base),
+      quote: this.normalizeAsset(quote),
+    };
+  }
+
+  /**
+   * Check if a currency is USD or USD-equivalent
+   */
+  private isUsdEquivalent(currency: string): boolean {
+    const usdEquivalents = ["USD", "USDT", "USDC", "DAI", "BUSD"];
+    return usdEquivalents.includes(currency.toUpperCase());
+  }
+
+  /**
+   * Get trades history with pagination
+   */
   async getTradesHistory(startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
-    const params: Record<string, any> = {};
-    if (startTime) params.start = startTime.toString();
-    if (endTime) params.end = endTime.toString();
+    const allTrades: ExchangeTransaction[] = [];
+    let offset = 0;
+    const pageSize = 50; // Kraken default
+    let hasMore = true;
 
     try {
-      const response = await this.makeRequest("/0/private/TradesHistory", params);
-      const trades: ExchangeTransaction[] = [];
+      while (hasMore) {
+        const params: Record<string, any> = {
+          ofs: offset.toString(),
+        };
+        if (startTime) params.start = Math.floor(startTime / 1000).toString(); // Kraken uses seconds
+        if (endTime) params.end = Math.floor(endTime / 1000).toString();
 
-      if (response.result && response.result.trades) {
-        for (const [txid, trade] of Object.entries(response.result.trades as any)) {
-          const [base, quote] = trade.pair.split("/");
+        const response = await this.makeRequest("/0/private/TradesHistory", params);
+        const trades = response.result?.trades || {};
+        const tradeCount = Object.keys(trades).length;
+
+        for (const [txid, trade] of Object.entries(trades as Record<string, any>)) {
+          const { base, quote } = this.parsePair(trade.pair);
           const isBuy = trade.type === "buy";
+          const vol = parseFloat(trade.vol);
+          const price = parseFloat(trade.price);
+          const cost = parseFloat(trade.cost);
+          const fee = parseFloat(trade.fee || "0");
 
-          trades.push({
+          // Calculate USD value
+          // If quote is USD-equivalent, cost is already in USD
+          // Otherwise, we'd need conversion (for now, store as-is with note)
+          const isUsdQuote = this.isUsdEquivalent(quote);
+          const valueUsd = isUsdQuote ? cost : cost; // TODO: Add conversion for non-USD pairs
+
+          allTrades.push({
             id: txid,
             type: isBuy ? "Buy" : "Sell",
             asset_symbol: base,
-            amount_value: new Decimal(Math.abs(parseFloat(trade.vol))),
-            price_per_unit: new Decimal(trade.price),
-            value_usd: new Decimal(Math.abs(parseFloat(trade.cost))),
-            fee_usd: trade.fee ? new Decimal(trade.fee) : null,
+            amount_value: new Decimal(Math.abs(vol)),
+            price_per_unit: new Decimal(price),
+            value_usd: new Decimal(Math.abs(valueUsd)),
+            fee_usd: isUsdQuote && fee > 0 ? new Decimal(fee) : null,
             tx_timestamp: new Date(parseFloat(trade.time) * 1000),
             source: "Kraken",
             source_type: "exchange_api",
             tx_hash: txid,
+            notes: `${trade.pair} @ ${price}${!isUsdQuote ? ` (value in ${quote})` : ""}`,
           });
+        }
+
+        // Check if there are more trades
+        const totalCount = response.result?.count || 0;
+        offset += tradeCount;
+        hasMore = tradeCount === pageSize && offset < totalCount;
+
+        // Safety limit
+        if (offset > 5000) {
+          console.log("[Kraken] Reached pagination limit (5000 trades)");
+          break;
         }
       }
 
-      return trades;
+      console.log(`[Kraken] Fetched ${allTrades.length} trades`);
+      return allTrades;
     } catch (error) {
-      log.error("[Kraken] Error fetching trades:", error);
-      return [];
+      console.error("[Kraken] Error fetching trades:", error instanceof Error ? error.message : error);
+      throw error;
     }
+  }
+
+  /**
+   * Get ledger entries (deposits, withdrawals, staking, etc.) with pagination
+   */
+  async getLedgers(startTime?: number, endTime?: number, type?: string): Promise<ExchangeTransaction[]> {
+    const transactions: ExchangeTransaction[] = [];
+    let offset = 0;
+    const pageSize = 50;
+    let hasMore = true;
+
+    try {
+      while (hasMore) {
+        const params: Record<string, any> = {
+          ofs: offset.toString(),
+        };
+        if (startTime) params.start = Math.floor(startTime / 1000).toString();
+        if (endTime) params.end = Math.floor(endTime / 1000).toString();
+        if (type) params.type = type; // deposit, withdrawal, trade, margin, staking, etc.
+
+        const response = await this.makeRequest("/0/private/Ledgers", params);
+        const ledgers = response.result?.ledger || {};
+        const ledgerCount = Object.keys(ledgers).length;
+
+        for (const [ledgerId, entry] of Object.entries(ledgers as Record<string, any>)) {
+          const asset = this.normalizeAsset(entry.asset);
+          const amount = parseFloat(entry.amount);
+          const fee = parseFloat(entry.fee || "0");
+
+          // Determine transaction type
+          let txType: string;
+          switch (entry.type) {
+            case "deposit":
+              txType = "Receive";
+              break;
+            case "withdrawal":
+              txType = "Send";
+              break;
+            case "staking":
+              txType = amount > 0 ? "Staking Reward" : "Staking";
+              break;
+            case "transfer":
+              txType = amount > 0 ? "Receive" : "Send";
+              break;
+            case "trade":
+              // Skip trades - we get those from TradesHistory
+              continue;
+            case "margin":
+              txType = "Margin";
+              break;
+            default:
+              txType = entry.type || "Transfer";
+          }
+
+          transactions.push({
+            id: ledgerId,
+            type: txType,
+            asset_symbol: asset,
+            amount_value: new Decimal(Math.abs(amount)),
+            price_per_unit: null, // Would need price lookup
+            value_usd: new Decimal(0), // Would need price lookup
+            fee_usd: fee > 0 ? new Decimal(fee) : null,
+            tx_timestamp: new Date(parseFloat(entry.time) * 1000),
+            source: "Kraken",
+            source_type: "exchange_api",
+            tx_hash: entry.refid || ledgerId,
+            notes: `${entry.type}: ${entry.subtype || ""}`,
+          });
+        }
+
+        const totalCount = response.result?.count || 0;
+        offset += ledgerCount;
+        hasMore = ledgerCount === pageSize && offset < totalCount;
+
+        if (offset > 5000) {
+          console.log("[Kraken] Reached ledger pagination limit");
+          break;
+        }
+      }
+
+      console.log(`[Kraken] Fetched ${transactions.length} ledger entries`);
+      return transactions;
+    } catch (error) {
+      console.error("[Kraken] Error fetching ledgers:", error instanceof Error ? error.message : error);
+      return []; // Don't throw - ledgers might fail but trades could work
+    }
+  }
+
+  /**
+   * Get deposits and withdrawals
+   */
+  async getDepositsAndWithdrawals(startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
+    // Get deposits and withdrawals from ledger
+    const [deposits, withdrawals] = await Promise.all([
+      this.getLedgers(startTime, endTime, "deposit"),
+      this.getLedgers(startTime, endTime, "withdrawal"),
+    ]);
+
+    return [...deposits, ...withdrawals];
+  }
+
+  /**
+   * Get all transactions (trades + deposits + withdrawals)
+   */
+  async getAllTransactions(startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
+    const [trades, depositsWithdrawals] = await Promise.all([
+      this.getTradesHistory(startTime, endTime),
+      this.getDepositsAndWithdrawals(startTime, endTime),
+    ]);
+
+    const all = [...trades, ...depositsWithdrawals];
+    // Sort by timestamp
+    all.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
+
+    console.log(`[Kraken] Total transactions: ${all.length} (${trades.length} trades, ${depositsWithdrawals.length} deposits/withdrawals)`);
+    return all;
   }
 }
 

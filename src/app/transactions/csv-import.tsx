@@ -70,6 +70,16 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   const [kucoinApiPassphrase, setKucoinApiPassphrase] = useState("");
   const [isConnectingKucoin, setIsConnectingKucoin] = useState(false);
 
+  // Kraken connection state
+  const [krakenConnected, setKrakenConnected] = useState(false);
+  const [krakenLoading, setKrakenLoading] = useState(false);
+  const [isSyncingKraken, setIsSyncingKraken] = useState(false);
+  const [krakenSyncProgress, setKrakenSyncProgress] = useState(0);
+  const [showKrakenApiKeyForm, setShowKrakenApiKeyForm] = useState(false);
+  const [krakenApiKey, setKrakenApiKey] = useState("");
+  const [krakenApiSecret, setKrakenApiSecret] = useState("");
+  const [isConnectingKraken, setIsConnectingKraken] = useState(false);
+
   // Check if exchange is already connected when component mounts
   useEffect(() => {
     if (selectedExchange === "coinbase") {
@@ -78,6 +88,8 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
       checkGeminiConnection();
     } else if (selectedExchange === "kucoin") {
       checkKucoinConnection();
+    } else if (selectedExchange === "kraken") {
+      checkKrakenConnection();
     }
   }, [selectedExchange]);
 
@@ -395,6 +407,110 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
     } finally {
       setIsSyncingKucoin(false);
       setKucoinSyncProgress(0);
+    }
+  };
+
+  // Kraken connection functions
+  const checkKrakenConnection = async () => {
+    setKrakenLoading(true);
+    try {
+      const response = await axios.get("/api/exchanges");
+      const exchanges = response.data.exchanges || [];
+      const kraken = exchanges.find((e: any) => e.name.toLowerCase() === "kraken");
+      setKrakenConnected(kraken?.isConnected || false);
+    } catch (error) {
+      console.error("[CSVImport] Error checking Kraken connection:", error);
+      setKrakenConnected(false);
+    } finally {
+      setKrakenLoading(false);
+    }
+  };
+
+  const handleKrakenApiKeyConnect = async () => {
+    if (!krakenApiKey || !krakenApiSecret) {
+      toast.error("Please enter both API Key and Private Key");
+      return;
+    }
+
+    setIsConnectingKraken(true);
+    try {
+      const response = await axios.post("/api/exchanges/connect", {
+        exchange: "kraken",
+        apiKey: krakenApiKey,
+        apiSecret: krakenApiSecret,
+      });
+
+      if (response.data.status === "success") {
+        toast.success("Kraken account connected successfully!");
+        setKrakenConnected(true);
+        setShowKrakenApiKeyForm(false);
+        setKrakenApiKey("");
+        setKrakenApiSecret("");
+      } else {
+        throw new Error(response.data.error || "Failed to connect");
+      }
+    } catch (error) {
+      console.error("[CSVImport] Kraken connect error:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to connect Kraken";
+      toast.error(errorMessage);
+    } finally {
+      setIsConnectingKraken(false);
+    }
+  };
+
+  const handleKrakenSync = async () => {
+    setIsSyncingKraken(true);
+    setKrakenSyncProgress(0);
+
+    try {
+      const progressInterval = setInterval(() => {
+        setKrakenSyncProgress((prev) => Math.min(prev + 5, 90));
+      }, 500);
+
+      const response = await axios.post("/api/exchanges/sync", {
+        fullSync: true,
+      });
+
+      clearInterval(progressInterval);
+      setKrakenSyncProgress(100);
+
+      if (response.data.status === "success") {
+        const count = response.data.transactionsAdded || 0;
+        const skipped = response.data.transactionsSkipped || 0;
+
+        toast.success(
+          `Successfully imported ${count} transaction${count !== 1 ? "s" : ""} from Kraken${skipped > 0 ? ` (${skipped} duplicates skipped)` : ""}`
+        );
+
+        if (onImportComplete) {
+          onImportComplete({
+            source: "Kraken (API)",
+            fileName: "kraken-api-sync",
+            timestamp: new Date().toISOString(),
+            transactions: [],
+            totalTransactions: count,
+          });
+        }
+      } else {
+        throw new Error(response.data.error || "Failed to sync");
+      }
+    } catch (error) {
+      console.error("[CSVImport] Kraken sync error:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.errors?.[0] || error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to sync Kraken transactions";
+
+      if (errorMessage.includes("reconnect") || errorMessage.includes("expired") || errorMessage.includes("Invalid")) {
+        setKrakenConnected(false);
+        toast.error("Kraken connection failed. Please reconnect your account.");
+      } else {
+        toast.error(errorMessage);
+      }
+    } finally {
+      setIsSyncingKraken(false);
+      setKrakenSyncProgress(0);
     }
   };
 
@@ -1085,6 +1201,160 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
                     <Button
                       onClick={() => setShowKucoinApiKeyForm(true)}
                       className="mt-4 bg-[#23AF91] hover:bg-[#23AF91]/90"
+                    >
+                      <Link2 className="mr-2 h-4 w-4" />
+                      Connect with API Key
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">
+                  Or upload CSV manually
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Kraken API Key Section - Show when Kraken is selected */}
+        {selectedExchange === "kraken" && (
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-gradient-to-r from-purple-500/10 to-indigo-600/10 p-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#5741D9]">
+                  <svg className="h-6 w-6" viewBox="0 0 24 24" fill="white">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">Connect Kraken Account</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Connect your Kraken account using API keys to automatically download all your historical transactions.
+                  </p>
+                  <p className="mt-1 text-xs text-amber-500">
+                    Note: Not available for NY and WA residents. Some features restricted for US users.
+                  </p>
+
+                  {krakenLoading ? (
+                    <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Checking connection status...
+                    </div>
+                  ) : krakenConnected ? (
+                    <div className="mt-4 space-y-3">
+                      <div className="flex items-center gap-2 text-sm text-green-500">
+                        <CheckCircle2 className="h-4 w-4" />
+                        Kraken account connected
+                      </div>
+
+                      {isSyncingKraken ? (
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs">
+                            <span>Downloading transactions...</span>
+                            <span>{krakenSyncProgress}%</span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                            <div
+                              className="h-full bg-[#5741D9] transition-all"
+                              style={{ width: `${krakenSyncProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleKrakenSync}
+                            className="bg-[#5741D9] hover:bg-[#5741D9]/90"
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Download All Transactions
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowKrakenApiKeyForm(true);
+                              setKrakenConnected(false);
+                            }}
+                          >
+                            Reconnect
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : showKrakenApiKeyForm ? (
+                    <div className="mt-4 space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="kraken-api-key">API Key</Label>
+                        <Input
+                          id="kraken-api-key"
+                          type="text"
+                          placeholder="Enter your Kraken API key"
+                          value={krakenApiKey}
+                          onChange={(e) => setKrakenApiKey(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="kraken-api-secret">Private Key</Label>
+                        <Input
+                          id="kraken-api-secret"
+                          type="password"
+                          placeholder="Enter your Kraken Private Key (base64)"
+                          value={krakenApiSecret}
+                          onChange={(e) => setKrakenApiSecret(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleKrakenApiKeyConnect}
+                          disabled={isConnectingKraken || !krakenApiKey || !krakenApiSecret}
+                          className="bg-[#5741D9] hover:bg-[#5741D9]/90"
+                        >
+                          {isConnectingKraken ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Connecting...
+                            </>
+                          ) : (
+                            <>
+                              <Link2 className="mr-2 h-4 w-4" />
+                              Connect
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setShowKrakenApiKeyForm(false);
+                            setKrakenApiKey("");
+                            setKrakenApiSecret("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                      <div className="rounded-md bg-purple-900/20 p-3 text-xs text-purple-400">
+                        <p className="font-medium">How to get Kraken API keys:</p>
+                        <ol className="mt-1 list-inside list-decimal space-y-1">
+                          <li>Log in to your Kraken account</li>
+                          <li>Go to Settings → Security → API</li>
+                          <li>Click &quot;Generate New Key&quot;</li>
+                          <li>Enable &quot;Query Funds&quot; and &quot;Query Ledger Entries&quot; permissions</li>
+                          <li>Copy the API Key and Private Key (Private Key is only shown once!)</li>
+                        </ol>
+                        <p className="mt-2 text-purple-300 font-medium">Note: No sandbox available for spot trading.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={() => setShowKrakenApiKeyForm(true)}
+                      className="mt-4 bg-[#5741D9] hover:bg-[#5741D9]/90"
                     >
                       <Link2 className="mr-2 h-4 w-4" />
                       Connect with API Key

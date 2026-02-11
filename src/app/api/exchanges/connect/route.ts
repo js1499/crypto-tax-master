@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
             break;
           case "kraken":
             const krakenClient = new KrakenClient(apiKey, apiSecret);
-            await krakenClient.getBalance();
+            await krakenClient.testConnection();
             break;
           case "kucoin":
             if (!apiPassphrase) {

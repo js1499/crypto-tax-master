@@ -136,8 +136,8 @@ export async function POST(request: NextRequest) {
 
           case "kraken":
             if (apiKey && apiSecret) {
-              const client = new KrakenClient(apiKey, apiSecret);
-              transactions = await client.getAllTransactions(effectiveStartTime, endTime);
+              const krakenClient = new KrakenClient(apiKey, apiSecret);
+              transactions = await krakenClient.getAllTransactions(effectiveStartTime, endTime);
             }
             break;
 
