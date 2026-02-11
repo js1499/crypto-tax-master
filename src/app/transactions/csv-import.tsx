@@ -59,12 +59,25 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   const [geminiApiSecret, setGeminiApiSecret] = useState("");
   const [isConnectingGemini, setIsConnectingGemini] = useState(false);
 
+  // KuCoin connection state
+  const [kucoinConnected, setKucoinConnected] = useState(false);
+  const [kucoinLoading, setKucoinLoading] = useState(false);
+  const [isSyncingKucoin, setIsSyncingKucoin] = useState(false);
+  const [kucoinSyncProgress, setKucoinSyncProgress] = useState(0);
+  const [showKucoinApiKeyForm, setShowKucoinApiKeyForm] = useState(false);
+  const [kucoinApiKey, setKucoinApiKey] = useState("");
+  const [kucoinApiSecret, setKucoinApiSecret] = useState("");
+  const [kucoinApiPassphrase, setKucoinApiPassphrase] = useState("");
+  const [isConnectingKucoin, setIsConnectingKucoin] = useState(false);
+
   // Check if exchange is already connected when component mounts
   useEffect(() => {
     if (selectedExchange === "coinbase") {
       checkCoinbaseConnection();
     } else if (selectedExchange === "gemini") {
       checkGeminiConnection();
+    } else if (selectedExchange === "kucoin") {
+      checkKucoinConnection();
     }
   }, [selectedExchange]);
 
@@ -276,6 +289,112 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
     } finally {
       setIsSyncingGemini(false);
       setGeminiSyncProgress(0);
+    }
+  };
+
+  // KuCoin connection functions
+  const checkKucoinConnection = async () => {
+    setKucoinLoading(true);
+    try {
+      const response = await axios.get("/api/exchanges");
+      const exchanges = response.data.exchanges || [];
+      const kucoin = exchanges.find((e: any) => e.name.toLowerCase() === "kucoin");
+      setKucoinConnected(kucoin?.isConnected || false);
+    } catch (error) {
+      console.error("[CSVImport] Error checking KuCoin connection:", error);
+      setKucoinConnected(false);
+    } finally {
+      setKucoinLoading(false);
+    }
+  };
+
+  const handleKucoinApiKeyConnect = async () => {
+    if (!kucoinApiKey || !kucoinApiSecret || !kucoinApiPassphrase) {
+      toast.error("Please enter API Key, API Secret, and Passphrase");
+      return;
+    }
+
+    setIsConnectingKucoin(true);
+    try {
+      const response = await axios.post("/api/exchanges/connect", {
+        exchange: "kucoin",
+        apiKey: kucoinApiKey,
+        apiSecret: kucoinApiSecret,
+        apiPassphrase: kucoinApiPassphrase,
+      });
+
+      if (response.data.status === "success") {
+        toast.success("KuCoin account connected successfully!");
+        setKucoinConnected(true);
+        setShowKucoinApiKeyForm(false);
+        setKucoinApiKey("");
+        setKucoinApiSecret("");
+        setKucoinApiPassphrase("");
+      } else {
+        throw new Error(response.data.error || "Failed to connect");
+      }
+    } catch (error) {
+      console.error("[CSVImport] KuCoin connect error:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to connect KuCoin";
+      toast.error(errorMessage);
+    } finally {
+      setIsConnectingKucoin(false);
+    }
+  };
+
+  const handleKucoinSync = async () => {
+    setIsSyncingKucoin(true);
+    setKucoinSyncProgress(0);
+
+    try {
+      const progressInterval = setInterval(() => {
+        setKucoinSyncProgress((prev) => Math.min(prev + 5, 90));
+      }, 500);
+
+      const response = await axios.post("/api/exchanges/sync", {
+        fullSync: true,
+      });
+
+      clearInterval(progressInterval);
+      setKucoinSyncProgress(100);
+
+      if (response.data.status === "success") {
+        const count = response.data.transactionsAdded || 0;
+        const skipped = response.data.transactionsSkipped || 0;
+
+        toast.success(
+          `Successfully imported ${count} transaction${count !== 1 ? "s" : ""} from KuCoin${skipped > 0 ? ` (${skipped} duplicates skipped)` : ""}`
+        );
+
+        if (onImportComplete) {
+          onImportComplete({
+            source: "KuCoin (API)",
+            fileName: "kucoin-api-sync",
+            timestamp: new Date().toISOString(),
+            transactions: [],
+            totalTransactions: count,
+          });
+        }
+      } else {
+        throw new Error(response.data.error || "Failed to sync");
+      }
+    } catch (error) {
+      console.error("[CSVImport] KuCoin sync error:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.errors?.[0] || error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to sync KuCoin transactions";
+
+      if (errorMessage.includes("reconnect") || errorMessage.includes("expired") || errorMessage.includes("Invalid")) {
+        setKucoinConnected(false);
+        toast.error("KuCoin connection failed. Please reconnect your account.");
+      } else {
+        toast.error(errorMessage);
+      }
+    } finally {
+      setIsSyncingKucoin(false);
+      setKucoinSyncProgress(0);
     }
   };
 
@@ -800,6 +919,172 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
                     <Button
                       onClick={() => setShowGeminiApiKeyForm(true)}
                       className="mt-4 bg-[#00DCFA] hover:bg-[#00DCFA]/90 text-black"
+                    >
+                      <Link2 className="mr-2 h-4 w-4" />
+                      Connect with API Key
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">
+                  Or upload CSV manually
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* KuCoin API Key Section - Show when KuCoin is selected */}
+        {selectedExchange === "kucoin" && (
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-gradient-to-r from-green-500/10 to-emerald-600/10 p-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#23AF91]">
+                  <svg className="h-6 w-6" viewBox="0 0 24 24" fill="white">
+                    <path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18l6.9 3.45L12 11.27 5.1 7.63 12 4.18zM4 8.81l7 3.5v6.88l-7-3.5V8.81zm9 10.38v-6.88l7-3.5v6.88l-7 3.5z"/>
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">Connect KuCoin Account</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Connect your KuCoin account using API keys to automatically download all your historical transactions.
+                  </p>
+                  <p className="mt-1 text-xs text-amber-500">
+                    Note: KuCoin is not available for US residents.
+                  </p>
+
+                  {kucoinLoading ? (
+                    <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Checking connection status...
+                    </div>
+                  ) : kucoinConnected ? (
+                    <div className="mt-4 space-y-3">
+                      <div className="flex items-center gap-2 text-sm text-green-500">
+                        <CheckCircle2 className="h-4 w-4" />
+                        KuCoin account connected
+                      </div>
+
+                      {isSyncingKucoin ? (
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs">
+                            <span>Downloading transactions...</span>
+                            <span>{kucoinSyncProgress}%</span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                            <div
+                              className="h-full bg-[#23AF91] transition-all"
+                              style={{ width: `${kucoinSyncProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <Button
+                            onClick={handleKucoinSync}
+                            className="bg-[#23AF91] hover:bg-[#23AF91]/90"
+                          >
+                            <RefreshCw className="mr-2 h-4 w-4" />
+                            Download All Transactions
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setShowKucoinApiKeyForm(true);
+                              setKucoinConnected(false);
+                            }}
+                          >
+                            Reconnect
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : showKucoinApiKeyForm ? (
+                    <div className="mt-4 space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="kucoin-api-key">API Key</Label>
+                        <Input
+                          id="kucoin-api-key"
+                          type="text"
+                          placeholder="Enter your KuCoin API key"
+                          value={kucoinApiKey}
+                          onChange={(e) => setKucoinApiKey(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="kucoin-api-secret">API Secret</Label>
+                        <Input
+                          id="kucoin-api-secret"
+                          type="password"
+                          placeholder="Enter your KuCoin API secret"
+                          value={kucoinApiSecret}
+                          onChange={(e) => setKucoinApiSecret(e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="kucoin-api-passphrase">API Passphrase</Label>
+                        <Input
+                          id="kucoin-api-passphrase"
+                          type="password"
+                          placeholder="Enter your KuCoin API passphrase"
+                          value={kucoinApiPassphrase}
+                          onChange={(e) => setKucoinApiPassphrase(e.target.value)}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          onClick={handleKucoinApiKeyConnect}
+                          disabled={isConnectingKucoin || !kucoinApiKey || !kucoinApiSecret || !kucoinApiPassphrase}
+                          className="bg-[#23AF91] hover:bg-[#23AF91]/90"
+                        >
+                          {isConnectingKucoin ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Connecting...
+                            </>
+                          ) : (
+                            <>
+                              <Link2 className="mr-2 h-4 w-4" />
+                              Connect
+                            </>
+                          )}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setShowKucoinApiKeyForm(false);
+                            setKucoinApiKey("");
+                            setKucoinApiSecret("");
+                            setKucoinApiPassphrase("");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                      <div className="rounded-md bg-green-900/20 p-3 text-xs text-green-500">
+                        <p className="font-medium">How to get KuCoin API keys:</p>
+                        <ol className="mt-1 list-inside list-decimal space-y-1">
+                          <li>Log in to your KuCoin account</li>
+                          <li>Go to API Management in your account settings</li>
+                          <li>Click &quot;Create API&quot;</li>
+                          <li>Set a passphrase (you&apos;ll need this!)</li>
+                          <li>Enable &quot;General&quot; and &quot;Trade&quot; permissions</li>
+                          <li>Copy the API Key, Secret, and remember your Passphrase</li>
+                        </ol>
+                        <p className="mt-2 text-green-400 font-medium">For testing: Use sandbox.kucoin.com for test API keys.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={() => setShowKucoinApiKeyForm(true)}
+                      className="mt-4 bg-[#23AF91] hover:bg-[#23AF91]/90"
                     >
                       <Link2 className="mr-2 h-4 w-4" />
                       Connect with API Key

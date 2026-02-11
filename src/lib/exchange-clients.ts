@@ -259,14 +259,23 @@ export class KuCoinClient {
   private apiKey: string;
   private apiSecret: string;
   private apiPassphrase: string;
-  private baseURL: string = "https://api.kucoin.com";
+  private baseURL: string;
+  private isSandbox: boolean;
 
-  constructor(apiKey: string, apiSecret: string, apiPassphrase: string) {
+  constructor(apiKey: string, apiSecret: string, apiPassphrase: string, sandbox: boolean = false) {
     this.apiKey = apiKey;
     this.apiSecret = apiSecret;
     this.apiPassphrase = apiPassphrase;
+    this.isSandbox = sandbox;
+    this.baseURL = sandbox
+      ? "https://openapi-sandbox.kucoin.com"
+      : "https://api.kucoin.com";
   }
 
+  /**
+   * Generate signature for KuCoin API
+   * Signature = BASE64(HMAC-SHA256(timestamp + method + endpoint + body))
+   */
   private generateSignature(
     timestamp: string,
     method: string,
@@ -280,68 +289,297 @@ export class KuCoinClient {
       .digest("base64");
   }
 
+  /**
+   * Sign passphrase for API V2
+   * For V2 API, passphrase must be HMAC-SHA256 signed with secret and BASE64 encoded
+   */
+  private signPassphrase(): string {
+    return crypto
+      .createHmac("sha256", this.apiSecret)
+      .update(this.apiPassphrase)
+      .digest("base64");
+  }
+
+  /**
+   * Make authenticated request to KuCoin API
+   */
   private async makeRequest(
     endpoint: string,
     method: string = "GET",
-    params: Record<string, any> = {}
+    params: Record<string, any> = {},
+    body: any = null
   ): Promise<any> {
     const timestamp = Date.now().toString();
-    const queryString = new URLSearchParams(params).toString();
-    const url = queryString ? `${endpoint}?${queryString}` : endpoint;
-    const signature = this.generateSignature(timestamp, method, url);
+    const queryString = Object.keys(params).length > 0
+      ? "?" + new URLSearchParams(params).toString()
+      : "";
+    const url = endpoint + queryString;
+    const bodyStr = body ? JSON.stringify(body) : "";
+    const signature = this.generateSignature(timestamp, method, url, bodyStr);
+    const signedPassphrase = this.signPassphrase();
+
+    const headers: Record<string, string> = {
+      "KC-API-KEY": this.apiKey,
+      "KC-API-SIGN": signature,
+      "KC-API-TIMESTAMP": timestamp,
+      "KC-API-PASSPHRASE": signedPassphrase,
+      "KC-API-KEY-VERSION": "2",
+      "Content-Type": "application/json",
+    };
 
     const response = await axios.request({
       method,
       url: `${this.baseURL}${url}`,
-      headers: {
-        "KC-API-KEY": this.apiKey,
-        "KC-API-SIGN": signature,
-        "KC-API-TIMESTAMP": timestamp,
-        "KC-API-PASSPHRASE": this.apiPassphrase,
-        "KC-API-KEY-VERSION": "2",
-      },
+      headers,
+      data: body || undefined,
     });
+
+    // KuCoin returns { code: "200000", data: ... } for success
+    if (response.data.code !== "200000") {
+      throw new Error(`KuCoin API error: ${response.data.code} - ${response.data.msg || "Unknown error"}`);
+    }
 
     return response.data;
   }
 
+  /**
+   * Test API connection by fetching account info
+   */
+  async testConnection(): Promise<boolean> {
+    try {
+      const response = await this.makeRequest("/api/v1/accounts", "GET");
+      console.log(`[KuCoin] Connection test successful, found ${response.data?.length || 0} accounts`);
+      return true;
+    } catch (error) {
+      console.error("[KuCoin] Connection test failed:", error instanceof Error ? error.message : error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get account balances
+   */
+  async getAccounts(): Promise<any[]> {
+    const response = await this.makeRequest("/api/v1/accounts", "GET");
+    return response.data || [];
+  }
+
+  /**
+   * Parse trading pair symbol to extract base and quote currencies
+   * KuCoin format: BTC-USDT, ETH-BTC, etc.
+   */
+  private parseSymbol(symbol: string): { base: string; quote: string } {
+    const parts = symbol.split("-");
+    return {
+      base: parts[0] || symbol,
+      quote: parts[1] || "USDT",
+    };
+  }
+
+  /**
+   * Get all fills/trades with pagination
+   */
   async getTrades(symbol?: string, startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
-    const params: Record<string, any> = {};
-    if (symbol) params.symbol = symbol;
-    if (startTime) params.startAt = startTime;
-    if (endTime) params.endAt = endTime;
-    params.pageSize = 200;
+    const allTrades: ExchangeTransaction[] = [];
+    let currentPage = 1;
+    const pageSize = 500; // Max allowed
+    let hasMore = true;
 
     try {
-      const response = await this.makeRequest("/api/v1/fills", "GET", params);
-      const trades: ExchangeTransaction[] = [];
+      while (hasMore) {
+        const params: Record<string, any> = {
+          pageSize: pageSize.toString(),
+          currentPage: currentPage.toString(),
+        };
+        if (symbol) params.symbol = symbol;
+        if (startTime) params.startAt = startTime.toString();
+        if (endTime) params.endAt = endTime.toString();
 
-      if (response.data && Array.isArray(response.data.items)) {
-        for (const trade of response.data.items) {
-          const [base, quote] = trade.symbol.split("-");
+        const response = await this.makeRequest("/api/v1/fills", "GET", params);
+        const items = response.data?.items || [];
+
+        for (const trade of items) {
+          const { base, quote } = this.parseSymbol(trade.symbol);
           const isBuy = trade.side === "buy";
+          const size = parseFloat(trade.size);
+          const price = parseFloat(trade.price);
+          const funds = parseFloat(trade.funds);
+          const fee = parseFloat(trade.fee || "0");
 
-          trades.push({
-            id: trade.id,
+          // Calculate USD value - if quote is USDT/USD, use funds directly
+          // Otherwise, this is an approximation (would need price conversion)
+          const isUsdQuote = ["USDT", "USD", "USDC", "DAI", "BUSD"].includes(quote.toUpperCase());
+          const valueUsd = isUsdQuote ? funds : funds; // TODO: Add price conversion for non-USD pairs
+
+          allTrades.push({
+            id: trade.tradeId || trade.id,
             type: isBuy ? "Buy" : "Sell",
             asset_symbol: base,
-            amount_value: new Decimal(Math.abs(parseFloat(trade.size))),
-            price_per_unit: new Decimal(trade.price),
-            value_usd: new Decimal(Math.abs(parseFloat(trade.funds))),
-            fee_usd: trade.fee ? new Decimal(trade.fee) : null,
+            amount_value: new Decimal(Math.abs(size)),
+            price_per_unit: new Decimal(price),
+            value_usd: new Decimal(Math.abs(valueUsd)),
+            fee_usd: isUsdQuote && fee > 0 ? new Decimal(fee) : null,
             tx_timestamp: new Date(trade.createdAt),
             source: "KuCoin",
             source_type: "exchange_api",
-            tx_hash: trade.id,
+            tx_hash: trade.tradeId || trade.id,
+            notes: `${trade.symbol} @ ${price}`,
           });
+        }
+
+        // Check if there are more pages
+        const totalPages = Math.ceil((response.data?.totalNum || 0) / pageSize);
+        hasMore = currentPage < totalPages && items.length === pageSize;
+        currentPage++;
+
+        // Safety limit
+        if (currentPage > 100) {
+          console.log("[KuCoin] Reached pagination limit (100 pages)");
+          break;
         }
       }
 
-      return trades;
+      console.log(`[KuCoin] Fetched ${allTrades.length} trades across ${currentPage - 1} pages`);
+      return allTrades;
     } catch (error) {
-      log.error("[KuCoin] Error fetching trades:", error);
-      return [];
+      console.error("[KuCoin] Error fetching trades:", error instanceof Error ? error.message : error);
+      throw error;
     }
+  }
+
+  /**
+   * Get deposit history with pagination
+   */
+  async getDeposits(startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
+    const deposits: ExchangeTransaction[] = [];
+    let currentPage = 1;
+    const pageSize = 100;
+    let hasMore = true;
+
+    try {
+      while (hasMore) {
+        const params: Record<string, any> = {
+          pageSize: pageSize.toString(),
+          currentPage: currentPage.toString(),
+        };
+        if (startTime) params.startAt = startTime.toString();
+        if (endTime) params.endAt = endTime.toString();
+
+        const response = await this.makeRequest("/api/v1/deposits", "GET", params);
+        const items = response.data?.items || [];
+
+        for (const deposit of items) {
+          // Skip pending deposits
+          if (deposit.status !== "SUCCESS") continue;
+
+          const amount = parseFloat(deposit.amount);
+
+          deposits.push({
+            id: deposit.id || `deposit-${deposit.createdAt}`,
+            type: "Receive",
+            asset_symbol: deposit.currency,
+            amount_value: new Decimal(amount),
+            price_per_unit: null,
+            value_usd: new Decimal(0), // Would need price lookup
+            fee_usd: deposit.fee ? new Decimal(parseFloat(deposit.fee)) : null,
+            tx_timestamp: new Date(deposit.createdAt),
+            source: "KuCoin",
+            source_type: "exchange_api",
+            tx_hash: deposit.walletTxId || deposit.id,
+            notes: `Deposit: ${deposit.memo || ""}`,
+          });
+        }
+
+        const totalPages = Math.ceil((response.data?.totalNum || 0) / pageSize);
+        hasMore = currentPage < totalPages && items.length === pageSize;
+        currentPage++;
+
+        if (currentPage > 50) break; // Safety limit
+      }
+
+      console.log(`[KuCoin] Fetched ${deposits.length} deposits`);
+      return deposits;
+    } catch (error) {
+      console.error("[KuCoin] Error fetching deposits:", error instanceof Error ? error.message : error);
+      return []; // Don't throw - deposits might fail but trades could work
+    }
+  }
+
+  /**
+   * Get withdrawal history with pagination
+   */
+  async getWithdrawals(startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
+    const withdrawals: ExchangeTransaction[] = [];
+    let currentPage = 1;
+    const pageSize = 100;
+    let hasMore = true;
+
+    try {
+      while (hasMore) {
+        const params: Record<string, any> = {
+          pageSize: pageSize.toString(),
+          currentPage: currentPage.toString(),
+        };
+        if (startTime) params.startAt = startTime.toString();
+        if (endTime) params.endAt = endTime.toString();
+
+        const response = await this.makeRequest("/api/v1/withdrawals", "GET", params);
+        const items = response.data?.items || [];
+
+        for (const withdrawal of items) {
+          // Skip pending/failed withdrawals
+          if (withdrawal.status !== "SUCCESS") continue;
+
+          const amount = parseFloat(withdrawal.amount);
+          const fee = parseFloat(withdrawal.fee || "0");
+
+          withdrawals.push({
+            id: withdrawal.id || `withdrawal-${withdrawal.createdAt}`,
+            type: "Send",
+            asset_symbol: withdrawal.currency,
+            amount_value: new Decimal(amount),
+            price_per_unit: null,
+            value_usd: new Decimal(0), // Would need price lookup
+            fee_usd: fee > 0 ? new Decimal(fee) : null,
+            tx_timestamp: new Date(withdrawal.createdAt),
+            source: "KuCoin",
+            source_type: "exchange_api",
+            tx_hash: withdrawal.walletTxId || withdrawal.id,
+            notes: `Withdrawal to ${withdrawal.address || ""}`,
+          });
+        }
+
+        const totalPages = Math.ceil((response.data?.totalNum || 0) / pageSize);
+        hasMore = currentPage < totalPages && items.length === pageSize;
+        currentPage++;
+
+        if (currentPage > 50) break; // Safety limit
+      }
+
+      console.log(`[KuCoin] Fetched ${withdrawals.length} withdrawals`);
+      return withdrawals;
+    } catch (error) {
+      console.error("[KuCoin] Error fetching withdrawals:", error instanceof Error ? error.message : error);
+      return []; // Don't throw - withdrawals might fail but trades could work
+    }
+  }
+
+  /**
+   * Get all transactions (trades + deposits + withdrawals)
+   */
+  async getAllTransactions(startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
+    const [trades, deposits, withdrawals] = await Promise.all([
+      this.getTrades(undefined, startTime, endTime),
+      this.getDeposits(startTime, endTime),
+      this.getWithdrawals(startTime, endTime),
+    ]);
+
+    const all = [...trades, ...deposits, ...withdrawals];
+    // Sort by timestamp
+    all.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
+
+    console.log(`[KuCoin] Total transactions: ${all.length} (${trades.length} trades, ${deposits.length} deposits, ${withdrawals.length} withdrawals)`);
+    return all;
   }
 }
 

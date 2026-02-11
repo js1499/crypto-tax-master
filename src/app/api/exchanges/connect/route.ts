@@ -200,7 +200,13 @@ export async function POST(request: NextRequest) {
                 { status: 400 }
               );
             }
-            // KuCoin validation would go here
+            // Detect sandbox keys (sandbox API keys might have different patterns)
+            const isKuCoinSandbox = apiKey.includes("sandbox") || process.env.KUCOIN_SANDBOX === "true";
+            const kucoinClient = new KuCoinClient(apiKey, apiSecret, apiPassphrase, isKuCoinSandbox);
+            await kucoinClient.testConnection();
+            if (isKuCoinSandbox) {
+              console.log("[Exchange Connect] KuCoin SANDBOX connection validated");
+            }
             break;
           case "gemini":
             // Detect sandbox keys (they start with "master-" or from sandbox domain)

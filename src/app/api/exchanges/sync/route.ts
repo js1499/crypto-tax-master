@@ -143,8 +143,9 @@ export async function POST(request: NextRequest) {
 
           case "kucoin":
             if (apiKey && apiSecret && apiPassphrase) {
-              const client = new KuCoinClient(apiKey, apiSecret, apiPassphrase);
-              transactions = await client.getTrades(undefined, effectiveStartTime, endTime);
+              const isKuCoinSandbox = apiKey.includes("sandbox") || process.env.KUCOIN_SANDBOX === "true";
+              const client = new KuCoinClient(apiKey, apiSecret, apiPassphrase, isKuCoinSandbox);
+              transactions = await client.getAllTransactions(effectiveStartTime, endTime);
             }
             break;
 
