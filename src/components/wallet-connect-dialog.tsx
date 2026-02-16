@@ -14,11 +14,30 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { QrCode, Loader2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { QrCode, Loader2, Wallet } from "lucide-react";
 import type { ConnectionResult, WalletProvider, ExchangeProvider } from "@/types/wallet";
 import { toast } from "sonner";
 
+// Supported EVM chains for Moralis sync
+const EVM_CHAINS = [
+  { id: "eth", name: "Ethereum", nativeToken: "ETH" },
+  { id: "polygon", name: "Polygon", nativeToken: "MATIC" },
+  { id: "arbitrum", name: "Arbitrum", nativeToken: "ETH" },
+  { id: "optimism", name: "Optimism", nativeToken: "ETH" },
+  { id: "base", name: "Base", nativeToken: "ETH" },
+  { id: "bsc", name: "BNB Chain", nativeToken: "BNB" },
+  { id: "avalanche", name: "Avalanche", nativeToken: "AVAX" },
+  { id: "fantom", name: "Fantom", nativeToken: "FTM" },
+];
+
 const walletProviders: WalletProvider[] = [
+  {
+    id: "evm",
+    name: "EVM Wallet",
+    icon: "/images/tokens/ethereum.png",
+    chains: ["Ethereum", "Polygon", "Arbitrum", "Optimism", "Base"],
+  },
   {
     id: "metamask",
     name: "MetaMask",
@@ -30,12 +49,6 @@ const walletProviders: WalletProvider[] = [
     name: "Phantom",
     icon: "/images/tokens/solana.png",
     chains: ["Solana"],
-  },
-  {
-    id: "keplr",
-    name: "Keplr",
-    icon: "/images/tokens/ethereum.png",
-    chains: ["Cosmos", "Osmosis", "Juno"],
   },
   {
     id: "ledger",
@@ -91,22 +104,27 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
   const [apiSecret, setApiSecret] = useState("");
   const [apiPassphrase, setApiPassphrase] = useState("");
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  // EVM wallet specific state
+  const [walletName, setWalletName] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
+  const [selectedChains, setSelectedChains] = useState<string[]>(["eth", "polygon", "arbitrum", "optimism", "base"]);
+  const [syncAfterAdd, setSyncAfterAdd] = useState(true);
 
   const handleConnect = async (provider: string) => {
     setSelectedProvider(provider);
-    setConnecting(true);
     setConnectionError(null);
 
+    // For EVM wallets, show the manual entry form
+    if (provider === "evm" || provider === "metamask") {
+      // Just set the provider, the UI will show the form
+      return;
+    }
+
+    // For other wallet providers
+    setConnecting(true);
     try {
-      // For wallet providers, we need an address
-      // In a real app, this would come from wallet extension or manual input
-      // For now, we'll show a message that manual wallet entry is needed
       toast.info("Please enter your wallet address manually");
       setConnecting(false);
-      
-      // TODO: Implement actual wallet connection via browser extension
-      // For now, wallets need to be added via the transactions/fetch route
-      // or manually through an API call with address
     } catch (error) {
       console.error(`[Wallet Connect] Error connecting to ${provider}:`, error);
       setConnecting(false);
@@ -114,6 +132,103 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
       setConnectionError(errorMessage);
       toast.error(errorMessage);
     }
+  };
+
+  const handleAddEvmWallet = async () => {
+    if (!walletName || !walletAddress) {
+      toast.error("Please enter wallet name and address");
+      return;
+    }
+
+    // Validate EVM address format
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      toast.error("Invalid EVM address. Must start with 0x and be 42 characters.");
+      return;
+    }
+
+    if (selectedChains.length === 0) {
+      toast.error("Please select at least one chain");
+      return;
+    }
+
+    setConnecting(true);
+    setConnectionError(null);
+
+    try {
+      // Create wallet
+      const response = await fetch("/api/wallets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: walletName,
+          address: walletAddress.toLowerCase(),
+          provider: "evm",
+          chains: selectedChains.join(","),
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create wallet");
+      }
+
+      toast.success("Wallet added successfully");
+
+      // Optionally sync transactions immediately
+      if (syncAfterAdd) {
+        toast.info("Syncing wallet transactions...");
+        try {
+          const syncResponse = await fetch("/api/wallets/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              walletId: data.wallet.id,
+              chains: selectedChains,
+            }),
+          });
+
+          const syncData = await syncResponse.json();
+          if (syncResponse.ok) {
+            toast.success(`Synced ${syncData.transactionsAdded} transactions`);
+          } else {
+            toast.error(syncData.error || "Sync completed with errors");
+          }
+        } catch (syncError) {
+          console.error("[Wallet Sync] Error:", syncError);
+          toast.error("Wallet added but sync failed. You can sync later.");
+        }
+      }
+
+      // Reset form
+      setWalletName("");
+      setWalletAddress("");
+      setSelectedProvider("");
+      setOpen(false);
+
+      if (onConnect) {
+        onConnect("evm", {
+          success: true,
+          provider: "evm",
+          address: walletAddress,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.error("[Wallet Connect] Error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to add wallet";
+      setConnectionError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const toggleChain = (chainId: string) => {
+    setSelectedChains((prev) =>
+      prev.includes(chainId)
+        ? prev.filter((c) => c !== chainId)
+        : [...prev, chainId]
+    );
   };
 
   const handleOAuthConnect = async (provider: string) => {
@@ -257,115 +372,140 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
             </TabsList>
 
             <TabsContent value="wallets" className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                {walletProviders.map((provider) => (
-                  <button
-                    key={provider.id}
-                    className="flex flex-col items-center space-y-2 rounded-lg border p-4 hover:bg-accent transition-colors"
-                    onClick={() => handleConnect(provider.id)}
-                  >
-                    <img
-                      src={provider.icon}
-                      alt={provider.name}
-                      className="h-12 w-12 rounded-full"
-                    />
-                    <div className="text-center">
-                      <p className="font-medium">{provider.name}</p>
-                      <p className="text-xs text-muted-foreground">{provider.chains.join(", ")}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center justify-center space-x-2 pt-2">
-                <div className="h-px flex-1 bg-border" />
-                <p className="text-xs text-muted-foreground">Or connect manually</p>
-                <div className="h-px flex-1 bg-border" />
-              </div>
-              {selectedProvider === "manual" ? (
-                <div className="space-y-3 border rounded-lg p-4">
-                  <h3 className="text-sm font-medium">Add Wallet Manually</h3>
+              {/* Show EVM wallet form when selected */}
+              {(selectedProvider === "evm" || selectedProvider === "metamask") ? (
+                <div className="space-y-4 border rounded-lg p-4">
+                  <div className="flex items-center gap-2">
+                    <Wallet className="h-5 w-5 text-primary" />
+                    <h3 className="text-sm font-medium">Add EVM Wallet</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Enter any Ethereum-compatible wallet address to import transactions across multiple chains.
+                  </p>
+
                   <div className="space-y-2">
-                    <Label htmlFor="wallet-name">Wallet Name</Label>
+                    <Label htmlFor="evm-wallet-name">Wallet Name</Label>
                     <Input
-                      id="wallet-name"
-                      placeholder="My Ethereum Wallet"
-                      value={apiKey} // Reuse state for wallet name
-                      onChange={(e) => setApiKey(e.target.value)}
+                      id="evm-wallet-name"
+                      placeholder="My Main Wallet"
+                      value={walletName}
+                      onChange={(e) => setWalletName(e.target.value)}
                     />
                   </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="wallet-address">Wallet Address</Label>
+                    <Label htmlFor="evm-wallet-address">Wallet Address</Label>
                     <Input
-                      id="wallet-address"
+                      id="evm-wallet-address"
                       placeholder="0x..."
-                      value={apiSecret} // Reuse state for wallet address
-                      onChange={(e) => setApiSecret(e.target.value)}
+                      value={walletAddress}
+                      onChange={(e) => setWalletAddress(e.target.value)}
+                      className="font-mono"
                     />
                   </div>
+
                   <div className="space-y-2">
-                    <Label htmlFor="wallet-provider">Provider</Label>
-                    <Input
-                      id="wallet-provider"
-                      placeholder="ethereum, solana, etc."
-                      value={apiPassphrase} // Reuse state for provider
-                      onChange={(e) => setApiPassphrase(e.target.value)}
-                    />
+                    <Label>Chains to Sync</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {EVM_CHAINS.map((chain) => (
+                        <div
+                          key={chain.id}
+                          className="flex items-center space-x-2"
+                        >
+                          <Checkbox
+                            id={`chain-${chain.id}`}
+                            checked={selectedChains.includes(chain.id)}
+                            onCheckedChange={() => toggleChain(chain.id)}
+                          />
+                          <label
+                            htmlFor={`chain-${chain.id}`}
+                            className="text-sm cursor-pointer"
+                          >
+                            {chain.name}
+                          </label>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <Button 
-                    className="w-full" 
-                    onClick={async () => {
-                      if (!apiKey || !apiSecret || !apiPassphrase) {
-                        toast.error("Please fill in all fields");
-                        return;
-                      }
-                      setConnecting(true);
-                      try {
-                        const response = await fetch("/api/wallets", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            name: apiKey,
-                            address: apiSecret,
-                            provider: apiPassphrase.toLowerCase(),
-                          }),
-                        });
-                        const data = await response.json();
-                        if (!response.ok) {
-                          throw new Error(data.error || "Failed to create wallet");
-                        }
-                        toast.success("Wallet added successfully");
-                        setOpen(false);
-                        if (onConnect) {
-                          onConnect(apiPassphrase, {
-                            success: true,
-                            provider: apiPassphrase,
-                            timestamp: new Date().toISOString(),
-                          });
-                        }
-                      } catch (error) {
-                        console.error("[Wallet Connect] Error:", error);
-                        toast.error(error instanceof Error ? error.message : "Failed to add wallet");
-                      } finally {
-                        setConnecting(false);
-                      }
-                    }}
-                    disabled={connecting}
-                  >
-                    {connecting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Adding...
-                      </>
-                    ) : (
-                      "Add Wallet"
-                    )}
-                  </Button>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="sync-after-add"
+                      checked={syncAfterAdd}
+                      onCheckedChange={(checked) => setSyncAfterAdd(checked === true)}
+                    />
+                    <label htmlFor="sync-after-add" className="text-sm cursor-pointer">
+                      Sync transactions immediately after adding
+                    </label>
+                  </div>
+
+                  {connectionError && (
+                    <div className="text-sm text-red-500">{connectionError}</div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        setSelectedProvider("");
+                        setWalletName("");
+                        setWalletAddress("");
+                        setConnectionError(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={handleAddEvmWallet}
+                      disabled={connecting || !walletName || !walletAddress}
+                    >
+                      {connecting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          {syncAfterAdd ? "Adding & Syncing..." : "Adding..."}
+                        </>
+                      ) : (
+                        <>
+                          <Wallet className="mr-2 h-4 w-4" />
+                          {syncAfterAdd ? "Add & Sync Wallet" : "Add Wallet"}
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               ) : (
-                <Button variant="outline" className="w-full" onClick={() => setSelectedProvider("manual")}>
-                  <QrCode className="mr-2 h-4 w-4" />
-                  Connect with address
-                </Button>
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    {walletProviders.map((provider) => (
+                      <button
+                        key={provider.id}
+                        className="flex flex-col items-center space-y-2 rounded-lg border p-4 hover:bg-accent transition-colors"
+                        onClick={() => handleConnect(provider.id)}
+                      >
+                        <img
+                          src={provider.icon}
+                          alt={provider.name}
+                          className="h-12 w-12 rounded-full"
+                        />
+                        <div className="text-center">
+                          <p className="font-medium">{provider.name}</p>
+                          <p className="text-xs text-muted-foreground">{provider.chains.join(", ")}</p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-center space-x-2 pt-2">
+                    <div className="h-px flex-1 bg-border" />
+                    <p className="text-xs text-muted-foreground">Or enter address directly</p>
+                    <div className="h-px flex-1 bg-border" />
+                  </div>
+                  <Button variant="outline" className="w-full" onClick={() => setSelectedProvider("evm")}>
+                    <Wallet className="mr-2 h-4 w-4" />
+                    Add EVM Wallet by Address
+                  </Button>
+                </>
               )}
             </TabsContent>
 

@@ -49,6 +49,8 @@ export async function GET(request: NextRequest) {
       name: wallet.name,
       address: wallet.address,
       provider: wallet.provider,
+      chains: wallet.chains,
+      lastSyncAt: wallet.lastSyncAt,
       createdAt: wallet.createdAt,
       updatedAt: wallet.updatedAt
     }));
@@ -96,8 +98,8 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { name, address, provider } = body;
-    
+    const { name, address, provider, chains } = body;
+
     // Validate required fields
     if (!name || !address || !provider) {
       return NextResponse.json(
@@ -105,7 +107,16 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    
+
+    // Validate EVM address format for ethereum-based wallets
+    const evmProviders = ["ethereum", "polygon", "bsc", "arbitrum", "optimism", "base", "avalanche", "fantom", "cronos", "gnosis", "linea", "evm"];
+    if (evmProviders.includes(provider.toLowerCase()) && !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+      return NextResponse.json(
+        { error: "Invalid EVM wallet address. Must start with 0x and be 42 characters long." },
+        { status: 400 }
+      );
+    }
+
     // Create or update wallet (upsert to avoid duplicates)
     const wallet = await prisma.wallet.upsert({
       where: {
@@ -117,11 +128,13 @@ export async function POST(request: NextRequest) {
       update: {
         name: name,
         userId: user.id,
+        chains: chains || null,
       },
       create: {
         name: name,
         address: address,
         provider: provider,
+        chains: chains || null,
         userId: user.id,
       },
     });

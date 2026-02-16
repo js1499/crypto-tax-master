@@ -73,7 +73,9 @@ model Wallet {
   id           String   @id @default(cuid())
   name         String
   address      String
-  provider     String
+  provider     String   // e.g., "ethereum", "polygon", "bsc", etc.
+  chains       String?  // Comma-separated list of chains to sync, e.g., "eth,polygon,arbitrum"
+  lastSyncAt   DateTime? // Last successful sync time
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt    DateTime @default(now())

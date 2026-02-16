@@ -18,12 +18,25 @@ import type { ImportedData } from "@/types/wallet"; // Updated import
 import axios from "axios";
 
 const exchangeTemplates = [
+  { id: "wallet", name: "EVM Wallet" },
   { id: "coinbase", name: "Coinbase" },
   { id: "binance", name: "Binance" },
   { id: "kraken", name: "Kraken" },
   { id: "kucoin", name: "KuCoin" },
   { id: "gemini", name: "Gemini" },
   { id: "custom", name: "Custom Format" },
+];
+
+// Supported EVM chains for Moralis sync
+const EVM_CHAINS = [
+  { id: "eth", name: "Ethereum" },
+  { id: "polygon", name: "Polygon" },
+  { id: "arbitrum", name: "Arbitrum" },
+  { id: "optimism", name: "Optimism" },
+  { id: "base", name: "Base" },
+  { id: "bsc", name: "BNB Chain" },
+  { id: "avalanche", name: "Avalanche" },
+  { id: "fantom", name: "Fantom" },
 ];
 
 interface CSVImportProps {
@@ -80,6 +93,16 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   const [krakenApiSecret, setKrakenApiSecret] = useState("");
   const [isConnectingKraken, setIsConnectingKraken] = useState(false);
 
+  // Wallet state
+  const [walletName, setWalletName] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
+  const [selectedChains, setSelectedChains] = useState<string[]>(["eth", "polygon", "arbitrum", "optimism", "base"]);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [isSyncingWallet, setIsSyncingWallet] = useState(false);
+  const [walletSyncProgress, setWalletSyncProgress] = useState(0);
+  const [isAddingWallet, setIsAddingWallet] = useState(false);
+  const [userWallets, setUserWallets] = useState<any[]>([]);
+
   // Check if exchange is already connected when component mounts
   useEffect(() => {
     if (selectedExchange === "coinbase") {
@@ -90,8 +113,122 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
       checkKucoinConnection();
     } else if (selectedExchange === "kraken") {
       checkKrakenConnection();
+    } else if (selectedExchange === "wallet") {
+      loadUserWallets();
     }
   }, [selectedExchange]);
+
+  const loadUserWallets = async () => {
+    setWalletLoading(true);
+    try {
+      const response = await axios.get("/api/wallets");
+      setUserWallets(response.data.wallets || []);
+    } catch (error) {
+      console.error("[CSVImport] Error loading wallets:", error);
+      setUserWallets([]);
+    } finally {
+      setWalletLoading(false);
+    }
+  };
+
+  const handleAddWallet = async () => {
+    if (!walletName || !walletAddress) {
+      toast.error("Please enter wallet name and address");
+      return;
+    }
+
+    // Validate EVM address format
+    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
+      toast.error("Invalid EVM address. Must start with 0x and be 42 characters.");
+      return;
+    }
+
+    if (selectedChains.length === 0) {
+      toast.error("Please select at least one chain");
+      return;
+    }
+
+    setIsAddingWallet(true);
+    try {
+      const response = await axios.post("/api/wallets", {
+        name: walletName,
+        address: walletAddress.toLowerCase(),
+        provider: "evm",
+        chains: selectedChains.join(","),
+      });
+
+      if (response.data.status === "success") {
+        toast.success("Wallet added successfully!");
+        setWalletName("");
+        setWalletAddress("");
+        loadUserWallets();
+      } else {
+        throw new Error(response.data.error || "Failed to add wallet");
+      }
+    } catch (error) {
+      console.error("[CSVImport] Error adding wallet:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to add wallet";
+      toast.error(errorMessage);
+    } finally {
+      setIsAddingWallet(false);
+    }
+  };
+
+  const handleSyncWallet = async (walletId?: string) => {
+    setIsSyncingWallet(true);
+    setWalletSyncProgress(0);
+
+    try {
+      // Simulate progress
+      const progressInterval = setInterval(() => {
+        setWalletSyncProgress((prev) => Math.min(prev + 5, 90));
+      }, 500);
+
+      const response = await axios.post("/api/wallets/sync", {
+        walletId,
+        chains: selectedChains,
+      });
+
+      clearInterval(progressInterval);
+      setWalletSyncProgress(100);
+
+      if (response.data.status === "success") {
+        const { transactionsAdded, transactionsSkipped } = response.data;
+        toast.success(`Synced ${transactionsAdded} new transactions (${transactionsSkipped} skipped)`);
+
+        if (onImportComplete) {
+          onImportComplete({
+            transactions: transactionsAdded,
+            format: "wallet",
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        loadUserWallets();
+      } else {
+        throw new Error(response.data.error || "Sync failed");
+      }
+    } catch (error) {
+      console.error("[CSVImport] Error syncing wallet:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to sync wallet";
+      toast.error(errorMessage);
+    } finally {
+      setIsSyncingWallet(false);
+      setTimeout(() => setWalletSyncProgress(0), 1000);
+    }
+  };
+
+  const toggleChain = (chainId: string) => {
+    setSelectedChains((prev) =>
+      prev.includes(chainId)
+        ? prev.filter((c) => c !== chainId)
+        : [...prev, chainId]
+    );
+  };
 
   const checkCoinbaseConnection = async () => {
     setCoinbaseLoading(true);
@@ -738,7 +875,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
             </SelectContent>
           </Select>
 
-          {selectedExchange && selectedExchange !== "coinbase" && (
+          {selectedExchange && selectedExchange !== "coinbase" && selectedExchange !== "wallet" && (
             <div className="mt-1 text-xs text-muted-foreground">
               {selectedExchange === "custom"
                 ? "Custom format requires mapping columns"
@@ -746,6 +883,182 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
             </div>
           )}
         </div>
+
+        {/* EVM Wallet Section - Show when Wallet is selected */}
+        {selectedExchange === "wallet" && (
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-gradient-to-r from-purple-500/10 to-indigo-600/10 p-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-indigo-600">
+                  <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" />
+                    <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">Import EVM Wallet Transactions</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Enter any Ethereum-compatible wallet address to automatically import transactions across multiple chains.
+                  </p>
+
+                  {walletLoading ? (
+                    <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading wallets...
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-4">
+                      {/* Existing wallets */}
+                      {userWallets.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">Your Wallets</p>
+                          <div className="space-y-2">
+                            {userWallets.map((wallet) => (
+                              <div
+                                key={wallet.id}
+                                className="flex items-center justify-between rounded-md border p-2"
+                              >
+                                <div>
+                                  <p className="text-sm font-medium">{wallet.name}</p>
+                                  <p className="text-xs text-muted-foreground font-mono">
+                                    {wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}
+                                  </p>
+                                  {wallet.lastSyncAt && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Last synced: {new Date(wallet.lastSyncAt).toLocaleDateString()}
+                                    </p>
+                                  )}
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleSyncWallet(wallet.id)}
+                                  disabled={isSyncingWallet}
+                                >
+                                  {isSyncingWallet ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <RefreshCw className="mr-1 h-3 w-3" />
+                                      Sync
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                          <Button
+                            className="w-full"
+                            onClick={() => handleSyncWallet()}
+                            disabled={isSyncingWallet}
+                          >
+                            {isSyncingWallet ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Syncing All Wallets...
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                                Sync All Wallets
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      )}
+
+                      {/* Sync progress */}
+                      {isSyncingWallet && walletSyncProgress > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs">
+                            <span>Syncing wallet transactions...</span>
+                            <span>{walletSyncProgress}%</span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                            <div
+                              className="h-full bg-gradient-to-r from-purple-500 to-indigo-600 transition-all"
+                              style={{ width: `${walletSyncProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Add new wallet form */}
+                      <div className="space-y-3 rounded-md border p-3">
+                        <p className="text-sm font-medium">Add New Wallet</p>
+                        <div className="space-y-2">
+                          <Label htmlFor="wallet-name">Wallet Name</Label>
+                          <Input
+                            id="wallet-name"
+                            placeholder="My Main Wallet"
+                            value={walletName}
+                            onChange={(e) => setWalletName(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="wallet-address">Wallet Address</Label>
+                          <Input
+                            id="wallet-address"
+                            placeholder="0x..."
+                            value={walletAddress}
+                            onChange={(e) => setWalletAddress(e.target.value)}
+                            className="font-mono"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Chains to Sync</Label>
+                          <div className="grid grid-cols-2 gap-2">
+                            {EVM_CHAINS.map((chain) => (
+                              <label
+                                key={chain.id}
+                                className="flex items-center gap-2 text-sm cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={selectedChains.includes(chain.id)}
+                                  onChange={() => toggleChain(chain.id)}
+                                  className="rounded border-gray-300"
+                                />
+                                {chain.name}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        <Button
+                          className="w-full"
+                          onClick={handleAddWallet}
+                          disabled={isAddingWallet || !walletName || !walletAddress}
+                        >
+                          {isAddingWallet ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Adding Wallet...
+                            </>
+                          ) : (
+                            <>
+                              <Link2 className="mr-2 h-4 w-4" />
+                              Add Wallet
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="rounded-md bg-amber-900/20 p-3 text-xs text-amber-500">
+                        <p className="font-medium">Supported Networks:</p>
+                        <p className="mt-1">
+                          Ethereum, Polygon, Arbitrum, Optimism, Base, BNB Chain, Avalanche, Fantom
+                        </p>
+                        <p className="mt-2">
+                          Transactions are fetched using Moralis Web3 Data API. Only on-chain transactions are imported.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Coinbase API Key Section - Show when Coinbase is selected */}
         {selectedExchange === "coinbase" && (

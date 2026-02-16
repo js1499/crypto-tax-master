@@ -4,6 +4,7 @@ export interface ConnectionResult {
   provider: string;
   timestamp: string;
   fileName?: string;
+  address?: string;
 }
 
 // Wallet provider type
@@ -32,11 +33,12 @@ export interface ImportedTransaction {
   date: string;
 }
 
-// Data returned from CSV import
+// Data returned from CSV import or wallet sync
 export interface ImportedData {
-  source: string;
-  fileName: string;
+  source?: string;
+  fileName?: string;
   timestamp: string;
-  transactions: ImportedTransaction[];
-  totalTransactions: number;
+  transactions: ImportedTransaction[] | number; // Can be array or count
+  totalTransactions?: number;
+  format?: string; // e.g., "wallet", "csv"
 }
