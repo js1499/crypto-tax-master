@@ -27,16 +27,27 @@ const exchangeTemplates = [
   { id: "custom", name: "Custom Format" },
 ];
 
-// Supported EVM chains for Moralis sync
+// All chains supported by Moralis wallet history API
 const EVM_CHAINS = [
   { id: "eth", name: "Ethereum" },
   { id: "polygon", name: "Polygon" },
-  { id: "arbitrum", name: "Arbitrum" },
-  { id: "optimism", name: "Optimism" },
-  { id: "base", name: "Base" },
   { id: "bsc", name: "BNB Chain" },
   { id: "avalanche", name: "Avalanche" },
   { id: "fantom", name: "Fantom" },
+  { id: "cronos", name: "Cronos" },
+  { id: "gnosis", name: "Gnosis" },
+  { id: "pulse", name: "PulseChain" },
+  { id: "arbitrum", name: "Arbitrum" },
+  { id: "optimism", name: "Optimism" },
+  { id: "base", name: "Base" },
+  { id: "linea", name: "Linea" },
+  { id: "lisk", name: "Lisk" },
+  { id: "moonbeam", name: "Moonbeam" },
+  { id: "moonriver", name: "Moonriver" },
+  { id: "chiliz", name: "Chiliz" },
+  { id: "ronin", name: "Ronin" },
+  { id: "flow", name: "Flow" },
+  { id: "sei", name: "Sei" },
 ];
 
 interface CSVImportProps {
@@ -96,7 +107,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   // Wallet state
   const [walletName, setWalletName] = useState("");
   const [walletAddress, setWalletAddress] = useState("");
-  const [selectedChains, setSelectedChains] = useState<string[]>(["eth", "polygon", "arbitrum", "optimism", "base"]);
+  const [selectedChains, setSelectedChains] = useState<string[]>(["eth", "polygon", "bsc", "arbitrum", "optimism", "base", "avalanche"]);
   const [walletLoading, setWalletLoading] = useState(false);
   const [isSyncingWallet, setIsSyncingWallet] = useState(false);
   const [walletSyncProgress, setWalletSyncProgress] = useState(0);

@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
           chainsToSync = wallet.chains.split(",").map((c: string) => c.trim());
           console.log(`[Wallet Sync] Using wallet's stored chains: ${chainsToSync.join(", ")}`);
         } else {
-          chainsToSync = ["eth", "polygon", "arbitrum", "optimism", "base"];
+          chainsToSync = ["eth", "polygon", "bsc", "arbitrum", "optimism", "base", "avalanche"];
           console.log(`[Wallet Sync] Using default chains: ${chainsToSync.join(", ")}`);
         }
 

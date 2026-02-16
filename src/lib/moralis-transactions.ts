@@ -5,76 +5,148 @@ import { Decimal } from "@prisma/client/runtime/library";
 const MORALIS_API_KEY = process.env.MORALIS_API_KEY;
 const MORALIS_BASE_URL = "https://deep-index.moralis.io/api/v2.2";
 
-// Supported chains with their native tokens and wrapped token addresses (for price lookups)
+// All chains supported by Moralis Wallet History API
+// Uses the chain identifier accepted by the Moralis API (short name or hex chain ID)
 export const SUPPORTED_CHAINS: Record<
   string,
-  { name: string; nativeToken: string; decimals: number; wrappedAddress: string }
+  { name: string; chainParam: string; nativeToken: string; decimals: number; wrappedAddress: string }
 > = {
+  // --- Major L1s ---
   eth: {
     name: "Ethereum",
+    chainParam: "eth",
     nativeToken: "ETH",
     decimals: 18,
-    wrappedAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH
+    wrappedAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
   },
   polygon: {
     name: "Polygon",
-    nativeToken: "MATIC",
+    chainParam: "0x89",
+    nativeToken: "POL",
     decimals: 18,
-    wrappedAddress: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", // WMATIC
+    wrappedAddress: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
   },
   bsc: {
     name: "BNB Chain",
+    chainParam: "0x38",
     nativeToken: "BNB",
     decimals: 18,
-    wrappedAddress: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c", // WBNB
+    wrappedAddress: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
   },
   avalanche: {
     name: "Avalanche",
+    chainParam: "0xa86a",
     nativeToken: "AVAX",
     decimals: 18,
-    wrappedAddress: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7", // WAVAX
+    wrappedAddress: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
   },
   fantom: {
     name: "Fantom",
+    chainParam: "0xfa",
     nativeToken: "FTM",
     decimals: 18,
-    wrappedAddress: "0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83", // WFTM
-  },
-  arbitrum: {
-    name: "Arbitrum",
-    nativeToken: "ETH",
-    decimals: 18,
-    wrappedAddress: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", // WETH on Arbitrum
-  },
-  optimism: {
-    name: "Optimism",
-    nativeToken: "ETH",
-    decimals: 18,
-    wrappedAddress: "0x4200000000000000000000000000000000000006", // WETH on Optimism
-  },
-  base: {
-    name: "Base",
-    nativeToken: "ETH",
-    decimals: 18,
-    wrappedAddress: "0x4200000000000000000000000000000000000006", // WETH on Base
+    wrappedAddress: "0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83",
   },
   cronos: {
     name: "Cronos",
+    chainParam: "0x19",
     nativeToken: "CRO",
     decimals: 18,
-    wrappedAddress: "0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23", // WCRO
+    wrappedAddress: "0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23",
   },
   gnosis: {
     name: "Gnosis",
+    chainParam: "0x64",
     nativeToken: "xDAI",
     decimals: 18,
-    wrappedAddress: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d", // WXDAI
+    wrappedAddress: "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
+  },
+  pulse: {
+    name: "PulseChain",
+    chainParam: "0x171",
+    nativeToken: "PLS",
+    decimals: 18,
+    wrappedAddress: "0xA1077a294dDE1B09bB078844df40758a5D0f9a27",
+  },
+  // --- L2s / Rollups ---
+  arbitrum: {
+    name: "Arbitrum",
+    chainParam: "0xa4b1",
+    nativeToken: "ETH",
+    decimals: 18,
+    wrappedAddress: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+  },
+  optimism: {
+    name: "Optimism",
+    chainParam: "0xa",
+    nativeToken: "ETH",
+    decimals: 18,
+    wrappedAddress: "0x4200000000000000000000000000000000000006",
+  },
+  base: {
+    name: "Base",
+    chainParam: "0x2105",
+    nativeToken: "ETH",
+    decimals: 18,
+    wrappedAddress: "0x4200000000000000000000000000000000000006",
   },
   linea: {
     name: "Linea",
+    chainParam: "0xe708",
     nativeToken: "ETH",
     decimals: 18,
-    wrappedAddress: "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f", // WETH on Linea
+    wrappedAddress: "0xe5D7C2a44FfDDf6b295A15c148167daaAf5Cf34f",
+  },
+  lisk: {
+    name: "Lisk",
+    chainParam: "0x46f",
+    nativeToken: "ETH",
+    decimals: 18,
+    wrappedAddress: "0x4200000000000000000000000000000000000006",
+  },
+  // --- Moonbeam ecosystem ---
+  moonbeam: {
+    name: "Moonbeam",
+    chainParam: "0x504",
+    nativeToken: "GLMR",
+    decimals: 18,
+    wrappedAddress: "0xAcc15dC74880C9944775448304B263D191c6077F",
+  },
+  moonriver: {
+    name: "Moonriver",
+    chainParam: "0x505",
+    nativeToken: "MOVR",
+    decimals: 18,
+    wrappedAddress: "0x98878B06940aE243284CA214f92Bb71a2b032B8A",
+  },
+  // --- Gaming / Specialty ---
+  chiliz: {
+    name: "Chiliz",
+    chainParam: "0x15b38",
+    nativeToken: "CHZ",
+    decimals: 18,
+    wrappedAddress: "0x677F7e16C7Dd57be1D4C8aD1244883214953DC47",
+  },
+  ronin: {
+    name: "Ronin",
+    chainParam: "0x7e4",
+    nativeToken: "RON",
+    decimals: 18,
+    wrappedAddress: "0xe514d9DEB7966c8BE0ca922de8a064264eA6bcd4",
+  },
+  flow: {
+    name: "Flow",
+    chainParam: "0x2eb",
+    nativeToken: "FLOW",
+    decimals: 18,
+    wrappedAddress: "0xd3bF53DAC106A0290B0483EcBC89d40FcC961f3e",
+  },
+  sei: {
+    name: "Sei",
+    chainParam: "0x531",
+    nativeToken: "SEI",
+    decimals: 18,
+    wrappedAddress: "0xE30feDd158A2e3b13e9badaeABaFc5516e95e8C7",
   },
 };
 
@@ -209,7 +281,7 @@ async function rateLimitPriceApi(): Promise<void> {
  */
 export async function getTokenPriceUSD(
   tokenAddress: string,
-  chain: string,
+  chain: string, // Our internal chain key (e.g., "eth", "polygon")
   blockNumber: number,
   txDate: Date
 ): Promise<number | null> {
@@ -220,6 +292,10 @@ export async function getTokenPriceUSD(
   if (priceCache.has(cacheKey)) {
     return priceCache.get(cacheKey)!;
   }
+
+  // Resolve Moralis chain parameter
+  const chainInfo = SUPPORTED_CHAINS[chain];
+  const moralisChainParam = chainInfo?.chainParam || chain;
 
   try {
     await rateLimitPriceApi();
@@ -232,7 +308,7 @@ export async function getTokenPriceUSD(
           Accept: "application/json",
         },
         params: {
-          chain,
+          chain: moralisChainParam,
           to_block: blockNumber,
         },
         timeout: 10000,
@@ -399,7 +475,8 @@ export async function getWalletTransactions(
     );
   }
 
-  console.log(`[Moralis] ====== Starting fetch for ${walletAddress} on ${chainInfo.name} ======`);
+  const moralisChainParam = chainInfo.chainParam;
+  console.log(`[Moralis] ====== Starting fetch for ${walletAddress} on ${chainInfo.name} (chain param: ${moralisChainParam}) ======`);
   if (startTime) console.log(`[Moralis] Start time: ${new Date(startTime).toISOString()}`);
   if (endTime) console.log(`[Moralis] End time: ${new Date(endTime).toISOString()}`);
 
@@ -417,7 +494,7 @@ export async function getWalletTransactions(
     do {
       pageCount++;
       const params: Record<string, any> = {
-        chain,
+        chain: moralisChainParam,
         order: "DESC",
         limit: 100,
         include_internal_transactions: true,
@@ -680,6 +757,7 @@ async function enrichTransactionsWithPrices(
   );
 
   // Fetch prices for each unique token+date
+  // Note: getTokenPriceUSD handles chainParam resolution internally
   const prices = new Map<string, number>(); // key → USD price
   let lookedUp = 0;
   let found = 0;
@@ -689,7 +767,7 @@ async function enrichTransactionsWithPrices(
     lookedUp++;
     const price = await getTokenPriceUSD(
       info.tokenAddress,
-      chain,
+      chain, // internal key — getTokenPriceUSD resolves to chainParam
       info.blockNumber,
       info.date
     );

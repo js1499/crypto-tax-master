@@ -19,16 +19,30 @@ import { QrCode, Loader2, Wallet } from "lucide-react";
 import type { ConnectionResult, WalletProvider, ExchangeProvider } from "@/types/wallet";
 import { toast } from "sonner";
 
-// Supported EVM chains for Moralis sync
+// All chains supported by Moralis wallet history API
 const EVM_CHAINS = [
-  { id: "eth", name: "Ethereum", nativeToken: "ETH" },
-  { id: "polygon", name: "Polygon", nativeToken: "MATIC" },
-  { id: "arbitrum", name: "Arbitrum", nativeToken: "ETH" },
-  { id: "optimism", name: "Optimism", nativeToken: "ETH" },
-  { id: "base", name: "Base", nativeToken: "ETH" },
-  { id: "bsc", name: "BNB Chain", nativeToken: "BNB" },
-  { id: "avalanche", name: "Avalanche", nativeToken: "AVAX" },
-  { id: "fantom", name: "Fantom", nativeToken: "FTM" },
+  // Major L1s
+  { id: "eth", name: "Ethereum" },
+  { id: "polygon", name: "Polygon" },
+  { id: "bsc", name: "BNB Chain" },
+  { id: "avalanche", name: "Avalanche" },
+  { id: "fantom", name: "Fantom" },
+  { id: "cronos", name: "Cronos" },
+  { id: "gnosis", name: "Gnosis" },
+  { id: "pulse", name: "PulseChain" },
+  // L2s / Rollups
+  { id: "arbitrum", name: "Arbitrum" },
+  { id: "optimism", name: "Optimism" },
+  { id: "base", name: "Base" },
+  { id: "linea", name: "Linea" },
+  { id: "lisk", name: "Lisk" },
+  // Other
+  { id: "moonbeam", name: "Moonbeam" },
+  { id: "moonriver", name: "Moonriver" },
+  { id: "chiliz", name: "Chiliz" },
+  { id: "ronin", name: "Ronin" },
+  { id: "flow", name: "Flow" },
+  { id: "sei", name: "Sei" },
 ];
 
 const walletProviders: WalletProvider[] = [
@@ -107,7 +121,7 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
   // EVM wallet specific state
   const [walletName, setWalletName] = useState("");
   const [walletAddress, setWalletAddress] = useState("");
-  const [selectedChains, setSelectedChains] = useState<string[]>(["eth", "polygon", "arbitrum", "optimism", "base"]);
+  const [selectedChains, setSelectedChains] = useState<string[]>(["eth", "polygon", "bsc", "arbitrum", "optimism", "base", "avalanche"]);
   const [syncAfterAdd, setSyncAfterAdd] = useState(true);
 
   const handleConnect = async (provider: string) => {
