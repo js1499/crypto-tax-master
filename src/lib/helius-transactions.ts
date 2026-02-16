@@ -5,11 +5,7 @@ import type { WalletTransaction } from "./moralis-transactions";
 // Helius API key from environment
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
 const HELIUS_BASE_URL = "https://api.helius.xyz";
-
-// Jupiter Price API
-const JUPITER_PRICE_URL = "https://api.jup.ag/price/v2";
-
-// Native SOL mint address (used for Jupiter price lookups)
+// Native SOL mint address
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 
 // ============================================================
@@ -74,60 +70,69 @@ export function isValidSolanaAddress(address: string): boolean {
 }
 
 // ============================================================
-// Price cache and lookup via Jupiter
+// Price cache and lookup via Helius DAS API
 // ============================================================
 
 // Cache prices: "mint:YYYY-MM-DD" -> price in USD
 const priceCache = new Map<string, number>();
 
 /**
- * Get token prices from Jupiter Price API.
- * Supports batch lookups for multiple mints.
- * Returns a map of mint -> USD price.
+ * Get token prices from Helius DAS API (getAssetBatch).
+ * Returns price_per_token for top ~10k tokens by volume.
+ * Uses the existing HELIUS_API_KEY — no extra API key needed.
  */
-async function getJupiterPrices(mints: string[]): Promise<Map<string, number>> {
+async function getHeliusTokenPrices(mints: string[]): Promise<Map<string, number>> {
   const result = new Map<string, number>();
-  if (mints.length === 0) return result;
+  if (mints.length === 0 || !HELIUS_API_KEY) return result;
 
-  // Deduplicate
   const uniqueMints = [...new Set(mints)];
 
-  // Jupiter supports batch lookups with comma-separated IDs
-  // Process in chunks of 100 to avoid URL length limits
-  const chunkSize = 100;
+  // Helius getAssetBatch supports up to 1000 IDs per call
+  const chunkSize = 1000;
 
   for (let i = 0; i < uniqueMints.length; i += chunkSize) {
     const chunk = uniqueMints.slice(i, i + chunkSize);
     try {
-      const response = await axios.get(JUPITER_PRICE_URL, {
-        params: { ids: chunk.join(",") },
-        timeout: 15000,
-      });
+      const response = await axios.post(
+        `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`,
+        {
+          jsonrpc: "2.0",
+          id: "price-lookup",
+          method: "getAssetBatch",
+          params: {
+            ids: chunk,
+          },
+        },
+        { timeout: 30000 }
+      );
 
-      const data = response.data?.data;
-      if (data) {
-        for (const mint of chunk) {
-          const priceInfo = data[mint];
-          if (priceInfo?.price) {
-            const price = parseFloat(priceInfo.price);
-            if (!isNaN(price) && price > 0) {
-              result.set(mint, price);
-            }
+      const assets = response.data?.result;
+      if (Array.isArray(assets)) {
+        for (const asset of assets) {
+          if (!asset) continue;
+          const price = asset?.token_info?.price_info?.price_per_token;
+          const mint = asset?.id;
+          if (mint && price && typeof price === "number" && price > 0) {
+            result.set(mint, price);
           }
         }
       }
 
       console.log(
-        `[Helius Price] Jupiter batch: ${chunk.length} mints queried, ${result.size} prices found`
+        `[Helius Price] DAS batch: ${chunk.length} mints queried, ${result.size} prices found so far`
       );
     } catch (error) {
       if (axios.isAxiosError(error)) {
         console.warn(
-          `[Helius Price] Jupiter API error: ${error.response?.status} - ${error.message}`
+          `[Helius Price] DAS API error: ${error.response?.status} - ${error.message}`
         );
+        // Log response body for debugging
+        if (error.response?.data) {
+          console.warn(`[Helius Price] DAS response:`, JSON.stringify(error.response.data).slice(0, 200));
+        }
       } else {
         console.warn(
-          `[Helius Price] Jupiter error:`,
+          `[Helius Price] DAS error:`,
           error instanceof Error ? error.message : error
         );
       }
@@ -135,35 +140,6 @@ async function getJupiterPrices(mints: string[]): Promise<Map<string, number>> {
   }
 
   return result;
-}
-
-/**
- * Get a single token's USD price, with day-granularity caching.
- * Note: Jupiter only returns current spot prices, not historical.
- * For accurate tax reporting, historical prices would need a different data source.
- */
-async function getTokenPriceUSD(
-  mint: string,
-  txDate: Date
-): Promise<number | null> {
-  const dateKey = txDate.toISOString().split("T")[0];
-  const cacheKey = `${mint}:${dateKey}`;
-
-  if (priceCache.has(cacheKey)) {
-    const cached = priceCache.get(cacheKey)!;
-    return cached > 0 ? cached : null;
-  }
-
-  const prices = await getJupiterPrices([mint]);
-  const price = prices.get(mint);
-
-  if (price && price > 0) {
-    priceCache.set(cacheKey, price);
-    return price;
-  }
-
-  priceCache.set(cacheKey, 0);
-  return null;
 }
 
 /**
@@ -375,8 +351,9 @@ export async function getSolanaWalletTransactions(
             const isIncoming = transfer.toUserAccount === walletAddress;
             const solAmount = lamportsToSol(transfer.amount);
 
+            const subTxId = `${tx.signature}-native-${transfer.fromUserAccount.slice(0, 8)}-${transfer.toUserAccount.slice(0, 8)}`;
             transactions.push({
-              id: `${tx.signature}-native-${transfer.fromUserAccount}-${transfer.toUserAccount}`,
+              id: subTxId,
               type: isIncoming ? "Receive" : "Send",
               asset_symbol: "SOL",
               asset_chain: "solana",
@@ -387,7 +364,7 @@ export async function getSolanaWalletTransactions(
               tx_timestamp: timestamp,
               source: "Solana Wallet",
               source_type: "wallet",
-              tx_hash: tx.signature,
+              tx_hash: subTxId,
               wallet_address: walletAddress,
               counterparty_address: isIncoming ? transfer.fromUserAccount : transfer.toUserAccount,
               chain: "solana",
@@ -414,8 +391,9 @@ export async function getSolanaWalletTransactions(
 
             const isIncoming = transfer.toUserAccount === walletAddress;
 
+            const tokenSubTxId = `${tx.signature}-token-${transfer.mint.slice(0, 8)}-${transfer.fromUserAccount.slice(0, 8)}`;
             transactions.push({
-              id: `${tx.signature}-token-${transfer.mint}-${transfer.fromUserAccount}`,
+              id: tokenSubTxId,
               type: isIncoming ? "Receive" : "Send",
               asset_symbol: transfer.mint.slice(0, 6) + "...",
               asset_address: transfer.mint,
@@ -427,7 +405,7 @@ export async function getSolanaWalletTransactions(
               tx_timestamp: timestamp,
               source: "Solana Wallet",
               source_type: "wallet",
-              tx_hash: tx.signature,
+              tx_hash: tokenSubTxId,
               wallet_address: walletAddress,
               counterparty_address: isIncoming ? transfer.fromUserAccount : transfer.toUserAccount,
               chain: "solana",
@@ -441,8 +419,9 @@ export async function getSolanaWalletTransactions(
 
         // If no transfers were processed but the tx has a known type, add a record
         if (!hasTransfers && txType !== "Transfer") {
+          const mainSubTxId = `${tx.signature}-main`;
           transactions.push({
-            id: `${tx.signature}-main`,
+            id: mainSubTxId,
             type: txType,
             asset_symbol: "SOL",
             asset_chain: "solana",
@@ -453,7 +432,7 @@ export async function getSolanaWalletTransactions(
             tx_timestamp: timestamp,
             source: "Solana Wallet",
             source_type: "wallet",
-            tx_hash: tx.signature,
+            tx_hash: mainSubTxId,
             wallet_address: walletAddress,
             chain: "solana",
             block_number: tx.slot,
@@ -472,8 +451,13 @@ export async function getSolanaWalletTransactions(
     } while (beforeSignature && pageCount < maxPages);
 
     console.log(
-      `[Helius] Step 1 complete: ${totalRawTx} raw tx fetched, ${transactions.length} valid transactions parsed across ${pageCount} pages`
+      `[Helius] Step 1 complete: ${totalRawTx} raw tx fetched, ${transactions.length} records created across ${pageCount} pages`
     );
+    if (transactions.length > totalRawTx) {
+      console.log(
+        `[Helius] Note: records > raw tx because one Solana tx can contain multiple transfers (native + token)`
+      );
+    }
 
     // Step 2: Enrich with USD prices
     console.log(`[Helius] Step 2: Looking up USD prices for ${transactions.length} transactions...`);
@@ -555,8 +539,9 @@ function processSwapTransaction(
     inAmount = rawAmount / Math.pow(10, output.rawTokenAmount.decimals);
   }
 
+  const swapSubTxId = `${tx.signature}-swap`;
   transactions.push({
-    id: `${tx.signature}-swap`,
+    id: swapSubTxId,
     type: "Swap",
     asset_symbol: outSymbol,
     asset_address: outMint !== SOL_MINT ? outMint : undefined,
@@ -568,7 +553,7 @@ function processSwapTransaction(
     tx_timestamp: timestamp,
     source: "Solana Wallet",
     source_type: "wallet",
-    tx_hash: tx.signature,
+    tx_hash: swapSubTxId,
     wallet_address: walletAddress,
     chain: "solana",
     block_number: tx.slot,
@@ -581,7 +566,7 @@ function processSwapTransaction(
 }
 
 /**
- * Enrich Solana transactions with USD prices from Jupiter
+ * Enrich Solana transactions with USD prices from Helius DAS API
  */
 async function enrichSolanaTransactionsWithPrices(
   transactions: WalletTransaction[]
@@ -608,11 +593,11 @@ async function enrichSolanaTransactionsWithPrices(
   }
 
   console.log(
-    `[Helius Price] Fetching prices for ${mintsToPrice.size} unique mints from Jupiter...`
+    `[Helius Price] Fetching prices for ${mintsToPrice.size} unique mints from Helius DAS API...`
   );
 
-  // Fetch all prices in one batch
-  const prices = await getJupiterPrices([...mintsToPrice]);
+  // Fetch all prices in one batch via Helius DAS
+  const prices = await getHeliusTokenPrices([...mintsToPrice]);
   const solPrice = prices.get(SOL_MINT) || 0;
 
   console.log(

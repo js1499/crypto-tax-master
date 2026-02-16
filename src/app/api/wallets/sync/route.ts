@@ -244,85 +244,93 @@ export async function POST(request: NextRequest) {
         const unpriced = transactions.length - priced;
         console.log(`[Wallet Sync] Price coverage: ${priced} priced, ${unpriced} unpriced (${transactions.length > 0 ? Math.round((priced / transactions.length) * 100) : 0}%)`);
 
-        // Store transactions in database
+        // Store transactions in database (batch approach for performance)
         console.log(`[Wallet Sync] Saving ${transactions.length} transactions to database...`);
         const saveStart = Date.now();
         let walletAdded = 0;
         let walletSkipped = 0;
         let walletErrors = 0;
 
-        for (let j = 0; j < transactions.length; j++) {
-          const tx = transactions[j];
-          try {
-            // Check for duplicates
-            if (tx.tx_hash) {
-              const existing = await prisma.transaction.findFirst({
-                where: {
-                  OR: [
-                    { tx_hash: tx.tx_hash },
-                    {
-                      tx_timestamp: tx.tx_timestamp,
-                      asset_symbol: tx.asset_symbol,
-                      amount_value: tx.amount_value,
-                      wallet_address: wallet.address,
-                      source_type: "wallet",
-                    },
-                  ],
-                },
-              });
+        // Step A: Batch duplicate check — collect all tx_hashes and query at once
+        const txHashes = transactions
+          .map((tx) => tx.tx_hash)
+          .filter((h): h is string => !!h);
 
-              if (existing) {
-                walletSkipped++;
-                totalSkipped++;
-                continue;
-              }
-            }
-
-            // Create transaction record
-            await prisma.transaction.create({
-              data: {
-                type: tx.type,
-                status: "confirmed",
-                source: tx.source,
-                source_type: "wallet",
-                asset_symbol: tx.asset_symbol,
-                asset_address: tx.asset_address || null,
-                asset_chain: tx.asset_chain,
-                amount_value: tx.amount_value,
-                price_per_unit: tx.price_per_unit,
-                value_usd: tx.value_usd,
-                fee_usd: tx.fee_usd,
-                tx_timestamp: tx.tx_timestamp,
-                tx_hash: tx.tx_hash || null,
-                wallet_address: tx.wallet_address,
-                counterparty_address: tx.counterparty_address || null,
-                chain: tx.chain,
-                block_number: tx.block_number ? BigInt(tx.block_number) : null,
-                explorer_url: tx.explorer_url || null,
-                identified: false,
-                notes: tx.notes || null,
-                incoming_asset_symbol: tx.incoming_asset_symbol || null,
-                incoming_amount_value: tx.incoming_amount_value || null,
-                incoming_value_usd: tx.incoming_value_usd || null,
-              },
+        const existingHashes = new Set<string>();
+        if (txHashes.length > 0) {
+          // Query in chunks of 500 to avoid query size limits
+          const hashChunkSize = 500;
+          for (let h = 0; h < txHashes.length; h += hashChunkSize) {
+            const hashChunk = txHashes.slice(h, h + hashChunkSize);
+            const existing = await prisma.transaction.findMany({
+              where: { tx_hash: { in: hashChunk } },
+              select: { tx_hash: true },
             });
-
-            walletAdded++;
-            totalAdded++;
-
-            // Progress log every 50 saves
-            if ((walletAdded + walletSkipped) % 50 === 0) {
-              console.log(`[Wallet Sync] Save progress: ${walletAdded + walletSkipped}/${transactions.length} (${walletAdded} added, ${walletSkipped} skipped)`);
+            for (const row of existing) {
+              if (row.tx_hash) existingHashes.add(row.tx_hash);
             }
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            if (errorMessage.includes("Unique constraint") || errorMessage.includes("P2002")) {
-              walletSkipped++;
-              totalSkipped++;
-            } else {
-              walletErrors++;
-              totalErrors++;
-              console.error(`[Wallet Sync] DB error saving tx ${tx.tx_hash?.slice(0, 10)}...: ${errorMessage}`);
+          }
+          console.log(`[Wallet Sync] Found ${existingHashes.size} existing tx_hashes (duplicates to skip)`);
+        }
+
+        // Step B: Filter out duplicates and prepare batch insert data
+        const toInsert = [];
+        for (const tx of transactions) {
+          if (tx.tx_hash && existingHashes.has(tx.tx_hash)) {
+            walletSkipped++;
+            totalSkipped++;
+            continue;
+          }
+          toInsert.push({
+            type: tx.type,
+            status: "confirmed",
+            source: tx.source,
+            source_type: "wallet",
+            asset_symbol: tx.asset_symbol,
+            asset_address: tx.asset_address || null,
+            asset_chain: tx.asset_chain,
+            amount_value: tx.amount_value,
+            price_per_unit: tx.price_per_unit,
+            value_usd: tx.value_usd,
+            fee_usd: tx.fee_usd,
+            tx_timestamp: tx.tx_timestamp,
+            tx_hash: tx.tx_hash || null,
+            wallet_address: tx.wallet_address,
+            counterparty_address: tx.counterparty_address || null,
+            chain: tx.chain,
+            block_number: tx.block_number ? BigInt(tx.block_number) : null,
+            explorer_url: tx.explorer_url || null,
+            identified: false,
+            notes: tx.notes || null,
+            incoming_asset_symbol: tx.incoming_asset_symbol || null,
+            incoming_amount_value: tx.incoming_amount_value || null,
+            incoming_value_usd: tx.incoming_value_usd || null,
+          });
+        }
+
+        console.log(`[Wallet Sync] ${walletSkipped} duplicates filtered, ${toInsert.length} new transactions to insert`);
+
+        // Step C: Batch insert with createMany (skipDuplicates handles any race conditions)
+        if (toInsert.length > 0) {
+          const insertChunkSize = 500;
+          for (let c = 0; c < toInsert.length; c += insertChunkSize) {
+            const chunk = toInsert.slice(c, c + insertChunkSize);
+            try {
+              const result = await prisma.transaction.createMany({
+                data: chunk,
+                skipDuplicates: true,
+              });
+              walletAdded += result.count;
+              totalAdded += result.count;
+              const chunkSkipped = chunk.length - result.count;
+              walletSkipped += chunkSkipped;
+              totalSkipped += chunkSkipped;
+              console.log(`[Wallet Sync] Batch insert: ${result.count}/${chunk.length} added (chunk ${Math.floor(c / insertChunkSize) + 1}/${Math.ceil(toInsert.length / insertChunkSize)})`);
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              console.error(`[Wallet Sync] Batch insert error: ${errorMessage}`);
+              walletErrors += chunk.length;
+              totalErrors += chunk.length;
             }
           }
         }
