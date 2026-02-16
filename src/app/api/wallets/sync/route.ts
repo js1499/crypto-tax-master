@@ -11,6 +11,11 @@ import {
   SUPPORTED_CHAINS,
   WalletTransaction,
 } from "@/lib/moralis-transactions";
+import {
+  getSolanaWalletTransactions,
+  isValidSolanaAddress,
+  clearHeliusPriceCache,
+} from "@/lib/helius-transactions";
 
 // Configure for long-running operations on Vercel
 export const maxDuration = 300; // 5 minutes max execution time
@@ -34,14 +39,17 @@ export async function POST(request: NextRequest) {
   try {
     // Step 1: Validate environment
     console.log("[Wallet Sync] Step 1: Checking environment...");
-    if (!process.env.MORALIS_API_KEY) {
-      console.error("[Wallet Sync] FATAL: MORALIS_API_KEY not configured in environment variables");
+    const hasMoralis = !!process.env.MORALIS_API_KEY;
+    const hasHelius = !!process.env.HELIUS_API_KEY;
+    if (!hasMoralis && !hasHelius) {
+      console.error("[Wallet Sync] FATAL: Neither MORALIS_API_KEY nor HELIUS_API_KEY configured");
       return NextResponse.json(
-        { error: "Wallet sync is not configured. MORALIS_API_KEY environment variable is missing." },
+        { error: "Wallet sync is not configured. No API keys set for wallet providers." },
         { status: 500 }
       );
     }
-    console.log("[Wallet Sync] MORALIS_API_KEY is set (length: " + process.env.MORALIS_API_KEY.length + ")");
+    if (hasMoralis) console.log("[Wallet Sync] MORALIS_API_KEY is set (length: " + process.env.MORALIS_API_KEY!.length + ")");
+    if (hasHelius) console.log("[Wallet Sync] HELIUS_API_KEY is set (length: " + process.env.HELIUS_API_KEY!.length + ")");
 
     // Step 2: Rate limiting
     console.log("[Wallet Sync] Step 2: Checking rate limits...");
@@ -101,8 +109,9 @@ export async function POST(request: NextRequest) {
       console.log(`[Wallet Sync]   - ${w.name}: ${w.address} (provider: ${w.provider}, chains: ${w.chains || "default"}, lastSync: ${w.lastSyncAt || "never"})`);
     }
 
-    // Clear price cache for fresh sync
+    // Clear price caches for fresh sync
     clearPriceCache();
+    clearHeliusPriceCache();
 
     let totalAdded = 0;
     let totalSkipped = 0;
@@ -116,40 +125,65 @@ export async function POST(request: NextRequest) {
       console.log(`\n[Wallet Sync] ===== Wallet ${i + 1}/${wallets.length}: ${wallet.name} (${wallet.address}) =====`);
 
       try {
-        // Validate wallet address
-        if (!isValidEthAddress(wallet.address)) {
-          console.error(`[Wallet Sync] SKIP: Invalid EVM address format: ${wallet.address}`);
-          errors.push(`${wallet.name}: Invalid EVM wallet address`);
-          totalErrors++;
-          continue;
+        const isSolana = wallet.provider === "solana";
+
+        // Validate wallet address based on provider
+        if (isSolana) {
+          if (!isValidSolanaAddress(wallet.address)) {
+            console.error(`[Wallet Sync] SKIP: Invalid Solana address format: ${wallet.address}`);
+            errors.push(`${wallet.name}: Invalid Solana wallet address`);
+            totalErrors++;
+            continue;
+          }
+          if (!process.env.HELIUS_API_KEY) {
+            console.error(`[Wallet Sync] SKIP: HELIUS_API_KEY not set for Solana wallet ${wallet.name}`);
+            errors.push(`${wallet.name}: HELIUS_API_KEY not configured`);
+            totalErrors++;
+            continue;
+          }
+        } else {
+          if (!isValidEthAddress(wallet.address)) {
+            console.error(`[Wallet Sync] SKIP: Invalid EVM address format: ${wallet.address}`);
+            errors.push(`${wallet.name}: Invalid EVM wallet address`);
+            totalErrors++;
+            continue;
+          }
+          if (!process.env.MORALIS_API_KEY) {
+            console.error(`[Wallet Sync] SKIP: MORALIS_API_KEY not set for EVM wallet ${wallet.name}`);
+            errors.push(`${wallet.name}: MORALIS_API_KEY not configured`);
+            totalErrors++;
+            continue;
+          }
         }
 
-        // Determine chains to sync (priority: override > wallet config > defaults)
+        // Determine chains to sync (only for EVM wallets)
         let chainsToSync: string[] = [];
 
-        if (chainsOverride && chainsOverride.length > 0) {
-          chainsToSync = chainsOverride;
-          console.log(`[Wallet Sync] Using chain override from request: ${chainsToSync.join(", ")}`);
-        } else if (wallet.chains) {
-          chainsToSync = wallet.chains.split(",").map((c: string) => c.trim());
-          console.log(`[Wallet Sync] Using wallet's stored chains: ${chainsToSync.join(", ")}`);
-        } else {
-          chainsToSync = ["eth", "polygon", "bsc", "arbitrum", "optimism", "base", "avalanche"];
-          console.log(`[Wallet Sync] Using default chains: ${chainsToSync.join(", ")}`);
-        }
+        if (!isSolana) {
+          if (chainsOverride && chainsOverride.length > 0) {
+            chainsToSync = chainsOverride;
+            console.log(`[Wallet Sync] Using chain override from request: ${chainsToSync.join(", ")}`);
+          } else if (wallet.chains) {
+            chainsToSync = wallet.chains.split(",").map((c: string) => c.trim());
+            console.log(`[Wallet Sync] Using wallet's stored chains: ${chainsToSync.join(", ")}`);
+          } else {
+            chainsToSync = ["eth", "polygon", "bsc", "arbitrum", "optimism", "base", "avalanche"];
+            console.log(`[Wallet Sync] Using default chains: ${chainsToSync.join(", ")}`);
+          }
 
-        // Filter to only supported chains
-        const unsupported = chainsToSync.filter((c) => !SUPPORTED_CHAINS[c]);
-        if (unsupported.length > 0) {
-          console.warn(`[Wallet Sync] Removing unsupported chains: ${unsupported.join(", ")}`);
-        }
-        chainsToSync = chainsToSync.filter((c) => SUPPORTED_CHAINS[c]);
+          // Filter to only supported chains
+          const unsupported = chainsToSync.filter((c) => !SUPPORTED_CHAINS[c]);
+          if (unsupported.length > 0) {
+            console.warn(`[Wallet Sync] Removing unsupported chains: ${unsupported.join(", ")}`);
+          }
+          chainsToSync = chainsToSync.filter((c) => SUPPORTED_CHAINS[c]);
 
-        if (chainsToSync.length === 0) {
-          console.error(`[Wallet Sync] SKIP: No supported chains configured for ${wallet.name}`);
-          errors.push(`${wallet.name}: No supported chains configured`);
-          totalErrors++;
-          continue;
+          if (chainsToSync.length === 0) {
+            console.error(`[Wallet Sync] SKIP: No supported chains configured for ${wallet.name}`);
+            errors.push(`${wallet.name}: No supported chains configured`);
+            totalErrors++;
+            continue;
+          }
         }
 
         // Determine effective start time for incremental sync
@@ -163,29 +197,40 @@ export async function POST(request: NextRequest) {
           console.log(`[Wallet Sync] First sync — fetching all history`);
         }
 
-        // Fetch transactions from Moralis
-        console.log(`[Wallet Sync] Calling Moralis API for ${chainsToSync.length} chain(s)...`);
+        // Fetch transactions from the appropriate provider
         const fetchStart = Date.now();
-
         let transactions: WalletTransaction[] = [];
-        if (chainsToSync.length === 1) {
-          transactions = await getWalletTransactions(
+
+        if (isSolana) {
+          // Use Helius for Solana wallets
+          console.log(`[Wallet Sync] Calling Helius API for Solana wallet...`);
+          transactions = await getSolanaWalletTransactions(
             wallet.address,
-            chainsToSync[0],
             effectiveStartTime,
             endTime
           );
         } else {
-          transactions = await getWalletTransactionsAllChains(
-            wallet.address,
-            chainsToSync,
-            effectiveStartTime,
-            endTime
-          );
+          // Use Moralis for EVM wallets
+          console.log(`[Wallet Sync] Calling Moralis API for ${chainsToSync.length} chain(s)...`);
+          if (chainsToSync.length === 1) {
+            transactions = await getWalletTransactions(
+              wallet.address,
+              chainsToSync[0],
+              effectiveStartTime,
+              endTime
+            );
+          } else {
+            transactions = await getWalletTransactionsAllChains(
+              wallet.address,
+              chainsToSync,
+              effectiveStartTime,
+              endTime
+            );
+          }
         }
 
         const fetchDuration = Date.now() - fetchStart;
-        console.log(`[Wallet Sync] Moralis returned ${transactions.length} transactions in ${fetchDuration}ms`);
+        console.log(`[Wallet Sync] ${isSolana ? "Helius" : "Moralis"} returned ${transactions.length} transactions in ${fetchDuration}ms`);
 
         // Log transaction type breakdown
         const typeCounts: Record<string, number> = {};
@@ -291,7 +336,7 @@ export async function POST(request: NextRequest) {
           name: wallet.name,
           added: walletAdded,
           skipped: walletSkipped,
-          chains: chainsToSync,
+          chains: isSolana ? ["solana"] : chainsToSync,
         });
 
         // Update wallet lastSyncAt

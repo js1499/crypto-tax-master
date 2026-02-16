@@ -19,6 +19,7 @@ import axios from "axios";
 
 const exchangeTemplates = [
   { id: "wallet", name: "EVM Wallet" },
+  { id: "solana-wallet", name: "Solana Wallet" },
   { id: "coinbase", name: "Coinbase" },
   { id: "binance", name: "Binance" },
   { id: "kraken", name: "Kraken" },
@@ -114,6 +115,15 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   const [isAddingWallet, setIsAddingWallet] = useState(false);
   const [userWallets, setUserWallets] = useState<any[]>([]);
 
+  // Solana wallet state
+  const [solanaWalletName, setSolanaWalletName] = useState("");
+  const [solanaWalletAddress, setSolanaWalletAddress] = useState("");
+  const [isAddingSolanaWallet, setIsAddingSolanaWallet] = useState(false);
+  const [isSyncingSolanaWallet, setIsSyncingSolanaWallet] = useState(false);
+  const [solanaSyncProgress, setSolanaSyncProgress] = useState(0);
+  const [solanaWallets, setSolanaWallets] = useState<any[]>([]);
+  const [solanaWalletLoading, setSolanaWalletLoading] = useState(false);
+
   // Check if exchange is already connected when component mounts
   useEffect(() => {
     if (selectedExchange === "coinbase") {
@@ -126,6 +136,8 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
       checkKrakenConnection();
     } else if (selectedExchange === "wallet") {
       loadUserWallets();
+    } else if (selectedExchange === "solana-wallet") {
+      loadSolanaWallets();
     }
   }, [selectedExchange]);
 
@@ -139,6 +151,102 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
       setUserWallets([]);
     } finally {
       setWalletLoading(false);
+    }
+  };
+
+  const loadSolanaWallets = async () => {
+    setSolanaWalletLoading(true);
+    try {
+      const response = await axios.get("/api/wallets");
+      const allWallets = response.data.wallets || [];
+      setSolanaWallets(allWallets.filter((w: any) => w.provider === "solana"));
+    } catch (error) {
+      console.error("[CSVImport] Error loading Solana wallets:", error);
+      setSolanaWallets([]);
+    } finally {
+      setSolanaWalletLoading(false);
+    }
+  };
+
+  const handleAddSolanaWallet = async () => {
+    if (!solanaWalletName || !solanaWalletAddress) {
+      toast.error("Please enter wallet name and address");
+      return;
+    }
+
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(solanaWalletAddress)) {
+      toast.error("Invalid Solana address. Must be a valid base58 address (32-44 characters).");
+      return;
+    }
+
+    setIsAddingSolanaWallet(true);
+    try {
+      const response = await axios.post("/api/wallets", {
+        name: solanaWalletName,
+        address: solanaWalletAddress,
+        provider: "solana",
+      });
+
+      if (response.data.status === "success") {
+        toast.success("Solana wallet added successfully!");
+        setSolanaWalletName("");
+        setSolanaWalletAddress("");
+        loadSolanaWallets();
+      } else {
+        throw new Error(response.data.error || "Failed to add wallet");
+      }
+    } catch (error) {
+      console.error("[CSVImport] Error adding Solana wallet:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to add wallet";
+      toast.error(errorMessage);
+    } finally {
+      setIsAddingSolanaWallet(false);
+    }
+  };
+
+  const handleSyncSolanaWallet = async (walletId?: string) => {
+    setIsSyncingSolanaWallet(true);
+    setSolanaSyncProgress(0);
+
+    try {
+      const progressInterval = setInterval(() => {
+        setSolanaSyncProgress((prev) => Math.min(prev + 5, 90));
+      }, 500);
+
+      const response = await axios.post("/api/wallets/sync", {
+        walletId,
+      });
+
+      clearInterval(progressInterval);
+      setSolanaSyncProgress(100);
+
+      if (response.data.status === "success") {
+        const { transactionsAdded, transactionsSkipped } = response.data;
+        toast.success(`Synced ${transactionsAdded} new transactions (${transactionsSkipped} skipped)`);
+
+        if (onImportComplete) {
+          onImportComplete({
+            transactions: transactionsAdded,
+            format: "wallet",
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        loadSolanaWallets();
+      } else {
+        throw new Error(response.data.error || "Sync failed");
+      }
+    } catch (error) {
+      console.error("[CSVImport] Error syncing Solana wallet:", error);
+      const errorMessage = axios.isAxiosError(error)
+        ? error.response?.data?.error || error.message
+        : error instanceof Error ? error.message : "Failed to sync wallet";
+      toast.error(errorMessage);
+    } finally {
+      setIsSyncingSolanaWallet(false);
+      setTimeout(() => setSolanaSyncProgress(0), 1000);
     }
   };
 
@@ -886,7 +994,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
             </SelectContent>
           </Select>
 
-          {selectedExchange && selectedExchange !== "coinbase" && selectedExchange !== "wallet" && (
+          {selectedExchange && selectedExchange !== "coinbase" && selectedExchange !== "wallet" && selectedExchange !== "solana-wallet" && (
             <div className="mt-1 text-xs text-muted-foreground">
               {selectedExchange === "custom"
                 ? "Custom format requires mapping columns"
@@ -1061,6 +1169,146 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
                         </p>
                         <p className="mt-2">
                           Transactions are fetched using Moralis Web3 Data API. Only on-chain transactions are imported.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Solana Wallet Section - Show when Solana Wallet is selected */}
+        {selectedExchange === "solana-wallet" && (
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-gradient-to-r from-green-400/10 to-emerald-500/10 p-4">
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#9945FF] to-[#14F195]">
+                  <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" />
+                    <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">Import Solana Wallet Transactions</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Enter any Solana wallet address to automatically import transactions via Helius.
+                  </p>
+
+                  {solanaWalletLoading ? (
+                    <div className="mt-4 flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading wallets...
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-4">
+                      {/* Existing Solana wallets */}
+                      {solanaWallets.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">Your Solana Wallets</p>
+                          <div className="space-y-2">
+                            {solanaWallets.map((wallet) => (
+                              <div
+                                key={wallet.id}
+                                className="flex items-center justify-between rounded-md border p-2"
+                              >
+                                <div>
+                                  <p className="text-sm font-medium">{wallet.name}</p>
+                                  <p className="text-xs text-muted-foreground font-mono">
+                                    {wallet.address.slice(0, 6)}...{wallet.address.slice(-4)}
+                                  </p>
+                                  {wallet.lastSyncAt && (
+                                    <p className="text-xs text-muted-foreground">
+                                      Last synced: {new Date(wallet.lastSyncAt).toLocaleDateString()}
+                                    </p>
+                                  )}
+                                </div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleSyncSolanaWallet(wallet.id)}
+                                  disabled={isSyncingSolanaWallet}
+                                >
+                                  {isSyncingSolanaWallet ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <>
+                                      <RefreshCw className="mr-1 h-3 w-3" />
+                                      Sync
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Sync progress */}
+                      {isSyncingSolanaWallet && solanaSyncProgress > 0 && (
+                        <div className="space-y-2">
+                          <div className="flex justify-between text-xs">
+                            <span>Syncing Solana transactions...</span>
+                            <span>{solanaSyncProgress}%</span>
+                          </div>
+                          <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                            <div
+                              className="h-full bg-gradient-to-r from-[#9945FF] to-[#14F195] transition-all"
+                              style={{ width: `${solanaSyncProgress}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Add new Solana wallet form */}
+                      <div className="space-y-3 rounded-md border p-3">
+                        <p className="text-sm font-medium">Add New Solana Wallet</p>
+                        <div className="space-y-2">
+                          <Label htmlFor="solana-wallet-name">Wallet Name</Label>
+                          <Input
+                            id="solana-wallet-name"
+                            placeholder="My Solana Wallet"
+                            value={solanaWalletName}
+                            onChange={(e) => setSolanaWalletName(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="solana-wallet-address">Solana Address</Label>
+                          <Input
+                            id="solana-wallet-address"
+                            placeholder="Enter Solana address..."
+                            value={solanaWalletAddress}
+                            onChange={(e) => setSolanaWalletAddress(e.target.value)}
+                            className="font-mono"
+                          />
+                        </div>
+                        <Button
+                          className="w-full"
+                          onClick={handleAddSolanaWallet}
+                          disabled={isAddingSolanaWallet || !solanaWalletName || !solanaWalletAddress}
+                        >
+                          {isAddingSolanaWallet ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Adding Wallet...
+                            </>
+                          ) : (
+                            <>
+                              <Link2 className="mr-2 h-4 w-4" />
+                              Add Wallet
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      <div className="rounded-md bg-amber-900/20 p-3 text-xs text-amber-500">
+                        <p className="font-medium">Supported:</p>
+                        <p className="mt-1">
+                          All Solana transaction types including transfers, swaps (Jupiter, Raydium), NFT activity, staking, and more.
+                        </p>
+                        <p className="mt-2">
+                          Transactions are fetched using the Helius Enhanced Transactions API. Only on-chain transactions are imported.
                         </p>
                       </div>
                     </div>

@@ -53,6 +53,12 @@ const walletProviders: WalletProvider[] = [
     chains: ["Ethereum", "Polygon", "Arbitrum", "Optimism", "Base"],
   },
   {
+    id: "solana",
+    name: "Solana Wallet",
+    icon: "/images/tokens/solana.png",
+    chains: ["Solana"],
+  },
+  {
     id: "metamask",
     name: "MetaMask",
     icon: "/images/tokens/ethereum.png",
@@ -130,7 +136,11 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
 
     // For EVM wallets, show the manual entry form
     if (provider === "evm" || provider === "metamask") {
-      // Just set the provider, the UI will show the form
+      return;
+    }
+
+    // For Solana wallets, show the Solana form
+    if (provider === "solana" || provider === "phantom") {
       return;
     }
 
@@ -145,6 +155,83 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
       const errorMessage = error instanceof Error ? error.message : "Failed to connect";
       setConnectionError(errorMessage);
       toast.error(errorMessage);
+    }
+  };
+
+  const handleAddSolanaWallet = async () => {
+    if (!walletName || !walletAddress) {
+      toast.error("Please enter wallet name and address");
+      return;
+    }
+
+    // Validate Solana address format (base58, 32-44 chars)
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
+      toast.error("Invalid Solana address. Must be a valid base58 address (32-44 characters).");
+      return;
+    }
+
+    setConnecting(true);
+    setConnectionError(null);
+
+    try {
+      const response = await fetch("/api/wallets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: walletName,
+          address: walletAddress,
+          provider: "solana",
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create wallet");
+      }
+
+      toast.success("Solana wallet added successfully");
+
+      if (syncAfterAdd) {
+        toast.info("Syncing Solana wallet transactions...");
+        try {
+          const syncResponse = await fetch("/api/wallets/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ walletId: data.wallet.id }),
+          });
+
+          const syncData = await syncResponse.json();
+          if (syncResponse.ok) {
+            toast.success(`Synced ${syncData.transactionsAdded} transactions`);
+          } else {
+            toast.error(syncData.error || "Sync completed with errors");
+          }
+        } catch (syncError) {
+          console.error("[Wallet Sync] Error:", syncError);
+          toast.error("Wallet added but sync failed. You can sync later.");
+        }
+      }
+
+      setWalletName("");
+      setWalletAddress("");
+      setSelectedProvider("");
+      setOpen(false);
+
+      if (onConnect) {
+        onConnect("solana", {
+          success: true,
+          provider: "solana",
+          address: walletAddress,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (error) {
+      console.error("[Wallet Connect] Error:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to add wallet";
+      setConnectionError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setConnecting(false);
     }
   };
 
@@ -386,8 +473,87 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
             </TabsList>
 
             <TabsContent value="wallets" className="mt-4 space-y-4">
-              {/* Show EVM wallet form when selected */}
-              {(selectedProvider === "evm" || selectedProvider === "metamask") ? (
+              {/* Show Solana wallet form when selected */}
+              {(selectedProvider === "solana" || selectedProvider === "phantom") ? (
+                <div className="space-y-4 border rounded-lg p-4">
+                  <div className="flex items-center gap-2">
+                    <Wallet className="h-5 w-5 text-primary" />
+                    <h3 className="text-sm font-medium">Add Solana Wallet</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Enter your Solana wallet address to import transactions via Helius.
+                  </p>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="sol-wallet-name">Wallet Name</Label>
+                    <Input
+                      id="sol-wallet-name"
+                      placeholder="My Solana Wallet"
+                      value={walletName}
+                      onChange={(e) => setWalletName(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="sol-wallet-address">Solana Address</Label>
+                    <Input
+                      id="sol-wallet-address"
+                      placeholder="Enter Solana address..."
+                      value={walletAddress}
+                      onChange={(e) => setWalletAddress(e.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="sol-sync-after-add"
+                      checked={syncAfterAdd}
+                      onCheckedChange={(checked) => setSyncAfterAdd(checked === true)}
+                    />
+                    <label htmlFor="sol-sync-after-add" className="text-sm cursor-pointer">
+                      Sync transactions immediately after adding
+                    </label>
+                  </div>
+
+                  {connectionError && (
+                    <div className="text-sm text-red-500">{connectionError}</div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        setSelectedProvider("");
+                        setWalletName("");
+                        setWalletAddress("");
+                        setConnectionError(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      className="flex-1"
+                      onClick={handleAddSolanaWallet}
+                      disabled={connecting || !walletName || !walletAddress}
+                    >
+                      {connecting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          {syncAfterAdd ? "Adding & Syncing..." : "Adding..."}
+                        </>
+                      ) : (
+                        <>
+                          <Wallet className="mr-2 h-4 w-4" />
+                          {syncAfterAdd ? "Add & Sync Wallet" : "Add Wallet"}
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              ) : /* Show EVM wallet form when selected */
+              (selectedProvider === "evm" || selectedProvider === "metamask") ? (
                 <div className="space-y-4 border rounded-lg p-4">
                   <div className="flex items-center gap-2">
                     <Wallet className="h-5 w-5 text-primary" />
@@ -515,10 +681,16 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
                     <p className="text-xs text-muted-foreground">Or enter address directly</p>
                     <div className="h-px flex-1 bg-border" />
                   </div>
-                  <Button variant="outline" className="w-full" onClick={() => setSelectedProvider("evm")}>
-                    <Wallet className="mr-2 h-4 w-4" />
-                    Add EVM Wallet by Address
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setSelectedProvider("evm")}>
+                      <Wallet className="mr-2 h-4 w-4" />
+                      Add EVM Wallet
+                    </Button>
+                    <Button variant="outline" className="flex-1" onClick={() => setSelectedProvider("solana")}>
+                      <Wallet className="mr-2 h-4 w-4" />
+                      Add Solana Wallet
+                    </Button>
+                  </div>
                 </>
               )}
             </TabsContent>

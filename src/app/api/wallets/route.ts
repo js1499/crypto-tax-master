@@ -108,13 +108,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate EVM address format for ethereum-based wallets
-    const evmProviders = ["ethereum", "polygon", "bsc", "arbitrum", "optimism", "base", "avalanche", "fantom", "cronos", "gnosis", "linea", "evm"];
-    if (evmProviders.includes(provider.toLowerCase()) && !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-      return NextResponse.json(
-        { error: "Invalid EVM wallet address. Must start with 0x and be 42 characters long." },
-        { status: 400 }
-      );
+    // Validate address format based on provider
+    if (provider.toLowerCase() === "solana") {
+      // Solana address: base58, 32-44 characters
+      if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) {
+        return NextResponse.json(
+          { error: "Invalid Solana wallet address. Must be a valid base58 address (32-44 characters)." },
+          { status: 400 }
+        );
+      }
+    } else {
+      // Validate EVM address format for ethereum-based wallets
+      const evmProviders = ["ethereum", "polygon", "bsc", "arbitrum", "optimism", "base", "avalanche", "fantom", "cronos", "gnosis", "linea", "evm"];
+      if (evmProviders.includes(provider.toLowerCase()) && !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+        return NextResponse.json(
+          { error: "Invalid EVM wallet address. Must start with 0x and be 42 characters long." },
+          { status: 400 }
+        );
+      }
     }
 
     // Create or update wallet (upsert to avoid duplicates)
