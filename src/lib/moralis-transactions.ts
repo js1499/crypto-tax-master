@@ -442,12 +442,103 @@ function determineTransactionType(
   if (category.includes("unstake")) return "Unstake";
   if (category.includes("bridge")) return "Bridge";
   if (category.includes("airdrop")) return "Airdrop";
+  if (category.includes("deposit")) return "Deposit";
+  if (category.includes("withdraw")) return "Withdraw";
 
   if (from === wallet && to !== wallet) return "Send";
   if (to === wallet && from !== wallet) return "Receive";
   if (from === wallet && to === wallet) return "Self";
 
   return "Transfer";
+}
+
+/**
+ * Post-process transactions from a single Moralis tx to detect swaps and wraps.
+ * When a single on-chain tx has both outgoing and incoming token/native transfers,
+ * it's likely a swap (DEX trade) or wrap/unwrap.
+ */
+function postProcessTransaction(
+  txRecords: WalletTransaction[],
+  tx: MoralisTransaction,
+  chain: string,
+  walletAddress: string
+): WalletTransaction[] {
+  if (txRecords.length < 2) return txRecords;
+
+  const chainInfo = SUPPORTED_CHAINS[chain];
+  if (!chainInfo) return txRecords;
+
+  const wallet = walletAddress.toLowerCase();
+  const outgoing = txRecords.filter(
+    (r) => r.type === "Send" && parseFloat(r.amount_value.toString()) > 0
+  );
+  const incoming = txRecords.filter(
+    (r) => r.type === "Receive" && parseFloat(r.amount_value.toString()) > 0
+  );
+
+  // Need at least one outgoing and one incoming to be a swap/wrap
+  if (outgoing.length === 0 || incoming.length === 0) return txRecords;
+
+  const outRecord = outgoing[0];
+  const inRecord = incoming[0];
+  const wrappedAddr = chainInfo.wrappedAddress.toLowerCase();
+
+  // Detect WETH wrap: send native token, receive wrapped token (or vice versa)
+  const outIsNative = !outRecord.asset_address;
+  const inIsNative = !inRecord.asset_address;
+  const outIsWrapped = outRecord.asset_address?.toLowerCase() === wrappedAddr;
+  const inIsWrapped = inRecord.asset_address?.toLowerCase() === wrappedAddr;
+
+  if (outIsNative && inIsWrapped) {
+    // Wrap: ETH → WETH
+    return [{
+      ...outRecord,
+      type: "Wrap",
+      notes: `Wrap ${chainInfo.nativeToken} → W${chainInfo.nativeToken}`,
+      incoming_asset_symbol: inRecord.asset_symbol,
+      incoming_amount_value: inRecord.amount_value,
+      incoming_value_usd: inRecord.value_usd,
+    }];
+  }
+
+  if (outIsWrapped && inIsNative) {
+    // Unwrap: WETH → ETH
+    return [{
+      ...outRecord,
+      type: "Unwrap",
+      notes: `Unwrap W${chainInfo.nativeToken} → ${chainInfo.nativeToken}`,
+      incoming_asset_symbol: inRecord.asset_symbol,
+      incoming_amount_value: inRecord.amount_value,
+      incoming_value_usd: inRecord.value_usd,
+    }];
+  }
+
+  // Detect swap: different tokens going out and coming in within the same tx
+  // (Moralis category might not have caught it)
+  const isSameAsset =
+    outRecord.asset_symbol === inRecord.asset_symbol &&
+    outRecord.asset_address?.toLowerCase() === inRecord.asset_address?.toLowerCase();
+
+  if (!isSameAsset) {
+    // This is a swap — merge into one Swap record
+    // Keep all other records that aren't the primary out/in pair (e.g., fees, approvals)
+    const otherRecords = txRecords.filter(
+      (r) => r !== outRecord && r !== inRecord
+    );
+
+    const swapRecord: WalletTransaction = {
+      ...outRecord,
+      type: "Swap",
+      notes: tx.summary || `Swap ${outRecord.asset_symbol} → ${inRecord.asset_symbol}`,
+      incoming_asset_symbol: inRecord.asset_symbol,
+      incoming_amount_value: inRecord.amount_value,
+      incoming_value_usd: inRecord.value_usd,
+    };
+
+    return [swapRecord, ...otherRecords];
+  }
+
+  return txRecords;
 }
 
 // ============================================================
@@ -541,6 +632,9 @@ export async function getWalletTransactions(
         const feeWei = tx.transaction_fee || "0";
         const feeInNativeToken = fromWei(feeWei, chainInfo.decimals);
 
+        // Collect records per-tx for post-processing (swap/wrap detection)
+        const txRecords: WalletTransaction[] = [];
+
         // === Process native transfers ===
         if (tx.native_transfers && tx.native_transfers.length > 0) {
           for (const transfer of tx.native_transfers) {
@@ -549,7 +643,7 @@ export async function getWalletTransactions(
 
             const isIncoming = transfer.direction === "receive";
 
-            transactions.push({
+            txRecords.push({
               id: `${tx.hash}-native-${transfer.from_address}-${transfer.to_address}`,
               type: isIncoming ? "Receive" : "Send",
               asset_symbol: chainInfo.nativeToken,
@@ -587,7 +681,7 @@ export async function getWalletTransactions(
 
             const isIncoming = transfer.direction === "receive";
 
-            transactions.push({
+            txRecords.push({
               id: `${tx.hash}-erc20-${transfer.log_index}`,
               type: isIncoming ? "Receive" : "Send",
               asset_symbol: transfer.token_symbol || "UNKNOWN",
@@ -625,7 +719,7 @@ export async function getWalletTransactions(
             const collectionName = transfer.token_name || "Unknown Collection";
             const tokenId = transfer.token_id || "?";
 
-            transactions.push({
+            txRecords.push({
               id: `${tx.hash}-nft-${transfer.token_address}-${transfer.token_id}`,
               type: isIncoming ? "Receive" : "Send",
               asset_symbol: transfer.token_symbol || "NFT",
@@ -657,7 +751,7 @@ export async function getWalletTransactions(
         ) {
           const value = fromWei(tx.value || "0", chainInfo.decimals);
           if (value > 0 || txType !== "Transfer") {
-            transactions.push({
+            txRecords.push({
               id: `${tx.hash}-main`,
               type: txType,
               asset_symbol: chainInfo.nativeToken,
@@ -679,6 +773,10 @@ export async function getWalletTransactions(
             });
           }
         }
+
+        // Post-process: detect swaps and wraps within a single on-chain tx
+        const processed = postProcessTransaction(txRecords, tx, chain, walletAddress);
+        transactions.push(...processed);
       }
 
       cursor = data.cursor || null;

@@ -76,14 +76,23 @@ export function isValidSolanaAddress(address: string): boolean {
 // Cache prices: "mint:YYYY-MM-DD" -> price in USD
 const priceCache = new Map<string, number>();
 
+// Token metadata cache: mint -> { symbol, name }
+const tokenMetadataCache = new Map<string, { symbol: string; name: string }>();
+
+interface HeliusDASResult {
+  prices: Map<string, number>;
+  metadata: Map<string, { symbol: string; name: string }>;
+}
+
 /**
- * Get token prices from Helius DAS API (getAssetBatch).
- * Returns price_per_token for top ~10k tokens by volume.
+ * Get token prices AND metadata from Helius DAS API (getAssetBatch).
+ * Returns price_per_token and symbol/name for each mint.
  * Uses the existing HELIUS_API_KEY — no extra API key needed.
  */
-async function getHeliusTokenPrices(mints: string[]): Promise<Map<string, number>> {
-  const result = new Map<string, number>();
-  if (mints.length === 0 || !HELIUS_API_KEY) return result;
+async function getHeliusTokenData(mints: string[]): Promise<HeliusDASResult> {
+  const prices = new Map<string, number>();
+  const metadata = new Map<string, { symbol: string; name: string }>();
+  if (mints.length === 0 || !HELIUS_API_KEY) return { prices, metadata };
 
   const uniqueMints = [...new Set(mints)];
 
@@ -110,36 +119,65 @@ async function getHeliusTokenPrices(mints: string[]): Promise<Map<string, number
       if (Array.isArray(assets)) {
         for (const asset of assets) {
           if (!asset) continue;
-          const price = asset?.token_info?.price_info?.price_per_token;
           const mint = asset?.id;
-          if (mint && price && typeof price === "number" && price > 0) {
-            result.set(mint, price);
+          if (!mint) continue;
+
+          // Extract price
+          const price = asset?.token_info?.price_info?.price_per_token;
+          if (price && typeof price === "number" && price > 0) {
+            prices.set(mint, price);
+          }
+
+          // Extract symbol and name from metadata
+          const symbol =
+            asset?.token_info?.symbol ||
+            asset?.content?.metadata?.symbol ||
+            null;
+          const name =
+            asset?.content?.metadata?.name ||
+            asset?.token_info?.name ||
+            null;
+
+          if (symbol) {
+            metadata.set(mint, { symbol, name: name || symbol });
+            // Also cache for later lookups
+            tokenMetadataCache.set(mint, { symbol, name: name || symbol });
           }
         }
       }
 
       console.log(
-        `[Helius Price] DAS batch: ${chunk.length} mints queried, ${result.size} prices found so far`
+        `[Helius DAS] Batch: ${chunk.length} mints queried, ${prices.size} prices + ${metadata.size} symbols found so far`
       );
     } catch (error) {
       if (axios.isAxiosError(error)) {
         console.warn(
-          `[Helius Price] DAS API error: ${error.response?.status} - ${error.message}`
+          `[Helius DAS] API error: ${error.response?.status} - ${error.message}`
         );
-        // Log response body for debugging
         if (error.response?.data) {
-          console.warn(`[Helius Price] DAS response:`, JSON.stringify(error.response.data).slice(0, 200));
+          console.warn(`[Helius DAS] Response:`, JSON.stringify(error.response.data).slice(0, 200));
         }
       } else {
         console.warn(
-          `[Helius Price] DAS error:`,
+          `[Helius DAS] Error:`,
           error instanceof Error ? error.message : error
         );
       }
     }
   }
 
-  return result;
+  return { prices, metadata };
+}
+
+/**
+ * Resolve a mint address to a human-readable symbol.
+ * Returns cached symbol or truncated mint as fallback.
+ */
+function resolveTokenSymbol(mint: string): string {
+  if (mint === SOL_MINT) return "SOL";
+  const cached = tokenMetadataCache.get(mint);
+  if (cached) return cached.symbol;
+  return mint.slice(0, 6) + "...";
 }
 
 /**
@@ -181,20 +219,32 @@ function mapTransactionType(
 
   if (typeUpper === "SWAP") return "Swap";
   if (typeUpper === "TRANSFER") {
-    // Determine direction from native/token transfers
     return determineTransferDirection(walletAddress, tx);
   }
   if (typeUpper === "NFT_SALE" || typeUpper === "NFT_LISTING") {
-    return determineTransferDirection(walletAddress, tx);
+    return "NFT Sale";
   }
   if (typeUpper === "NFT_MINT" || typeUpper === "COMPRESSED_NFT_MINT") return "Receive";
   if (typeUpper === "COMPRESSED_NFT_TRANSFER" || typeUpper === "NFT_TRANSFER") {
     return determineTransferDirection(walletAddress, tx);
   }
+  if (typeUpper === "NFT_BID" || typeUpper === "NFT_CANCEL_LISTING" || typeUpper === "NFT_BID_CANCELLED") {
+    return "NFT Activity";
+  }
   if (typeUpper === "STAKE" || typeUpper === "STAKE_SOL") return "Stake";
   if (typeUpper === "UNSTAKE" || typeUpper === "UNSTAKE_SOL") return "Unstake";
   if (typeUpper === "BURN" || typeUpper === "BURN_NFT") return "Burn";
   if (typeUpper === "TOKEN_MINT") return "Receive";
+
+  // DeFi types
+  if (typeUpper === "ADD_LIQUIDITY" || typeUpper === "DEPOSIT") return "Deposit";
+  if (typeUpper === "REMOVE_LIQUIDITY" || typeUpper === "WITHDRAW") return "Withdraw";
+  if (typeUpper === "BORROW" || typeUpper === "BORROW_FOX" || typeUpper === "LOAN") return "Borrow";
+  if (typeUpper === "REPAY_LOAN") return "Repay";
+  if (typeUpper === "INIT_BANK" || typeUpper === "CREATE_POOL") return "DeFi Setup";
+  if (typeUpper === "CLAIM_REWARDS" || typeUpper === "HARVEST") return "Reward";
+  if (typeUpper === "CLOSE_POSITION") return "Withdraw";
+
   if (typeUpper === "UNKNOWN") {
     return determineTransferDirection(walletAddress, tx);
   }
@@ -322,9 +372,16 @@ export async function getSolanaWalletTransactions(
         const timestamp = new Date(txTimestamp);
         const txType = mapTransactionType(tx.type, walletAddress, tx);
         const isSwap = txType === "Swap" || tx.events?.swap;
+        const isNftSale = tx.type?.toUpperCase() === "NFT_SALE" && tx.events?.nft;
 
         // Calculate fee in SOL
         const feeInSol = lamportsToSol(tx.fee || 0);
+
+        // Process NFT sale events (with events.nft data)
+        if (isNftSale && tx.events?.nft) {
+          processNftSaleTransaction(transactions, tx, tx.events.nft, walletAddress, timestamp, feeInSol);
+          continue;
+        }
 
         // Process swap events
         if (isSwap && tx.events?.swap) {
@@ -395,7 +452,7 @@ export async function getSolanaWalletTransactions(
             transactions.push({
               id: tokenSubTxId,
               type: isIncoming ? "Receive" : "Send",
-              asset_symbol: transfer.mint.slice(0, 6) + "...",
+              asset_symbol: resolveTokenSymbol(transfer.mint),
               asset_address: transfer.mint,
               asset_chain: "solana",
               amount_value: new Decimal(transfer.tokenAmount),
@@ -518,7 +575,7 @@ function processSwapTransaction(
   if (swap.tokenInputs && swap.tokenInputs.length > 0) {
     const input = swap.tokenInputs[0];
     outMint = input.mint;
-    outSymbol = input.mint.slice(0, 6) + "...";
+    outSymbol = resolveTokenSymbol(input.mint);
     const rawAmount = parseInt(input.rawTokenAmount.tokenAmount);
     outAmount = rawAmount / Math.pow(10, input.rawTokenAmount.decimals);
   }
@@ -534,7 +591,7 @@ function processSwapTransaction(
   if (swap.tokenOutputs && swap.tokenOutputs.length > 0) {
     const output = swap.tokenOutputs[0];
     inMint = output.mint;
-    inSymbol = output.mint.slice(0, 6) + "...";
+    inSymbol = resolveTokenSymbol(output.mint);
     const rawAmount = parseInt(output.rawTokenAmount.tokenAmount);
     inAmount = rawAmount / Math.pow(10, output.rawTokenAmount.decimals);
   }
@@ -566,6 +623,113 @@ function processSwapTransaction(
 }
 
 /**
+ * Process an NFT sale transaction from Helius events.nft data.
+ * Captures seller, buyer, sale amount (SOL), and NFT mint(s).
+ */
+function processNftSaleTransaction(
+  transactions: WalletTransaction[],
+  tx: HeliusEnhancedTransaction,
+  nftEvent: NonNullable<HeliusEnhancedTransaction["events"]>["nft"],
+  walletAddress: string,
+  timestamp: Date,
+  feeInSol: number
+): void {
+  if (!nftEvent) return;
+
+  const seller = nftEvent.seller || "";
+  const buyer = nftEvent.buyer || "";
+  const saleAmountLamports = nftEvent.amount || 0;
+  const saleAmountSol = lamportsToSol(saleAmountLamports);
+  const nfts = nftEvent.nfts || [];
+  const isSeller = seller === walletAddress;
+  const isBuyer = buyer === walletAddress;
+
+  // Build NFT description
+  const nftList = nfts
+    .map((n) => resolveTokenSymbol(n.mint))
+    .join(", ");
+  const nftNote = nfts.length > 0 ? `NFT: ${nftList}` : "NFT Sale";
+
+  if (isSeller) {
+    // We sold an NFT — record the SOL proceeds as incoming
+    const subTxId = `${tx.signature}-nftsale-seller`;
+    transactions.push({
+      id: subTxId,
+      type: "NFT Sale",
+      asset_symbol: nfts.length > 0 ? resolveTokenSymbol(nfts[0].mint) : "NFT",
+      asset_address: nfts.length > 0 ? nfts[0].mint : undefined,
+      asset_chain: "solana",
+      amount_value: new Decimal(nfts.length || 1),
+      price_per_unit: saleAmountSol > 0 ? new Decimal(saleAmountSol) : null,
+      value_usd: new Decimal(0), // Will be enriched with SOL price later
+      fee_usd: feeInSol > 0 ? new Decimal(feeInSol) : null,
+      tx_timestamp: timestamp,
+      source: "Solana Wallet",
+      source_type: "wallet",
+      tx_hash: subTxId,
+      wallet_address: walletAddress,
+      counterparty_address: buyer,
+      chain: "solana",
+      block_number: tx.slot,
+      explorer_url: getExplorerUrl(tx.signature),
+      notes: `${nftNote} — Sold for ${saleAmountSol.toFixed(4)} SOL via ${tx.source}`,
+      incoming_asset_symbol: "SOL",
+      incoming_amount_value: new Decimal(saleAmountSol),
+      incoming_value_usd: new Decimal(0), // Enriched in Step 2
+    });
+  } else if (isBuyer) {
+    // We bought an NFT — record the SOL spent as outgoing
+    const subTxId = `${tx.signature}-nftsale-buyer`;
+    transactions.push({
+      id: subTxId,
+      type: "NFT Sale",
+      asset_symbol: "SOL",
+      asset_chain: "solana",
+      amount_value: new Decimal(saleAmountSol),
+      price_per_unit: null,
+      value_usd: new Decimal(0),
+      fee_usd: feeInSol > 0 ? new Decimal(feeInSol) : null,
+      tx_timestamp: timestamp,
+      source: "Solana Wallet",
+      source_type: "wallet",
+      tx_hash: subTxId,
+      wallet_address: walletAddress,
+      counterparty_address: seller,
+      chain: "solana",
+      block_number: tx.slot,
+      explorer_url: getExplorerUrl(tx.signature),
+      notes: `${nftNote} — Bought for ${saleAmountSol.toFixed(4)} SOL via ${tx.source}`,
+      incoming_asset_symbol: nfts.length > 0 ? resolveTokenSymbol(nfts[0].mint) : "NFT",
+      incoming_amount_value: new Decimal(nfts.length || 1),
+      incoming_value_usd: new Decimal(0),
+    });
+  } else {
+    // Neither buyer nor seller (shouldn't happen, but handle gracefully)
+    const subTxId = `${tx.signature}-nftsale`;
+    transactions.push({
+      id: subTxId,
+      type: "NFT Sale",
+      asset_symbol: nfts.length > 0 ? resolveTokenSymbol(nfts[0].mint) : "NFT",
+      asset_address: nfts.length > 0 ? nfts[0].mint : undefined,
+      asset_chain: "solana",
+      amount_value: new Decimal(saleAmountSol),
+      price_per_unit: null,
+      value_usd: new Decimal(0),
+      fee_usd: feeInSol > 0 ? new Decimal(feeInSol) : null,
+      tx_timestamp: timestamp,
+      source: "Solana Wallet",
+      source_type: "wallet",
+      tx_hash: subTxId,
+      wallet_address: walletAddress,
+      chain: "solana",
+      block_number: tx.slot,
+      explorer_url: getExplorerUrl(tx.signature),
+      notes: `${nftNote} — ${saleAmountSol.toFixed(4)} SOL via ${tx.source}`,
+    });
+  }
+}
+
+/**
  * Enrich Solana transactions with USD prices from Helius DAS API
  */
 async function enrichSolanaTransactionsWithPrices(
@@ -593,16 +757,39 @@ async function enrichSolanaTransactionsWithPrices(
   }
 
   console.log(
-    `[Helius Price] Fetching prices for ${mintsToPrice.size} unique mints from Helius DAS API...`
+    `[Helius DAS] Fetching prices + metadata for ${mintsToPrice.size} unique mints...`
   );
 
-  // Fetch all prices in one batch via Helius DAS
-  const prices = await getHeliusTokenPrices([...mintsToPrice]);
+  // Fetch all prices AND metadata in one batch via Helius DAS
+  const { prices, metadata } = await getHeliusTokenData([...mintsToPrice]);
   const solPrice = prices.get(SOL_MINT) || 0;
 
   console.log(
-    `[Helius Price] Got ${prices.size}/${mintsToPrice.size} prices (SOL: $${solPrice.toFixed(2)})`
+    `[Helius DAS] Got ${prices.size}/${mintsToPrice.size} prices, ${metadata.size} symbols (SOL: $${solPrice.toFixed(2)})`
   );
+
+  // Post-resolve: update any truncated mint-based symbols to real names
+  // Pass 1: Resolve asset_symbol from asset_address
+  for (const tx of transactions) {
+    if (tx.asset_address && tx.asset_symbol.endsWith("...")) {
+      const meta = metadata.get(tx.asset_address);
+      if (meta) {
+        tx.asset_symbol = meta.symbol;
+      }
+    }
+  }
+  // Pass 2: Resolve incoming_asset_symbol by searching metadata
+  for (const tx of transactions) {
+    if (tx.incoming_asset_symbol && tx.incoming_asset_symbol.endsWith("...")) {
+      const truncated = tx.incoming_asset_symbol;
+      // Search metadata for a mint whose truncated form matches
+      metadata.forEach((meta, mint) => {
+        if (mint.slice(0, 6) + "..." === truncated) {
+          tx.incoming_asset_symbol = meta.symbol;
+        }
+      });
+    }
+  }
 
   // Cache all fetched prices
   const today = new Date().toISOString().split("T")[0];
@@ -636,18 +823,25 @@ async function enrichSolanaTransactionsWithPrices(
       feesConverted++;
     }
 
-    // Price incoming swap assets
+    // Price incoming swap/sale assets
     if (tx.incoming_amount_value) {
-      // Find mint for incoming asset
       let incomingMint: string | null = null;
       if (tx.incoming_asset_symbol === "SOL") {
         incomingMint = SOL_MINT;
-      } else {
-        // Look for mint in other transactions
-        const mintTx = transactions.find(
-          (t) => t.asset_address && t.asset_symbol === tx.incoming_asset_symbol
-        );
-        incomingMint = mintTx?.asset_address || null;
+      } else if (tx.incoming_asset_symbol) {
+        // Find mint by resolved symbol in metadata, or by matching asset_address in other txs
+        metadata.forEach((meta, mint) => {
+          if (meta.symbol === tx.incoming_asset_symbol) {
+            incomingMint = mint;
+          }
+        });
+        // Fallback: find from other transactions
+        if (!incomingMint) {
+          const mintTx = transactions.find(
+            (t) => t.asset_address && t.asset_symbol === tx.incoming_asset_symbol
+          );
+          incomingMint = mintTx?.asset_address || null;
+        }
       }
 
       if (incomingMint) {
