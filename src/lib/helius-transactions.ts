@@ -8,6 +8,10 @@ const HELIUS_BASE_URL = "https://api.helius.xyz";
 // Native SOL mint address
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 
+// Track incoming mints for swaps/NFT sales (tx_hash → mint address)
+// Populated during processing, consumed during enrichment
+const incomingMintMap = new Map<string, string>();
+
 // ============================================================
 // Helius API response interfaces
 // ============================================================
@@ -186,6 +190,8 @@ function resolveTokenSymbol(mint: string): string {
 export function clearHeliusPriceCache(): void {
   const size = priceCache.size;
   priceCache.clear();
+  tokenMetadataCache.clear();
+  incomingMintMap.clear();
   console.log(`[Helius Price] Cache cleared (had ${size} entries)`);
 }
 
@@ -311,6 +317,9 @@ export async function getSolanaWalletTransactions(
   if (!isValidSolanaAddress(walletAddress)) {
     throw new Error(`Invalid Solana address: ${walletAddress}`);
   }
+
+  // Clear tracking maps for fresh sync
+  incomingMintMap.clear();
 
   console.log(`[Helius] ====== Starting fetch for ${walletAddress} on Solana ======`);
   if (startTime) console.log(`[Helius] Start time: ${new Date(startTime).toISOString()}`);
@@ -597,6 +606,12 @@ function processSwapTransaction(
   }
 
   const swapSubTxId = `${tx.signature}-swap`;
+
+  // Track incoming mint for enrichment
+  if (inMint) {
+    incomingMintMap.set(swapSubTxId, inMint);
+  }
+
   transactions.push({
     id: swapSubTxId,
     type: "Swap",
@@ -653,6 +668,7 @@ function processNftSaleTransaction(
   if (isSeller) {
     // We sold an NFT — record the SOL proceeds as incoming
     const subTxId = `${tx.signature}-nftsale-seller`;
+    incomingMintMap.set(subTxId, SOL_MINT);
     transactions.push({
       id: subTxId,
       type: "NFT Sale",
@@ -680,6 +696,9 @@ function processNftSaleTransaction(
   } else if (isBuyer) {
     // We bought an NFT — record the SOL spent as outgoing
     const subTxId = `${tx.signature}-nftsale-buyer`;
+    if (nfts.length > 0) {
+      incomingMintMap.set(subTxId, nfts[0].mint);
+    }
     transactions.push({
       id: subTxId,
       type: "NFT Sale",
@@ -737,7 +756,7 @@ async function enrichSolanaTransactionsWithPrices(
 ): Promise<void> {
   if (transactions.length === 0) return;
 
-  // Collect unique mints that need pricing
+  // Collect unique mints that need pricing + metadata
   const mintsToPrice = new Set<string>();
   mintsToPrice.add(SOL_MINT); // Always need SOL price
 
@@ -745,14 +764,10 @@ async function enrichSolanaTransactionsWithPrices(
     if (tx.asset_address) {
       mintsToPrice.add(tx.asset_address);
     }
-    if (tx.incoming_asset_symbol && tx.incoming_asset_symbol !== "SOL") {
-      // Find mint from other transactions with same symbol
-      const mintTx = transactions.find(
-        (t) => t.asset_address && t.asset_symbol === tx.incoming_asset_symbol
-      );
-      if (mintTx?.asset_address) {
-        mintsToPrice.add(mintTx.asset_address);
-      }
+    // Add incoming mints tracked during processing
+    const incomingMint = incomingMintMap.get(tx.tx_hash);
+    if (incomingMint) {
+      mintsToPrice.add(incomingMint);
     }
   }
 
@@ -778,16 +793,16 @@ async function enrichSolanaTransactionsWithPrices(
       }
     }
   }
-  // Pass 2: Resolve incoming_asset_symbol by searching metadata
+  // Pass 2: Resolve incoming_asset_symbol using tracked incoming mints
   for (const tx of transactions) {
     if (tx.incoming_asset_symbol && tx.incoming_asset_symbol.endsWith("...")) {
-      const truncated = tx.incoming_asset_symbol;
-      // Search metadata for a mint whose truncated form matches
-      metadata.forEach((meta, mint) => {
-        if (mint.slice(0, 6) + "..." === truncated) {
+      const incMint = incomingMintMap.get(tx.tx_hash);
+      if (incMint) {
+        const meta = metadata.get(incMint);
+        if (meta) {
           tx.incoming_asset_symbol = meta.symbol;
         }
-      });
+      }
     }
   }
 
@@ -825,27 +840,14 @@ async function enrichSolanaTransactionsWithPrices(
 
     // Price incoming swap/sale assets
     if (tx.incoming_amount_value) {
-      let incomingMint: string | null = null;
-      if (tx.incoming_asset_symbol === "SOL") {
-        incomingMint = SOL_MINT;
-      } else if (tx.incoming_asset_symbol) {
-        // Find mint by resolved symbol in metadata, or by matching asset_address in other txs
-        metadata.forEach((meta, mint) => {
-          if (meta.symbol === tx.incoming_asset_symbol) {
-            incomingMint = mint;
-          }
-        });
-        // Fallback: find from other transactions
-        if (!incomingMint) {
-          const mintTx = transactions.find(
-            (t) => t.asset_address && t.asset_symbol === tx.incoming_asset_symbol
-          );
-          incomingMint = mintTx?.asset_address || null;
-        }
+      // Use the tracked incoming mint directly
+      let incMint: string | null = incomingMintMap.get(tx.tx_hash) || null;
+      if (!incMint && tx.incoming_asset_symbol === "SOL") {
+        incMint = SOL_MINT;
       }
 
-      if (incomingMint) {
-        const inPrice = prices.get(incomingMint);
+      if (incMint) {
+        const inPrice = prices.get(incMint);
         if (inPrice && inPrice > 0) {
           const inAmount = parseFloat(tx.incoming_amount_value.toString());
           tx.incoming_value_usd = new Decimal(inAmount * inPrice);
