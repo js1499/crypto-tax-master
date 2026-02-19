@@ -93,7 +93,7 @@ interface HeliusDASResult {
  * Returns price_per_token and symbol/name for each mint.
  * Uses the existing HELIUS_API_KEY — no extra API key needed.
  */
-async function getHeliusTokenData(mints: string[]): Promise<HeliusDASResult> {
+export async function getHeliusTokenData(mints: string[]): Promise<HeliusDASResult> {
   const prices = new Map<string, number>();
   const metadata = new Map<string, { symbol: string; name: string }>();
   if (mints.length === 0 || !HELIUS_API_KEY) return { prices, metadata };
@@ -173,6 +173,31 @@ async function getHeliusTokenData(mints: string[]): Promise<HeliusDASResult> {
   return { prices, metadata };
 }
 
+// Cache the full Jupiter token list (refreshed per sync)
+let jupiterTokenMap: Map<string, string> | null = null;
+
+export async function getJupiterTokenMap(): Promise<Map<string, string>> {
+  if (jupiterTokenMap) return jupiterTokenMap;
+  try {
+    const response = await axios.get(
+      "https://tokens.jup.ag/tokens?tags=verified,community",
+      { timeout: 15000 }
+    );
+    const map = new Map<string, string>();
+    for (const token of response.data) {
+      if (token.address && token.symbol) {
+        map.set(token.address, token.symbol);
+      }
+    }
+    jupiterTokenMap = map;
+    console.log(`[Jupiter] Loaded ${map.size} token symbols`);
+    return map;
+  } catch (error) {
+    console.warn("[Jupiter] Failed to fetch token list:", error instanceof Error ? error.message : error);
+    return new Map();
+  }
+}
+
 /**
  * Resolve a mint address to a human-readable symbol.
  * Returns cached symbol or truncated mint as fallback.
@@ -192,6 +217,7 @@ export function clearHeliusPriceCache(): void {
   priceCache.clear();
   tokenMetadataCache.clear();
   incomingMintMap.clear();
+  jupiterTokenMap = null;
   console.log(`[Helius Price] Cache cleared (had ${size} entries)`);
 }
 
@@ -801,6 +827,32 @@ async function enrichSolanaTransactionsWithPrices(
         const meta = metadata.get(incMint);
         if (meta) {
           tx.incoming_asset_symbol = meta.symbol;
+        }
+      }
+    }
+  }
+
+  // Pass 3: Jupiter fallback for still-unresolved symbols
+  const stillUnresolved = transactions.filter(
+    tx => tx.asset_symbol.endsWith("...") ||
+          (tx.incoming_asset_symbol && tx.incoming_asset_symbol.endsWith("..."))
+  );
+  if (stillUnresolved.length > 0) {
+    console.log(`[Jupiter] Attempting fallback resolution for ${stillUnresolved.length} transactions...`);
+    const jupiterMap = await getJupiterTokenMap();
+    for (const tx of transactions) {
+      if (tx.asset_address && tx.asset_symbol.endsWith("...")) {
+        const sym = jupiterMap.get(tx.asset_address);
+        if (sym) {
+          tx.asset_symbol = sym;
+          tokenMetadataCache.set(tx.asset_address, { symbol: sym, name: sym });
+        }
+      }
+      if (tx.incoming_asset_symbol?.endsWith("...")) {
+        const incMint = incomingMintMap.get(tx.tx_hash);
+        if (incMint) {
+          const sym = jupiterMap.get(incMint);
+          if (sym) tx.incoming_asset_symbol = sym;
         }
       }
     }
