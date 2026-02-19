@@ -3,17 +3,21 @@ import { Decimal } from "@prisma/client/runtime/library";
 /**
  * Transaction categories
  */
-export type TransactionCategory = 
-  | "buy" 
-  | "sell" 
-  | "transfer" 
-  | "swap" 
-  | "staking" 
-  | "liquidity" 
-  | "nft" 
-  | "dca" 
-  | "zero" 
-  | "spam";
+export type TransactionCategory =
+  | "buy"
+  | "sell"
+  | "transfer"
+  | "swap"
+  | "staking"
+  | "liquidity"
+  | "nft"
+  | "dca"
+  | "zero"
+  | "spam"
+  | "borrow"
+  | "repay"
+  | "liquidation"
+  | "margin";
 
 /**
  * Categorize a transaction based on its type, notes, and other attributes
@@ -239,6 +243,31 @@ export function categorizeTransaction(
       category: "sell",
       identified: true,
       finalType: "Sell",
+    };
+  }
+
+  // Borrow transactions (DeFi lending)
+  if (
+    typeLower.includes("borrow") ||
+    notesLower.includes("borrow")
+  ) {
+    return {
+      category: "borrow",
+      identified: true,
+      finalType: "Borrow",
+    };
+  }
+
+  // Repay transactions (DeFi lending)
+  if (
+    typeLower.includes("repay") ||
+    notesLower.includes("repay") ||
+    notesLower.includes("repayment")
+  ) {
+    return {
+      category: "repay",
+      identified: true,
+      finalType: "Repay",
     };
   }
 

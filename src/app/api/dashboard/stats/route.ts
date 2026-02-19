@@ -53,6 +53,25 @@ export async function GET(request: NextRequest) {
     });
 
     const walletAddresses = userWithWallets?.wallets.map((w) => w.address) || [];
+    const costBasisMethod = (userWithWallets?.costBasisMethod || "FIFO") as "FIFO" | "LIFO" | "HIFO";
+
+    // Helper to sort lots according to user's cost basis method
+    function sortLotsForMethod<T extends { date: Date; amount: number; costBasis: number }>(lots: T[]): T[] {
+      switch (costBasisMethod) {
+        case "LIFO":
+          return lots.sort((a, b) => b.date.getTime() - a.date.getTime());
+        case "HIFO":
+          return lots.sort((a, b) => {
+            const aPerUnit = a.amount > 0 ? a.costBasis / a.amount : 0;
+            const bPerUnit = b.amount > 0 ? b.costBasis / b.amount : 0;
+            return bPerUnit - aPerUnit;
+          });
+        case "FIFO":
+        default:
+          // Already in chronological order from DB query
+          return lots;
+      }
+    }
 
     // Build where clause for transactions - include CSV imports and exchange API imports
     const whereClause: Prisma.TransactionWhereInput = {};
@@ -112,7 +131,8 @@ export async function GET(request: NextRequest) {
         const sellAmount = amount;
         let remainingToSell = sellAmount;
         
-        // Use FIFO to calculate cost basis of sold amount
+        // Sort lots according to user's cost basis method
+        sortLotsForMethod(costBasisLots[asset]);
         let soldCostBasis = 0;
         for (const lot of costBasisLots[asset]) {
           if (remainingToSell <= 0) break;
@@ -122,6 +142,7 @@ export async function GET(request: NextRequest) {
           const costBasisFromLot = costBasisPerUnit * amountFromLot;
           soldCostBasis += costBasisFromLot;
           lot.amount -= amountFromLot;
+          lot.costBasis -= costBasisFromLot;
           remainingToSell -= amountFromLot;
         }
 
@@ -273,7 +294,8 @@ export async function GET(request: NextRequest) {
           let remainingToSell = sellAmount;
           let soldCostBasis = 0;
 
-          // Use FIFO to calculate cost basis
+          // Sort lots according to user's cost basis method
+          sortLotsForMethod(runningCostBasisLots[asset]);
           for (const lot of runningCostBasisLots[asset]) {
             if (remainingToSell <= 0) break;
             const amountFromLot = Math.min(remainingToSell, lot.amount);
@@ -282,6 +304,7 @@ export async function GET(request: NextRequest) {
             const costBasisFromLot = costBasisPerUnit * amountFromLot;
             soldCostBasis += costBasisFromLot;
             lot.amount -= amountFromLot;
+            lot.costBasis -= costBasisFromLot;
             remainingToSell -= amountFromLot;
           }
 

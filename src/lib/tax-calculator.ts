@@ -210,6 +210,7 @@ function processDisposal(
 
       totalCostBasis += costBasisFromLot;
       lot.amount -= amountFromLot;
+      lot.costBasis -= costBasisFromLot;
       remainingToSell -= amountFromLot;
     }
 
@@ -982,6 +983,7 @@ function processTransactionsForTax(
 
           totalCostBasis += costBasisFromLot;
           lot.amount -= amountFromLot;
+          lot.costBasis -= costBasisFromLot;
           remainingToSwap -= amountFromLot;
         }
 
@@ -1224,6 +1226,7 @@ function processTransactionsForTax(
 
         totalCostBasis += costBasisFromLot;
         lot.amount -= amountFromLot;
+        lot.costBasis -= costBasisFromLot;
         remainingToBridge -= amountFromLot;
       }
 
@@ -1307,6 +1310,7 @@ function processTransactionsForTax(
 
         totalCostBasis += costBasisFromLot;
         lot.amount -= amountFromLot;
+        lot.costBasis -= costBasisFromLot;
         remainingToRemove -= amountFromLot;
       }
 

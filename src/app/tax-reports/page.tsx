@@ -194,6 +194,8 @@ export default function TaxReportsPage() {
   const [reportData, setReportData] = useState<TaxReportData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [costBasisMethod, setCostBasisMethod] = useState<"FIFO" | "LIFO" | "HIFO">("FIFO");
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
   const { data: session, status: sessionStatus } = useSession();
 
   // Set mounted and current year after component mounts (client-side only)
@@ -206,16 +208,57 @@ export default function TaxReportsPage() {
     }
   }, []);
 
-  // Fetch tax report data when year changes
+  // Fetch user's cost basis method setting
+  useEffect(() => {
+    if (!mounted) return;
+    const fetchSettings = async () => {
+      try {
+        const response = await fetch("/api/settings");
+        if (response.ok) {
+          const data = await response.json();
+          if (data.costBasisMethod) {
+            setCostBasisMethod(data.costBasisMethod);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching settings:", err);
+      }
+    };
+    fetchSettings();
+  }, [mounted]);
+
+  const handleMethodChange = async (method: "FIFO" | "LIFO" | "HIFO") => {
+    if (method === costBasisMethod) return;
+    setIsSavingSettings(true);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ costBasisMethod: method }),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to save settings");
+      }
+      setCostBasisMethod(method);
+      toast.success(`Cost basis method changed to ${method}`);
+    } catch (err) {
+      console.error("Error saving settings:", err);
+      toast.error("Failed to save settings");
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  // Fetch tax report data when year or method changes
   useEffect(() => {
     if (!mounted) return; // Don't fetch until mounted
-    
+
     const fetchTaxReport = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        console.log(`[Tax Reports Page] Fetching tax report for year ${selectedYear}`);
-        const response = await fetch(`/api/tax-reports?year=${selectedYear}`);
+        console.log(`[Tax Reports Page] Fetching tax report for year ${selectedYear}, method ${costBasisMethod}`);
+        const response = await fetch(`/api/tax-reports?year=${selectedYear}&method=${costBasisMethod}`);
         
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -278,7 +321,7 @@ export default function TaxReportsPage() {
     };
 
     fetchTaxReport();
-  }, [selectedYear, mounted]);
+  }, [selectedYear, costBasisMethod, mounted]);
 
   // Show consistent loading state to avoid hydration mismatch
   if (!mounted) {
@@ -569,13 +612,28 @@ export default function TaxReportsPage() {
                   <div className="space-y-2">
                     <h4 className="font-medium">Calculation Method</h4>
                     <div className="grid grid-cols-1 gap-2">
-                      <Button variant="outline" className="justify-start">
+                      <Button
+                        variant={costBasisMethod === "FIFO" ? "default" : "outline"}
+                        className="justify-start"
+                        disabled={isSavingSettings}
+                        onClick={() => handleMethodChange("FIFO")}
+                      >
                         FIFO (First In, First Out)
                       </Button>
-                      <Button variant="outline" className="justify-start">
+                      <Button
+                        variant={costBasisMethod === "LIFO" ? "default" : "outline"}
+                        className="justify-start"
+                        disabled={isSavingSettings}
+                        onClick={() => handleMethodChange("LIFO")}
+                      >
                         LIFO (Last In, First Out)
                       </Button>
-                      <Button variant="outline" className="justify-start">
+                      <Button
+                        variant={costBasisMethod === "HIFO" ? "default" : "outline"}
+                        className="justify-start"
+                        disabled={isSavingSettings}
+                        onClick={() => handleMethodChange("HIFO")}
+                      >
                         HIFO (Highest In, First Out)
                       </Button>
                     </div>

@@ -75,11 +75,13 @@ export async function GET(request: NextRequest) {
     // Get filing status from query params (default to "single")
     const filingStatus = (searchParams.get("filingStatus") || "single") as "single" | "married_joint" | "married_separate" | "head_of_household";
     
+    const costBasisMethod = (userWithWallets.costBasisMethod || "FIFO") as "FIFO" | "LIFO" | "HIFO";
+
     const report = await calculateTaxReport(
       prisma,
       walletAddresses, // Pass wallet addresses, but also need to include CSV imports
       year,
-      "FIFO",
+      costBasisMethod,
       user.id, // Pass user ID to filter CSV imports by user
       filingStatus
     );

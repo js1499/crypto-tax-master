@@ -85,11 +85,13 @@ export async function GET(request: NextRequest) {
     
     // Calculate tax report
     // Also include CSV-imported transactions
+    const costBasisMethod = (userWithWallets.costBasisMethod || "FIFO") as "FIFO" | "LIFO" | "HIFO";
+
     const report = await calculateTaxReport(
       prisma,
       walletAddresses,
       year,
-      "FIFO",
+      costBasisMethod,
       user.id, // Pass user ID to include CSV imports
       filingStatus
     );

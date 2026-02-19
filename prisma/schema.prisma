@@ -19,6 +19,7 @@ model User {
   emailVerified DateTime?
   passwordHash  String?   // For credentials provider
   image         String?
+  costBasisMethod String   @default("FIFO")
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
