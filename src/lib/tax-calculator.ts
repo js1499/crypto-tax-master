@@ -1024,7 +1024,8 @@ function processTransactionsForTax(
       txType === "receive" ||
       txType === "mining" ||
       txType === "yield" ||
-      txType === "interest"
+      txType === "interest" ||
+      txType === "mint"
     ) {
       // Determine income type per IRS guidance
       let incomeType: IncomeEvent["type"] = "other";
@@ -1078,14 +1079,15 @@ function processTransactionsForTax(
       // IRS: Income received becomes part of cost basis for future sales
       // Add received income to cost basis at fair market value
       if (
-        (txType === "receive" || 
-         txType === "stake" || 
-         txType === "staking" || 
-         txType === "reward" || 
+        (txType === "receive" ||
+         txType === "stake" ||
+         txType === "staking" ||
+         txType === "reward" ||
          txType === "airdrop" ||
          txType === "mining" ||
          txType === "yield" ||
-         txType === "interest") && 
+         txType === "interest" ||
+         txType === "mint") &&
         valueUsd > 0
       ) {
         costBasisLots[asset].push({
@@ -1448,6 +1450,133 @@ function processTransactionsForTax(
       // Reduces borrowed amount (which is not currently tracked)
       // See borrow handler above for full explanation of limitations
       console.log(`[Tax Calculator] Repay transaction ${tx.id}: Repayment is not currently tracked. Ensure you don't mix borrowed and owned crypto.`);
+    }
+    // Handle deposit — treat as acquisition (same as buy: creates cost basis lot)
+    else if (txType === "deposit") {
+      const totalCostBasis = Math.abs(valueUsd) + feeUsd;
+      costBasisLots[asset].push({
+        id: tx.id,
+        date,
+        amount,
+        costBasis: totalCostBasis,
+        pricePerUnit,
+        fees: feeUsd,
+      });
+    }
+    // Handle withdraw — treat as disposal (same as sell)
+    else if (txType === "withdraw") {
+      const disposal = processDisposal(
+        tx,
+        asset,
+        amount,
+        valueUsd,
+        feeUsd,
+        date,
+        costBasisLots,
+        method,
+        processedCount,
+        taxableEventCount
+      );
+
+      if (disposal.shouldTrackAsLossSale) {
+        lossSales.push({
+          id: tx.id,
+          date,
+          asset,
+          amount,
+          lossAmount: Math.abs(disposal.gainLoss),
+          costBasis: disposal.totalCostBasis,
+          proceeds: disposal.netProceeds,
+          holdingPeriod: disposal.holdingPeriod,
+          remainingLoss: Math.abs(disposal.gainLoss),
+        });
+      }
+
+      if (txYear === taxYear) {
+        taxableEventCount++;
+        taxableEvents.push({
+          id: tx.id,
+          date,
+          dateAcquired: disposal.earliestLotDate,
+          asset,
+          amount,
+          proceeds: disposal.netProceeds,
+          costBasis: disposal.totalCostBasis,
+          gainLoss: disposal.gainLoss,
+          holdingPeriod: disposal.holdingPeriod,
+          chain: tx.chain || undefined,
+          txHash: tx.tx_hash || undefined,
+          washSale: false,
+          washSaleAdjustment: undefined,
+        });
+      }
+    }
+    // Handle burn — disposal at $0 proceeds (capital loss = full cost basis)
+    else if (txType === "burn") {
+      let totalCostBasis = 0;
+      let earliestLotDate = date;
+      let remainingToBurn = amount;
+
+      const selectedLots = selectLots(
+        costBasisLots[asset],
+        amount,
+        method
+      );
+
+      for (const lot of selectedLots) {
+        if (remainingToBurn <= 0) break;
+        const amountFromLot = Math.min(remainingToBurn, lot.amount);
+        const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
+        const costBasisFromLot = costBasisPerUnit * amountFromLot;
+        totalCostBasis += costBasisFromLot;
+        lot.amount -= amountFromLot;
+        lot.costBasis -= costBasisFromLot;
+        remainingToBurn -= amountFromLot;
+      }
+
+      costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
+
+      if (selectedLots.length > 0) {
+        earliestLotDate = selectedLots.reduce(
+          (earliest, lot) => lot.date < earliest ? lot.date : earliest,
+          selectedLots[0].date
+        );
+      }
+
+      const holdingPeriod = isLongTerm(earliestLotDate, date) ? "long" : "short";
+      const gainLoss = 0 - totalCostBasis; // Proceeds are $0
+
+      if (txYear === taxYear) {
+        taxableEventCount++;
+        taxableEvents.push({
+          id: tx.id,
+          date,
+          dateAcquired: earliestLotDate,
+          asset,
+          amount,
+          proceeds: 0,
+          costBasis: totalCostBasis,
+          gainLoss,
+          holdingPeriod,
+          chain: tx.chain || undefined,
+          txHash: tx.tx_hash || undefined,
+          washSale: false,
+          washSaleAdjustment: undefined,
+        });
+      }
+    }
+    // Skip economically neutral types — no taxable event, no cost basis change
+    else if (
+      txType === "wrap" ||
+      txType === "unwrap" ||
+      txType === "self" ||
+      txType === "approve" ||
+      txType === "nft activity" ||
+      txType === "defi setup" ||
+      txType === "zero transaction" ||
+      txType === "spam"
+    ) {
+      // These types are economically neutral and require no tax processing
     }
     // Handle yield farming rewards - income recognition
     else if (txType === "yield farming" || txType === "farm reward") {

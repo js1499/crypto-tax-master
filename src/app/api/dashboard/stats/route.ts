@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Handle buys, DCA, receives, rewards, income - add to holdings
-      if (["buy", "dca", "receive", "reward", "staking", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "unstake"].includes(txType)) {
+      if (["buy", "dca", "receive", "reward", "stake", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "unstake", "mint"].includes(txType)) {
         const totalCostBasis = Math.abs(valueUsd) + feeUsd;
         holdings[asset].amount += amount;
         holdings[asset].costBasis += totalCostBasis;
@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
         });
       }
       // Handle sells, sends, swaps (outgoing) - remove from holdings
-      else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity"].includes(txType)) {
+      else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity", "burn"].includes(txType)) {
         const sellAmount = amount;
         let remainingToSell = sellAmount;
         
@@ -278,7 +278,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Handle buys, receives, rewards - add to holdings
-        if (["buy", "dca", "receive", "reward", "staking", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "unstake"].includes(txType)) {
+        if (["buy", "dca", "receive", "reward", "stake", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "unstake", "mint"].includes(txType)) {
           const totalCostBasis = Math.abs(valueUsd) + feeUsd;
           runningHoldings[asset].amount += amount;
           runningHoldings[asset].costBasis += totalCostBasis;
@@ -289,7 +289,7 @@ export async function GET(request: NextRequest) {
           });
         }
         // Handle sells, sends, swaps (outgoing) - remove from holdings
-        else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity"].includes(txType)) {
+        else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity", "burn"].includes(txType)) {
           const sellAmount = amount;
           let remainingToSell = sellAmount;
           let soldCostBasis = 0;

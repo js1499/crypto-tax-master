@@ -151,7 +151,7 @@ export function categorizeTransaction(
     return {
       category: "staking",
       identified: true,
-      finalType: "Staking",
+      finalType: "Stake",
       subtype: "Reward",
     };
   }

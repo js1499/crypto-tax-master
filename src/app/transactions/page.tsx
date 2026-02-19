@@ -890,15 +890,25 @@ function TransactionsContent() {
     { value: "Payment", label: "Payment" },
     { value: "DCA", label: "DCA" },
     { value: "Bridge", label: "Bridge" },
-    { value: "Liquidity Providing", label: "Liquidity Providing" },
-    { value: "Liquidity Removal", label: "Liquidity Removal" },
+    { value: "Add Liquidity", label: "Add Liquidity" },
+    { value: "Remove Liquidity", label: "Remove Liquidity" },
     { value: "NFT Purchase", label: "NFT Purchase" },
     { value: "NFT Sale", label: "NFT Sale" },
     { value: "Margin Buy", label: "Margin Buy" },
     { value: "Margin Sell", label: "Margin Sell" },
     { value: "Liquidation", label: "Liquidation" },
     { value: "Zero Transaction", label: "Zero Transaction" },
-    { value: "Spam Transaction", label: "Spam Transaction" },
+    { value: "Spam", label: "Spam" },
+    { value: "Deposit", label: "Deposit" },
+    { value: "Withdraw", label: "Withdraw" },
+    { value: "Burn", label: "Burn" },
+    { value: "Mint", label: "Mint" },
+    { value: "Wrap", label: "Wrap" },
+    { value: "Unwrap", label: "Unwrap" },
+    { value: "Approve", label: "Approve" },
+    { value: "Self", label: "Self" },
+    { value: "NFT Activity", label: "NFT Activity" },
+    { value: "DeFi Setup", label: "DeFi Setup" },
   ];
 
   return (
@@ -1636,16 +1646,32 @@ function TransactionsContent() {
                                 ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400" 
                                 : transaction.type === "Bridge"
                                 ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400"
-                                : transaction.type === "Stake" || transaction.type === "Staking"
+                                : transaction.type === "Stake" || transaction.type === "Unstake"
                                 ? "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400"
-                                : transaction.type === "Liquidity Providing"
+                                : transaction.type === "Add Liquidity" || transaction.type === "Remove Liquidity"
                                 ? "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400"
                                 : transaction.type === "NFT Purchase" || transaction.type.includes("NFT")
                                 ? "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/30 dark:text-fuchsia-400"
                                 : transaction.type === "Zero Transaction"
                                 ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
-                                : transaction.type === "Spam Transaction"
+                                : transaction.type === "Spam"
                                 ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
+                                : transaction.type === "Deposit"
+                                ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                                : transaction.type === "Withdraw"
+                                ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
+                                : transaction.type === "Burn"
+                                ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                                : transaction.type === "Mint"
+                                ? "bg-lime-100 text-lime-800 dark:bg-lime-900/30 dark:text-lime-400"
+                                : transaction.type === "Wrap" || transaction.type === "Unwrap"
+                                ? "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400"
+                                : transaction.type === "Approve" || transaction.type === "Self"
+                                ? "bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-400"
+                                : transaction.type === "NFT Activity"
+                                ? "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400"
+                                : transaction.type === "DeFi Setup"
+                                ? "bg-stone-100 text-stone-800 dark:bg-stone-900/30 dark:text-stone-400"
                                 : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
                             }`}
                           >
@@ -1671,9 +1697,9 @@ function TransactionsContent() {
                                       <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'DCA')}>DCA</DropdownMenuItem>
                                       <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'NFT Purchase')}>NFT Purchase</DropdownMenuItem>
                                       <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Transfer')}>Transfer</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Liquidity Providing')}>Liquidity Providing</DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Add Liquidity')}>Add Liquidity</DropdownMenuItem>
                                       <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Zero Transaction')}>Zero Transaction</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Spam Transaction')}>Spam Transaction</DropdownMenuItem>
+                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Spam')}>Spam</DropdownMenuItem>
                                     </DropdownMenuContent>
                                   </DropdownMenu>
                                 </div>

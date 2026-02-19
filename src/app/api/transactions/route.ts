@@ -125,7 +125,7 @@ export async function GET(request: NextRequest) {
       if (filter === "transfer") {
         whereConditions.push({ type: { in: ["Send", "Receive", "Transfer", "Bridge"] } });
       } else if (filter === "stake") {
-        whereConditions.push({ type: { in: ["Stake", "Staking"] } });
+        whereConditions.push({ type: { in: ["Stake", "Unstake"] } });
       } else if (filter === "liquidity") {
         whereConditions.push({ type: { contains: "Liquidity", mode: "insensitive" } });
       } else if (filter === "nft") {
@@ -256,11 +256,13 @@ export async function GET(request: NextRequest) {
     // Known transaction types for identification
     const KNOWN_TYPES = new Set([
       "Buy", "Sell", "Swap", "Send", "Receive", "Transfer", "Bridge",
-      "Staking", "Stake", "DCA", "NFT Purchase", "NFT Sale",
+      "Stake", "DCA", "NFT Purchase", "NFT Sale",
       "Margin Buy", "Margin Sell", "Liquidation",
-      "Add Liquidity", "Remove Liquidity", "Liquidity Providing", "Liquidity Removal",
-      "Borrow", "Repay", "Unstake", "Zero Transaction", "Spam Transaction",
+      "Add Liquidity", "Remove Liquidity",
+      "Borrow", "Repay", "Unstake", "Zero Transaction", "Spam",
       "Airdrop", "Mining", "Yield", "Interest", "Reward",
+      "Deposit", "Withdraw", "Burn", "Wrap", "Unwrap",
+      "Self", "Approve", "Mint", "NFT Activity", "DeFi Setup",
     ]);
 
     // Format transactions for frontend
