@@ -43,6 +43,22 @@ export async function GET(request: NextRequest) {
       );
     }
     
+    // Count transactions per wallet address
+    const walletAddresses = userWithWallets.wallets.map(w => w.address);
+    const txCounts = walletAddresses.length > 0
+      ? await prisma.transaction.groupBy({
+          by: ['wallet_address'],
+          _count: true,
+          where: { wallet_address: { in: walletAddresses } },
+        })
+      : [];
+    const txCountMap: Record<string, number> = {};
+    for (const row of txCounts) {
+      if (row.wallet_address) {
+        txCountMap[row.wallet_address] = row._count;
+      }
+    }
+
     // Format the wallets for the frontend
     const wallets = userWithWallets.wallets.map(wallet => ({
       id: wallet.id,
@@ -52,7 +68,8 @@ export async function GET(request: NextRequest) {
       chains: wallet.chains,
       lastSyncAt: wallet.lastSyncAt,
       createdAt: wallet.createdAt,
-      updatedAt: wallet.updatedAt
+      updatedAt: wallet.updatedAt,
+      transactionCount: txCountMap[wallet.address] || 0,
     }));
     
     // Return the wallets
@@ -187,6 +204,78 @@ export async function POST(request: NextRequest) {
         error: "Failed to create wallet",
         details: error instanceof Error ? error.message : "Unknown error",
       },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/wallets?walletId=...
+ * Disconnect (delete) a wallet and its transactions
+ */
+export async function DELETE(request: NextRequest) {
+  console.log("[Wallets API] Deleting wallet");
+
+  try {
+    const rateLimitResult = rateLimitAPI(request, 20);
+    if (!rateLimitResult.success) {
+      return createRateLimitResponse(
+        rateLimitResult.remaining,
+        rateLimitResult.reset
+      );
+    }
+
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
+    const walletId = request.nextUrl.searchParams.get("walletId");
+    if (!walletId) {
+      return NextResponse.json(
+        { error: "Missing walletId parameter" },
+        { status: 400 }
+      );
+    }
+
+    const wallet = await prisma.wallet.findUnique({ where: { id: walletId } });
+    if (!wallet) {
+      return NextResponse.json(
+        { error: "Wallet not found" },
+        { status: 404 }
+      );
+    }
+    if (wallet.userId !== user.id) {
+      return NextResponse.json(
+        { error: "Not authorized" },
+        { status: 403 }
+      );
+    }
+
+    // Delete associated transactions first, then the wallet
+    const deletedTx = await prisma.transaction.deleteMany({
+      where: { wallet_address: wallet.address },
+    });
+    await prisma.wallet.delete({ where: { id: walletId } });
+
+    console.log("[Wallets API] Deleted wallet", walletId, "and", deletedTx.count, "transactions");
+
+    return NextResponse.json({
+      status: "success",
+      deletedTransactions: deletedTx.count,
+    });
+  } catch (error) {
+    console.error("[Wallets API] Error deleting wallet:", error);
+
+    Sentry.captureException(error, {
+      tags: { endpoint: "/api/wallets", method: "DELETE" },
+    });
+
+    return NextResponse.json(
+      { error: "Failed to delete wallet" },
       { status: 500 }
     );
   }

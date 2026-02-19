@@ -65,6 +65,7 @@ export async function GET(request: NextRequest) {
     const showOnlyUnlabelled = searchParams.get("showOnlyUnlabelled") === "true";
     const hideZeroTransactions = searchParams.get("hideZeroTransactions") === "true";
     const hideSpamTransactions = searchParams.get("hideSpamTransactions") === "true";
+    const walletFilter = searchParams.get("wallet") || "";
 
     // Calculate offset
     const skip = (page - 1) * limit;
@@ -186,6 +187,11 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    // Apply wallet filter
+    if (walletFilter) {
+      whereConditions.push({ wallet_address: walletFilter });
+    }
+
     // Combine all conditions with AND
     const where: Prisma.TransactionWhereInput =
       whereConditions.length > 0 ? { AND: whereConditions } : {};
@@ -247,6 +253,16 @@ export async function GET(request: NextRequest) {
       prisma.transaction.count({ where }),
     ]);
 
+    // Known transaction types for identification
+    const KNOWN_TYPES = new Set([
+      "Buy", "Sell", "Swap", "Send", "Receive", "Transfer", "Bridge",
+      "Staking", "Stake", "DCA", "NFT Purchase", "NFT Sale",
+      "Margin Buy", "Margin Sell", "Liquidation",
+      "Add Liquidity", "Remove Liquidity", "Liquidity Providing", "Liquidity Removal",
+      "Borrow", "Repay", "Unstake", "Zero Transaction", "Spam Transaction",
+      "Airdrop", "Mining", "Yield", "Interest", "Reward",
+    ]);
+
     // Format transactions for frontend
     const formattedTransactions = transactions.map((tx) => {
       const amountValue = Number(tx.amount_value);
@@ -292,13 +308,32 @@ export async function GET(request: NextRequest) {
         date: tx.tx_timestamp.toISOString(),
         status: tx.status,
         exchange: tx.source || "Unknown",
-        identified: tx.identified || false,
+        identified: KNOWN_TYPES.has(tx.type),
         valueIdentified: true, // Can be enhanced later
         chain: tx.chain,
         txHash: tx.tx_hash,
         notes: tx.notes || "",
       };
     });
+
+    // Stats queries (run in parallel)
+    const knownTypesArray = Array.from(KNOWN_TYPES);
+    const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, buyValueAgg, sellValueAgg] = await Promise.all([
+      prisma.transaction.count({ where: { ...where, type: "Buy" } }),
+      prisma.transaction.count({ where: { ...where, type: "Sell" } }),
+      prisma.transaction.count({ where: { ...where, type: { in: knownTypesArray } } }),
+      prisma.transaction.count({ where: { ...where, NOT: { value_usd: 0 } } }),
+      prisma.transaction.aggregate({ where: { ...where, type: "Buy" }, _sum: { value_usd: true } }),
+      prisma.transaction.aggregate({ where: { ...where, type: "Sell" }, _sum: { value_usd: true } }),
+    ]);
+
+    const otherCount = totalCount - buyCount - sellCount;
+    const unlabelledCount = totalCount - identifiedTypeCount;
+    const identifiedPercentage = totalCount > 0 ? Math.round((identifiedTypeCount / totalCount) * 100) : 0;
+    const valueIdentifiedPercentage = totalCount > 0 ? Math.round((valueIdentifiedCount / totalCount) * 100) : 100;
+    const totalBuyValue = Math.abs(Number(buyValueAgg._sum.value_usd || 0));
+    const totalSellValue = Number(sellValueAgg._sum.value_usd || 0);
+    const netPnL = totalSellValue - totalBuyValue;
 
     // Calculate pagination metadata
     const totalPages = Math.ceil(totalCount / limit);
@@ -315,6 +350,19 @@ export async function GET(request: NextRequest) {
         totalPages,
         hasNextPage,
         hasPreviousPage,
+      },
+      stats: {
+        buyCount,
+        sellCount,
+        otherCount,
+        unlabelledCount,
+        identifiedPercentage,
+        valueIdentifiedPercentage,
+        pnl: {
+          totalBuyValue,
+          totalSellValue,
+          netPnL,
+        },
       },
     });
   } catch (error) {

@@ -40,6 +40,7 @@ interface BaseAccount {
 interface WalletAccount extends BaseAccount {
   type: "wallet";
   address: string;
+  transactionCount: number;
 }
 
 interface ExchangeAccount extends BaseAccount {
@@ -105,7 +106,8 @@ function AccountsContent() {
         provider: wallet.provider,
         address: wallet.address,
         createdAt: wallet.createdAt,
-        updatedAt: wallet.updatedAt
+        updatedAt: wallet.updatedAt,
+        transactionCount: wallet.transactionCount || 0,
       }));
 
       // Map exchanges from API response
@@ -192,6 +194,29 @@ function AccountsContent() {
       console.error("[Accounts] Error disconnecting exchange:", error);
       toast.error(
         error instanceof Error ? error.message : "Failed to disconnect exchange"
+      );
+    }
+  };
+
+  // Function to disconnect wallet
+  const handleDisconnectWallet = async (walletId: string) => {
+    if (!confirm("Are you sure you want to disconnect this wallet? All associated transactions will be deleted.")) {
+      return;
+    }
+
+    try {
+      const response = await axios.delete(`/api/wallets?walletId=${walletId}`);
+
+      if (response.data.status === "success") {
+        toast.success(`Wallet disconnected. ${response.data.deletedTransactions} transaction(s) removed.`);
+        fetchWallets();
+      } else {
+        throw new Error(response.data.error || "Failed to disconnect");
+      }
+    } catch (error) {
+      console.error("[Accounts] Error disconnecting wallet:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to disconnect wallet"
       );
     }
   };
@@ -420,10 +445,25 @@ function AccountsContent() {
                             </span>
                           </div>
                           <div className="flex justify-between">
+                            <span className="text-muted-foreground">Transactions</span>
+                            <span>{(account as WalletAccount).transactionCount}</span>
+                          </div>
+                          <div className="flex justify-between">
                             <span className="text-muted-foreground">Connected</span>
                             <span>
                               {new Date(account.createdAt).toLocaleDateString()}
                             </span>
+                          </div>
+                          <div className="flex gap-2 pt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => handleDisconnectWallet(account.id)}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Disconnect
+                            </Button>
                           </div>
                         </>
                       ) : (

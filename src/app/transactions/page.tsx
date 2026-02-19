@@ -27,7 +27,6 @@ import {
   ChevronDown,
   X,
   FileText,
-  Copy,
   Trash2,
   Merge,
   ExternalLink,
@@ -188,9 +187,21 @@ function TransactionsContent() {
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
   
-  // Categorize transactions state
-  const [isCategorizing, setIsCategorizing] = useState(false);
-  
+  // Wallet filter state
+  const [walletFilter, setWalletFilter] = useState("");
+  const [wallets, setWallets] = useState<Array<{ id: string; name: string; address: string; provider: string }>>([]);
+
+  // Stats state from API
+  const [stats, setStats] = useState<{
+    buyCount: number;
+    sellCount: number;
+    otherCount: number;
+    unlabelledCount: number;
+    identifiedPercentage: number;
+    valueIdentifiedPercentage: number;
+    pnl: { totalBuyValue: number; totalSellValue: number; netPnL: number };
+  } | null>(null);
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
@@ -222,6 +233,24 @@ function TransactionsContent() {
     }
   }, [status, router]);
 
+  // Fetch wallets for filter dropdown
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    fetch("/api/wallets")
+      .then(res => res.json())
+      .then(data => {
+        if (data.wallets) {
+          setWallets(data.wallets.map((w: any) => ({
+            id: w.id,
+            name: w.name,
+            address: w.address,
+            provider: w.provider,
+          })));
+        }
+      })
+      .catch(() => {});
+  }, [status]);
+
   // Fetch transactions from API
   useEffect(() => {
     // Don't fetch if not authenticated or still loading
@@ -241,6 +270,7 @@ function TransactionsContent() {
           ...(showOnlyUnlabelled && { showOnlyUnlabelled: "true" }),
           ...(hideZeroTransactions && { hideZeroTransactions: "true" }),
           ...(hideSpamTransactions && { hideSpamTransactions: "true" }),
+          ...(walletFilter && { wallet: walletFilter }),
         });
 
         const response = await fetch(`/api/transactions?${params.toString()}`);
@@ -281,6 +311,9 @@ function TransactionsContent() {
           setFilteredTransactions(apiTransactions); // Keep for compatibility with existing code
           setTotalCount(data.pagination.totalCount);
           setTotalPages(data.pagination.totalPages);
+          if (data.stats) {
+            setStats(data.stats);
+          }
           
           // Reset to page 1 if current page is beyond total pages
           // Use a ref to prevent infinite loop
@@ -315,6 +348,7 @@ function TransactionsContent() {
     showOnlyUnlabelled,
     hideZeroTransactions,
     hideSpamTransactions,
+    walletFilter,
     router,
   ]);
 
@@ -812,63 +846,6 @@ function TransactionsContent() {
     }
   };
 
-  // Categorize all transactions
-  const handleCategorizeAll = async () => {
-    setIsCategorizing(true);
-    try {
-      const response = await fetch("/api/transactions/categorize", {
-        method: "POST",
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.details || "Failed to categorize transactions");
-      }
-
-      const data = await response.json();
-      if (data.status === "success") {
-        toast.success(
-          `Categorized ${data.categorized} out of ${data.total} transactions. ${data.updated} transactions were updated.`
-        );
-        
-        // Refresh transactions to show updated categories
-        setCurrentPage(1);
-      } else {
-        throw new Error(data.error || "Failed to categorize transactions");
-      }
-    } catch (error) {
-      console.error("Error categorizing transactions:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to categorize transactions";
-      toast.error(errorMessage);
-    } finally {
-      setIsCategorizing(false);
-    }
-  };
-
-  // Find duplicates
-  const handleFindDuplicates = async () => {
-    setIsLoadingDuplicates(true);
-    setIsDuplicatesOpen(true);
-    
-    try {
-      const response = await fetch("/api/transactions/duplicates?threshold=0.95&maxResults=50");
-      if (!response.ok) {
-        throw new Error("Failed to find duplicates");
-      }
-
-      const data = await response.json();
-      if (data.status === "success") {
-        setDuplicates(data.duplicates);
-        toast.success(`Found ${data.totalDuplicates} duplicate transaction(s) in ${data.totalGroups} group(s)`);
-      }
-    } catch (error) {
-      console.error("Error finding duplicates:", error);
-      toast.error("Failed to find duplicates");
-    } finally {
-      setIsLoadingDuplicates(false);
-    }
-  };
-
   // Merge duplicates
   const handleMergeDuplicates = async (ids: number[], keepId: number) => {
     try {
@@ -974,31 +951,8 @@ function TransactionsContent() {
               </>
             )}
 
-            <Button variant="outline" onClick={handleFindDuplicates}>
-              <Copy className="mr-2 h-4 w-4" />
-              <span>Find Duplicates</span>
-            </Button>
-
-            <Button 
-              variant="outline" 
-              onClick={handleCategorizeAll}
-              disabled={isCategorizing}
-            >
-              {isCategorizing ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  <span>Categorizing...</span>
-                </>
-              ) : (
-                <>
-                  <Tag className="mr-2 h-4 w-4" />
-                  <span>Auto-Categorize</span>
-                </>
-              )}
-            </Button>
-
             <Button variant="outline" onClick={handleExport}>
-              <Download className="mr-2 h-4 w-4" />
+              <Upload className="mr-2 h-4 w-4" />
               <span>Export</span>
             </Button>
 
@@ -1062,7 +1016,7 @@ function TransactionsContent() {
             <Sheet open={isImportOpen} onOpenChange={setIsImportOpen}>
               <SheetTrigger asChild>
                 <Button data-onboarding="import-transactions">
-                  <Upload className="mr-2 h-4 w-4" />
+                  <Download className="mr-2 h-4 w-4" />
                   <span>Import</span>
                 </Button>
               </SheetTrigger>
@@ -1251,13 +1205,13 @@ function TransactionsContent() {
         {/* Transaction Identification Indicators */}
         <div className="flex flex-col gap-2 sm:flex-row items-start sm:items-center">
           <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1">
-            <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{valueIdentificationPercentage}% Value Identified</span>
-            <Progress value={valueIdentificationPercentage} className="h-2 w-16 bg-emerald-100 dark:bg-emerald-900/30" />
+            <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{stats?.valueIdentifiedPercentage ?? 0}% Value Identified</span>
+            <Progress value={stats?.valueIdentifiedPercentage ?? 0} className="h-2 w-16 bg-emerald-100 dark:bg-emerald-900/30" />
             <Check className="h-4 w-4 text-emerald-500" />
           </div>
           <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1">
-            <span className="text-sm font-medium text-orange-600 dark:text-orange-400">65% Transaction Types Identified</span>
-            <Progress value={65} className="h-2 w-16 bg-orange-100 dark:bg-orange-900/30" />
+            <span className="text-sm font-medium text-orange-600 dark:text-orange-400">{stats?.identifiedPercentage ?? 0}% Transaction Types Identified</span>
+            <Progress value={stats?.identifiedPercentage ?? 0} className="h-2 w-16 bg-orange-100 dark:bg-orange-900/30" />
             <AlertCircle className="h-4 w-4 text-orange-500" />
           </div>
         </div>
@@ -1275,7 +1229,7 @@ function TransactionsContent() {
                 {isLoadingTransactions ? "..." : totalCount}
               </div>
               <div className="text-xs text-muted-foreground">
-                {isLoadingTransactions ? "Loading..." : "Total transactions"}
+                Across all pages
               </div>
             </CardContent>
           </Card>
@@ -1288,10 +1242,10 @@ function TransactionsContent() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {isLoadingTransactions ? "..." : transactions.filter(tx => tx.type === "Buy").length}
+                {isLoadingTransactions ? "..." : (stats?.buyCount ?? 0)}
               </div>
               <div className="text-xs text-muted-foreground">
-                {isLoadingTransactions ? "Loading..." : "On current page"}
+                Across all pages
               </div>
             </CardContent>
           </Card>
@@ -1304,26 +1258,26 @@ function TransactionsContent() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {isLoadingTransactions ? "..." : transactions.filter(tx => tx.type === "Sell").length}
+                {isLoadingTransactions ? "..." : (stats?.sellCount ?? 0)}
               </div>
               <div className="text-xs text-muted-foreground">
-                {isLoadingTransactions ? "Loading..." : "On current page"}
+                Across all pages
               </div>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
-                Transfers
+                Other
               </CardTitle>
               <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {isLoadingTransactions ? "..." : transactions.filter(tx => tx.type === "Send" || tx.type === "Receive").length}
+                {isLoadingTransactions ? "..." : (stats?.otherCount ?? 0)}
               </div>
               <div className="text-xs text-muted-foreground">
-                {isLoadingTransactions ? "Loading..." : "On current page"}
+                Across all pages
               </div>
             </CardContent>
           </Card>
@@ -1336,14 +1290,50 @@ function TransactionsContent() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {isLoadingTransactions ? "..." : transactions.filter(tx => !tx.identified).length}
+                {isLoadingTransactions ? "..." : (stats?.unlabelledCount ?? 0)}
               </div>
               <div className="text-xs text-muted-foreground">
-                {isLoadingTransactions ? "Loading..." : "On current page"}
+                Across all pages
               </div>
             </CardContent>
           </Card>
         </div>
+
+        {/* P&L Summary Card */}
+        {stats?.pnl && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold">Profit & Loss Summary</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Buys</p>
+                  <p className="text-xl font-bold text-rose-600 dark:text-rose-400">
+                    ${stats.pnl.totalBuyValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Sells</p>
+                  <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                    ${stats.pnl.totalSellValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Net P&L</p>
+                  <p className={cn(
+                    "text-xl font-bold",
+                    stats.pnl.netPnL >= 0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400"
+                  )}>
+                    {stats.pnl.netPnL >= 0 ? "+" : ""}${stats.pnl.netPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Add Transaction Identification Card */}
         <Card>
@@ -1440,6 +1430,25 @@ function TransactionsContent() {
                   <EyeOff className="mr-2 h-4 w-4" />
                   {hideSpamTransactions ? "Show Spam Tx" : "Hide Spam Tx"}
                 </Button>
+
+                {wallets.length > 0 && (
+                  <Select value={walletFilter} onValueChange={(value) => {
+                    setWalletFilter(value === "all" ? "" : value);
+                    setCurrentPage(1);
+                  }}>
+                    <SelectTrigger className="h-9 w-[200px]">
+                      <SelectValue placeholder="All Wallets" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Wallets</SelectItem>
+                      {wallets.map((w) => (
+                        <SelectItem key={w.id} value={w.address}>
+                          {w.name} ({w.address.slice(0, 6)}...{w.address.slice(-4)})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
               
               {/* Sorting dropdown */}
@@ -1550,7 +1559,6 @@ function TransactionsContent() {
                       <TableHead className="text-right font-medium font-mono">Value</TableHead>
                       <TableHead className="text-right font-medium font-mono">Exchange</TableHead>
                       <TableHead className="text-right font-medium font-mono">Date</TableHead>
-                      <TableHead className="text-right font-medium font-mono">Status</TableHead>
                       <TableHead className="text-right font-medium font-mono">Identified</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -1995,33 +2003,6 @@ function TransactionsContent() {
                               )}
                             </div>
                           )}
-                        </TableCell>
-                        
-                        <TableCell className="text-right font-mono">
-                          <div className="relative group flex justify-end"
-                            onMouseEnter={() => handleMouseEnter('status')}
-                            onMouseLeave={() => handleMouseLeave('status')}
-                          >
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                            {transaction.status}
-                          </span>
-                            {editableFields.status && (
-                              <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                      <ChevronDown className="h-3 w-3" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent side="right" align="end">
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'status', 'Completed')}>Completed</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'status', 'Pending')}>Pending</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'status', 'Failed')}>Failed</DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            )}
-                          </div>
                         </TableCell>
                         
                         <TableCell className="text-right font-mono">
