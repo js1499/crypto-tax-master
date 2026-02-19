@@ -24,7 +24,20 @@ const prisma = global.prisma || new PrismaClient({
   log: process.env.NODE_ENV === "development"
     ? ["query", "error", "warn"]
     : ["error"],
+  datasourceUrl: appendConnectionLimit(process.env.DATABASE_URL),
 });
+
+/**
+ * Append connection_limit=1 to the DATABASE_URL if not already set.
+ * Serverless functions behind a connection pooler (Supabase/PgBouncer)
+ * should each hold at most 1 connection to avoid exhausting the pool.
+ */
+function appendConnectionLimit(url: string | undefined): string | undefined {
+  if (!url) return url;
+  if (url.includes("connection_limit")) return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}connection_limit=1`;
+}
 
 // In development, store the instance globally to prevent
 // creating new instances on hot reloads

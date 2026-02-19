@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import prisma from "@/lib/prisma";
 import { getHistoricalPriceAtTimestamp } from "@/lib/coingecko";
 import { Decimal } from "@prisma/client/runtime/library";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
-
-const prisma = new PrismaClient();
 
 /**
  * POST /api/prices/update-transactions
