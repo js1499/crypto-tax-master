@@ -59,9 +59,9 @@ export async function GET(request: NextRequest) {
     function sortLotsForMethod<T extends { date: Date; amount: number; costBasis: number }>(lots: T[]): T[] {
       switch (costBasisMethod) {
         case "LIFO":
-          return lots.sort((a, b) => b.date.getTime() - a.date.getTime());
+          return [...lots].sort((a, b) => b.date.getTime() - a.date.getTime());
         case "HIFO":
-          return lots.sort((a, b) => {
+          return [...lots].sort((a, b) => {
             const aPerUnit = a.amount > 0 ? a.costBasis / a.amount : 0;
             const bPerUnit = b.amount > 0 ? b.costBasis / b.amount : 0;
             return bPerUnit - aPerUnit;
@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
         case "FIFO":
         default:
           // Already in chronological order from DB query
-          return lots;
+          return [...lots];
       }
     }
 
@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
     const allTransactions = await prisma.transaction.findMany({
       where: {
         ...whereClause,
-        status: { in: ["confirmed", "completed"] },
+        status: { in: ["confirmed", "completed", "pending"] },
       },
       orderBy: { tx_timestamp: "asc" },
     });
@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
 
     // Process transactions to calculate holdings
     for (const tx of allTransactions) {
-      const asset = tx.asset_symbol;
+      const asset = (tx.asset_symbol || "").trim().toUpperCase();
       const amount = Number(tx.amount_value);
       const valueUsd = Number(tx.value_usd);
       const feeUsd = tx.fee_usd ? Number(tx.fee_usd) : 0;
@@ -116,7 +116,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Handle buys, DCA, receives, rewards, income - add to holdings
-      if (["buy", "dca", "receive", "reward", "staking", "income", "deposit"].includes(txType)) {
+      if (["buy", "dca", "receive", "reward", "staking", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "unstake"].includes(txType)) {
         const totalCostBasis = Math.abs(valueUsd) + feeUsd;
         holdings[asset].amount += amount;
         holdings[asset].costBasis += totalCostBasis;
@@ -127,14 +127,14 @@ export async function GET(request: NextRequest) {
         });
       }
       // Handle sells, sends, swaps (outgoing) - remove from holdings
-      else if (["sell", "send", "swap", "withdraw"].includes(txType)) {
+      else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity"].includes(txType)) {
         const sellAmount = amount;
         let remainingToSell = sellAmount;
         
         // Sort lots according to user's cost basis method
-        sortLotsForMethod(costBasisLots[asset]);
+        const sortedLots = sortLotsForMethod(costBasisLots[asset]);
         let soldCostBasis = 0;
-        for (const lot of costBasisLots[asset]) {
+        for (const lot of sortedLots) {
           if (remainingToSell <= 0) break;
           const amountFromLot = Math.min(remainingToSell, lot.amount);
           // BUG-015 fix: Prevent division by zero
@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
 
       // Handle swaps - incoming asset
       if (tx.incoming_asset_symbol && tx.incoming_amount_value && tx.incoming_value_usd) {
-        const incomingAsset = tx.incoming_asset_symbol;
+        const incomingAsset = (tx.incoming_asset_symbol || "").trim().toUpperCase();
         const incomingAmount = Number(tx.incoming_amount_value);
         const incomingValueUsd = Number(tx.incoming_value_usd);
         const incomingFeeUsd = feeUsd; // Fees typically apply to outgoing side
@@ -188,7 +188,7 @@ export async function GET(request: NextRequest) {
       if (holdings[asset].amount > 0) {
         // Find latest transaction with price for this asset
         const latestTx = allTransactions
-          .filter((tx) => tx.asset_symbol === asset && tx.price_per_unit)
+          .filter((tx) => (tx.asset_symbol || "").trim().toUpperCase() === asset && tx.price_per_unit)
           .sort((a, b) => b.tx_timestamp.getTime() - a.tx_timestamp.getTime())[0];
         
         if (latestTx && latestTx.price_per_unit) {
@@ -266,7 +266,7 @@ export async function GET(request: NextRequest) {
 
       // Process all transactions in this month
       for (const tx of monthTransactions) {
-        const asset = tx.asset_symbol;
+        const asset = (tx.asset_symbol || "").trim().toUpperCase();
         const amount = Number(tx.amount_value);
         const valueUsd = Number(tx.value_usd);
         const feeUsd = tx.fee_usd ? Number(tx.fee_usd) : 0;
@@ -278,7 +278,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Handle buys, receives, rewards - add to holdings
-        if (["buy", "dca", "receive", "reward", "staking", "income", "deposit"].includes(txType)) {
+        if (["buy", "dca", "receive", "reward", "staking", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "unstake"].includes(txType)) {
           const totalCostBasis = Math.abs(valueUsd) + feeUsd;
           runningHoldings[asset].amount += amount;
           runningHoldings[asset].costBasis += totalCostBasis;
@@ -289,14 +289,14 @@ export async function GET(request: NextRequest) {
           });
         }
         // Handle sells, sends, swaps (outgoing) - remove from holdings
-        else if (["sell", "send", "swap", "withdraw"].includes(txType)) {
+        else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity"].includes(txType)) {
           const sellAmount = amount;
           let remainingToSell = sellAmount;
           let soldCostBasis = 0;
 
           // Sort lots according to user's cost basis method
-          sortLotsForMethod(runningCostBasisLots[asset]);
-          for (const lot of runningCostBasisLots[asset]) {
+          const sortedLots = sortLotsForMethod(runningCostBasisLots[asset]);
+          for (const lot of sortedLots) {
             if (remainingToSell <= 0) break;
             const amountFromLot = Math.min(remainingToSell, lot.amount);
             // BUG-015 fix: Prevent division by zero
@@ -316,7 +316,7 @@ export async function GET(request: NextRequest) {
 
         // Handle swaps - incoming asset
         if (tx.incoming_asset_symbol && tx.incoming_amount_value && tx.incoming_value_usd) {
-          const incomingAsset = tx.incoming_asset_symbol;
+          const incomingAsset = (tx.incoming_asset_symbol || "").trim().toUpperCase();
           const incomingAmount = Number(tx.incoming_amount_value);
           const incomingValueUsd = Number(tx.incoming_value_usd);
           const incomingCostBasis = incomingValueUsd + feeUsd;

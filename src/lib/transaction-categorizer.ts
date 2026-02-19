@@ -17,7 +17,9 @@ export type TransactionCategory =
   | "borrow"
   | "repay"
   | "liquidation"
-  | "margin";
+  | "margin"
+  | "unstake"
+  | "bridge";
 
 /**
  * Categorize a transaction based on its type, notes, and other attributes
@@ -122,6 +124,20 @@ export function categorizeTransaction(
     };
   }
 
+  // Unstake transactions (must be checked before staking - "unstake" contains "stake")
+  if (
+    typeLower.includes("unstake") ||
+    typeLower.includes("unstaking") ||
+    notesLower.includes("unstake") ||
+    notesLower.includes("unstaking")
+  ) {
+    return {
+      category: "unstake",
+      identified: true,
+      finalType: "Unstake",
+    };
+  }
+
   // Staking transactions
   if (
     typeLower.includes("stake") ||
@@ -192,12 +208,25 @@ export function categorizeTransaction(
     };
   }
 
+  // Bridge transactions (must be checked before transfer - bridges are taxable events)
+  if (
+    typeLower.includes("bridge") ||
+    notesLower.includes("bridge") ||
+    combinedText.includes("cross-chain") ||
+    combinedText.includes("bridge transfer")
+  ) {
+    return {
+      category: "bridge",
+      identified: true,
+      finalType: "Bridge",
+    };
+  }
+
   // Transfer transactions (Send/Receive)
   if (
     typeLower.includes("send") ||
     typeLower.includes("receive") ||
     typeLower.includes("transfer") ||
-    typeLower.includes("bridge") ||
     notesLower.includes("transfer") ||
     notesLower.includes("sent") ||
     notesLower.includes("received")

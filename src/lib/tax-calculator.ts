@@ -90,7 +90,7 @@ interface BuyTransaction {
   asset: string;
   amount: number;
   costBasis: number;
-  lotIndex?: number; // Index in costBasisLots array for adjustment
+  lotId: number; // ID of the CostBasisLot for wash sale adjustment lookup
 }
 
 /**
@@ -206,7 +206,8 @@ function processDisposal(
       if (remainingToSell <= 0) break;
 
       const amountFromLot = Math.min(remainingToSell, lot.amount);
-      const costBasisFromLot = (lot.costBasis / lot.amount) * amountFromLot;
+      const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
+      const costBasisFromLot = costBasisPerUnit * amountFromLot;
 
       totalCostBasis += costBasisFromLot;
       lot.amount -= amountFromLot;
@@ -444,67 +445,20 @@ export async function calculateTaxReport(
     }
   }
 
-  // Filter transactions by chain (Solana or Ethereum)
-  // Also include transactions without a chain (CSV imports might not have chain set)
-  const solanaTransactions = allTransactions.filter(
-    (tx: Transaction) => tx.chain?.toLowerCase() === "solana" || tx.chain?.toLowerCase() === "sol"
-  );
-  const ethereumTransactions = allTransactions.filter(
-    (tx: Transaction) =>
-      tx.chain?.toLowerCase() === "ethereum" ||
-      tx.chain?.toLowerCase() === "eth" ||
-      tx.chain?.toLowerCase() === "ethereum mainnet"
-  );
-  
-  // Get transactions without a chain (likely CSV imports)
-  const unchainTransactions = allTransactions.filter(
-    (tx: Transaction) => !tx.chain || (tx.chain.toLowerCase() !== "solana" && tx.chain.toLowerCase() !== "sol" && 
-      tx.chain.toLowerCase() !== "ethereum" && tx.chain.toLowerCase() !== "eth" && tx.chain.toLowerCase() !== "ethereum mainnet")
-  );
+  // Process ALL transactions together (unified across chains) so cost basis lots
+  // are shared across chains. allTransactions is already sorted chronologically.
+  console.log(`[Tax Calculator] Processing ${allTransactions.length} transactions (unified across all chains)`);
 
-  console.log(`[Tax Calculator] Processing ${solanaTransactions.length} Solana, ${ethereumTransactions.length} Ethereum, and ${unchainTransactions.length} unchain transactions`);
-
-  // IMPORTANT: Process transactions in chronological order (oldest first)
-  // This ensures buy transactions are processed before sell transactions
-  // so cost basis lots are available when calculating gains/losses
-  console.log(`[Tax Calculator] Processing transactions in chronological order...`);
-  
-  // Process transactions for both chains and unchain
-  const solanaReport = processTransactionsForTax(
-    solanaTransactions,
-    year,
-    method,
-    walletAddresses
-  );
-  const ethereumReport = processTransactionsForTax(
-    ethereumTransactions,
-    year,
-    method,
-    walletAddresses
-  );
-  const unchainReport = processTransactionsForTax(
-    unchainTransactions,
+  const unifiedReport = processTransactionsForTax(
+    allTransactions,
     year,
     method,
     walletAddresses
   );
 
-  console.log(`[Tax Calculator] Solana report: ${solanaReport.taxableEvents.length} taxable, ${solanaReport.incomeEvents.length} income`);
-  console.log(`[Tax Calculator] Ethereum report: ${ethereumReport.taxableEvents.length} taxable, ${ethereumReport.incomeEvents.length} income`);
-  console.log(`[Tax Calculator] Unchain report: ${unchainReport.taxableEvents.length} taxable, ${unchainReport.incomeEvents.length} income`);
+  const combinedTaxableEvents = unifiedReport.taxableEvents;
+  const combinedIncomeEvents = unifiedReport.incomeEvents;
 
-  // Combine reports
-  const combinedTaxableEvents = [
-    ...solanaReport.taxableEvents,
-    ...ethereumReport.taxableEvents,
-    ...unchainReport.taxableEvents,
-  ];
-  const combinedIncomeEvents = [
-    ...solanaReport.incomeEvents,
-    ...ethereumReport.incomeEvents,
-    ...unchainReport.incomeEvents,
-  ];
-  
   console.log(`[Tax Calculator] Combined: ${combinedTaxableEvents.length} taxable events, ${combinedIncomeEvents.length} income events`);
 
   // Calculate diagnostic totals for verification
@@ -691,7 +645,9 @@ export async function calculateTaxReport(
     netShortTermGain,
     netLongTermGain,
     totalTaxableGain:
-      netShortTermGain + netLongTermGain - deductibleLosses,
+      (netShortTermGain + netLongTermGain) >= 0
+        ? (netShortTermGain + netLongTermGain)
+        : -deductibleLosses,
     deductibleLosses,
     lossCarryover,
     form8949Data,
@@ -763,7 +719,7 @@ function processTransactionsForTax(
     const feeUsd = tx.fee_usd ? Number(tx.fee_usd) : 0;
     const pricePerUnit = tx.price_per_unit
       ? Number(tx.price_per_unit)
-      : valueUsd / amount;
+      : amount > 0 ? valueUsd / amount : 0;
     const date = tx.tx_timestamp;
     const txYear = date.getFullYear();
 
@@ -822,7 +778,6 @@ function processTransactionsForTax(
       if (tx.source_type === "csv_import" && processedCount < 20) {
         console.log(`[processTransactionsForTax] Processing CSV buy ${tx.id}: asset=${asset}, value_usd=${valueUsd}, totalCostBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, year=${txYear}`);
       }
-      const lotIndex = costBasisLots[asset].length;
       costBasisLots[asset].push({
         id: tx.id,
         date,
@@ -840,7 +795,7 @@ function processTransactionsForTax(
         asset,
         amount,
         costBasis: totalCostBasis,
-        lotIndex,
+        lotId: tx.id,
       });
       
       if (processedCount < 10 || costBasisLots[asset].length <= 3) {
@@ -978,8 +933,8 @@ function processTransactionsForTax(
           if (remainingToSwap <= 0) break;
 
           const amountFromLot = Math.min(remainingToSwap, lot.amount);
-          const costBasisFromLot =
-            (lot.costBasis / lot.amount) * amountFromLot;
+          const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
+          const costBasisFromLot = costBasisPerUnit * amountFromLot;
 
           totalCostBasis += costBasisFromLot;
           lot.amount -= amountFromLot;
@@ -1036,19 +991,19 @@ function processTransactionsForTax(
       if (incomingAsset && incomingAmount && incomingValueUsd) {
         const incomingPricePerUnit = incomingValueUsd / incomingAmount;
         // Fees are added to cost basis of incoming asset in swaps
-        const incomingCostBasis = Math.abs(incomingValueUsd) + feeUsd;
+        const incomingCostBasis = Math.abs(incomingValueUsd);
         costBasisLots[incomingAsset].push({
           id: tx.id,
           date,
           amount: incomingAmount,
-          costBasis: incomingCostBasis, // Cost basis = FMV at swap + fees
+          costBasis: incomingCostBasis, // Cost basis = FMV at swap (fees on disposal side only)
           pricePerUnit: incomingPricePerUnit,
           fees: feeUsd,
         });
       } else if (incomingAsset && incomingAmount) {
         // Fallback: use value_usd if incoming value not parsed
         const incomingPricePerUnit = Math.abs(valueUsd) / incomingAmount;
-        const incomingCostBasis = Math.abs(valueUsd) + feeUsd;
+        const incomingCostBasis = Math.abs(valueUsd);
         costBasisLots[incomingAsset].push({
           id: tx.id,
           date,
@@ -1069,10 +1024,7 @@ function processTransactionsForTax(
       txType === "receive" ||
       txType === "mining" ||
       txType === "yield" ||
-      txType === "interest" ||
-      txType === "liquidity providing" ||
-      txType === "yield farming" ||
-      txType === "farm reward"
+      txType === "interest"
     ) {
       // Determine income type per IRS guidance
       let incomeType: IncomeEvent["type"] = "other";
@@ -1086,12 +1038,9 @@ function processTransactionsForTax(
         incomeType = "mining"; // Mining income (may be subject to self-employment tax)
       } else if (
         txType === "yield" ||
-        txType === "interest" ||
-        txType === "liquidity providing" ||
-        txType === "yield farming" ||
-        txType === "farm reward"
+        txType === "interest"
       ) {
-        incomeType = "reward"; // DeFi yield, lending interest, yield farming
+        incomeType = "reward"; // DeFi yield, lending interest
       } else if (txType === "receive" && valueUsd > 0) {
         // Receives with positive value might be income (need to distinguish from transfers)
         // Check if this is a self-transfer (sender address is in user's wallets)
@@ -1221,8 +1170,8 @@ function processTransactionsForTax(
         if (remainingToBridge <= 0) break;
 
         const amountFromLot = Math.min(remainingToBridge, lot.amount);
-        const costBasisFromLot =
-          (lot.costBasis / lot.amount) * amountFromLot;
+        const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
+        const costBasisFromLot = costBasisPerUnit * amountFromLot;
 
         totalCostBasis += costBasisFromLot;
         lot.amount -= amountFromLot;
@@ -1269,7 +1218,7 @@ function processTransactionsForTax(
     }
     // Handle liquidity providing - LP token acquisition
     // IRS: Adding liquidity creates LP tokens with cost basis = value of assets provided
-    else if (txType === "liquidity providing" || txType === "liquidity add") {
+    else if (txType === "liquidity providing" || txType === "liquidity add" || txType === "add liquidity") {
       // LP token acquisition - cost basis = total value of assets provided
       // The LP token itself is the asset_symbol
       const lpTokenAmount = amount;
@@ -1289,7 +1238,8 @@ function processTransactionsForTax(
     else if (
       txType === "liquidity removal" ||
       txType === "liquidity remove" ||
-      txType === "liquidity exit"
+      txType === "liquidity exit" ||
+      txType === "remove liquidity"
     ) {
       const lpTokenAmount = amount;
       let remainingToRemove = lpTokenAmount;
@@ -1305,8 +1255,8 @@ function processTransactionsForTax(
         if (remainingToRemove <= 0) break;
 
         const amountFromLot = Math.min(remainingToRemove, lot.amount);
-        const costBasisFromLot =
-          (lot.costBasis / lot.amount) * amountFromLot;
+        const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
+        const costBasisFromLot = costBasisPerUnit * amountFromLot;
 
         totalCostBasis += costBasisFromLot;
         lot.amount -= amountFromLot;
@@ -1816,8 +1766,8 @@ function markWashSales(
         const disallowedAmount = Math.min(remainingLossToDisallow, lossSale.lossAmount);
 
         // Find the lot and add the wash sale adjustment
-        if (buyTx.lotIndex !== undefined && costBasisLots[buyTx.asset]?.[buyTx.lotIndex]) {
-          const lot = costBasisLots[buyTx.asset][buyTx.lotIndex];
+        const lot = costBasisLots[buyTx.asset]?.find(l => l.id === buyTx.lotId);
+        if (lot) {
 
           // Only apply if not already applied
           if (!lot.washSaleAdjustment || lot.washSaleAdjustment === 0) {
