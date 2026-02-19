@@ -319,23 +319,25 @@ export async function GET(request: NextRequest) {
     });
 
     // Stats queries (run in parallel)
+    // Outflow types match the sign logic used in the value column above
+    const OUTFLOW_TYPES = ["Buy", "DCA", "Send", "Withdraw", "Bridge", "Swap"];
     const knownTypesArray = Array.from(KNOWN_TYPES);
-    const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, buyValueAgg, sellValueAgg] = await Promise.all([
+    const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, outflowAgg, inflowAgg] = await Promise.all([
       prisma.transaction.count({ where: { ...where, type: "Buy" } }),
       prisma.transaction.count({ where: { ...where, type: "Sell" } }),
       prisma.transaction.count({ where: { ...where, type: { in: knownTypesArray } } }),
       prisma.transaction.count({ where: { ...where, NOT: { value_usd: 0 } } }),
-      prisma.transaction.aggregate({ where: { ...where, type: "Buy" }, _sum: { value_usd: true } }),
-      prisma.transaction.aggregate({ where: { ...where, type: "Sell" }, _sum: { value_usd: true } }),
+      prisma.transaction.aggregate({ where: { ...where, type: { in: OUTFLOW_TYPES } }, _sum: { value_usd: true } }),
+      prisma.transaction.aggregate({ where: { ...where, type: { notIn: OUTFLOW_TYPES }, NOT: { value_usd: 0 } }, _sum: { value_usd: true } }),
     ]);
 
     const otherCount = totalCount - buyCount - sellCount;
     const unlabelledCount = totalCount - identifiedTypeCount;
     const identifiedPercentage = totalCount > 0 ? Math.round((identifiedTypeCount / totalCount) * 100) : 0;
     const valueIdentifiedPercentage = totalCount > 0 ? Math.round((valueIdentifiedCount / totalCount) * 100) : 100;
-    const totalBuyValue = Math.abs(Number(buyValueAgg._sum.value_usd || 0));
-    const totalSellValue = Number(sellValueAgg._sum.value_usd || 0);
-    const netPnL = totalSellValue - totalBuyValue;
+    const totalLosses = Math.abs(Number(outflowAgg._sum.value_usd || 0));
+    const totalGains = Math.abs(Number(inflowAgg._sum.value_usd || 0));
+    const netPnL = totalGains - totalLosses;
 
     // Calculate pagination metadata
     const totalPages = Math.ceil(totalCount / limit);
@@ -361,8 +363,8 @@ export async function GET(request: NextRequest) {
         identifiedPercentage,
         valueIdentifiedPercentage,
         pnl: {
-          totalBuyValue,
-          totalSellValue,
+          totalGains,
+          totalLosses,
           netPnL,
         },
       },

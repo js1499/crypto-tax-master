@@ -199,7 +199,7 @@ function TransactionsContent() {
     unlabelledCount: number;
     identifiedPercentage: number;
     valueIdentifiedPercentage: number;
-    pnl: { totalBuyValue: number; totalSellValue: number; netPnL: number };
+    pnl: { totalGains: number; totalLosses: number; netPnL: number };
   } | null>(null);
 
   // Pagination state
@@ -1318,15 +1318,15 @@ function TransactionsContent() {
             <CardContent>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Buys</p>
-                  <p className="text-xl font-bold text-rose-600 dark:text-rose-400">
-                    ${stats.pnl.totalBuyValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <p className="text-sm text-muted-foreground">Total Gains</p>
+                  <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                    ${stats.pnl.totalGains.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Sells</p>
-                  <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                    ${stats.pnl.totalSellValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <p className="text-sm text-muted-foreground">Total Losses</p>
+                  <p className="text-xl font-bold text-rose-600 dark:text-rose-400">
+                    ${stats.pnl.totalLosses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div>
