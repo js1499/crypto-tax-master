@@ -343,9 +343,12 @@ export async function GET(request: NextRequest) {
     const unlabelledCount = totalCount - identifiedTypeCount;
     const identifiedPercentage = totalCount > 0 ? Math.round((identifiedTypeCount / totalCount) * 100) : 0;
     const valueIdentifiedPercentage = totalCount > 0 ? Math.round((valueIdentifiedCount / totalCount) * 100) : 100;
-    const totalLosses = Math.abs(Number(outflowAgg._sum.value_usd || 0));
-    const totalGains = Math.abs(Number(inflowAgg._sum.value_usd || 0));
-    const netPnL = totalGains - totalLosses;
+    // C-7 fix: Renamed from totalGains/totalLosses to totalInflow/totalOutflow to
+    // avoid confusion with the tax engine's realized capital gains/losses.
+    // These are cash-flow sums, NOT capital gains — they include non-taxable transfers.
+    const totalOutflow = Math.abs(Number(outflowAgg._sum.value_usd || 0));
+    const totalInflow = Math.abs(Number(inflowAgg._sum.value_usd || 0));
+    const netCashFlow = totalInflow - totalOutflow;
 
     // Calculate pagination metadata
     const totalPages = Math.ceil(totalCount / limit);
@@ -371,9 +374,9 @@ export async function GET(request: NextRequest) {
         identifiedPercentage,
         valueIdentifiedPercentage,
         pnl: {
-          totalGains,
-          totalLosses,
-          netPnL,
+          totalInflow,
+          totalOutflow,
+          netCashFlow,
         },
       },
     });

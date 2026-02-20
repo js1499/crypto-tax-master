@@ -218,11 +218,17 @@ export async function GET(request: NextRequest) {
     const currentYear = new Date().getFullYear();
     const yearStart = new Date(`${currentYear}-01-01T00:00:00Z`);
     const yearEnd = new Date(`${currentYear}-12-31T23:59:59Z`);
+    // H-7 fix: Include ALL disposal types that create taxable events, not just sell/swap.
+    // These match the types that produce TaxableEvent entries in the tax engine.
+    const DISPOSAL_TYPES = [
+      "sell", "swap", "margin sell", "liquidation", "bridge",
+      "remove liquidity", "burn", "nft sale",
+    ];
     const taxableEventsCurrentYear = allTransactions.filter(
       (tx) =>
         tx.tx_timestamp >= yearStart &&
         tx.tx_timestamp <= yearEnd &&
-        ["sell", "swap"].includes(tx.type.toLowerCase())
+        DISPOSAL_TYPES.includes(tx.type.toLowerCase())
     ).length;
 
     // Calculate asset allocation

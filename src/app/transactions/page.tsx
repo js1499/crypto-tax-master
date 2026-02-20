@@ -199,7 +199,7 @@ function TransactionsContent() {
     unlabelledCount: number;
     identifiedPercentage: number;
     valueIdentifiedPercentage: number;
-    pnl: { totalGains: number; totalLosses: number; netPnL: number };
+    pnl: { totalInflow: number; totalOutflow: number; netCashFlow: number };
   } | null>(null);
 
   // Pagination state
@@ -1313,31 +1313,31 @@ function TransactionsContent() {
         {stats?.pnl && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg font-semibold">Profit & Loss Summary</CardTitle>
+              <CardTitle className="text-lg font-semibold">Cash Flow Summary</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Gains</p>
+                  <p className="text-sm text-muted-foreground">Total Inflow</p>
                   <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                    ${stats.pnl.totalGains.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${stats.pnl.totalInflow.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Losses</p>
+                  <p className="text-sm text-muted-foreground">Total Outflow</p>
                   <p className="text-xl font-bold text-rose-600 dark:text-rose-400">
-                    ${stats.pnl.totalLosses.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    ${stats.pnl.totalOutflow.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Net P&L</p>
+                  <p className="text-sm text-muted-foreground">Net Cash Flow</p>
                   <p className={cn(
                     "text-xl font-bold",
-                    stats.pnl.netPnL >= 0
+                    stats.pnl.netCashFlow >= 0
                       ? "text-emerald-600 dark:text-emerald-400"
                       : "text-rose-600 dark:text-rose-400"
                   )}>
-                    {stats.pnl.netPnL >= 0 ? "+" : ""}${stats.pnl.netPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {stats.pnl.netCashFlow >= 0 ? "+" : ""}${stats.pnl.netCashFlow.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
               </div>
