@@ -1,6 +1,12 @@
 import { PrismaClient, Transaction, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 
+// L-1 fix: Debug-guarded logging — only emit verbose logs in development
+const TAX_DEBUG = process.env.NODE_ENV === "development" || process.env.TAX_DEBUG === "1";
+function debugLog(...args: unknown[]) {
+  if (TAX_DEBUG) console.log(...args);
+}
+
 // Types for tax calculations
 export interface TaxableEvent {
   id: number;
@@ -109,6 +115,12 @@ function isLongTerm(dateAcquired: Date, dateSold: Date): boolean {
  * Helper function to process asset disposal transactions (sell, margin sell, liquidation)
  * Returns the disposal details or null if processing should be skipped
  */
+interface LotDisposal {
+  lotDate: Date;
+  amount: number;
+  costBasis: number;
+}
+
 interface DisposalResult {
   totalCostBasis: number;
   netProceeds: number;
@@ -116,6 +128,7 @@ interface DisposalResult {
   earliestLotDate: Date;
   holdingPeriod: "short" | "long";
   shouldTrackAsLossSale: boolean;
+  lotDisposals: LotDisposal[];
 }
 
 function processDisposal(
@@ -163,9 +176,9 @@ function processDisposal(
     }
 
     if (totalCostBasis === 0 && processedCount < 10) {
-      console.log(`[Tax Calculator] ${tx.type} transaction ${tx.id}: Found cost basis 0 in notes. Notes: ${notes.substring(0, 200)}`);
+      debugLog(`[Tax Calculator] ${tx.type} transaction ${tx.id}: Found cost basis 0 in notes. Notes: ${notes.substring(0, 200)}`);
     } else if (processedCount < 10 || taxableEventCount < 5) {
-      console.log(`[Tax Calculator] ${tx.type} transaction ${tx.id}: Using cost basis from notes: $${totalCostBasis.toFixed(2)}`);
+      debugLog(`[Tax Calculator] ${tx.type} transaction ${tx.id}: Using cost basis from notes: $${totalCostBasis.toFixed(2)}`);
     }
 
     // Extract purchase date if available
@@ -182,11 +195,24 @@ function processDisposal(
       holdingPeriod = "short";
     }
 
-    gainLoss = netProceeds - totalCostBasis;
+    gainLoss = Math.round((netProceeds - totalCostBasis) * 100) / 100;
 
     if (processedCount < 10 || taxableEventCount < 5) {
-      console.log(`[Tax Calculator] ${tx.type} transaction ${tx.id}: proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, holdingPeriod=${holdingPeriod}`);
+      debugLog(`[Tax Calculator] ${tx.type} transaction ${tx.id}: proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, holdingPeriod=${holdingPeriod}`);
     }
+
+    // For notes-based path, create a single-element lotDisposals
+    const lotDisposals: LotDisposal[] = [{ lotDate: earliestLotDate, amount, costBasis: totalCostBasis }];
+
+    return {
+      totalCostBasis: Math.round(totalCostBasis * 100) / 100,
+      netProceeds: Math.round(netProceeds * 100) / 100,
+      gainLoss,
+      earliestLotDate,
+      holdingPeriod,
+      shouldTrackAsLossSale: gainLoss < 0,
+      lotDisposals,
+    };
   } else {
     // Calculate cost basis from lots (normal flow)
     const selectedLots = selectLots(
@@ -202,6 +228,7 @@ function processDisposal(
     }
 
     // Calculate cost basis from selected lots
+    const lotDisposals: LotDisposal[] = [];
     for (const lot of selectedLots) {
       if (remainingToSell <= 0) break;
 
@@ -213,6 +240,11 @@ function processDisposal(
       lot.amount -= amountFromLot;
       lot.costBasis -= costBasisFromLot;
       remainingToSell -= amountFromLot;
+      lotDisposals.push({ lotDate: lot.date, amount: amountFromLot, costBasis: costBasisFromLot });
+    }
+
+    if (remainingToSell > 0) {
+      console.warn(`[Tax Calculator] ⚠️  ${tx.type} transaction ${tx.id}: Sold ${amount} ${asset} but only had lots for ${amount - remainingToSell}. Excess ${remainingToSell} has zero cost basis.`);
     }
 
     // Remove empty lots
@@ -229,21 +261,102 @@ function processDisposal(
       console.warn(`[Tax Calculator] ${tx.type} transaction ${tx.id}: No cost basis lots available. Asset: ${asset}`);
     }
 
-    gainLoss = netProceeds - totalCostBasis;
+    gainLoss = Math.round((netProceeds - totalCostBasis) * 100) / 100;
 
     if (processedCount < 10) {
-      console.log(`[Tax Calculator] ${tx.type} transaction ${tx.id} (from lots): proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, lotsUsed=${selectedLots.length}`);
+      debugLog(`[Tax Calculator] ${tx.type} transaction ${tx.id} (from lots): proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, lotsUsed=${selectedLots.length}`);
     }
+
+    return {
+      totalCostBasis: Math.round(totalCostBasis * 100) / 100,
+      netProceeds: Math.round(netProceeds * 100) / 100,
+      gainLoss,
+      earliestLotDate,
+      holdingPeriod,
+      shouldTrackAsLossSale: gainLoss < 0,
+      lotDisposals,
+    };
+  }
+}
+
+function createDisposalTaxEvents(
+  tx: Transaction,
+  asset: string,
+  totalAmount: number,
+  disposal: DisposalResult,
+  date: Date,
+): TaxableEvent[] {
+  const lotDisposals = disposal.lotDisposals;
+
+  // If single lot or all lots have the same holding period, create one event
+  if (lotDisposals.length <= 1) {
+    return [{
+      id: tx.id,
+      date,
+      dateAcquired: disposal.earliestLotDate,
+      asset,
+      amount: totalAmount,
+      proceeds: disposal.netProceeds,
+      costBasis: disposal.totalCostBasis,
+      gainLoss: disposal.gainLoss,
+      holdingPeriod: disposal.holdingPeriod,
+      chain: tx.chain || undefined,
+      txHash: tx.tx_hash || undefined,
+      washSale: false,
+      washSaleAdjustment: undefined,
+    }];
   }
 
-  return {
-    totalCostBasis,
-    netProceeds,
-    gainLoss,
-    earliestLotDate,
-    holdingPeriod,
-    shouldTrackAsLossSale: gainLoss < 0,
-  };
+  // Group lots by holding period
+  const shortTermLots = lotDisposals.filter(l => !isLongTerm(l.lotDate, date));
+  const longTermLots = lotDisposals.filter(l => isLongTerm(l.lotDate, date));
+
+  // If all same period, single event
+  if (shortTermLots.length === 0 || longTermLots.length === 0) {
+    return [{
+      id: tx.id,
+      date,
+      dateAcquired: disposal.earliestLotDate,
+      asset,
+      amount: totalAmount,
+      proceeds: disposal.netProceeds,
+      costBasis: disposal.totalCostBasis,
+      gainLoss: disposal.gainLoss,
+      holdingPeriod: disposal.holdingPeriod,
+      chain: tx.chain || undefined,
+      txHash: tx.tx_hash || undefined,
+      washSale: false,
+      washSaleAdjustment: undefined,
+    }];
+  }
+
+  // Mixed holding periods — split into separate events
+  const events: TaxableEvent[] = [];
+  for (const [lots, hp] of [[shortTermLots, "short"] as const, [longTermLots, "long"] as const] as const) {
+    if (lots.length === 0) continue;
+    const lotCostBasis = lots.reduce((s: number, l: LotDisposal) => s + l.costBasis, 0);
+    const lotAmount = lots.reduce((s: number, l: LotDisposal) => s + l.amount, 0);
+    // Distribute proceeds proportionally by amount
+    const lotProceeds = totalAmount > 0 ? disposal.netProceeds * (lotAmount / totalAmount) : 0;
+    const earliestDate = lots.reduce((m: Date, l: LotDisposal) => l.lotDate < m ? l.lotDate : m, lots[0].lotDate);
+
+    events.push({
+      id: tx.id,
+      date,
+      dateAcquired: earliestDate,
+      asset,
+      amount: lotAmount,
+      proceeds: Math.round(lotProceeds * 100) / 100,
+      costBasis: Math.round(lotCostBasis * 100) / 100,
+      gainLoss: Math.round((lotProceeds - lotCostBasis) * 100) / 100,
+      holdingPeriod: hp,
+      chain: tx.chain || undefined,
+      txHash: tx.tx_hash || undefined,
+      washSale: false,
+      washSaleAdjustment: undefined,
+    });
+  }
+  return events;
 }
 
 /**
@@ -319,10 +432,10 @@ export async function calculateTaxReport(
   // Also include pending transactions (some CSV imports might be pending)
   whereClause.status = { in: ["confirmed", "completed", "pending"] };
 
-  console.log(`[Tax Calculator] Fetching transactions for year ${year}`);
-  console.log(`[Tax Calculator] Wallet addresses:`, walletAddresses);
-  console.log(`[Tax Calculator] User ID:`, userId);
-  console.log(`[Tax Calculator] Where clause:`, JSON.stringify(whereClause, null, 2));
+  debugLog(`[Tax Calculator] Fetching transactions for year ${year}`);
+  debugLog(`[Tax Calculator] Wallet addresses:`, walletAddresses);
+  debugLog(`[Tax Calculator] User ID:`, userId);
+  debugLog(`[Tax Calculator] Where clause:`, JSON.stringify(whereClause, null, 2));
 
   const allTransactions = await prisma.transaction.findMany({
     where: whereClause,
@@ -331,22 +444,16 @@ export async function calculateTaxReport(
     },
   });
 
-  console.log(`[Tax Calculator] Found ${allTransactions.length} total transactions`);
+  debugLog(`[Tax Calculator] Found ${allTransactions.length} total transactions`);
   
-  // Count buy vs sell transactions for debugging
-  const buyTransactions = allTransactions.filter(tx => {
-    const type = (tx.type || "").toLowerCase();
-    return type === "buy" || tx.type === "Buy";
-  });
-  const sellTransactions = allTransactions.filter(tx => {
-    const type = (tx.type || "").toLowerCase();
-    return type === "sell" || tx.type === "Sell";
-  });
-  console.log(`[Tax Calculator] Transaction breakdown: ${buyTransactions.length} buy, ${sellTransactions.length} sell, ${allTransactions.length - buyTransactions.length - sellTransactions.length} other`);
+  // L-6 fix: removed redundant case-sensitive checks (txType is already lowercased)
+  const buyTransactions = allTransactions.filter(tx => (tx.type || "").toLowerCase() === "buy");
+  const sellTransactions = allTransactions.filter(tx => (tx.type || "").toLowerCase() === "sell");
+  debugLog(`[Tax Calculator] Transaction breakdown: ${buyTransactions.length} buy, ${sellTransactions.length} sell, ${allTransactions.length - buyTransactions.length - sellTransactions.length} other`);
   
   // Log first few buy transactions to verify they're included
   if (buyTransactions.length > 0) {
-    console.log(`[Tax Calculator] First 5 buy transactions:`, buyTransactions.slice(0, 5).map(tx => ({
+    debugLog(`[Tax Calculator] First 5 buy transactions:`, buyTransactions.slice(0, 5).map(tx => ({
       id: tx.id,
       asset: tx.asset_symbol,
       amount: Number(tx.amount_value),
@@ -388,11 +495,11 @@ export async function calculateTaxReport(
       earliest: allTransactions[0].tx_timestamp.toISOString(),
       latest: allTransactions[allTransactions.length - 1].tx_timestamp.toISOString(),
     };
-    console.log(`[Tax Calculator] Transaction date range:`, dateRange);
+    debugLog(`[Tax Calculator] Transaction date range:`, dateRange);
     const csvImports = allTransactions.filter(tx => tx.source_type === "csv_import");
-    console.log(`[Tax Calculator] CSV imports: ${csvImports.length}`);
+    debugLog(`[Tax Calculator] CSV imports: ${csvImports.length}`);
     const walletTransactions = allTransactions.filter(tx => tx.source_type !== "csv_import");
-    console.log(`[Tax Calculator] Wallet transactions: ${walletTransactions.length}`);
+    debugLog(`[Tax Calculator] Wallet transactions: ${walletTransactions.length}`);
     
     // Check transaction types
     const typeCounts: Record<string, number> = {};
@@ -400,14 +507,10 @@ export async function calculateTaxReport(
       const type = tx.type || "unknown";
       typeCounts[type] = (typeCounts[type] || 0) + 1;
     });
-    console.log(`[Tax Calculator] Transaction types:`, typeCounts);
+    debugLog(`[Tax Calculator] Transaction types:`, typeCounts);
     
-    // Check for sell transactions
-    const sellTransactions = allTransactions.filter(tx => {
-      const type = (tx.type || "").toLowerCase();
-      return type === "sell" || tx.type === "Sell";
-    });
-    console.log(`[Tax Calculator] Sell transactions: ${sellTransactions.length}`);
+    // L-2 fix: Removed duplicate sellTransactions filter — already defined above
+    debugLog(`[Tax Calculator] Sell transactions: ${sellTransactions.length}`);
     
     // Check transaction years distribution
     const yearCounts: Record<number, number> = {};
@@ -415,7 +518,7 @@ export async function calculateTaxReport(
       const txYear = tx.tx_timestamp.getFullYear();
       yearCounts[txYear] = (yearCounts[txYear] || 0) + 1;
     });
-    console.log(`[Tax Calculator] Transactions by year:`, yearCounts);
+    debugLog(`[Tax Calculator] Transactions by year:`, yearCounts);
     
     // Check sell transactions by year
     const sellYearCounts: Record<number, number> = {};
@@ -423,12 +526,12 @@ export async function calculateTaxReport(
       const txYear = tx.tx_timestamp.getFullYear();
       sellYearCounts[txYear] = (sellYearCounts[txYear] || 0) + 1;
     });
-    console.log(`[Tax Calculator] Sell transactions by year:`, sellYearCounts);
+    debugLog(`[Tax Calculator] Sell transactions by year:`, sellYearCounts);
     
     // Check a few sell transactions to see their structure
     if (sellTransactions.length > 0) {
       const sampleSell = sellTransactions[0];
-      console.log(`[Tax Calculator] Sample sell transaction:`, {
+      debugLog(`[Tax Calculator] Sample sell transaction:`, {
         id: sampleSell.id,
         type: sampleSell.type,
         asset: sampleSell.asset_symbol,
@@ -454,13 +557,13 @@ export async function calculateTaxReport(
           };
         }
       });
-      console.log(`[Tax Calculator] Sample sell transactions by year:`, samplesByYear);
+      debugLog(`[Tax Calculator] Sample sell transactions by year:`, samplesByYear);
     }
   }
 
   // Process ALL transactions together (unified across chains) so cost basis lots
   // are shared across chains. allTransactions is already sorted chronologically.
-  console.log(`[Tax Calculator] Processing ${allTransactions.length} transactions (unified across all chains)`);
+  debugLog(`[Tax Calculator] Processing ${allTransactions.length} transactions (unified across all chains)`);
 
   const unifiedReport = processTransactionsForTax(
     allTransactions,
@@ -472,7 +575,7 @@ export async function calculateTaxReport(
   const combinedTaxableEvents = unifiedReport.taxableEvents;
   const combinedIncomeEvents = unifiedReport.incomeEvents;
 
-  console.log(`[Tax Calculator] Combined: ${combinedTaxableEvents.length} taxable events, ${combinedIncomeEvents.length} income events`);
+  debugLog(`[Tax Calculator] Combined: ${combinedTaxableEvents.length} taxable events, ${combinedIncomeEvents.length} income events`);
 
   // Calculate diagnostic totals for verification
   const totalProceeds = combinedTaxableEvents.reduce((sum, e) => sum + e.proceeds, 0);
@@ -480,12 +583,12 @@ export async function calculateTaxReport(
   const totalGainLoss = combinedTaxableEvents.reduce((sum, e) => sum + e.gainLoss, 0);
   const expectedGain = totalProceeds - totalCostBasis;
   
-  console.log(`[Tax Calculator] DIAGNOSTIC TOTALS:`);
-  console.log(`  - Total Proceeds: $${totalProceeds.toFixed(2)}`);
-  console.log(`  - Total Cost Basis: $${totalCostBasis.toFixed(2)}`);
-  console.log(`  - Expected Gain (Proceeds - Cost Basis): $${expectedGain.toFixed(2)}`);
-  console.log(`  - Actual Total Gain/Loss (sum of all gainLoss): $${totalGainLoss.toFixed(2)}`);
-  console.log(`  - Difference: $${Math.abs(expectedGain - totalGainLoss).toFixed(2)}`);
+  debugLog(`[Tax Calculator] DIAGNOSTIC TOTALS:`);
+  debugLog(`  - Total Proceeds: $${totalProceeds.toFixed(2)}`);
+  debugLog(`  - Total Cost Basis: $${totalCostBasis.toFixed(2)}`);
+  debugLog(`  - Expected Gain (Proceeds - Cost Basis): $${expectedGain.toFixed(2)}`);
+  debugLog(`  - Actual Total Gain/Loss (sum of all gainLoss): $${totalGainLoss.toFixed(2)}`);
+  debugLog(`  - Difference: $${Math.abs(expectedGain - totalGainLoss).toFixed(2)}`);
   
   if (Math.abs(expectedGain - totalGainLoss) > 0.01) {
     console.warn(`[Tax Calculator] ⚠️  WARNING: Expected gain (${expectedGain.toFixed(2)}) does not match actual gain/loss sum (${totalGainLoss.toFixed(2)})`);
@@ -569,19 +672,19 @@ export async function calculateTaxReport(
   const shortTermLossEvents = combinedTaxableEvents.filter((e) => e.holdingPeriod === "short" && e.gainLoss < 0);
   const longTermLossEvents = combinedTaxableEvents.filter((e) => e.holdingPeriod === "long" && e.gainLoss < 0);
   
-  console.log(`[Tax Calculator] Event breakdown (gainLoss = proceeds - costBasis):`);
-  console.log(`  - Short-term gains: ${shortTermGainsEvents.length} events, total: $${shortTermGains.toFixed(2)}`);
-  console.log(`  - Long-term gains: ${longTermGainsEvents.length} events, total: $${longTermGains.toFixed(2)}`);
-  console.log(`  - Short-term losses: ${shortTermLossEvents.length} events, total: $${shortTermLosses.toFixed(2)}`);
-  console.log(`  - Long-term losses: ${longTermLossEvents.length} events, total: $${longTermLosses.toFixed(2)}`);
-  console.log(`  - Zero gain/loss: ${zeroGainCount} events`);
-  console.log(`  - Total events: ${combinedTaxableEvents.length}`);
-  console.log(`  - Net gain (gains - losses): $${calculatedNetGain.toFixed(2)}`);
-  console.log(`  - Sum of all gainLoss: $${actualTotalGainLoss.toFixed(2)}`);
-  const totalIncome = combinedIncomeEvents.reduce(
+  debugLog(`[Tax Calculator] Event breakdown (gainLoss = proceeds - costBasis):`);
+  debugLog(`  - Short-term gains: ${shortTermGainsEvents.length} events, total: $${shortTermGains.toFixed(2)}`);
+  debugLog(`  - Long-term gains: ${longTermGainsEvents.length} events, total: $${longTermGains.toFixed(2)}`);
+  debugLog(`  - Short-term losses: ${shortTermLossEvents.length} events, total: $${shortTermLosses.toFixed(2)}`);
+  debugLog(`  - Long-term losses: ${longTermLossEvents.length} events, total: $${longTermLosses.toFixed(2)}`);
+  debugLog(`  - Zero gain/loss: ${zeroGainCount} events`);
+  debugLog(`  - Total events: ${combinedTaxableEvents.length}`);
+  debugLog(`  - Net gain (gains - losses): $${calculatedNetGain.toFixed(2)}`);
+  debugLog(`  - Sum of all gainLoss: $${actualTotalGainLoss.toFixed(2)}`);
+  const totalIncome = Math.round(combinedIncomeEvents.reduce(
     (sum, e) => sum + e.valueUsd,
     0
-  );
+  ) * 100) / 100;
   
   // Diagnostic: Check taxable events by year
   const eventsByYear: Record<number, number> = {};
@@ -595,13 +698,13 @@ export async function calculateTaxReport(
     eventsByYearWithGains[year].count++;
     eventsByYearWithGains[year].totalGain += e.gainLoss;
   });
-  console.log(`[Tax Calculator] Taxable events by year:`, eventsByYear);
-  console.log(`[Tax Calculator] Taxable events by year with gains:`, Object.entries(eventsByYearWithGains).map(([year, data]) => ({
+  debugLog(`[Tax Calculator] Taxable events by year:`, eventsByYear);
+  debugLog(`[Tax Calculator] Taxable events by year with gains:`, Object.entries(eventsByYearWithGains).map(([year, data]) => ({
     year: parseInt(year),
     count: data.count,
     totalGain: data.totalGain.toFixed(2)
   })));
-  console.log(`[Tax Calculator] Total Taxable Events: ${combinedTaxableEvents.length}`);
+  debugLog(`[Tax Calculator] Total Taxable Events: ${combinedTaxableEvents.length}`);
   
   // Warn if there are events in unexpected years
   const requestedYear = year;
@@ -618,11 +721,11 @@ export async function calculateTaxReport(
     }
   });
   
-  console.log(`[Tax Calculator] CALCULATED TOTALS:`);
-  console.log(`  - Short-term Gains: $${shortTermGains.toFixed(2)}`);
-  console.log(`  - Long-term Gains: $${longTermGains.toFixed(2)}`);
-  console.log(`  - Short-term Losses: $${shortTermLosses.toFixed(2)}`);
-  console.log(`  - Long-term Losses: $${longTermLosses.toFixed(2)}`);
+  debugLog(`[Tax Calculator] CALCULATED TOTALS:`);
+  debugLog(`  - Short-term Gains: $${shortTermGains.toFixed(2)}`);
+  debugLog(`  - Long-term Gains: $${longTermGains.toFixed(2)}`);
+  debugLog(`  - Short-term Losses: $${shortTermLosses.toFixed(2)}`);
+  debugLog(`  - Long-term Losses: $${longTermLosses.toFixed(2)}`);
   
   // Warn if totals don't match
   const calculatedTotal = shortTermGains + longTermGains - shortTermLosses - longTermLosses;
@@ -630,9 +733,16 @@ export async function calculateTaxReport(
     console.warn(`[Tax Calculator] ⚠️  WARNING: Calculated total (${calculatedTotal.toFixed(2)}) doesn't match sum of gain/loss (${totalGainLoss.toFixed(2)})`);
   }
 
+  // M-1 fix: Round all final USD values to cents to avoid float precision drift
+  const roundCents = (n: number) => Math.round(n * 100) / 100;
+  shortTermGains = roundCents(shortTermGains);
+  shortTermLosses = roundCents(shortTermLosses);
+  longTermGains = roundCents(longTermGains);
+  longTermLosses = roundCents(longTermLosses);
+
   // Calculate net gains/losses
-  const netShortTermGain = shortTermGains - shortTermLosses;
-  const netLongTermGain = longTermGains - longTermLosses;
+  const netShortTermGain = roundCents(shortTermGains - shortTermLosses);
+  const netLongTermGain = roundCents(longTermGains - longTermLosses);
   const totalNetLoss = Math.max(0, -(netShortTermGain + netLongTermGain));
 
   // US Tax Law: Capital loss deduction limit varies by filing status (IRC Section 1211)
@@ -692,7 +802,7 @@ function processTransactionsForTax(
   const buyTransactions: BuyTransaction[] = [];
 
   // Process transactions chronologically
-  console.log(`[processTransactionsForTax] Processing ${transactions.length} transactions for tax year ${taxYear}`);
+  debugLog(`[processTransactionsForTax] Processing ${transactions.length} transactions for tax year ${taxYear}`);
   
   let processedCount = 0;
   let taxableEventCount = 0;
@@ -705,18 +815,15 @@ function processTransactionsForTax(
     const year = tx.tx_timestamp.getFullYear();
     transactionsByYear[year] = (transactionsByYear[year] || 0) + 1;
   });
-  console.log(`[processTransactionsForTax] Transactions by year:`, transactionsByYear);
+  debugLog(`[processTransactionsForTax] Transactions by year:`, transactionsByYear);
   
   // Count sell transactions by year
   const sellTransactionsByYear: Record<number, number> = {};
-  transactions.filter(tx => {
-    const type = (tx.type || "").toLowerCase();
-    return type === "sell" || tx.type === "Sell";
-  }).forEach(tx => {
+  transactions.filter(tx => (tx.type || "").toLowerCase() === "sell").forEach(tx => {
     const year = tx.tx_timestamp.getFullYear();
     sellTransactionsByYear[year] = (sellTransactionsByYear[year] || 0) + 1;
   });
-  console.log(`[processTransactionsForTax] Sell transactions by year:`, sellTransactionsByYear);
+  debugLog(`[processTransactionsForTax] Sell transactions by year:`, sellTransactionsByYear);
 
   // List of fiat currencies to exclude from tax calculations
   // Bank transfers and fiat currency movements are not taxable crypto events
@@ -744,7 +851,7 @@ function processTransactionsForTax(
     // These are not crypto transactions and should not be included in tax calculations
     if (FIAT_CURRENCIES.has(asset)) {
       if (processedCount < 20) {
-        console.log(`[Tax Calculator] Skipping fiat currency transaction: ${tx.type} ${amount} ${asset}`);
+        debugLog(`[Tax Calculator] Skipping fiat currency transaction: ${tx.type} ${amount} ${asset}`);
       }
       continue;
     }
@@ -759,8 +866,8 @@ function processTransactionsForTax(
     }
 
     // Log first few sell transactions for debugging
-    if ((txType === "sell" || tx.type === "Sell") && processedCount < 10) {
-      console.log(`[processTransactionsForTax] Processing sell transaction ${tx.id}: type=${tx.type}, asset=${asset} (original: "${tx.asset_symbol}"), valueUsd=${valueUsd}, date=${date.toISOString().split('T')[0]}, year=${txYear}, taxYear=${taxYear}, notes=${tx.notes?.substring(0, 150) || "none"}`);
+    if (txType === "sell" && processedCount < 10) {
+      debugLog(`[processTransactionsForTax] Processing sell transaction ${tx.id}: type=${tx.type}, asset=${asset} (original: "${tx.asset_symbol}"), valueUsd=${valueUsd}, date=${date.toISOString().split('T')[0]}, year=${txYear}, taxYear=${taxYear}, notes=${tx.notes?.substring(0, 150) || "none"}`);
     }
 
     // Initialize asset lots if needed
@@ -769,10 +876,9 @@ function processTransactionsForTax(
     }
 
     // Handle buys - add to cost basis (including fees per IRS rules)
-    // Also handle "Buy" with capital B (from CSV parser)
     // NFT Purchase is treated as a buy (cost basis for future sale)
-    if (txType === "buy" || txType === "dca" || tx.type === "Buy" || 
-        txType === "nft purchase" || tx.type === "NFT Purchase") {
+    if (txType === "buy" || txType === "dca" ||
+        txType === "nft purchase") {
       // IRS Rule: Fees are added to cost basis for purchases
       // For CSV imports with tax report format, value_usd is NEGATIVE (cost basis as negative value)
       // For standard format, value_usd might be negative, so use absolute value
@@ -784,12 +890,12 @@ function processTransactionsForTax(
       if (washSaleAdjustment > 0) {
         // Add disallowed loss to cost basis of replacement shares
         totalCostBasis += washSaleAdjustment;
-        console.log(`[Wash Sale] Buy transaction ${tx.id}: Added $${washSaleAdjustment.toFixed(2)} wash sale adjustment to cost basis. New cost basis: $${totalCostBasis.toFixed(2)}`);
+        debugLog(`[Wash Sale] Buy transaction ${tx.id}: Added $${washSaleAdjustment.toFixed(2)} wash sale adjustment to cost basis. New cost basis: $${totalCostBasis.toFixed(2)}`);
       }
       
       // Log if this is a CSV import buy to verify it's being processed
       if (tx.source_type === "csv_import" && processedCount < 20) {
-        console.log(`[processTransactionsForTax] Processing CSV buy ${tx.id}: asset=${asset}, value_usd=${valueUsd}, totalCostBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, year=${txYear}`);
+        debugLog(`[processTransactionsForTax] Processing CSV buy ${tx.id}: asset=${asset}, value_usd=${valueUsd}, totalCostBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, year=${txYear}`);
       }
       costBasisLots[asset].push({
         id: tx.id,
@@ -812,14 +918,12 @@ function processTransactionsForTax(
       });
       
       if (processedCount < 10 || costBasisLots[asset].length <= 3) {
-        console.log(`[processTransactionsForTax] Added buy transaction ${tx.id} to cost basis: asset=${asset} (original: "${tx.asset_symbol}"), amount=${amount}, costBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, lotsForAsset=${costBasisLots[asset].length}`);
+        debugLog(`[processTransactionsForTax] Added buy transaction ${tx.id} to cost basis: asset=${asset} (original: "${tx.asset_symbol}"), amount=${amount}, costBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, lotsForAsset=${costBasisLots[asset].length}`);
       }
     }
     // Handle sells - calculate capital gains/losses
-    // Also handle "Sell" with capital S (from CSV parser)
     // NFT Sale is treated as a sell (taxable disposal event)
-    else if (txType === "sell" || tx.type === "Sell" ||
-             txType === "nft sale" || tx.type === "NFT Sale") {
+    else if (txType === "sell" || txType === "nft sale") {
       // Use the processDisposal helper to calculate disposal details
       const disposal = processDisposal(
         tx,
@@ -864,9 +968,9 @@ function processTransactionsForTax(
 
           if (taxableEventCount < 20) {
             if (hasIncomeForAsset) {
-              console.log(`[Tax Calculator] ℹ️  Sell transaction ${tx.id} has zero cost basis, but income was recorded for "${asset}".`);
-              console.log(`  - This is expected if you received "${asset}" as income/airdrop and sold it without buying more.`);
-              console.log(`  - Cost basis should equal the income value when received. Verify income events are correct.`);
+              debugLog(`[Tax Calculator] ℹ️  Sell transaction ${tx.id} has zero cost basis, but income was recorded for "${asset}".`);
+              debugLog(`  - This is expected if you received "${asset}" as income/airdrop and sold it without buying more.`);
+              debugLog(`  - Cost basis should equal the income value when received. Verify income events are correct.`);
             } else {
               console.warn(`[Tax Calculator] ⚠️  Sell transaction ${tx.id} has NO cost basis and NO matching buy/income transactions!`);
               console.warn(`  - Asset: "${asset}" (original: "${tx.asset_symbol}")`);
@@ -879,28 +983,17 @@ function processTransactionsForTax(
         }
 
         if (taxableEventCount < 10 || (disposal.totalCostBasis === 0 && taxableEventCount < 20)) {
-          console.log(`[Tax Calculator] Including taxable event: asset=${asset}, proceeds=${disposal.netProceeds}, costBasis=${disposal.totalCostBasis}, gainLoss=${disposal.gainLoss}, holdingPeriod=${disposal.holdingPeriod}, year=${txYear}`);
+          debugLog(`[Tax Calculator] Including taxable event: asset=${asset}, proceeds=${disposal.netProceeds}, costBasis=${disposal.totalCostBasis}, gainLoss=${disposal.gainLoss}, holdingPeriod=${disposal.holdingPeriod}, year=${txYear}`);
         }
 
-        taxableEventCount++;
-        taxableEvents.push({
-          id: tx.id,
-          date,
-          dateAcquired: disposal.earliestLotDate,
-          asset,
-          amount,
-          proceeds: disposal.netProceeds,
-          costBasis: disposal.totalCostBasis,
-          gainLoss: disposal.gainLoss,
-          holdingPeriod: disposal.holdingPeriod,
-          chain: tx.chain || undefined,
-          txHash: tx.tx_hash || undefined,
-          washSale: false,
-          washSaleAdjustment: undefined,
-        });
+        const events = createDisposalTaxEvents(tx, asset, amount, disposal, date);
+        for (const event of events) {
+          taxableEventCount++;
+          taxableEvents.push(event);
+        }
       } else {
-        if (processedCount < 20 && (txType === "sell" || tx.type === "Sell")) {
-          console.log(`[Tax Calculator] Skipping sell transaction ${tx.id}: year mismatch (txYear=${txYear}, taxYear=${taxYear}), date=${date.toISOString().split('T')[0]}, asset=${asset}`);
+        if (processedCount < 20 && txType === "sell") {
+          debugLog(`[Tax Calculator] Skipping sell transaction ${tx.id}: year mismatch (txYear=${txYear}, taxYear=${taxYear}), date=${date.toISOString().split('T')[0]}, asset=${asset}`);
         }
       }
     }
@@ -1230,6 +1323,16 @@ function processTransactionsForTax(
 
       // Note: Asset received on destination chain should be tracked separately
       // with cost basis = FMV at time of bridge
+
+      // Create cost basis lot on destination chain at FMV at bridge time
+      // This prevents the bridged asset from having zero cost basis
+      costBasisLots[asset].push({
+        id: tx.id,
+        date,
+        amount: bridgeAmount,
+        costBasis: proceeds, // FMV at time of bridge
+        pricePerUnit: proceeds / bridgeAmount,
+      });
     }
     // Handle liquidity providing - LP token acquisition
     // IRS: Adding liquidity creates LP tokens with cost basis = value of assets provided
@@ -1325,7 +1428,7 @@ function processTransactionsForTax(
       const washSaleAdjustment = checkWashSale(asset, date, lossSales);
       if (washSaleAdjustment > 0) {
         totalCostBasis += washSaleAdjustment;
-        console.log(`[Wash Sale] Margin buy transaction ${tx.id}: Added $${washSaleAdjustment.toFixed(2)} wash sale adjustment to cost basis.`);
+        debugLog(`[Wash Sale] Margin buy transaction ${tx.id}: Added $${washSaleAdjustment.toFixed(2)} wash sale adjustment to cost basis.`);
       }
       
       costBasisLots[asset].push({
@@ -1369,21 +1472,11 @@ function processTransactionsForTax(
       }
 
       if (txYear === taxYear) {
-        taxableEvents.push({
-          id: tx.id,
-          date,
-          dateAcquired: disposal.earliestLotDate,
-          asset,
-          amount,
-          proceeds: disposal.netProceeds,
-          costBasis: disposal.totalCostBasis,
-          gainLoss: disposal.gainLoss,
-          holdingPeriod: disposal.holdingPeriod,
-          chain: tx.chain || undefined,
-          txHash: tx.tx_hash || undefined,
-          washSale: false,
-          washSaleAdjustment: undefined,
-        });
+        const events = createDisposalTaxEvents(tx, asset, amount, disposal, date);
+        for (const event of events) {
+          taxableEventCount++;
+          taxableEvents.push(event);
+        }
       }
     }
     // Handle liquidations - treated as forced sale at market price
@@ -1419,21 +1512,11 @@ function processTransactionsForTax(
       }
 
       if (txYear === taxYear) {
-        taxableEvents.push({
-          id: tx.id,
-          date,
-          dateAcquired: disposal.earliestLotDate,
-          asset,
-          amount,
-          proceeds: disposal.netProceeds,
-          costBasis: disposal.totalCostBasis,
-          gainLoss: disposal.gainLoss,
-          holdingPeriod: disposal.holdingPeriod,
-          chain: tx.chain || undefined,
-          txHash: tx.tx_hash || undefined,
-          washSale: false,
-          washSaleAdjustment: undefined,
-        });
+        const events = createDisposalTaxEvents(tx, asset, amount, disposal, date);
+        for (const event of events) {
+          taxableEventCount++;
+          taxableEvents.push(event);
+        }
       }
     }
     // Handle borrow - not taxable but affects holdings tracking
@@ -1455,14 +1538,14 @@ function processTransactionsForTax(
       // - Track borrowed vs owned assets separately
       // - Prevent borrowed assets from being used in cost basis calculations
       // - Ensure repayments reduce borrowed pool, not owned pool
-      console.log(`[Tax Calculator] Borrow transaction ${tx.id}: Borrowing is not currently tracked. Ensure you don't mix borrowed and owned crypto.`);
+      debugLog(`[Tax Calculator] Borrow transaction ${tx.id}: Borrowing is not currently tracked. Ensure you don't mix borrowed and owned crypto.`);
     }
     // Handle repay - not taxable but affects holdings tracking
     else if (txType === "repay") {
       // LIMITATION: Repaying doesn't create taxable event
       // Reduces borrowed amount (which is not currently tracked)
       // See borrow handler above for full explanation of limitations
-      console.log(`[Tax Calculator] Repay transaction ${tx.id}: Repayment is not currently tracked. Ensure you don't mix borrowed and owned crypto.`);
+      debugLog(`[Tax Calculator] Repay transaction ${tx.id}: Repayment is not currently tracked. Ensure you don't mix borrowed and owned crypto.`);
     }
     // Handle deposit — treat as acquisition (same as buy: creates cost basis lot)
     else if (txType === "deposit") {
@@ -1506,22 +1589,11 @@ function processTransactionsForTax(
       }
 
       if (txYear === taxYear) {
-        taxableEventCount++;
-        taxableEvents.push({
-          id: tx.id,
-          date,
-          dateAcquired: disposal.earliestLotDate,
-          asset,
-          amount,
-          proceeds: disposal.netProceeds,
-          costBasis: disposal.totalCostBasis,
-          gainLoss: disposal.gainLoss,
-          holdingPeriod: disposal.holdingPeriod,
-          chain: tx.chain || undefined,
-          txHash: tx.tx_hash || undefined,
-          washSale: false,
-          washSaleAdjustment: undefined,
-        });
+        const events = createDisposalTaxEvents(tx, asset, amount, disposal, date);
+        for (const event of events) {
+          taxableEventCount++;
+          taxableEvents.push(event);
+        }
       }
     }
     // Handle burn — disposal at $0 proceeds (capital loss = full cost basis)
@@ -1628,26 +1700,26 @@ function processTransactionsForTax(
   // This includes checking buys that occurred BEFORE loss sales (two-pass approach)
   markWashSales(taxableEvents, lossSales, buyTransactions, costBasisLots);
   
-  console.log(`[processTransactionsForTax] Processing complete for tax year ${taxYear}:`);
-  console.log(`  - Processed ${processedCount} transactions (out of ${transactions.length} total)`);
-  console.log(`  - Found ${taxableEventCount} taxable events`);
-  console.log(`  - Found ${incomeEventCount} income events`);
-  console.log(`  - Transaction types processed:`, typeCounts);
-  console.log(`  - Loss sales tracked: ${lossSales.length}`);
+  debugLog(`[processTransactionsForTax] Processing complete for tax year ${taxYear}:`);
+  debugLog(`  - Processed ${processedCount} transactions (out of ${transactions.length} total)`);
+  debugLog(`  - Found ${taxableEventCount} taxable events`);
+  debugLog(`  - Found ${incomeEventCount} income events`);
+  debugLog(`  - Transaction types processed:`, typeCounts);
+  debugLog(`  - Loss sales tracked: ${lossSales.length}`);
   const washSaleCount = taxableEvents.filter(e => e.washSale).length;
   if (washSaleCount > 0) {
-    console.log(`  - Wash sales detected: ${washSaleCount}`);
+    debugLog(`  - Wash sales detected: ${washSaleCount}`);
   }
   
   // Log cost basis lots summary
   const assetsWithLots = Object.keys(costBasisLots).filter(k => costBasisLots[k].length > 0);
-  console.log(`  - Assets with cost basis lots: ${assetsWithLots.length}`);
+  debugLog(`  - Assets with cost basis lots: ${assetsWithLots.length}`);
   if (assetsWithLots.length > 0) {
-    console.log(`  - Assets: ${assetsWithLots.join(", ")}`);
+    debugLog(`  - Assets: ${assetsWithLots.join(", ")}`);
     assetsWithLots.forEach(asset => {
       const totalAmount = costBasisLots[asset].reduce((sum, lot) => sum + lot.amount, 0);
       const totalCostBasis = costBasisLots[asset].reduce((sum, lot) => sum + lot.costBasis, 0);
-      console.log(`    - ${asset}: ${costBasisLots[asset].length} lots, ${totalAmount} total amount, $${totalCostBasis.toFixed(2)} total cost basis`);
+      debugLog(`    - ${asset}: ${costBasisLots[asset].length} lots, ${totalAmount} total amount, $${totalCostBasis.toFixed(2)} total cost basis`);
     });
   } else {
     console.warn(`  - ⚠️  NO COST BASIS LOTS CREATED! This means no buy transactions were processed.`);
@@ -1768,43 +1840,63 @@ function parseSwapTransaction(tx: Transaction): {
   const assetSymbol = tx.asset_symbol;
   const outgoingValueUsd = Number(tx.value_usd);
 
-  // Try to parse from notes (format: "ETH → USDC" or "1.5 ETH → 3000 USDC" or "Swapped 1.5 ETH for 3000 USDC")
-  // More flexible patterns
-  const swapPatterns = [
-    /([\d.,]+)\s*(\w+)\s*(?:→|->|-|for|to)\s*([\d.,]+)\s*(\w+)/i, // "1.5 ETH → 3000 USDC"
-    /(?:swapped|swap|exchanged|exchange)\s+([\d.,]+)\s+(\w+)\s+(?:for|to|→|->|-)\s+([\d.,]+)\s+(\w+)/i, // "Swapped 1.5 ETH for 3000 USDC"
-    /(\w+)\s*→\s*(\w+)/i, // "ETH → USDC" (no amounts)
-  ];
-
-  for (const pattern of swapPatterns) {
-    const match = notes.match(pattern);
-    if (match) {
-      const outgoingAsset = match[2]?.toUpperCase() || match[1]?.toUpperCase();
-      const incomingAsset = match[4]?.toUpperCase() || match[2]?.toUpperCase();
-      const outgoingAmount = match[1] ? parseFloat(match[1].replace(/,/g, "")) : Number(tx.amount_value);
-      const incomingAmount = match[3] ? parseFloat(match[3].replace(/,/g, "")) : null;
-
-      // Calculate incoming value USD if we have incoming amount
-      // For swaps, incoming value should equal outgoing value (minus fees)
-      let incomingValueUsd: number | null = null;
-      if (incomingAmount && outgoingValueUsd) {
-        // In a swap, the incoming value should be approximately equal to outgoing value
-        // (the difference is slippage/fees, which we account for separately)
-        incomingValueUsd = Math.abs(outgoingValueUsd);
-      }
-
-      return {
-        outgoingAsset: outgoingAsset ? outgoingAsset.trim().toUpperCase() : (tx.asset_symbol ? tx.asset_symbol.trim().toUpperCase() : null),
-        incomingAsset: incomingAsset ? incomingAsset.trim().toUpperCase() : null,
-        outgoingAmount: outgoingAmount || Number(tx.amount_value),
-        incomingAmount,
-        incomingValueUsd,
-      };
+  // Pattern 1: "1.5 ETH → 3000 USDC" (4 capture groups)
+  const pattern1 = /([\d.,]+)\s*(\w+)\s*(?:→|->|\bfor\b|\bto\b)\s*([\d.,]+)\s*(\w+)/i;
+  const match1 = notes.match(pattern1);
+  if (match1) {
+    const outgoingAsset = match1[2].toUpperCase();
+    const incomingAsset = match1[4].toUpperCase();
+    const outgoingAmount = parseFloat(match1[1].replace(/,/g, ""));
+    const incomingAmount = parseFloat(match1[3].replace(/,/g, ""));
+    let incomingValueUsd: number | null = null;
+    if (incomingAmount && outgoingValueUsd) {
+      incomingValueUsd = Math.abs(outgoingValueUsd);
     }
+    return {
+      outgoingAsset: outgoingAsset.trim().toUpperCase(),
+      incomingAsset: incomingAsset.trim().toUpperCase(),
+      outgoingAmount: outgoingAmount || Number(tx.amount_value),
+      incomingAmount,
+      incomingValueUsd,
+    };
+  }
+
+  // Pattern 2: "Swapped 1.5 ETH for 3000 USDC" (4 capture groups)
+  const pattern2 = /(?:swapped|swap|exchanged|exchange)\s+([\d.,]+)\s+(\w+)\s+(?:\bfor\b|\bto\b|→|->)\s+([\d.,]+)\s+(\w+)/i;
+  const match2 = notes.match(pattern2);
+  if (match2) {
+    const outgoingAsset = match2[2].toUpperCase();
+    const incomingAsset = match2[4].toUpperCase();
+    const outgoingAmount = parseFloat(match2[1].replace(/,/g, ""));
+    const incomingAmount = parseFloat(match2[3].replace(/,/g, ""));
+    let incomingValueUsd: number | null = null;
+    if (incomingAmount && outgoingValueUsd) {
+      incomingValueUsd = Math.abs(outgoingValueUsd);
+    }
+    return {
+      outgoingAsset: outgoingAsset.trim().toUpperCase(),
+      incomingAsset: incomingAsset.trim().toUpperCase(),
+      outgoingAmount: outgoingAmount || Number(tx.amount_value),
+      incomingAmount,
+      incomingValueUsd,
+    };
+  }
+
+  // Pattern 3: "ETH → USDC" (2 capture groups, no amounts)
+  const pattern3 = /(\w+)\s*→\s*(\w+)/i;
+  const match3 = notes.match(pattern3);
+  if (match3) {
+    return {
+      outgoingAsset: match3[1].toUpperCase(),
+      incomingAsset: match3[2].toUpperCase(),
+      outgoingAmount: Number(tx.amount_value),
+      incomingAmount: null,
+      incomingValueUsd: outgoingValueUsd ? Math.abs(outgoingValueUsd) : null,
+    };
   }
 
   // Try to parse from asset_symbol (format: "ETH/USDC" or "ETH→USDC")
-  const assetPattern = /(\w+)\s*(?:\/|→|->|-)\s*(\w+)/i;
+  const assetPattern = /(\w+)\s*(?:\/|→|->)\s*(\w+)/i;
   const assetMatch = assetSymbol.match(assetPattern);
 
   if (assetMatch) {
@@ -1866,7 +1958,7 @@ function checkWashSale(
       lossSale.remainingLoss -= adjustment;
       totalAdjustment += adjustment;
       
-      console.log(`[Wash Sale] Detected wash sale: Buy on ${buyDate.toISOString().split('T')[0]} is within 30 days of loss sale on ${lossSale.date.toISOString().split('T')[0]}. Applying $${adjustment.toFixed(2)} adjustment.`);
+      debugLog(`[Wash Sale] Detected wash sale: Buy on ${buyDate.toISOString().split('T')[0]} is within 30 days of loss sale on ${lossSale.date.toISOString().split('T')[0]}. Applying $${adjustment.toFixed(2)} adjustment.`);
     }
   }
   
@@ -1906,7 +1998,11 @@ function markWashSales(
       if (daysDifference >= 0 && daysDifference <= thirtyDaysMs) {
         // This buy occurred before the loss sale within 30 days - wash sale applies
         // Add disallowed loss to the cost basis of this buy (if not already applied)
-        const disallowedAmount = Math.min(remainingLossToDisallow, lossSale.lossAmount);
+        // Proportional disallowance: only disallow the fraction matching replacement shares
+        const proportionalLoss = lossSale.amount > 0
+          ? lossSale.lossAmount * Math.min(buyTx.amount, lossSale.amount) / lossSale.amount
+          : lossSale.lossAmount;
+        const disallowedAmount = Math.min(remainingLossToDisallow, proportionalLoss);
 
         // Find the lot and add the wash sale adjustment
         const lot = costBasisLots[buyTx.asset]?.find(l => l.id === buyTx.lotId);
@@ -1918,7 +2014,7 @@ function markWashSales(
             lot.costBasis += disallowedAmount;
             remainingLossToDisallow -= disallowedAmount;
 
-            console.log(`[Wash Sale] Buy ${buyTx.id} occurred ${Math.round(daysDifference / (24 * 60 * 60 * 1000))} days BEFORE loss sale ${lossSale.id}. Adding $${disallowedAmount.toFixed(2)} to cost basis.`);
+            debugLog(`[Wash Sale] Buy ${buyTx.id} occurred ${Math.round(daysDifference / (24 * 60 * 60 * 1000))} days BEFORE loss sale ${lossSale.id}. Adding $${disallowedAmount.toFixed(2)} to cost basis.`);
           }
         }
       }
@@ -1940,7 +2036,7 @@ function markWashSales(
         event.washSale = true;
         event.washSaleAdjustment = disallowedAmount;
         // Note: The gainLoss remains negative (loss), but it will be marked with code "W" in Form 8949
-        console.log(`[Wash Sale] Marked event ${event.id} as wash sale. Total disallowed loss: $${disallowedAmount.toFixed(2)}`);
+        debugLog(`[Wash Sale] Marked event ${event.id} as wash sale. Total disallowed loss: $${disallowedAmount.toFixed(2)}`);
       }
     }
   }

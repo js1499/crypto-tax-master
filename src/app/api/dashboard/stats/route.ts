@@ -4,7 +4,6 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
-import { Decimal } from "@prisma/client/runtime/library";
 
 /**
  * GET /api/dashboard/stats
@@ -110,46 +109,42 @@ export async function GET(request: NextRequest) {
       orderBy: { tx_timestamp: "asc" },
     });
 
-    // Calculate current holdings and cost basis
-    const holdings: Record<string, { amount: number; costBasis: number; avgPrice: number }> = {};
-    const costBasisLots: Record<string, Array<{ date: Date; amount: number; costBasis: number }>> = {};
+    // L-3 fix: Extracted holdings processing into a reusable function
+    // to eliminate duplication between current holdings and monthly snapshots.
+    const BUY_SIDE_TYPES = ["buy", "dca", "receive", "reward", "stake", "staking", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "mint"];
+    const SELL_SIDE_TYPES = ["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity", "burn", "unstake"];
 
-    // Process transactions to calculate holdings
-    for (const tx of allTransactions) {
+    type HoldingsMap = Record<string, { amount: number; costBasis: number }>;
+    type LotMap = Record<string, Array<{ date: Date; amount: number; costBasis: number }>>;
+
+    function processTransactionForHoldings(
+      tx: typeof allTransactions[number],
+      holdingsMap: HoldingsMap,
+      lotsMap: LotMap,
+    ) {
       const asset = (tx.asset_symbol || "").trim().toUpperCase();
       const amount = Number(tx.amount_value);
       const valueUsd = Number(tx.value_usd);
       const feeUsd = tx.fee_usd ? Number(tx.fee_usd) : 0;
       const txType = tx.type.toLowerCase();
 
-      if (!holdings[asset]) {
-        holdings[asset] = { amount: 0, costBasis: 0, avgPrice: 0 };
-        costBasisLots[asset] = [];
+      if (!holdingsMap[asset]) {
+        holdingsMap[asset] = { amount: 0, costBasis: 0 };
+        lotsMap[asset] = [];
       }
 
-      // Handle buys, DCA, receives, rewards, income - add to holdings
-      if (["buy", "dca", "receive", "reward", "stake", "staking", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "mint"].includes(txType)) {
+      if (BUY_SIDE_TYPES.includes(txType)) {
         const totalCostBasis = Math.abs(valueUsd) + feeUsd;
-        holdings[asset].amount += amount;
-        holdings[asset].costBasis += totalCostBasis;
-        costBasisLots[asset].push({
-          date: tx.tx_timestamp,
-          amount,
-          costBasis: totalCostBasis,
-        });
-      }
-      // Handle sells, sends, swaps (outgoing) - remove from holdings
-      else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity", "burn", "unstake"].includes(txType)) {
-        const sellAmount = amount;
-        let remainingToSell = sellAmount;
-        
-        // Sort lots according to user's cost basis method
-        const sortedLots = sortLotsForMethod(costBasisLots[asset]);
+        holdingsMap[asset].amount += amount;
+        holdingsMap[asset].costBasis += totalCostBasis;
+        lotsMap[asset].push({ date: tx.tx_timestamp, amount, costBasis: totalCostBasis });
+      } else if (SELL_SIDE_TYPES.includes(txType)) {
+        let remainingToSell = amount;
+        const sortedLots = sortLotsForMethod(lotsMap[asset]);
         let soldCostBasis = 0;
         for (const lot of sortedLots) {
           if (remainingToSell <= 0) break;
           const amountFromLot = Math.min(remainingToSell, lot.amount);
-          // BUG-015 fix: Prevent division by zero
           const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
           const costBasisFromLot = costBasisPerUnit * amountFromLot;
           soldCostBasis += costBasisFromLot;
@@ -157,17 +152,9 @@ export async function GET(request: NextRequest) {
           lot.costBasis -= costBasisFromLot;
           remainingToSell -= amountFromLot;
         }
-
-        // Remove empty lots
-        costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
-
-        // BUG-016 fix: Prevent negative holdings
-        const previousAmount = holdings[asset].amount;
-        holdings[asset].amount = Math.max(0, holdings[asset].amount - sellAmount);
-        holdings[asset].costBasis = Math.max(0, holdings[asset].costBasis - soldCostBasis);
-        if (holdings[asset].amount === 0 && previousAmount < sellAmount) {
-          console.warn(`[Dashboard] Potential data issue: sold more ${asset} than purchased`);
-        }
+        lotsMap[asset] = lotsMap[asset].filter((lot) => lot.amount > 0);
+        holdingsMap[asset].amount = Math.max(0, holdingsMap[asset].amount - amount);
+        holdingsMap[asset].costBasis = Math.max(0, holdingsMap[asset].costBasis - soldCostBasis);
       }
 
       // Handle swaps - incoming asset
@@ -175,22 +162,23 @@ export async function GET(request: NextRequest) {
         const incomingAsset = (tx.incoming_asset_symbol || "").trim().toUpperCase();
         const incomingAmount = Number(tx.incoming_amount_value);
         const incomingValueUsd = Number(tx.incoming_value_usd);
-
-        if (!holdings[incomingAsset]) {
-          holdings[incomingAsset] = { amount: 0, costBasis: 0, avgPrice: 0 };
-          costBasisLots[incomingAsset] = [];
+        if (!holdingsMap[incomingAsset]) {
+          holdingsMap[incomingAsset] = { amount: 0, costBasis: 0 };
+          lotsMap[incomingAsset] = [];
         }
-
-        // Fees apply to the outgoing (disposal) side only, matching tax-calculator.ts
         const incomingCostBasis = incomingValueUsd;
-        holdings[incomingAsset].amount += incomingAmount;
-        holdings[incomingAsset].costBasis += incomingCostBasis;
-        costBasisLots[incomingAsset].push({
-          date: tx.tx_timestamp,
-          amount: incomingAmount,
-          costBasis: incomingCostBasis,
-        });
+        holdingsMap[incomingAsset].amount += incomingAmount;
+        holdingsMap[incomingAsset].costBasis += incomingCostBasis;
+        lotsMap[incomingAsset].push({ date: tx.tx_timestamp, amount: incomingAmount, costBasis: incomingCostBasis });
       }
+    }
+
+    // Calculate current holdings and cost basis
+    const holdings: HoldingsMap = {};
+    const costBasisLots: LotMap = {};
+
+    for (const tx of allTransactions) {
+      processTransactionForHoldings(tx, holdings, costBasisLots);
     }
 
     // Get current prices for assets (using latest transaction price as proxy)
@@ -276,77 +264,9 @@ export async function GET(request: NextRequest) {
         (a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime()
       );
 
-      // Process all transactions in this month
+      // L-3 fix: Reuse shared processTransactionForHoldings function
       for (const tx of monthTransactions) {
-        const asset = (tx.asset_symbol || "").trim().toUpperCase();
-        const amount = Number(tx.amount_value);
-        const valueUsd = Number(tx.value_usd);
-        const feeUsd = tx.fee_usd ? Number(tx.fee_usd) : 0;
-        const txType = tx.type.toLowerCase();
-
-        if (!runningHoldings[asset]) {
-          runningHoldings[asset] = { amount: 0, costBasis: 0 };
-          runningCostBasisLots[asset] = [];
-        }
-
-        // Handle buys, receives, rewards - add to holdings
-        if (["buy", "dca", "receive", "reward", "stake", "staking", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "mint"].includes(txType)) {
-          const totalCostBasis = Math.abs(valueUsd) + feeUsd;
-          runningHoldings[asset].amount += amount;
-          runningHoldings[asset].costBasis += totalCostBasis;
-          runningCostBasisLots[asset].push({
-            date: tx.tx_timestamp,
-            amount,
-            costBasis: totalCostBasis,
-          });
-        }
-        // Handle sells, sends, swaps (outgoing) - remove from holdings
-        else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity", "burn", "unstake"].includes(txType)) {
-          const sellAmount = amount;
-          let remainingToSell = sellAmount;
-          let soldCostBasis = 0;
-
-          // Sort lots according to user's cost basis method
-          const sortedLots = sortLotsForMethod(runningCostBasisLots[asset]);
-          for (const lot of sortedLots) {
-            if (remainingToSell <= 0) break;
-            const amountFromLot = Math.min(remainingToSell, lot.amount);
-            // BUG-015 fix: Prevent division by zero
-            const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
-            const costBasisFromLot = costBasisPerUnit * amountFromLot;
-            soldCostBasis += costBasisFromLot;
-            lot.amount -= amountFromLot;
-            lot.costBasis -= costBasisFromLot;
-            remainingToSell -= amountFromLot;
-          }
-
-          runningCostBasisLots[asset] = runningCostBasisLots[asset].filter((lot) => lot.amount > 0);
-          // BUG-016 fix: Prevent negative holdings
-          runningHoldings[asset].amount = Math.max(0, runningHoldings[asset].amount - sellAmount);
-          runningHoldings[asset].costBasis = Math.max(0, runningHoldings[asset].costBasis - soldCostBasis);
-        }
-
-        // Handle swaps - incoming asset
-        if (tx.incoming_asset_symbol && tx.incoming_amount_value && tx.incoming_value_usd) {
-          const incomingAsset = (tx.incoming_asset_symbol || "").trim().toUpperCase();
-          const incomingAmount = Number(tx.incoming_amount_value);
-          const incomingValueUsd = Number(tx.incoming_value_usd);
-          // Fees apply to the outgoing (disposal) side only
-          const incomingCostBasis = incomingValueUsd;
-
-          if (!runningHoldings[incomingAsset]) {
-            runningHoldings[incomingAsset] = { amount: 0, costBasis: 0 };
-            runningCostBasisLots[incomingAsset] = [];
-          }
-
-          runningHoldings[incomingAsset].amount += incomingAmount;
-          runningHoldings[incomingAsset].costBasis += incomingCostBasis;
-          runningCostBasisLots[incomingAsset].push({
-            date: tx.tx_timestamp,
-            amount: incomingAmount,
-            costBasis: incomingCostBasis,
-          });
-        }
+        processTransactionForHoldings(tx, runningHoldings, runningCostBasisLots);
       }
 
       // Calculate portfolio value at end of this month

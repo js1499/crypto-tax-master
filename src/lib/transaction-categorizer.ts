@@ -43,8 +43,12 @@ export function categorizeTransaction(
   const combinedText = `${typeLower} ${notesLower} ${assetLower}`.toLowerCase();
 
   // Zero value transactions
+  // M-7 fix: Don't categorize income-type transactions as "Zero Transaction" even
+  // if value_usd is 0 — they may still have non-zero amounts worth tracking.
   const value = valueUsd ? Number(valueUsd) : 0;
-  if (value === 0 || typeLower.includes("zero")) {
+  const incomeTypeKeywords = ["airdrop", "reward", "mining", "yield", "interest", "stake"];
+  const isIncomeType = incomeTypeKeywords.some(k => typeLower.includes(k));
+  if ((value === 0 && !isIncomeType) || typeLower.includes("zero")) {
     return {
       category: "zero",
       identified: true,
@@ -301,10 +305,11 @@ export function categorizeTransaction(
   }
 
   // Default: not identified, keep original type
-  // Don't default to "Sell" based on positive value alone - that's too aggressive
-  // Only categorize as sell if there are explicit sell indicators
+  // L-4 fix: Don't default to "buy" — that creates phantom cost basis lots in the
+  // tax engine for unknown transaction types. Use "transfer" as a neutral fallback
+  // so the tax engine skips it, and leave identified=false for user review.
   return {
-    category: "buy", // Default fallback
+    category: "transfer", // Neutral fallback — tax engine skips transfers
     identified: false,
     finalType: type, // Keep original type so user can review
   };
