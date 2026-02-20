@@ -80,12 +80,24 @@ export async function GET(request: NextRequest) {
     if (walletAddresses.length > 0) {
       orConditions.push({ wallet_address: { in: walletAddresses } });
     }
-    // Include CSV-imported transactions (source_type: "csv_import" with null wallet_address)
+    // Include CSV imports (see LIMITATION note in tax-calculator.ts)
     orConditions.push({
       AND: [{ source_type: "csv_import" }, { wallet_address: null }],
     });
-    // Include exchange API imports
-    orConditions.push({ source_type: "exchange_api" });
+    // Include exchange API imports — scoped to user's connected exchanges
+    const userExchanges = await prisma.exchange.findMany({
+      where: { userId: user.id },
+      select: { name: true },
+    });
+    const exchangeNames = userExchanges.map(e => e.name);
+    if (exchangeNames.length > 0) {
+      orConditions.push({
+        AND: [
+          { source_type: "exchange_api" },
+          { source: { in: exchangeNames } },
+        ],
+      });
+    }
 
     whereClause.OR = orConditions;
 
@@ -116,7 +128,7 @@ export async function GET(request: NextRequest) {
       }
 
       // Handle buys, DCA, receives, rewards, income - add to holdings
-      if (["buy", "dca", "receive", "reward", "stake", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "unstake", "mint"].includes(txType)) {
+      if (["buy", "dca", "receive", "reward", "stake", "staking", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "mint"].includes(txType)) {
         const totalCostBasis = Math.abs(valueUsd) + feeUsd;
         holdings[asset].amount += amount;
         holdings[asset].costBasis += totalCostBasis;
@@ -127,7 +139,7 @@ export async function GET(request: NextRequest) {
         });
       }
       // Handle sells, sends, swaps (outgoing) - remove from holdings
-      else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity", "burn"].includes(txType)) {
+      else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity", "burn", "unstake"].includes(txType)) {
         const sellAmount = amount;
         let remainingToSell = sellAmount;
         
@@ -163,14 +175,14 @@ export async function GET(request: NextRequest) {
         const incomingAsset = (tx.incoming_asset_symbol || "").trim().toUpperCase();
         const incomingAmount = Number(tx.incoming_amount_value);
         const incomingValueUsd = Number(tx.incoming_value_usd);
-        const incomingFeeUsd = feeUsd; // Fees typically apply to outgoing side
 
         if (!holdings[incomingAsset]) {
           holdings[incomingAsset] = { amount: 0, costBasis: 0, avgPrice: 0 };
           costBasisLots[incomingAsset] = [];
         }
 
-        const incomingCostBasis = incomingValueUsd + incomingFeeUsd;
+        // Fees apply to the outgoing (disposal) side only, matching tax-calculator.ts
+        const incomingCostBasis = incomingValueUsd;
         holdings[incomingAsset].amount += incomingAmount;
         holdings[incomingAsset].costBasis += incomingCostBasis;
         costBasisLots[incomingAsset].push({
@@ -278,7 +290,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Handle buys, receives, rewards - add to holdings
-        if (["buy", "dca", "receive", "reward", "stake", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "unstake", "mint"].includes(txType)) {
+        if (["buy", "dca", "receive", "reward", "stake", "staking", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "mint"].includes(txType)) {
           const totalCostBasis = Math.abs(valueUsd) + feeUsd;
           runningHoldings[asset].amount += amount;
           runningHoldings[asset].costBasis += totalCostBasis;
@@ -289,7 +301,7 @@ export async function GET(request: NextRequest) {
           });
         }
         // Handle sells, sends, swaps (outgoing) - remove from holdings
-        else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity", "burn"].includes(txType)) {
+        else if (["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity", "burn", "unstake"].includes(txType)) {
           const sellAmount = amount;
           let remainingToSell = sellAmount;
           let soldCostBasis = 0;
@@ -319,7 +331,8 @@ export async function GET(request: NextRequest) {
           const incomingAsset = (tx.incoming_asset_symbol || "").trim().toUpperCase();
           const incomingAmount = Number(tx.incoming_amount_value);
           const incomingValueUsd = Number(tx.incoming_value_usd);
-          const incomingCostBasis = incomingValueUsd + feeUsd;
+          // Fees apply to the outgoing (disposal) side only
+          const incomingCostBasis = incomingValueUsd;
 
           if (!runningHoldings[incomingAsset]) {
             runningHoldings[incomingAsset] = { amount: 0, costBasis: 0 };

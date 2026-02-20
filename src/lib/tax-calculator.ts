@@ -283,8 +283,10 @@ export async function calculateTaxReport(
     orConditions.push({ wallet_address: { in: walletAddresses } });
   }
   
-  // Always include CSV imports (assumes CSV imports belong to authenticated user)
-  // This is safe because the user is authenticated and can only see their own CSV imports
+  // Include CSV imports — scoped to user's wallets if possible.
+  // LIMITATION: CSV imports have no userId column, so in a multi-user database
+  // all CSV imports with wallet_address=null are visible to every user.
+  // A schema migration adding userId to Transaction would fix this.
   orConditions.push({
     AND: [
       { source_type: "csv_import" },
@@ -292,11 +294,22 @@ export async function calculateTaxReport(
     ],
   });
 
-  // Also include exchange API imports (Coinbase, Binance, etc.)
-  // These are transactions synced from connected exchanges
-  orConditions.push({
-    source_type: "exchange_api",
-  });
+  // Include exchange API imports — scoped to user's connected exchanges
+  if (userId) {
+    const userExchanges = await prisma.exchange.findMany({
+      where: { userId },
+      select: { name: true },
+    });
+    const exchangeNames = userExchanges.map(e => e.name);
+    if (exchangeNames.length > 0) {
+      orConditions.push({
+        AND: [
+          { source_type: "exchange_api" },
+          { source: { in: exchangeNames } },
+        ],
+      });
+    }
+  }
 
   if (orConditions.length > 0) {
     whereClause.OR = orConditions;
@@ -739,8 +752,8 @@ function processTransactionsForTax(
     // Skip "Transfer" type transactions - these are internal transfers or bank transfers
     // that don't create taxable events
     if (txType === "transfer") {
-      if (processedCount < 20) {
-        console.log(`[Tax Calculator] Skipping transfer transaction: ${tx.id} ${amount} ${asset}`);
+      if (valueUsd !== 0 && processedCount < 20) {
+        console.warn(`[Tax Calculator] ⚠️  Skipping transfer transaction ${tx.id} with non-zero value ($${valueUsd.toFixed(2)}) for ${amount} ${asset}. If this is a receive, re-categorize it.`);
       }
       continue;
     }
@@ -1012,6 +1025,10 @@ function processTransactionsForTax(
           pricePerUnit: incomingPricePerUnit,
           fees: feeUsd,
         });
+      } else {
+        // No incoming asset data — the received token will have NO cost basis,
+        // causing over-reported gains when it is eventually sold.
+        console.warn(`[Tax Calculator] ⚠️  Swap transaction ${tx.id}: No incoming asset data found. The received token will have zero cost basis. Review this swap manually.`);
       }
     }
     // Handle income events
@@ -1027,76 +1044,72 @@ function processTransactionsForTax(
       txType === "interest" ||
       txType === "mint"
     ) {
-      // Determine income type per IRS guidance
-      let incomeType: IncomeEvent["type"] = "other";
-      if (txType === "stake" || txType === "staking") {
-        incomeType = "staking"; // Staking rewards are ordinary income
-      } else if (txType === "reward") {
-        incomeType = "reward"; // General rewards
-      } else if (txType === "airdrop") {
-        incomeType = "airdrop"; // Airdrops are ordinary income
-      } else if (txType === "mining") {
-        incomeType = "mining"; // Mining income (may be subject to self-employment tax)
-      } else if (
-        txType === "yield" ||
-        txType === "interest"
-      ) {
-        incomeType = "reward"; // DeFi yield, lending interest
-      } else if (txType === "receive" && valueUsd > 0) {
-        // Receives with positive value might be income (need to distinguish from transfers)
-        // Check if this is a self-transfer (sender address is in user's wallets)
-        const isSelfTransfer =
-          // Check if explicitly marked as self-transfer in notes
-          tx.notes?.toLowerCase().includes("self transfer") ||
-          tx.notes?.toLowerCase().includes("internal transfer") ||
-          // Check if counterparty_address (sender) is in user's wallet addresses
-          (tx.counterparty_address && walletAddresses.some(addr =>
-            addr.toLowerCase() === tx.counterparty_address?.toLowerCase()
-          )) ||
-          false;
+      // Check if this is a self-transfer (sender address is in user's wallets)
+      // Must be checked before income/cost basis to avoid double-counting
+      const isSelfTransfer = txType === "receive" && (
+        tx.notes?.toLowerCase().includes("self transfer") ||
+        tx.notes?.toLowerCase().includes("internal transfer") ||
+        (tx.counterparty_address && walletAddresses.some(addr =>
+          addr.toLowerCase() === tx.counterparty_address?.toLowerCase()
+        )) ||
+        false
+      );
 
-        if (!isSelfTransfer) {
-          incomeType = "other";
-        }
-        // If it's a self-transfer, don't count as income (it's just movement between wallets)
-      }
-
-      // Only count as income if it occurred in the tax year and has positive value
-      // IRS: Income recognized when received
-      if (txYear === taxYear && valueUsd > 0) {
-        incomeEvents.push({
-          id: tx.id,
-          date,
-          asset,
-          amount,
-          valueUsd: Math.abs(valueUsd),
-          type: incomeType,
-          chain: tx.chain || undefined,
-          txHash: tx.tx_hash || undefined,
-        });
-      }
-
-      // IRS: Income received becomes part of cost basis for future sales
-      // Add received income to cost basis at fair market value
-      if (
-        (txType === "receive" ||
-         txType === "stake" ||
-         txType === "staking" ||
-         txType === "reward" ||
-         txType === "airdrop" ||
-         txType === "mining" ||
-         txType === "yield" ||
-         txType === "interest" ||
-         txType === "mint") &&
-        valueUsd > 0
-      ) {
+      if (isSelfTransfer) {
+        // Self-transfers are not income and should not create cost basis lots.
+        // The "send" side already consumed the lots; the "receive" side is just
+        // the same tokens arriving in another wallet the user owns.
+        // Create a cost basis lot at the ORIGINAL cost basis (not FMV) so we
+        // don't lose tracking, but do NOT record income.
         costBasisLots[asset].push({
           id: tx.id,
           date,
           amount,
-          costBasis: Math.abs(valueUsd), // Cost basis = FMV at time of receipt
+          costBasis: Math.abs(valueUsd), // Preserves value for future disposal tracking
           pricePerUnit,
         });
+      } else {
+        // Determine income type per IRS guidance
+        let incomeType: IncomeEvent["type"] = "other";
+        if (txType === "stake" || txType === "staking") {
+          incomeType = "staking";
+        } else if (txType === "reward") {
+          incomeType = "reward";
+        } else if (txType === "airdrop") {
+          incomeType = "airdrop";
+        } else if (txType === "mining") {
+          incomeType = "mining";
+        } else if (txType === "yield" || txType === "interest") {
+          incomeType = "reward";
+        } else if (txType === "receive" && valueUsd > 0) {
+          incomeType = "other";
+        }
+
+        // Only count as income if it occurred in the tax year and has positive value
+        if (txYear === taxYear && valueUsd > 0) {
+          incomeEventCount++;
+          incomeEvents.push({
+            id: tx.id,
+            date,
+            asset,
+            amount,
+            valueUsd: Math.abs(valueUsd),
+            type: incomeType,
+            chain: tx.chain || undefined,
+            txHash: tx.tx_hash || undefined,
+          });
+        }
+
+        // IRS: Income received becomes part of cost basis for future sales
+        if (valueUsd > 0) {
+          costBasisLots[asset].push({
+            id: tx.id,
+            date,
+            amount,
+            costBasis: Math.abs(valueUsd),
+            pricePerUnit,
+          });
+        }
       }
     }
     // Handle sends - reduce cost basis if it's a disposal
@@ -1585,6 +1598,7 @@ function processTransactionsForTax(
       const rewardValue = Math.abs(valueUsd);
 
       if (txYear === taxYear && rewardValue > 0) {
+        incomeEventCount++;
         incomeEvents.push({
           id: tx.id,
           date,

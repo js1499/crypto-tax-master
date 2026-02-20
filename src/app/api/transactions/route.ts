@@ -90,8 +90,7 @@ export async function GET(request: NextRequest) {
       userTransactionConditions.push({ wallet_address: { in: walletAddresses } });
     }
 
-    // Always include CSV imports (assumes CSV imports belong to authenticated user)
-    // This is safe because the user is authenticated and can only see their own CSV imports
+    // Include CSV imports (see LIMITATION note in tax-calculator.ts re: multi-user scoping)
     userTransactionConditions.push({
       AND: [
         { source_type: "csv_import" },
@@ -99,11 +98,20 @@ export async function GET(request: NextRequest) {
       ],
     });
 
-    // Also include exchange API imports (Coinbase, Binance, etc.)
-    // These are transactions synced from connected exchanges
-    userTransactionConditions.push({
-      source_type: "exchange_api",
+    // Include exchange API imports — scoped to user's connected exchanges
+    const userExchanges = await prisma.exchange.findMany({
+      where: { userId: user.id },
+      select: { name: true },
     });
+    const exchangeNames = userExchanges.map(e => e.name);
+    if (exchangeNames.length > 0) {
+      userTransactionConditions.push({
+        AND: [
+          { source_type: "exchange_api" },
+          { source: { in: exchangeNames } },
+        ],
+      });
+    }
 
     if (userTransactionConditions.length > 0) {
       whereConditions.push({ OR: userTransactionConditions });
