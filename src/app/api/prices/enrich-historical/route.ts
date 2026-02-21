@@ -42,8 +42,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
     }
 
-    console.log(`[Enrich Historical] Starting for wallet ${wallet.address} (${wallet.name})`);
-
     // Query all Solana transactions for this wallet
     const transactions = await prisma.transaction.findMany({
       where: {
@@ -75,8 +73,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.log(`[Enrich Historical] Found ${transactions.length} transactions to process`);
-
     // Find date range across all transactions (with 1-day buffer on each side)
     let minDate = transactions[0].tx_timestamp;
     let maxDate = transactions[0].tx_timestamp;
@@ -86,8 +82,6 @@ export async function POST(request: NextRequest) {
     }
     const rangeStart = new Date(minDate.getTime() - 86400000); // -1 day
     const rangeEnd = new Date(maxDate.getTime() + 86400000); // +1 day
-
-    console.log(`[Enrich Historical] Date range: ${rangeStart.toISOString()} to ${rangeEnd.toISOString()}`);
 
     // Collect unique symbols that have CoinGecko IDs
     const symbolSet = new Set<string>();
@@ -102,11 +96,12 @@ export async function POST(request: NextRequest) {
     }
     const symbols = Array.from(symbolSet);
 
-    console.log(`[Enrich Historical] Fetching price ranges for ${symbols.length} symbols: ${symbols.join(", ")}`);
+    console.log(`[Enrich] ${wallet.name}: ${transactions.length} tx, ${symbols.length} symbols (${symbols.join(",")}), range ${rangeStart.toISOString().split("T")[0]} to ${rangeEnd.toISOString().split("T")[0]}`);
 
     // Fetch historical prices for each symbol (sequentially to respect CoinGecko rate limits)
     // Build lookup Map: "SOL:2023-01-15" → 14.52
     const priceMap = new Map<string, number>();
+    const failedSymbols: string[] = [];
 
     for (const symbol of symbols) {
       try {
@@ -117,18 +112,20 @@ export async function POST(request: NextRequest) {
             const mapKey = `${symbol}:${dateKey}`;
             priceMap.set(mapKey, entry.price);
           }
-          console.log(`[Enrich Historical] ${symbol}: ${prices.length} daily prices loaded`);
         } else {
-          console.warn(`[Enrich Historical] ${symbol}: no price data returned`);
+          failedSymbols.push(symbol);
         }
       } catch (err) {
-        console.error(`[Enrich Historical] Error fetching price range for ${symbol}:`, err);
+        failedSymbols.push(symbol);
       }
+    }
+
+    if (failedSymbols.length > 0) {
+      console.warn(`[Enrich] No price data for: ${failedSymbols.join(", ")}`);
     }
 
     // Get current SOL price for fee correction (reverse-compute fee_usd back to SOL amount)
     const currentSolPrice = await getCurrentPrice("SOL");
-    console.log(`[Enrich Historical] Current SOL price for fee correction: $${currentSolPrice}`);
 
     // Helper: find closest price for a symbol on a given date
     function lookupPrice(symbol: string, date: Date): number | null {
@@ -220,14 +217,8 @@ export async function POST(request: NextRequest) {
     }
 
     const fallbackList = Array.from(fallbackSymbols);
-    if (fallbackList.length > 0) {
-      console.log(`[Enrich Historical] Fallback tokens (kept DAS prices): ${fallbackList.join(", ")}`);
-    }
-
     const durationMs = Date.now() - startTime;
-    console.log(
-      `[Enrich Historical] Done: ${updated} updated, ${skipped} skipped, ${durationMs}ms`
-    );
+    console.log(`[Enrich] Done in ${(durationMs / 1000).toFixed(1)}s: ${updated} updated, ${skipped} skipped${fallbackList.length > 0 ? ` | fallback tokens: ${fallbackList.join(",")}` : ""}`);
 
     return NextResponse.json({
       status: "success",

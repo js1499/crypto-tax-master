@@ -150,23 +150,9 @@ export async function getHeliusTokenData(mints: string[]): Promise<HeliusDASResu
         }
       }
 
-      console.log(
-        `[Helius DAS] Batch: ${chunk.length} mints queried, ${prices.size} prices + ${metadata.size} symbols found so far`
-      );
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        console.warn(
-          `[Helius DAS] API error: ${error.response?.status} - ${error.message}`
-        );
-        if (error.response?.data) {
-          console.warn(`[Helius DAS] Response:`, JSON.stringify(error.response.data).slice(0, 200));
-        }
-      } else {
-        console.warn(
-          `[Helius DAS] Error:`,
-          error instanceof Error ? error.message : error
-        );
-      }
+      const msg = axios.isAxiosError(error) ? `${error.response?.status} - ${error.message}` : (error instanceof Error ? error.message : String(error));
+      console.warn(`[Helius DAS] Batch error: ${msg}`);
     }
   }
 
@@ -190,7 +176,6 @@ export async function getJupiterTokenMap(): Promise<Map<string, string>> {
       }
     }
     jupiterTokenMap = map;
-    console.log(`[Jupiter] Loaded ${map.size} token symbols`);
     return map;
   } catch (error) {
     console.warn("[Jupiter] Failed to fetch token list:", error instanceof Error ? error.message : error);
@@ -218,7 +203,6 @@ export function clearHeliusPriceCache(): void {
   tokenMetadataCache.clear();
   incomingMintMap.clear();
   jupiterTokenMap = null;
-  console.log(`[Helius Price] Cache cleared (had ${size} entries)`);
 }
 
 // ============================================================
@@ -347,9 +331,7 @@ export async function getSolanaWalletTransactions(
   // Clear tracking maps for fresh sync
   incomingMintMap.clear();
 
-  console.log(`[Helius] ====== Starting fetch for ${walletAddress} on Solana ======`);
-  if (startTime) console.log(`[Helius] Start time: ${new Date(startTime).toISOString()}`);
-  if (endTime) console.log(`[Helius] End time: ${new Date(endTime).toISOString()}`);
+  console.log(`[Helius] Fetching ${walletAddress}${startTime ? ` from ${new Date(startTime).toISOString()}` : ""}${endTime ? ` to ${new Date(endTime).toISOString()}` : ""}`);
 
   const transactions: WalletTransaction[] = [];
   let beforeSignature: string | undefined;
@@ -357,9 +339,6 @@ export async function getSolanaWalletTransactions(
   const maxPages = 500; // Safety valve only — loop terminates naturally via empty results, startTime cutoff, or retry exhaustion
   let totalRawTx = 0;
   const maxRetries = 3;
-
-  // Step 1: Fetch all raw transactions from Helius
-  console.log(`[Helius] Step 1: Fetching transaction history from API...`);
 
   let paginationDone = false;
 
@@ -371,10 +350,6 @@ export async function getSolanaWalletTransactions(
     };
 
     if (beforeSignature) params.before = beforeSignature;
-
-    console.log(
-      `[Helius] Fetching page ${pageCount}${beforeSignature ? " (before: " + beforeSignature.slice(0, 20) + "...)" : ""}...`
-    );
 
     let results: HeliusEnhancedTransaction[] | null = null;
 
@@ -428,18 +403,18 @@ export async function getSolanaWalletTransactions(
     if (results === null) break;
 
     totalRawTx += results.length;
-    console.log(`[Helius] Page ${pageCount}: ${results.length} transactions received`);
-
     if (results.length === 0) break;
+
+    // Log progress every 50 pages to stay within log limits
+    if (pageCount % 50 === 0) {
+      console.log(`[Helius] Progress: page ${pageCount}, ${totalRawTx} raw tx so far`);
+    }
 
     for (const tx of results) {
       const txTimestamp = tx.timestamp * 1000; // Convert to milliseconds
 
       // Time-based filtering
       if (startTime && txTimestamp < startTime) {
-        // Transactions are in reverse chronological order;
-        // once we pass startTime, we can stop
-        console.log(`[Helius] Reached startTime cutoff, stopping pagination`);
         paginationDone = true;
         break;
       }
@@ -588,27 +563,15 @@ export async function getSolanaWalletTransactions(
     }
   }
 
-  console.log(
-    `[Helius] Step 1 complete: ${totalRawTx} raw tx fetched, ${transactions.length} records created across ${pageCount} pages`
-  );
-  if (transactions.length > totalRawTx) {
-    console.log(
-      `[Helius] Note: records > raw tx because one Solana tx can contain multiple transfers (native + token)`
-    );
-  }
+  console.log(`[Helius] Fetched ${totalRawTx} raw tx → ${transactions.length} records across ${pageCount} pages`);
 
-  // Step 2: Enrich with USD prices (even for partial results)
+  // Enrich with USD prices (even for partial results)
   if (transactions.length > 0) {
-    console.log(`[Helius] Step 2: Looking up USD prices for ${transactions.length} transactions...`);
     await enrichSolanaTransactionsWithPrices(transactions);
-  } else {
-    console.log(`[Helius] Step 2: No transactions to enrich, skipping price lookup`);
   }
 
   // Sort by timestamp
   transactions.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
-
-  console.log(`[Helius] ====== Fetch complete: ${transactions.length} transactions for Solana ======`);
   return transactions;
 }
 
@@ -829,17 +792,9 @@ async function enrichSolanaTransactionsWithPrices(
     }
   }
 
-  console.log(
-    `[Helius DAS] Fetching prices + metadata for ${mintsToPrice.size} unique mints...`
-  );
-
   // Fetch all prices AND metadata in one batch via Helius DAS
   const { prices, metadata } = await getHeliusTokenData([...mintsToPrice]);
   const solPrice = prices.get(SOL_MINT) || 0;
-
-  console.log(
-    `[Helius DAS] Got ${prices.size}/${mintsToPrice.size} prices, ${metadata.size} symbols (SOL: $${solPrice.toFixed(2)})`
-  );
 
   // Post-resolve: update any truncated mint-based symbols to real names
   // Pass 1: Resolve asset_symbol from asset_address
@@ -870,7 +825,6 @@ async function enrichSolanaTransactionsWithPrices(
           (tx.incoming_asset_symbol && tx.incoming_asset_symbol.endsWith("..."))
   );
   if (stillUnresolved.length > 0) {
-    console.log(`[Jupiter] Attempting fallback resolution for ${stillUnresolved.length} transactions...`);
     const jupiterMap = await getJupiterTokenMap();
     for (const tx of transactions) {
       if (tx.asset_address && tx.asset_symbol.endsWith("...")) {
@@ -940,7 +894,5 @@ async function enrichSolanaTransactionsWithPrices(
     }
   }
 
-  console.log(
-    `[Helius Price] Enrichment complete: ${priced} priced, ${unpriced} unpriced, ${feesConverted} fees converted to USD`
-  );
+  console.log(`[Helius] DAS enrichment: ${prices.size}/${mintsToPrice.size} mints priced (SOL $${solPrice.toFixed(2)}), ${priced} tx priced, ${unpriced} unpriced, ${feesConverted} fees converted`);
 }
