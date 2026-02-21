@@ -1,6 +1,7 @@
 import axios from "axios";
 import { Decimal } from "@prisma/client/runtime/library";
 import type { WalletTransaction } from "./moralis-transactions";
+import { getCoinGeckoId, getPriceRange } from "./coingecko";
 
 // Helius API key from environment
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
@@ -354,7 +355,7 @@ export async function getSolanaWalletTransactions(
   const transactions: WalletTransaction[] = [];
   let beforeSignature: string | undefined;
   let pageCount = 0;
-  const maxPages = 50;
+  const maxPages = 500; // Safety valve only — loop terminates naturally via empty results or startTime cutoff
   let totalRawTx = 0;
   const maxRetries = 3;
 
@@ -833,12 +834,12 @@ async function enrichSolanaTransactionsWithPrices(
     `[Helius DAS] Fetching prices + metadata for ${mintsToPrice.size} unique mints...`
   );
 
-  // Fetch all prices AND metadata in one batch via Helius DAS
-  const { prices, metadata } = await getHeliusTokenData([...mintsToPrice]);
-  const solPrice = prices.get(SOL_MINT) || 0;
+  // Fetch metadata + current prices (fallback) via Helius DAS
+  const { prices: dasPrices, metadata } = await getHeliusTokenData([...mintsToPrice]);
+  const dasSolPrice = dasPrices.get(SOL_MINT) || 0;
 
   console.log(
-    `[Helius DAS] Got ${prices.size}/${mintsToPrice.size} prices, ${metadata.size} symbols (SOL: $${solPrice.toFixed(2)})`
+    `[Helius DAS] Got ${dasPrices.size}/${mintsToPrice.size} prices, ${metadata.size} symbols (SOL current: $${dasSolPrice.toFixed(2)})`
   );
 
   // Post-resolve: update any truncated mint-based symbols to real names
@@ -890,57 +891,155 @@ async function enrichSolanaTransactionsWithPrices(
     }
   }
 
-  // Cache all fetched prices
-  const today = new Date().toISOString().split("T")[0];
-  for (const [mint, price] of prices) {
-    priceCache.set(`${mint}:${today}`, price);
+  // ================================================================
+  // Step C: Build historical price lookup via CoinGecko
+  // ================================================================
+
+  // Find min/max transaction dates
+  let minDate = new Date();
+  let maxDate = new Date(0);
+  for (const tx of transactions) {
+    if (tx.tx_timestamp < minDate) minDate = new Date(tx.tx_timestamp.getTime());
+    if (tx.tx_timestamp > maxDate) maxDate = new Date(tx.tx_timestamp.getTime());
   }
 
-  // Apply prices to transactions
+  // Add 1-day buffer on each side to ensure boundary coverage
+  const rangeStart = new Date(minDate.getTime() - 86400000);
+  const rangeEnd = new Date(maxDate.getTime() + 86400000);
+
+  // Collect unique resolved symbols from all transactions
+  const symbolsForHistory = new Set<string>();
+  symbolsForHistory.add("SOL"); // Always need SOL for fee conversion
+  for (const tx of transactions) {
+    if (tx.asset_symbol && !tx.asset_symbol.endsWith("...")) {
+      symbolsForHistory.add(tx.asset_symbol.toUpperCase());
+    }
+    if (tx.incoming_asset_symbol && !tx.incoming_asset_symbol.endsWith("...")) {
+      symbolsForHistory.add(tx.incoming_asset_symbol.toUpperCase());
+    }
+  }
+
+  // Filter to symbols that have CoinGecko IDs
+  const cgSymbols = [...symbolsForHistory].filter(s => getCoinGeckoId(s));
+
+  // Fetch historical price ranges — one API call per token
+  const historicalPrices = new Map<string, number>(); // "SOL:2023-01-15" → price
+
+  console.log(
+    `[CoinGecko] Fetching historical prices for ${cgSymbols.length} symbols (${cgSymbols.join(", ")}) from ${rangeStart.toISOString().split("T")[0]} to ${rangeEnd.toISOString().split("T")[0]}...`
+  );
+
+  for (const symbol of cgSymbols) {
+    try {
+      const priceData = await getPriceRange(symbol, rangeStart, rangeEnd);
+      if (priceData && priceData.length > 0) {
+        for (const entry of priceData) {
+          const dateKey = entry.date.split("T")[0]; // "2023-01-15"
+          historicalPrices.set(`${symbol}:${dateKey}`, entry.price);
+        }
+        console.log(`[CoinGecko] ${symbol}: ${priceData.length} daily prices loaded`);
+      } else {
+        console.warn(`[CoinGecko] ${symbol}: no price data returned`);
+      }
+    } catch (error) {
+      console.warn(
+        `[CoinGecko] ${symbol}: failed to fetch historical prices —`,
+        error instanceof Error ? error.message : error
+      );
+    }
+  }
+
+  console.log(`[CoinGecko] Historical price lookup built: ${historicalPrices.size} entries`);
+
+  // Cache historical prices (they never change within a sync session)
+  for (const [key, price] of historicalPrices) {
+    priceCache.set(key, price);
+  }
+
+  // ================================================================
+  // Step D: Apply prices to transactions (historical first, DAS fallback)
+  // ================================================================
+
   let priced = 0;
   let unpriced = 0;
   let feesConverted = 0;
+  let historicalCount = 0;
+  let fallbackCount = 0;
+  const fallbackSymbols = new Set<string>();
 
   for (const tx of transactions) {
-    // Determine the mint for this transaction
-    const mint = tx.asset_address || (tx.asset_symbol === "SOL" ? SOL_MINT : null);
-    const price = mint ? prices.get(mint) : null;
+    const txDate = tx.tx_timestamp.toISOString().split("T")[0];
 
-    if (price && price > 0) {
+    // --- Price the main asset ---
+    const symbol = tx.asset_symbol?.toUpperCase();
+    const historicalPrice = symbol ? historicalPrices.get(`${symbol}:${txDate}`) : undefined;
+
+    if (historicalPrice && historicalPrice > 0) {
+      // Use CoinGecko historical price
       const amountNum = parseFloat(tx.amount_value.toString());
-      tx.price_per_unit = new Decimal(price);
-      tx.value_usd = new Decimal(amountNum * price);
+      tx.price_per_unit = new Decimal(historicalPrice);
+      tx.value_usd = new Decimal(amountNum * historicalPrice);
       priced++;
+      historicalCount++;
     } else {
-      unpriced++;
-    }
-
-    // Convert fee from SOL to USD
-    if (tx.fee_usd !== null && solPrice > 0) {
-      const feeInSol = parseFloat(tx.fee_usd.toString());
-      tx.fee_usd = new Decimal(feeInSol * solPrice);
-      feesConverted++;
-    }
-
-    // Price incoming swap/sale assets
-    if (tx.incoming_amount_value) {
-      // Use the tracked incoming mint directly
-      let incMint: string | null = incomingMintMap.get(tx.tx_hash) || null;
-      if (!incMint && tx.incoming_asset_symbol === "SOL") {
-        incMint = SOL_MINT;
+      // Fallback to Helius DAS current price
+      const mint = tx.asset_address || (tx.asset_symbol === "SOL" ? SOL_MINT : null);
+      const price = mint ? dasPrices.get(mint) : null;
+      if (price && price > 0) {
+        const amountNum = parseFloat(tx.amount_value.toString());
+        tx.price_per_unit = new Decimal(price);
+        tx.value_usd = new Decimal(amountNum * price);
+        priced++;
+        fallbackCount++;
+        if (symbol) fallbackSymbols.add(symbol);
+      } else {
+        unpriced++;
       }
+    }
 
-      if (incMint) {
-        const inPrice = prices.get(incMint);
-        if (inPrice && inPrice > 0) {
-          const inAmount = parseFloat(tx.incoming_amount_value.toString());
-          tx.incoming_value_usd = new Decimal(inAmount * inPrice);
+    // --- Convert fee from SOL to USD using historical SOL price ---
+    if (tx.fee_usd !== null) {
+      const historicalSolPrice = historicalPrices.get(`SOL:${txDate}`);
+      const solPriceForFee = historicalSolPrice || dasSolPrice;
+      if (solPriceForFee > 0) {
+        const feeInSol = parseFloat(tx.fee_usd.toString());
+        tx.fee_usd = new Decimal(feeInSol * solPriceForFee);
+        feesConverted++;
+      }
+    }
+
+    // --- Price incoming swap/sale assets ---
+    if (tx.incoming_amount_value) {
+      const incSymbol = tx.incoming_asset_symbol?.toUpperCase();
+      const incHistPrice = incSymbol ? historicalPrices.get(`${incSymbol}:${txDate}`) : undefined;
+
+      if (incHistPrice && incHistPrice > 0) {
+        const inAmount = parseFloat(tx.incoming_amount_value.toString());
+        tx.incoming_value_usd = new Decimal(inAmount * incHistPrice);
+      } else {
+        // Fallback to Helius DAS current price
+        let incMint: string | null = incomingMintMap.get(tx.tx_hash) || null;
+        if (!incMint && tx.incoming_asset_symbol === "SOL") {
+          incMint = SOL_MINT;
+        }
+        if (incMint) {
+          const inPrice = dasPrices.get(incMint);
+          if (inPrice && inPrice > 0) {
+            const inAmount = parseFloat(tx.incoming_amount_value.toString());
+            tx.incoming_value_usd = new Decimal(inAmount * inPrice);
+          }
         }
       }
     }
   }
 
+  if (fallbackSymbols.size > 0) {
+    console.log(
+      `[Helius Price] Tokens using current-price fallback (no CoinGecko data): ${[...fallbackSymbols].join(", ")}`
+    );
+  }
+
   console.log(
-    `[Helius Price] Enrichment complete: ${priced} priced, ${unpriced} unpriced, ${feesConverted} fees converted to USD`
+    `[Helius Price] Enrichment complete: ${priced} priced (${historicalCount} historical, ${fallbackCount} DAS fallback), ${unpriced} unpriced, ${feesConverted} fees converted`
   );
 }
