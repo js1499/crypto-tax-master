@@ -356,228 +356,260 @@ export async function getSolanaWalletTransactions(
   let pageCount = 0;
   const maxPages = 50;
   let totalRawTx = 0;
+  const maxRetries = 3;
 
-  try {
-    // Step 1: Fetch all raw transactions from Helius
-    console.log(`[Helius] Step 1: Fetching transaction history from API...`);
+  // Step 1: Fetch all raw transactions from Helius
+  console.log(`[Helius] Step 1: Fetching transaction history from API...`);
 
-    do {
-      pageCount++;
-      const params: Record<string, any> = {
-        "api-key": HELIUS_API_KEY,
-        limit: 100,
-      };
+  let paginationDone = false;
 
-      if (beforeSignature) params.before = beforeSignature;
+  while (!paginationDone && pageCount < maxPages) {
+    pageCount++;
+    const params: Record<string, any> = {
+      "api-key": HELIUS_API_KEY,
+      limit: 100,
+    };
 
-      console.log(
-        `[Helius] Fetching page ${pageCount}${beforeSignature ? " (before: " + beforeSignature.slice(0, 20) + "...)" : ""}...`
-      );
+    if (beforeSignature) params.before = beforeSignature;
 
-      const response = await axios.get(
-        `${HELIUS_BASE_URL}/v0/addresses/${walletAddress}/transactions`,
-        {
-          params,
-          timeout: 30000,
-        }
-      );
+    console.log(
+      `[Helius] Fetching page ${pageCount}${beforeSignature ? " (before: " + beforeSignature.slice(0, 20) + "...)" : ""}...`
+    );
 
-      const results: HeliusEnhancedTransaction[] = response.data || [];
-      totalRawTx += results.length;
+    let results: HeliusEnhancedTransaction[] | null = null;
 
-      console.log(`[Helius] Page ${pageCount}: ${results.length} transactions received`);
-
-      if (results.length === 0) break;
-
-      for (const tx of results) {
-        const txTimestamp = tx.timestamp * 1000; // Convert to milliseconds
-
-        // Time-based filtering
-        if (startTime && txTimestamp < startTime) {
-          // Transactions are in reverse chronological order;
-          // once we pass startTime, we can stop
-          console.log(`[Helius] Reached startTime cutoff, stopping pagination`);
-          beforeSignature = undefined; // Signal to stop
-          break;
-        }
-        if (endTime && txTimestamp > endTime) {
-          continue; // Skip transactions after endTime
-        }
-
-        const timestamp = new Date(txTimestamp);
-        const txType = mapTransactionType(tx.type, walletAddress, tx);
-        const isSwap = txType === "Swap" || tx.events?.swap;
-        const isNftSale = tx.type?.toUpperCase() === "NFT_SALE" && tx.events?.nft;
-
-        // Calculate fee in SOL
-        const feeInSol = lamportsToSol(tx.fee || 0);
-
-        // Process NFT sale events (with events.nft data)
-        if (isNftSale && tx.events?.nft) {
-          processNftSaleTransaction(transactions, tx, tx.events.nft, walletAddress, timestamp, feeInSol);
-          continue;
-        }
-
-        // Process swap events
-        if (isSwap && tx.events?.swap) {
-          const swap = tx.events.swap;
-          processSwapTransaction(transactions, tx, swap, walletAddress, timestamp, feeInSol);
-          continue;
-        }
-
-        // Process native SOL transfers
-        let hasTransfers = false;
-        if (tx.nativeTransfers && tx.nativeTransfers.length > 0) {
-          for (const transfer of tx.nativeTransfers) {
-            // Only process transfers involving our wallet
-            if (transfer.fromUserAccount !== walletAddress && transfer.toUserAccount !== walletAddress) {
-              continue;
-            }
-            // Skip zero-amount transfers (e.g., rent)
-            if (transfer.amount <= 0) continue;
-            // Skip self-transfers
-            if (transfer.fromUserAccount === walletAddress && transfer.toUserAccount === walletAddress) {
-              continue;
-            }
-
-            const isIncoming = transfer.toUserAccount === walletAddress;
-            const solAmount = lamportsToSol(transfer.amount);
-
-            const subTxId = `${tx.signature}-native-${transfer.fromUserAccount.slice(0, 8)}-${transfer.toUserAccount.slice(0, 8)}`;
-            transactions.push({
-              id: subTxId,
-              type: isIncoming ? "Receive" : "Send",
-              asset_symbol: "SOL",
-              asset_chain: "solana",
-              amount_value: new Decimal(solAmount),
-              price_per_unit: null,
-              value_usd: new Decimal(0),
-              fee_usd: !isIncoming && feeInSol > 0 ? new Decimal(feeInSol) : null,
-              tx_timestamp: timestamp,
-              source: "Solana Wallet",
-              source_type: "wallet",
-              tx_hash: subTxId,
-              wallet_address: walletAddress,
-              counterparty_address: isIncoming ? transfer.fromUserAccount : transfer.toUserAccount,
-              chain: "solana",
-              block_number: tx.slot,
-              explorer_url: getExplorerUrl(tx.signature),
-              notes: tx.source !== "SYSTEM_PROGRAM" ? `Source: ${tx.source}` : undefined,
-            });
-            hasTransfers = true;
+    // Retry loop for transient errors (504, 502, 503, network timeouts)
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await axios.get(
+          `${HELIUS_BASE_URL}/v0/addresses/${walletAddress}/transactions`,
+          {
+            params,
+            timeout: 30000,
           }
-        }
+        );
+        results = response.data || [];
+        break; // Success — exit retry loop
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          const status = error.response?.status;
+          const message = error.response?.data?.message || error.response?.data?.error || error.message;
 
-        // Process SPL token transfers
-        if (tx.tokenTransfers && tx.tokenTransfers.length > 0) {
-          for (const transfer of tx.tokenTransfers) {
-            // Only process transfers involving our wallet
-            if (transfer.fromUserAccount !== walletAddress && transfer.toUserAccount !== walletAddress) {
-              continue;
-            }
-            if (transfer.tokenAmount <= 0) continue;
-            // Skip self-transfers
-            if (transfer.fromUserAccount === walletAddress && transfer.toUserAccount === walletAddress) {
-              continue;
-            }
-
-            const isIncoming = transfer.toUserAccount === walletAddress;
-
-            const tokenSubTxId = `${tx.signature}-token-${transfer.mint.slice(0, 8)}-${transfer.fromUserAccount.slice(0, 8)}`;
-            transactions.push({
-              id: tokenSubTxId,
-              type: isIncoming ? "Receive" : "Send",
-              asset_symbol: resolveTokenSymbol(transfer.mint),
-              asset_address: transfer.mint,
-              asset_chain: "solana",
-              amount_value: new Decimal(transfer.tokenAmount),
-              price_per_unit: null,
-              value_usd: new Decimal(0),
-              fee_usd: null,
-              tx_timestamp: timestamp,
-              source: "Solana Wallet",
-              source_type: "wallet",
-              tx_hash: tokenSubTxId,
-              wallet_address: walletAddress,
-              counterparty_address: isIncoming ? transfer.fromUserAccount : transfer.toUserAccount,
-              chain: "solana",
-              block_number: tx.slot,
-              explorer_url: getExplorerUrl(tx.signature),
-              notes: tx.source !== "SYSTEM_PROGRAM" ? `Source: ${tx.source}` : undefined,
-            });
-            hasTransfers = true;
+          // Non-retryable errors — fail immediately
+          if (status === 401 || status === 403) {
+            throw new Error("Invalid Helius API key. Check HELIUS_API_KEY environment variable.");
           }
+
+          // Retryable errors: 429 (rate limit), 502, 503, 504, network timeouts
+          const isRetryable = !status || status === 429 || status === 502 || status === 503 || status === 504;
+
+          if (isRetryable && attempt < maxRetries) {
+            // Exponential backoff: 2s, 4s, 8s
+            const backoffMs = Math.pow(2, attempt) * 1000;
+            console.warn(`[Helius] Page ${pageCount} attempt ${attempt}/${maxRetries} failed (${status || "timeout"}): ${message}. Retrying in ${backoffMs / 1000}s...`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            continue;
+          }
+
+          // Final attempt failed — log and break out with partial results
+          console.error(`[Helius] Page ${pageCount} failed after ${maxRetries} attempts (${status}): ${message}`);
+        } else {
+          console.error(`[Helius] Unexpected error on page ${pageCount}:`, error);
         }
 
-        // If no transfers were processed but the tx has a known type, add a record
-        if (!hasTransfers && txType !== "Transfer") {
-          const mainSubTxId = `${tx.signature}-main`;
+        // All retries exhausted — stop pagination but keep what we have
+        console.warn(`[Helius] Stopping pagination after ${pageCount - 1} successful pages. ${transactions.length} transactions collected so far will be saved.`);
+        paginationDone = true;
+        break;
+      }
+    }
+
+    // If retries exhausted (results is null), stop pagination
+    if (results === null) break;
+
+    totalRawTx += results.length;
+    console.log(`[Helius] Page ${pageCount}: ${results.length} transactions received`);
+
+    if (results.length === 0) break;
+
+    for (const tx of results) {
+      const txTimestamp = tx.timestamp * 1000; // Convert to milliseconds
+
+      // Time-based filtering
+      if (startTime && txTimestamp < startTime) {
+        // Transactions are in reverse chronological order;
+        // once we pass startTime, we can stop
+        console.log(`[Helius] Reached startTime cutoff, stopping pagination`);
+        paginationDone = true;
+        break;
+      }
+      if (endTime && txTimestamp > endTime) {
+        continue; // Skip transactions after endTime
+      }
+
+      const timestamp = new Date(txTimestamp);
+      const txType = mapTransactionType(tx.type, walletAddress, tx);
+      const isSwap = txType === "Swap" || tx.events?.swap;
+      const isNftSale = tx.type?.toUpperCase() === "NFT_SALE" && tx.events?.nft;
+
+      // Calculate fee in SOL
+      const feeInSol = lamportsToSol(tx.fee || 0);
+
+      // Process NFT sale events (with events.nft data)
+      if (isNftSale && tx.events?.nft) {
+        processNftSaleTransaction(transactions, tx, tx.events.nft, walletAddress, timestamp, feeInSol);
+        continue;
+      }
+
+      // Process swap events
+      if (isSwap && tx.events?.swap) {
+        const swap = tx.events.swap;
+        processSwapTransaction(transactions, tx, swap, walletAddress, timestamp, feeInSol);
+        continue;
+      }
+
+      // Process native SOL transfers
+      let hasTransfers = false;
+      if (tx.nativeTransfers && tx.nativeTransfers.length > 0) {
+        for (const transfer of tx.nativeTransfers) {
+          // Only process transfers involving our wallet
+          if (transfer.fromUserAccount !== walletAddress && transfer.toUserAccount !== walletAddress) {
+            continue;
+          }
+          // Skip zero-amount transfers (e.g., rent)
+          if (transfer.amount <= 0) continue;
+          // Skip self-transfers
+          if (transfer.fromUserAccount === walletAddress && transfer.toUserAccount === walletAddress) {
+            continue;
+          }
+
+          const isIncoming = transfer.toUserAccount === walletAddress;
+          const solAmount = lamportsToSol(transfer.amount);
+
+          const subTxId = `${tx.signature}-native-${transfer.fromUserAccount.slice(0, 8)}-${transfer.toUserAccount.slice(0, 8)}`;
           transactions.push({
-            id: mainSubTxId,
-            type: txType,
+            id: subTxId,
+            type: isIncoming ? "Receive" : "Send",
             asset_symbol: "SOL",
             asset_chain: "solana",
-            amount_value: new Decimal(0),
+            amount_value: new Decimal(solAmount),
             price_per_unit: null,
             value_usd: new Decimal(0),
-            fee_usd: feeInSol > 0 ? new Decimal(feeInSol) : null,
+            fee_usd: !isIncoming && feeInSol > 0 ? new Decimal(feeInSol) : null,
             tx_timestamp: timestamp,
             source: "Solana Wallet",
             source_type: "wallet",
-            tx_hash: mainSubTxId,
+            tx_hash: subTxId,
             wallet_address: walletAddress,
+            counterparty_address: isIncoming ? transfer.fromUserAccount : transfer.toUserAccount,
             chain: "solana",
             block_number: tx.slot,
             explorer_url: getExplorerUrl(tx.signature),
-            notes: tx.description || (tx.source !== "SYSTEM_PROGRAM" ? `Source: ${tx.source}` : undefined),
+            notes: tx.source !== "SYSTEM_PROGRAM" ? `Source: ${tx.source}` : undefined,
           });
+          hasTransfers = true;
         }
       }
 
-      // Update cursor for next page
-      if (results.length > 0) {
-        beforeSignature = results[results.length - 1].signature;
-      } else {
-        break;
-      }
-    } while (beforeSignature && pageCount < maxPages);
+      // Process SPL token transfers
+      if (tx.tokenTransfers && tx.tokenTransfers.length > 0) {
+        for (const transfer of tx.tokenTransfers) {
+          // Only process transfers involving our wallet
+          if (transfer.fromUserAccount !== walletAddress && transfer.toUserAccount !== walletAddress) {
+            continue;
+          }
+          if (transfer.tokenAmount <= 0) continue;
+          // Skip self-transfers
+          if (transfer.fromUserAccount === walletAddress && transfer.toUserAccount === walletAddress) {
+            continue;
+          }
 
-    console.log(
-      `[Helius] Step 1 complete: ${totalRawTx} raw tx fetched, ${transactions.length} records created across ${pageCount} pages`
-    );
-    if (transactions.length > totalRawTx) {
-      console.log(
-        `[Helius] Note: records > raw tx because one Solana tx can contain multiple transfers (native + token)`
-      );
+          const isIncoming = transfer.toUserAccount === walletAddress;
+
+          const tokenSubTxId = `${tx.signature}-token-${transfer.mint.slice(0, 8)}-${transfer.fromUserAccount.slice(0, 8)}`;
+          transactions.push({
+            id: tokenSubTxId,
+            type: isIncoming ? "Receive" : "Send",
+            asset_symbol: resolveTokenSymbol(transfer.mint),
+            asset_address: transfer.mint,
+            asset_chain: "solana",
+            amount_value: new Decimal(transfer.tokenAmount),
+            price_per_unit: null,
+            value_usd: new Decimal(0),
+            fee_usd: null,
+            tx_timestamp: timestamp,
+            source: "Solana Wallet",
+            source_type: "wallet",
+            tx_hash: tokenSubTxId,
+            wallet_address: walletAddress,
+            counterparty_address: isIncoming ? transfer.fromUserAccount : transfer.toUserAccount,
+            chain: "solana",
+            block_number: tx.slot,
+            explorer_url: getExplorerUrl(tx.signature),
+            notes: tx.source !== "SYSTEM_PROGRAM" ? `Source: ${tx.source}` : undefined,
+          });
+          hasTransfers = true;
+        }
+      }
+
+      // If no transfers were processed but the tx has a known type, add a record
+      if (!hasTransfers && txType !== "Transfer") {
+        const mainSubTxId = `${tx.signature}-main`;
+        transactions.push({
+          id: mainSubTxId,
+          type: txType,
+          asset_symbol: "SOL",
+          asset_chain: "solana",
+          amount_value: new Decimal(0),
+          price_per_unit: null,
+          value_usd: new Decimal(0),
+          fee_usd: feeInSol > 0 ? new Decimal(feeInSol) : null,
+          tx_timestamp: timestamp,
+          source: "Solana Wallet",
+          source_type: "wallet",
+          tx_hash: mainSubTxId,
+          wallet_address: walletAddress,
+          chain: "solana",
+          block_number: tx.slot,
+          explorer_url: getExplorerUrl(tx.signature),
+          notes: tx.description || (tx.source !== "SYSTEM_PROGRAM" ? `Source: ${tx.source}` : undefined),
+        });
+      }
     }
 
-    // Step 2: Enrich with USD prices
+    // Update cursor for next page
+    if (!paginationDone && results.length > 0) {
+      beforeSignature = results[results.length - 1].signature;
+
+      // Small delay between pages to avoid overwhelming the API
+      await new Promise(resolve => setTimeout(resolve, 200));
+    } else {
+      break;
+    }
+  }
+
+  console.log(
+    `[Helius] Step 1 complete: ${totalRawTx} raw tx fetched, ${transactions.length} records created across ${pageCount} pages`
+  );
+  if (transactions.length > totalRawTx) {
+    console.log(
+      `[Helius] Note: records > raw tx because one Solana tx can contain multiple transfers (native + token)`
+    );
+  }
+
+  // Step 2: Enrich with USD prices (even for partial results)
+  if (transactions.length > 0) {
     console.log(`[Helius] Step 2: Looking up USD prices for ${transactions.length} transactions...`);
     await enrichSolanaTransactionsWithPrices(transactions);
-
-    // Sort by timestamp
-    transactions.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
-
-    console.log(`[Helius] ====== Fetch complete: ${transactions.length} transactions for Solana ======`);
-    return transactions;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      const status = error.response?.status;
-      const message = error.response?.data?.message || error.response?.data?.error || error.message;
-
-      console.error(`[Helius] API error: status=${status}, message=${message}`);
-
-      if (status === 401 || status === 403) {
-        throw new Error("Invalid Helius API key. Check HELIUS_API_KEY environment variable.");
-      } else if (status === 429) {
-        throw new Error("Helius API rate limit exceeded. Please try again later.");
-      } else {
-        throw new Error(`Helius API error (${status}): ${message}`);
-      }
-    }
-    console.error(`[Helius] Unexpected error:`, error);
-    throw error;
+  } else {
+    console.log(`[Helius] Step 2: No transactions to enrich, skipping price lookup`);
   }
+
+  // Sort by timestamp
+  transactions.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
+
+  console.log(`[Helius] ====== Fetch complete: ${transactions.length} transactions for Solana ======`);
+  return transactions;
 }
 
 /**
