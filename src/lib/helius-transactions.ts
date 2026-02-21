@@ -907,49 +907,81 @@ async function enrichSolanaTransactionsWithPrices(
   const rangeStart = new Date(minDate.getTime() - 86400000);
   const rangeEnd = new Date(maxDate.getTime() + 86400000);
 
-  // Collect unique resolved symbols from all transactions
-  const symbolsForHistory = new Set<string>();
-  symbolsForHistory.add("SOL"); // Always need SOL for fee conversion
+  // Collect symbols ranked by frequency — only fetch the top ones to stay within timeout
+  const symbolFrequency = new Map<string, number>();
   for (const tx of transactions) {
     if (tx.asset_symbol && !tx.asset_symbol.endsWith("...")) {
-      symbolsForHistory.add(tx.asset_symbol.toUpperCase());
+      const s = tx.asset_symbol.toUpperCase();
+      symbolFrequency.set(s, (symbolFrequency.get(s) || 0) + 1);
     }
     if (tx.incoming_asset_symbol && !tx.incoming_asset_symbol.endsWith("...")) {
-      symbolsForHistory.add(tx.incoming_asset_symbol.toUpperCase());
+      const s = tx.incoming_asset_symbol.toUpperCase();
+      symbolFrequency.set(s, (symbolFrequency.get(s) || 0) + 1);
     }
   }
+  // SOL is always needed for fee conversion
+  if (!symbolFrequency.has("SOL")) symbolFrequency.set("SOL", Infinity);
 
-  // Filter to symbols that have CoinGecko IDs
-  const cgSymbols = [...symbolsForHistory].filter(s => getCoinGeckoId(s));
+  // Filter to CoinGecko-supported symbols, ranked by frequency, capped at 10
+  const MAX_CG_SYMBOLS = 10;
+  const cgSymbols = [...symbolFrequency.entries()]
+    .filter(([s]) => getCoinGeckoId(s))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, MAX_CG_SYMBOLS)
+    .map(([s]) => s);
 
-  // Fetch historical price ranges — one API call per token
+  // Fetch historical price ranges in parallel batches to avoid timeout
   const historicalPrices = new Map<string, number>(); // "SOL:2023-01-15" → price
+  const CG_BATCH_SIZE = 5;
+  const CG_CALL_TIMEOUT = 10000; // 10s per individual call
+  const CG_TOTAL_TIMEOUT = 30000; // 30s max for all CoinGecko fetching
+  const cgStartTime = Date.now();
 
   console.log(
     `[CoinGecko] Fetching historical prices for ${cgSymbols.length} symbols (${cgSymbols.join(", ")}) from ${rangeStart.toISOString().split("T")[0]} to ${rangeEnd.toISOString().split("T")[0]}...`
   );
 
-  for (const symbol of cgSymbols) {
-    try {
-      const priceData = await getPriceRange(symbol, rangeStart, rangeEnd);
-      if (priceData && priceData.length > 0) {
+  for (let i = 0; i < cgSymbols.length; i += CG_BATCH_SIZE) {
+    // Bail out if total time budget exceeded
+    if (Date.now() - cgStartTime > CG_TOTAL_TIMEOUT) {
+      console.warn(`[CoinGecko] Total timeout reached (${CG_TOTAL_TIMEOUT / 1000}s), using DAS fallback for remaining symbols`);
+      break;
+    }
+
+    const batch = cgSymbols.slice(i, i + CG_BATCH_SIZE);
+    const results = await Promise.allSettled(
+      batch.map(async (symbol) => {
+        const priceData = await Promise.race([
+          getPriceRange(symbol, rangeStart, rangeEnd),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`timeout fetching ${symbol}`)), CG_CALL_TIMEOUT)
+          ),
+        ]);
+        return { symbol, priceData };
+      })
+    );
+
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value.priceData) {
+        const { symbol, priceData } = result.value;
         for (const entry of priceData) {
-          const dateKey = entry.date.split("T")[0]; // "2023-01-15"
+          const dateKey = entry.date.split("T")[0];
           historicalPrices.set(`${symbol}:${dateKey}`, entry.price);
         }
         console.log(`[CoinGecko] ${symbol}: ${priceData.length} daily prices loaded`);
       } else {
-        console.warn(`[CoinGecko] ${symbol}: no price data returned`);
+        const reason = result.status === "rejected" ? result.reason?.message || result.reason : "no data";
+        console.warn(`[CoinGecko] batch item failed: ${reason}`);
       }
-    } catch (error) {
-      console.warn(
-        `[CoinGecko] ${symbol}: failed to fetch historical prices —`,
-        error instanceof Error ? error.message : error
-      );
+    }
+
+    // Brief pause between batches to respect rate limits
+    if (i + CG_BATCH_SIZE < cgSymbols.length) {
+      await new Promise(resolve => setTimeout(resolve, 1500));
     }
   }
 
-  console.log(`[CoinGecko] Historical price lookup built: ${historicalPrices.size} entries`);
+  console.log(`[CoinGecko] Historical price lookup built: ${historicalPrices.size} entries in ${((Date.now() - cgStartTime) / 1000).toFixed(1)}s`);
 
   // Cache historical prices (they never change within a sync session)
   for (const [key, price] of historicalPrices) {
