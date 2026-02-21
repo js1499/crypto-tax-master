@@ -18,7 +18,7 @@ import {
 } from "@/lib/helius-transactions";
 
 // Configure for long-running operations on Vercel
-export const maxDuration = 300; // 5 minutes max execution time
+export const maxDuration = 800; // 13 minutes max execution time
 export const runtime = "nodejs";
 
 /**
