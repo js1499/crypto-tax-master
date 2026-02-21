@@ -111,8 +111,11 @@ export async function GET(request: NextRequest) {
 
     // L-3 fix: Extracted holdings processing into a reusable function
     // to eliminate duplication between current holdings and monthly snapshots.
-    const BUY_SIDE_TYPES = ["buy", "dca", "receive", "reward", "stake", "staking", "income", "deposit", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "mint"];
-    const SELL_SIDE_TYPES = ["sell", "send", "swap", "withdraw", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity", "burn", "unstake"];
+    // C-5 fix: deposit/withdraw are transfers (tokens move between wallets/exchanges
+    // but you still own them) — they must NOT alter holdings. Unstake returns locked
+    // tokens that were already counted from the original buy.
+    const BUY_SIDE_TYPES = ["buy", "dca", "receive", "reward", "stake", "staking", "income", "airdrop", "mining", "yield", "interest", "yield farming", "farm reward", "nft purchase", "margin buy", "add liquidity", "mint"];
+    const SELL_SIDE_TYPES = ["sell", "send", "swap", "nft sale", "margin sell", "liquidation", "bridge", "remove liquidity", "burn"];
 
     type HoldingsMap = Record<string, { amount: number; costBasis: number }>;
     type LotMap = Record<string, Array<{ date: Date; amount: number; costBasis: number }>>;
