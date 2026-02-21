@@ -5,7 +5,7 @@ import { getCoinGeckoId, getPriceRange, getCurrentPrice } from "@/lib/coingecko"
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import { Decimal } from "@prisma/client/runtime/library";
 
-export const maxDuration = 300; // 5 min Vercel timeout
+export const maxDuration = 800; // 13 min Vercel timeout
 
 /**
  * POST /api/prices/enrich-historical
