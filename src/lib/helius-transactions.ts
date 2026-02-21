@@ -354,7 +354,7 @@ export async function getSolanaWalletTransactions(
   const transactions: WalletTransaction[] = [];
   let beforeSignature: string | undefined;
   let pageCount = 0;
-  const maxPages = 50;
+  const maxPages = 500; // Safety valve only — loop terminates naturally via empty results, startTime cutoff, or retry exhaustion
   let totalRawTx = 0;
   const maxRetries = 3;
 

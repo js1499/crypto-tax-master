@@ -112,6 +112,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   const [walletLoading, setWalletLoading] = useState(false);
   const [isSyncingWallet, setIsSyncingWallet] = useState(false);
   const [walletSyncProgress, setWalletSyncProgress] = useState(0);
+  const [walletSyncStatus, setWalletSyncStatus] = useState("");
   const [isAddingWallet, setIsAddingWallet] = useState(false);
   const [userWallets, setUserWallets] = useState<any[]>([]);
 
@@ -121,6 +122,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   const [isAddingSolanaWallet, setIsAddingSolanaWallet] = useState(false);
   const [isSyncingSolanaWallet, setIsSyncingSolanaWallet] = useState(false);
   const [solanaSyncProgress, setSolanaSyncProgress] = useState(0);
+  const [solanaSyncStatus, setSolanaSyncStatus] = useState("");
   const [solanaWallets, setSolanaWallets] = useState<any[]>([]);
   const [solanaWalletLoading, setSolanaWalletLoading] = useState(false);
 
@@ -209,6 +211,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   const handleSyncSolanaWallet = async (walletId?: string) => {
     setIsSyncingSolanaWallet(true);
     setSolanaSyncProgress(0);
+    setSolanaSyncStatus("Syncing Solana transactions...");
 
     try {
       const progressInterval = setInterval(() => {
@@ -235,6 +238,32 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
         }
 
         loadSolanaWallets();
+
+        // Enrich historical prices (non-blocking — sync data is already saved)
+        if (walletId && transactionsAdded > 0) {
+          setSolanaSyncProgress(0);
+          setSolanaSyncStatus("Enriching historical prices...");
+          const enrichInterval = setInterval(() => {
+            setSolanaSyncProgress((prev) => Math.min(prev + 3, 90));
+          }, 500);
+
+          try {
+            const enrichResponse = await axios.post("/api/prices/enrich-historical", {
+              walletId,
+            });
+            clearInterval(enrichInterval);
+            setSolanaSyncProgress(100);
+            if (enrichResponse.data.status === "success") {
+              toast.success(
+                `Updated ${enrichResponse.data.updated} transactions with historical prices`
+              );
+            }
+          } catch (enrichError) {
+            clearInterval(enrichInterval);
+            console.warn("[Price Enrich] Error:", enrichError);
+            toast.warning("Prices may be approximate for older transactions");
+          }
+        }
       } else {
         throw new Error(response.data.error || "Sync failed");
       }
@@ -246,6 +275,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
       toast.error(errorMessage);
     } finally {
       setIsSyncingSolanaWallet(false);
+      setSolanaSyncStatus("");
       setTimeout(() => setSolanaSyncProgress(0), 1000);
     }
   };
@@ -298,6 +328,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
   const handleSyncWallet = async (walletId?: string) => {
     setIsSyncingWallet(true);
     setWalletSyncProgress(0);
+    setWalletSyncStatus("Syncing wallet transactions...");
 
     try {
       // Simulate progress
@@ -326,6 +357,32 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
         }
 
         loadUserWallets();
+
+        // Enrich historical prices (non-blocking — sync data is already saved)
+        if (walletId && transactionsAdded > 0) {
+          setWalletSyncProgress(0);
+          setWalletSyncStatus("Enriching historical prices...");
+          const enrichInterval = setInterval(() => {
+            setWalletSyncProgress((prev) => Math.min(prev + 3, 90));
+          }, 500);
+
+          try {
+            const enrichResponse = await axios.post("/api/prices/enrich-historical", {
+              walletId,
+            });
+            clearInterval(enrichInterval);
+            setWalletSyncProgress(100);
+            if (enrichResponse.data.status === "success") {
+              toast.success(
+                `Updated ${enrichResponse.data.updated} transactions with historical prices`
+              );
+            }
+          } catch (enrichError) {
+            clearInterval(enrichInterval);
+            console.warn("[Price Enrich] Error:", enrichError);
+            toast.warning("Prices may be approximate for older transactions");
+          }
+        }
       } else {
         throw new Error(response.data.error || "Sync failed");
       }
@@ -337,6 +394,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
       toast.error(errorMessage);
     } finally {
       setIsSyncingWallet(false);
+      setWalletSyncStatus("");
       setTimeout(() => setWalletSyncProgress(0), 1000);
     }
   };
@@ -1090,7 +1148,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
                       {isSyncingWallet && walletSyncProgress > 0 && (
                         <div className="space-y-2">
                           <div className="flex justify-between text-xs">
-                            <span>Syncing wallet transactions...</span>
+                            <span>{walletSyncStatus || "Syncing wallet transactions..."}</span>
                             <span>{walletSyncProgress}%</span>
                           </div>
                           <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
@@ -1249,7 +1307,7 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
                       {isSyncingSolanaWallet && solanaSyncProgress > 0 && (
                         <div className="space-y-2">
                           <div className="flex justify-between text-xs">
-                            <span>Syncing Solana transactions...</span>
+                            <span>{solanaSyncStatus || "Syncing Solana transactions..."}</span>
                             <span>{solanaSyncProgress}%</span>
                           </div>
                           <div className="h-2 w-full overflow-hidden rounded-full bg-secondary">
