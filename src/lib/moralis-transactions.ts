@@ -241,6 +241,7 @@ export interface WalletTransaction {
   notes?: string;
   // Swap fields
   incoming_asset_symbol?: string;
+  incoming_asset_address?: string;
   incoming_amount_value?: Decimal;
   incoming_value_usd?: Decimal;
 }

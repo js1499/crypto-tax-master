@@ -13,9 +13,9 @@ const API_BASE = COINGECKO_API_KEY
   ? COINGECKO_PRO_API_BASE
   : COINGECKO_API_BASE;
 
-// Rate limiting: Free tier allows 10-50 calls/minute
-// Pro tier allows more calls
-const RATE_LIMIT_DELAY = 1200; // 1.2 seconds between calls for free tier
+// Rate limiting: Free/Demo ~30 calls/min, Analyst 500/min
+// Delay = 60_000ms / calls_per_minute
+const RATE_LIMIT_DELAY = COINGECKO_API_KEY ? 120 : 1200; // 120ms (Analyst 500/min) or 1.2s (free)
 
 // Fallback in-memory cache (used when Redis is unavailable)
 interface PriceCache {
@@ -100,12 +100,208 @@ const SYMBOL_TO_ID_MAP: { [symbol: string]: string } = {
   BSV: "bitcoin-sv",
 };
 
+// Dynamic cache: symbols resolved at runtime via search API.
+// Persists for the lifetime of the server process so repeated enrichment
+// calls don't re-search the same symbols.
+const dynamicIdCache = new Map<string, string | null>();
+
 /**
- * Get CoinGecko ID from symbol
+ * Get CoinGecko ID from symbol.
+ * Checks the hardcoded map first, then the dynamic cache populated by
+ * resolveUnknownSymbols().
  */
 export function getCoinGeckoId(symbol: string): string | null {
   const upperSymbol = symbol.toUpperCase();
-  return SYMBOL_TO_ID_MAP[upperSymbol] || null;
+  if (SYMBOL_TO_ID_MAP[upperSymbol]) return SYMBOL_TO_ID_MAP[upperSymbol];
+  if (dynamicIdCache.has(upperSymbol)) return dynamicIdCache.get(upperSymbol) || null;
+  return null;
+}
+
+/**
+ * Resolve unknown symbols by searching the CoinGecko API.
+ * For each symbol not already in the hardcoded map or dynamic cache,
+ * calls the search API, picks the best exact-symbol match by market cap
+ * rank, and caches the result (including misses to avoid re-searching).
+ *
+ * Call this BEFORE getPriceRange/getHistoricalPrice so that getCoinGeckoId()
+ * returns the correct IDs.
+ */
+export async function resolveUnknownSymbols(
+  symbols: string[]
+): Promise<{ resolved: string[]; failed: string[] }> {
+  const unknown = symbols.filter((s) => {
+    const upper = s.toUpperCase();
+    return !SYMBOL_TO_ID_MAP[upper] && !dynamicIdCache.has(upper);
+  });
+
+  if (unknown.length === 0) return { resolved: [], failed: [] };
+
+  console.log(`[CoinGecko] Resolving ${unknown.length} unknown symbol(s): ${unknown.join(", ")}`);
+
+  const resolved: string[] = [];
+  const failed: string[] = [];
+
+  for (const symbol of unknown) {
+    const upper = symbol.toUpperCase();
+    try {
+      // searchCoin already calls rateLimit() internally
+      const results = await searchCoin(symbol);
+
+      // Find best match: exact symbol match, sorted by market cap rank (lower = more popular)
+      const exactMatches = results
+        .filter((r) => r.symbol.toUpperCase() === upper)
+        .sort((a, b) => (a.market_cap_rank || 999999) - (b.market_cap_rank || 999999));
+
+      if (exactMatches.length > 0) {
+        const best = exactMatches[0];
+        dynamicIdCache.set(upper, best.id);
+        resolved.push(symbol);
+        console.log(
+          `[CoinGecko] Resolved ${symbol} → ${best.id} (${best.name}, rank #${best.market_cap_rank || "N/A"})`
+        );
+      } else {
+        dynamicIdCache.set(upper, null); // Cache the miss
+        failed.push(symbol);
+        console.log(`[CoinGecko] No match for ${symbol} (${results.length} search results, none matched symbol)`);
+      }
+    } catch (err) {
+      dynamicIdCache.set(upper, null);
+      failed.push(symbol);
+      console.warn(`[CoinGecko] Search failed for ${symbol}:`, err instanceof Error ? err.message : err);
+    }
+  }
+
+  console.log(
+    `[CoinGecko] Resolution complete: ${resolved.length} resolved, ${failed.length} failed`
+  );
+  return { resolved, failed };
+}
+
+// Contract address → resolved token info cache (mint → { id, symbol, name } or null)
+const contractCache = new Map<string, { id: string; symbol: string; name: string } | null>();
+
+/**
+ * Look up a token on CoinGecko by its on-chain contract (mint) address.
+ * Uses GET /coins/{platform}/contract/{address}.
+ * Returns the CoinGecko ID, symbol, and name, or null if not found.
+ * Also populates the dynamicIdCache so getPriceRange() works afterwards.
+ */
+export async function getTokenByContract(
+  contractAddress: string,
+  platform: string = "solana"
+): Promise<{ id: string; symbol: string; name: string } | null> {
+  // Check cache first
+  if (contractCache.has(contractAddress)) {
+    return contractCache.get(contractAddress) || null;
+  }
+
+  try {
+    await rateLimit();
+
+    const url = `${API_BASE}/coins/${platform}/contract/${contractAddress}`;
+    const params: any = {};
+    if (COINGECKO_API_KEY) {
+      params.x_cg_pro_api_key = COINGECKO_API_KEY;
+    }
+
+    const response = await axios.get(url, { params, timeout: 10000 });
+    const data = response.data;
+
+    if (data && data.id && data.symbol) {
+      const result = {
+        id: data.id,
+        symbol: data.symbol.toUpperCase(),
+        name: data.name || data.symbol,
+      };
+      contractCache.set(contractAddress, result);
+      // Also populate dynamic ID cache so getPriceRange/getCoinGeckoId work
+      dynamicIdCache.set(result.symbol, result.id);
+      return result;
+    }
+
+    contractCache.set(contractAddress, null);
+    return null;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      // Token not on CoinGecko — cache the miss
+      contractCache.set(contractAddress, null);
+      return null;
+    }
+    // Transient error — don't cache so we can retry later
+    console.warn(
+      `[CoinGecko] Contract lookup failed for ${contractAddress}:`,
+      axios.isAxiosError(error) ? `${error.response?.status} ${error.message}` : error
+    );
+    return null;
+  }
+}
+
+/**
+ * Resolve multiple contract addresses in bulk.
+ * Calls getTokenByContract() sequentially (respecting rate limits).
+ * Returns maps of resolved and failed addresses.
+ *
+ * @param addresses Array of { contractAddress, currentSymbol } pairs
+ * @param platform Blockchain platform ID (default: "solana")
+ */
+export async function resolveByContractAddress(
+  addresses: Array<{ contractAddress: string; currentSymbol: string }>,
+  platform: string = "solana"
+): Promise<{
+  resolved: Map<string, { id: string; symbol: string; name: string }>;
+  failed: string[];
+  symbolUpdates: Map<string, string>; // old truncated symbol → new real symbol
+}> {
+  const resolved = new Map<string, { id: string; symbol: string; name: string }>();
+  const failed: string[] = [];
+  const symbolUpdates = new Map<string, string>();
+
+  // Filter to only addresses not already cached
+  const toResolve = addresses.filter((a) => !contractCache.has(a.contractAddress));
+  const alreadyCached = addresses.filter((a) => contractCache.has(a.contractAddress));
+
+  // Process already-cached entries
+  for (const { contractAddress, currentSymbol } of alreadyCached) {
+    const cached = contractCache.get(contractAddress);
+    if (cached) {
+      resolved.set(contractAddress, cached);
+      if (currentSymbol !== cached.symbol) {
+        symbolUpdates.set(currentSymbol, cached.symbol);
+      }
+    }
+  }
+
+  if (toResolve.length === 0) {
+    console.log(`[CoinGecko] All ${addresses.length} contract addresses already cached`);
+    return { resolved, failed, symbolUpdates };
+  }
+
+  console.log(
+    `[CoinGecko] Resolving ${toResolve.length} contract addresses (${alreadyCached.length} cached)...`
+  );
+
+  for (let i = 0; i < toResolve.length; i++) {
+    const { contractAddress, currentSymbol } = toResolve[i];
+    const result = await getTokenByContract(contractAddress, platform);
+
+    if (result) {
+      resolved.set(contractAddress, result);
+      if (currentSymbol !== result.symbol) {
+        symbolUpdates.set(currentSymbol, result.symbol);
+      }
+      // Log progress every 50
+      if ((i + 1) % 50 === 0) {
+        console.log(`[CoinGecko]   Contract resolution progress: ${i + 1}/${toResolve.length}`);
+      }
+    } else {
+      failed.push(contractAddress);
+    }
+  }
+
+  console.log(
+    `[CoinGecko] Contract resolution complete: ${resolved.size} resolved, ${failed.length} not on CoinGecko`
+  );
+  return { resolved, failed, symbolUpdates };
 }
 
 /**

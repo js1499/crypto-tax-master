@@ -736,6 +736,7 @@ function processSwapTransaction(
     explorer_url: getExplorerUrl(tx.signature),
     notes: `Swap via ${tx.source}`,
     incoming_asset_symbol: inSymbol,
+    incoming_asset_address: inMint !== SOL_MINT ? inMint : undefined,
     incoming_amount_value: new Decimal(inAmount),
     incoming_value_usd: new Decimal(0),
   });
@@ -794,6 +795,7 @@ function processNftSaleTransaction(
       explorer_url: getExplorerUrl(tx.signature),
       notes: `${nftNote} — Sold for ${saleAmountSol.toFixed(4)} SOL via ${tx.source}`,
       incoming_asset_symbol: "SOL",
+      // SOL has no contract address (native asset)
       incoming_amount_value: new Decimal(saleAmountSol),
       incoming_value_usd: new Decimal(0), // Enriched in Step 2
     });
@@ -805,7 +807,7 @@ function processNftSaleTransaction(
     }
     transactions.push({
       id: subTxId,
-      type: "NFT_SALE",
+      type: "NFT_PURCHASE",
       asset_symbol: "SOL",
       asset_chain: "solana",
       amount_value: new Decimal(saleAmountSol),
@@ -823,6 +825,7 @@ function processNftSaleTransaction(
       explorer_url: getExplorerUrl(tx.signature),
       notes: `${nftNote} — Bought for ${saleAmountSol.toFixed(4)} SOL via ${tx.source}`,
       incoming_asset_symbol: nfts.length > 0 ? resolveTokenSymbol(nfts[0].mint) : "NFT",
+      incoming_asset_address: nfts.length > 0 ? nfts[0].mint : undefined,
       incoming_amount_value: new Decimal(nfts.length || 1),
       incoming_value_usd: new Decimal(0),
     });

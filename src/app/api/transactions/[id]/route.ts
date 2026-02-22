@@ -142,6 +142,9 @@ export async function PATCH(
         notes: true,
         chain: true,
         tx_hash: true,
+        incoming_asset_symbol: true,
+        incoming_amount_value: true,
+        incoming_value_usd: true,
       },
     });
 
@@ -176,6 +179,9 @@ export async function PATCH(
         notes: updatedTransaction.notes || "",
         chain: updatedTransaction.chain,
         txHash: updatedTransaction.tx_hash,
+        incomingAsset: updatedTransaction.incoming_asset_symbol || null,
+        incomingAmount: updatedTransaction.incoming_amount_value ? Number(updatedTransaction.incoming_amount_value) : null,
+        incomingValueUsd: updatedTransaction.incoming_value_usd ? Number(updatedTransaction.incoming_value_usd) : null,
       },
     });
   } catch (error) {

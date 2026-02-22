@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getCoinGeckoId, getPriceRange, getCurrentPrice } from "@/lib/coingecko";
+import { getCoinGeckoId, getPriceRange, getCurrentPrice, resolveUnknownSymbols, resolveByContractAddress } from "@/lib/coingecko";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import { Decimal } from "@prisma/client/runtime/library";
 
@@ -9,11 +10,19 @@ export const maxDuration = 800; // 13 min Vercel timeout
 
 /**
  * POST /api/prices/enrich-historical
- * Enriches Solana transactions with CoinGecko historical prices.
- * Called after wallet sync to replace DAS current prices with accurate historical prices.
+ * Enriches transactions with CoinGecko historical prices.
+ * Called after wallet sync to replace DAS current prices with accurate
+ * historical prices. Works for all chains, not just Solana.
+ *
+ * Body:
+ *   walletId? — enrich transactions for a specific wallet.
+ *              If omitted, enriches ALL transactions for the user
+ *              (wallets + CSV imports + exchange API imports).
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
+  const log = (msg: string) => console.log(`[Enrich] ${msg}`);
+  const warn = (msg: string) => console.warn(`[Enrich] ${msg}`);
 
   try {
     // Rate limiting: 3 requests per minute
@@ -30,24 +39,57 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}));
     const { walletId } = body;
-    if (!walletId) {
-      return NextResponse.json({ error: "walletId is required" }, { status: 400 });
+
+    // ── Step 1: Build transaction query ──────────────────────────────
+    let where: Prisma.TransactionWhereInput;
+    let label: string;
+
+    if (walletId) {
+      // Single wallet mode
+      const wallet = await prisma.wallet.findFirst({
+        where: { id: walletId, userId: user.id },
+      });
+      if (!wallet) {
+        return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
+      }
+      where = { wallet_address: wallet.address };
+      label = wallet.name || wallet.address.slice(0, 8);
+    } else {
+      // All-transactions mode: wallets + CSV + exchange imports
+      const userWithWallets = await prisma.user.findUnique({
+        where: { id: user.id },
+        include: { wallets: true },
+      });
+      const walletAddresses = userWithWallets?.wallets.map((w) => w.address) || [];
+
+      const orConditions: Prisma.TransactionWhereInput[] = [];
+      if (walletAddresses.length > 0) {
+        orConditions.push({ wallet_address: { in: walletAddresses } });
+      }
+      orConditions.push({
+        AND: [{ source_type: "csv_import" }, { wallet_address: null }],
+      });
+      const userExchanges = await prisma.exchange.findMany({
+        where: { userId: user.id },
+        select: { name: true },
+      });
+      if (userExchanges.length > 0) {
+        orConditions.push({
+          AND: [
+            { source_type: "exchange_api" },
+            { source: { in: userExchanges.map((e) => e.name) } },
+          ],
+        });
+      }
+      where = { OR: orConditions };
+      label = `user ${user.id} (all transactions)`;
     }
 
-    // Verify wallet belongs to user
-    const wallet = await prisma.wallet.findFirst({
-      where: { id: walletId, userId: user.id },
-    });
-    if (!wallet) {
-      return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
-    }
+    // ── Step 2: Fetch transactions ───────────────────────────────────
+    log(`Querying transactions for ${label}...`);
 
-    // Query all Solana transactions for this wallet
     const transactions = await prisma.transaction.findMany({
-      where: {
-        wallet_address: wallet.address,
-        chain: "solana",
-      },
+      where,
       select: {
         id: true,
         asset_symbol: true,
@@ -55,12 +97,17 @@ export async function POST(request: NextRequest) {
         amount_value: true,
         fee_usd: true,
         incoming_asset_symbol: true,
+        incoming_asset_address: true,
         incoming_amount_value: true,
         incoming_value_usd: true,
         price_per_unit: true,
         value_usd: true,
+        chain: true,
+        asset_address: true,
       },
     });
+
+    log(`Found ${transactions.length} transactions`);
 
     if (transactions.length === 0) {
       return NextResponse.json({
@@ -73,59 +120,116 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Find date range across all transactions (with 1-day buffer on each side)
+    // ── Step 3: Date range ───────────────────────────────────────────
     let minDate = transactions[0].tx_timestamp;
     let maxDate = transactions[0].tx_timestamp;
     for (const tx of transactions) {
       if (tx.tx_timestamp < minDate) minDate = tx.tx_timestamp;
       if (tx.tx_timestamp > maxDate) maxDate = tx.tx_timestamp;
     }
-    const rangeStart = new Date(minDate.getTime() - 86400000); // -1 day
-    const rangeEnd = new Date(maxDate.getTime() + 86400000); // +1 day
+    const rangeStart = new Date(minDate.getTime() - 86400000); // -1 day buffer
+    const rangeEnd = new Date(maxDate.getTime() + 86400000); // +1 day buffer
 
-    // Collect unique symbols that have CoinGecko IDs
-    const symbolSet = new Set<string>();
-    symbolSet.add("SOL"); // Always include SOL for fee correction
+    log(`Date range: ${rangeStart.toISOString().split("T")[0]} → ${rangeEnd.toISOString().split("T")[0]}`);
+
+    // ── Step 4: Collect unique symbols and contract addresses ─────────
+    const allSymbols = new Set<string>();
+    allSymbols.add("SOL"); // Always need SOL for fee correction
+    // Map: contract address → current symbol (for tokens with on-chain addresses)
+    const contractsToResolve = new Map<string, string>();
+
     for (const tx of transactions) {
-      if (tx.asset_symbol && getCoinGeckoId(tx.asset_symbol)) {
-        symbolSet.add(tx.asset_symbol.toUpperCase());
+      if (tx.asset_symbol) allSymbols.add(tx.asset_symbol.toUpperCase());
+      if (tx.incoming_asset_symbol) allSymbols.add(tx.incoming_asset_symbol.toUpperCase());
+      // Collect contract addresses for tokens we can't price by symbol
+      if (tx.asset_address && !getCoinGeckoId(tx.asset_symbol)) {
+        contractsToResolve.set(tx.asset_address, tx.asset_symbol);
       }
-      if (tx.incoming_asset_symbol && getCoinGeckoId(tx.incoming_asset_symbol)) {
-        symbolSet.add(tx.incoming_asset_symbol.toUpperCase());
+      // Also collect incoming asset contract addresses (for swap received tokens)
+      if (tx.incoming_asset_address && tx.incoming_asset_symbol && !getCoinGeckoId(tx.incoming_asset_symbol)) {
+        contractsToResolve.set(tx.incoming_asset_address, tx.incoming_asset_symbol);
       }
     }
-    const symbols = Array.from(symbolSet);
 
-    console.log(`[Enrich] ${wallet.name}: ${transactions.length} tx, ${symbols.length} symbols (${symbols.join(",")}), range ${rangeStart.toISOString().split("T")[0]} to ${rangeEnd.toISOString().split("T")[0]}`);
+    log(`${allSymbols.size} unique symbol(s), ${contractsToResolve.size} with contract addresses to resolve`);
 
-    // Fetch historical prices for each symbol (sequentially to respect CoinGecko rate limits)
-    // Build lookup Map: "SOL:2023-01-15" → 14.52
+    // ── Step 5a: Resolve tokens by contract address (most reliable) ──
+    // symbolMap tracks old symbol → new resolved symbol for DB updates
+    const symbolMap = new Map<string, string>();
+    let contractResolved = 0;
+
+    if (contractsToResolve.size > 0) {
+      log(`Resolving ${contractsToResolve.size} token(s) by contract address...`);
+      const contractEntries = Array.from(contractsToResolve.entries()).map(
+        ([addr, sym]) => ({ contractAddress: addr, currentSymbol: sym })
+      );
+      const { resolved: contractResults, failed: contractFailed, symbolUpdates } =
+        await resolveByContractAddress(contractEntries);
+      contractResolved = contractResults.size;
+
+      // Register resolved symbols so they can be priced
+      for (const [, tokenInfo] of contractResults) {
+        allSymbols.add(tokenInfo.symbol);
+      }
+      // Track symbol renames for DB update
+      for (const [oldSym, newSym] of symbolUpdates) {
+        symbolMap.set(oldSym, newSym);
+      }
+
+      log(`Contract resolution: ${contractResolved} found on CoinGecko, ${contractFailed.length} not found`);
+    }
+
+    // ── Step 5b: Resolve remaining unknown symbols via search ─────────
+    const stillUnknown = Array.from(allSymbols).filter(
+      (s) => !getCoinGeckoId(s) && !s.includes("...")
+    );
+    if (stillUnknown.length > 0) {
+      log(`${stillUnknown.length} symbol(s) still unresolved, searching by name...`);
+      const { resolved, failed } = await resolveUnknownSymbols(stillUnknown);
+      if (resolved.length > 0) log(`Search resolved: ${resolved.join(", ")}`);
+      if (failed.length > 0) warn(`Search failed: ${failed.join(", ")}`);
+    }
+
+    // Build final list of symbols we can actually price
+    const priceableSymbols = Array.from(allSymbols).filter((s) => getCoinGeckoId(s));
+    const unpriceableSymbols = Array.from(allSymbols).filter((s) => !getCoinGeckoId(s));
+
+    log(`Priceable: ${priceableSymbols.length} symbols | Unpriceable: ${unpriceableSymbols.length} symbols`);
+
+    // ── Step 6: Fetch historical price ranges ────────────────────────
+    log(`Fetching price ranges for ${priceableSymbols.length} symbol(s)...`);
+
     const priceMap = new Map<string, number>();
-    const failedSymbols: string[] = [];
+    const priceFetchFailed: string[] = [];
 
-    for (const symbol of symbols) {
+    for (let idx = 0; idx < priceableSymbols.length; idx++) {
+      const symbol = priceableSymbols[idx];
       try {
         const prices = await getPriceRange(symbol, rangeStart, rangeEnd);
         if (prices && prices.length > 0) {
           for (const entry of prices) {
             const dateKey = entry.date.split("T")[0]; // YYYY-MM-DD
-            const mapKey = `${symbol}:${dateKey}`;
-            priceMap.set(mapKey, entry.price);
+            priceMap.set(`${symbol}:${dateKey}`, entry.price);
           }
+          log(`  [${idx + 1}/${priceableSymbols.length}] ${symbol}: ${prices.length} daily prices fetched`);
         } else {
-          failedSymbols.push(symbol);
+          priceFetchFailed.push(symbol);
+          warn(`  [${idx + 1}/${priceableSymbols.length}] ${symbol}: no price data returned`);
         }
       } catch (err) {
-        failedSymbols.push(symbol);
+        priceFetchFailed.push(symbol);
+        warn(`  [${idx + 1}/${priceableSymbols.length}] ${symbol}: fetch error — ${err instanceof Error ? err.message : err}`);
       }
     }
 
-    if (failedSymbols.length > 0) {
-      console.warn(`[Enrich] No price data for: ${failedSymbols.join(", ")}`);
+    log(`Price map built: ${priceMap.size} date-price entries`);
+    if (priceFetchFailed.length > 0) {
+      warn(`Failed to fetch prices for: ${priceFetchFailed.join(", ")}`);
     }
 
-    // Get current SOL price for fee correction (reverse-compute fee_usd back to SOL amount)
+    // ── Step 7: Current SOL price for fee correction ─────────────────
     const currentSolPrice = await getCurrentPrice("SOL");
+    log(`Current SOL price for fee correction: $${currentSolPrice?.toFixed(2) || "N/A"}`);
 
     // Helper: find closest price for a symbol on a given date
     function lookupPrice(symbol: string, date: Date): number | null {
@@ -145,9 +249,15 @@ export async function POST(request: NextRequest) {
       return null;
     }
 
-    // Batch update transactions
+    // ── Step 8: Update transactions in batches ───────────────────────
+    log(`Updating transactions in batches of 100...`);
+
     let updated = 0;
     let skipped = 0;
+    let mainPriced = 0;
+    let feeCorrected = 0;
+    let incomingPriced = 0;
+    let symbolsFixed = 0;
     const fallbackSymbols = new Set<string>();
     const BATCH_SIZE = 100;
 
@@ -159,18 +269,28 @@ export async function POST(request: NextRequest) {
         const updateData: Record<string, any> = {};
         let didUpdate = false;
 
-        // Main asset price
-        const historicalPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
+        // Resolve symbol: if we found a better name via contract lookup, use it
+        let effectiveSymbol = tx.asset_symbol;
+        const betterSymbol = symbolMap.get(tx.asset_symbol);
+        if (betterSymbol) {
+          effectiveSymbol = betterSymbol;
+          updateData.asset_symbol = betterSymbol;
+          didUpdate = true;
+          symbolsFixed++;
+        }
+
+        // Main asset price (use resolved symbol for lookup)
+        const historicalPrice = lookupPrice(effectiveSymbol, tx.tx_timestamp);
         if (historicalPrice !== null) {
           updateData.price_per_unit = new Decimal(historicalPrice);
           updateData.value_usd = new Decimal(
             Math.abs(Number(tx.amount_value) * historicalPrice)
           );
           didUpdate = true;
+          mainPriced++;
         } else {
-          // Token not in CoinGecko — keep DAS price
-          if (!getCoinGeckoId(tx.asset_symbol)) {
-            fallbackSymbols.add(tx.asset_symbol);
+          if (!getCoinGeckoId(effectiveSymbol)) {
+            fallbackSymbols.add(effectiveSymbol);
           }
         }
 
@@ -181,19 +301,25 @@ export async function POST(request: NextRequest) {
             const feeSol = Number(tx.fee_usd) / currentSolPrice;
             updateData.fee_usd = new Decimal(feeSol * historicalSolPrice);
             didUpdate = true;
+            feeCorrected++;
           }
         }
 
-        // Incoming asset (for swaps)
+        // Incoming asset (for swaps / NFT sales)
         if (tx.incoming_asset_symbol && tx.incoming_amount_value) {
-          const incomingPrice = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
+          const effectiveIncoming = symbolMap.get(tx.incoming_asset_symbol) || tx.incoming_asset_symbol;
+          if (effectiveIncoming !== tx.incoming_asset_symbol) {
+            updateData.incoming_asset_symbol = effectiveIncoming;
+          }
+          const incomingPrice = lookupPrice(effectiveIncoming, tx.tx_timestamp);
           if (incomingPrice !== null) {
             updateData.incoming_value_usd = new Decimal(
               Math.abs(Number(tx.incoming_amount_value) * incomingPrice)
             );
             didUpdate = true;
-          } else if (!getCoinGeckoId(tx.incoming_asset_symbol)) {
-            fallbackSymbols.add(tx.incoming_asset_symbol);
+            incomingPriced++;
+          } else if (!getCoinGeckoId(effectiveIncoming)) {
+            fallbackSymbols.add(effectiveIncoming);
           }
         }
 
@@ -214,17 +340,38 @@ export async function POST(request: NextRequest) {
       if (updates.length > 0) {
         await prisma.$transaction(updates);
       }
+
+      // Progress log every 500 transactions
+      if ((i + BATCH_SIZE) % 500 === 0 || i + BATCH_SIZE >= transactions.length) {
+        log(`  Progress: ${Math.min(i + BATCH_SIZE, transactions.length)}/${transactions.length} processed`);
+      }
     }
 
+    // ── Step 9: Summary ──────────────────────────────────────────────
     const fallbackList = Array.from(fallbackSymbols);
     const durationMs = Date.now() - startTime;
-    console.log(`[Enrich] Done in ${(durationMs / 1000).toFixed(1)}s: ${updated} updated, ${skipped} skipped${fallbackList.length > 0 ? ` | fallback tokens: ${fallbackList.join(",")}` : ""}`);
+
+    log(`─── Enrichment complete ───`);
+    log(`  Duration:        ${(durationMs / 1000).toFixed(1)}s`);
+    log(`  Transactions:    ${transactions.length} total`);
+    log(`  Updated:         ${updated} (${mainPriced} main prices, ${feeCorrected} fees, ${incomingPriced} incoming prices)`);
+    log(`  Symbols fixed:   ${symbolsFixed} (truncated mints → real names)`);
+    log(`  Contracts resolved: ${contractResolved} via on-chain address`);
+    log(`  Skipped:         ${skipped} (no price data available)`);
+    if (fallbackList.length > 0) {
+      log(`  Unpriceable:     ${fallbackList.join(", ")}`);
+    }
 
     return NextResponse.json({
       status: "success",
       updated,
       total: transactions.length,
       skipped,
+      mainPriced,
+      feeCorrected,
+      incomingPriced,
+      symbolsFixed,
+      contractResolved,
       fallbackSymbols: fallbackList,
       durationMs,
     });

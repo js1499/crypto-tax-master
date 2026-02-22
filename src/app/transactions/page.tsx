@@ -119,6 +119,9 @@ interface Transaction {
   notes?: string;
   chain?: string;
   txHash?: string;
+  incomingAsset?: string | null;
+  incomingAmount?: number | null;
+  incomingValueUsd?: number | null;
   [key: string]: any; // Add index signature to allow string-based property access
 }
 
@@ -1987,6 +1990,14 @@ function TransactionsContent() {
                                   <ArrowDownRight className="mr-0.5 h-2.5 w-2.5" />
                             )}
                                 <span className="crypto-amount font-mono">{transaction.value}</span>
+                                {transaction.incomingAsset && transaction.incomingAmount != null && transaction.incomingAmount > 0 && (
+                                  <span className="ml-1 text-xs text-muted-foreground">
+                                    {" \u2192 "}{transaction.incomingAmount < 0.01
+                                      ? transaction.incomingAmount.toExponential(2)
+                                      : transaction.incomingAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })
+                                    }{" "}{transaction.incomingAsset}
+                                  </span>
+                                )}
                           </div>
                               {editableFields.value && (
                                 <Button 

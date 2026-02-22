@@ -130,6 +130,7 @@ model Transaction {
 
   // Swap transaction details (for crypto-to-crypto swaps)
   incoming_asset_symbol   String?   @db.VarChar(50) // Asset received in swap
+  incoming_asset_address  String?   @db.VarChar(255) // Contract/mint address of incoming asset
   incoming_amount_value  Decimal?  @db.Decimal(30, 15) // Amount of incoming asset
   incoming_value_usd      Decimal?  @db.Decimal(30, 15) // USD value of incoming asset at swap time
 

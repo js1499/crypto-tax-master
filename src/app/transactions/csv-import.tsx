@@ -1010,6 +1010,14 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
       const message = `Successfully imported ${data.transactionsAdded} transaction${data.transactionsAdded !== 1 ? "s" : ""} from ${csvFile.name}${data.transactionsSkipped > 0 ? ` (${data.transactionsSkipped} skipped as duplicates)` : ""}`;
       toast.success(message);
 
+      // Trigger price enrichment in background (no walletId = enrich all user txns)
+      fetch("/api/prices/enrich-historical", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+        credentials: "include",
+      }).catch((err) => console.error("[CSV Import] Price enrichment failed:", err));
+
       // Reset form after successful import
       setTimeout(() => {
         setCsvFile(null);

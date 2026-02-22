@@ -35,6 +35,7 @@ const CATEGORY_MAP: Record<string, string> = {
 
   // -- NFT Marketplace --
   "NFT_SALE": "nft",
+  "NFT_PURCHASE": "nft",
   "NFT_LISTING": "nft",
   "NFT_CANCEL_LISTING": "nft",
   "NFT_BID": "nft",
@@ -371,16 +372,45 @@ export function getTypesForCategory(category: string): string[] {
   return _categoryIndex[category] || [];
 }
 
+const OUTFLOW_RAW_TYPES = new Set([
+  "TRANSFER_OUT", "Send", "send", "token send", "nft send", "withdrawal",
+  "NFT_PURCHASE",
+]);
+
 /** True for categories where crypto/money is leaving (outflow). */
 export function isOutflow(rawType: string): boolean {
+  if (OUTFLOW_RAW_TYPES.has(rawType)) return true;
   const cat = getCategory(rawType);
   return cat === "buy" || cat === "swap" || cat === "defi";
 }
 
+const INFLOW_RAW_TYPES = new Set([
+  "TRANSFER_IN", "Receive", "receive", "token receive", "nft receive", "deposit",
+  "NFT_SALE",
+]);
+
 /** True for categories where crypto/money is arriving (inflow). */
 export function isInflow(rawType: string): boolean {
+  if (INFLOW_RAW_TYPES.has(rawType)) return true;
   const cat = getCategory(rawType);
   return cat === "sell" || cat === "income";
+}
+
+/** Classify a raw type for P&L purposes: outflow, inflow, or excluded. */
+export function getPnlCategory(rawType: string): "outflow" | "inflow" | "excluded" {
+  if (isOutflow(rawType)) return "outflow";
+  if (isInflow(rawType)) return "inflow";
+  return "excluded";
+}
+
+/** All raw type strings in CATEGORY_MAP classified as outflow. */
+export function getPnlOutflowTypes(): string[] {
+  return Object.keys(CATEGORY_MAP).filter(t => getPnlCategory(t) === "outflow");
+}
+
+/** All raw type strings in CATEGORY_MAP classified as inflow. */
+export function getPnlInflowTypes(): string[] {
+  return Object.keys(CATEGORY_MAP).filter(t => getPnlCategory(t) === "inflow");
 }
 
 /** Types that create cost basis lots in the tax engine. */
@@ -388,7 +418,7 @@ export function isTaxableBuy(rawType: string): boolean {
   const cat = getCategory(rawType);
   if (cat === "buy") return true;
   // NFT Purchase is a buy (cost basis for future sale)
-  if (rawType === "NFT Purchase" || rawType === "nft purchase") return true;
+  if (rawType === "NFT Purchase" || rawType === "nft purchase" || rawType === "NFT_PURCHASE") return true;
   return false;
 }
 
