@@ -24,21 +24,29 @@ export async function POST(request: NextRequest) {
   const log = (msg: string) => console.log(`[Enrich] ${msg}`);
   const warn = (msg: string) => console.warn(`[Enrich] ${msg}`);
 
+  log(`── Endpoint called at ${new Date().toISOString()} ──`);
+
   try {
-    // Rate limiting: 3 requests per minute
-    const rateLimitResult = rateLimitAPI(request, 3);
+    // Rate limiting: 10 requests per minute
+    const rateLimitResult = rateLimitAPI(request, 10);
     if (!rateLimitResult.success) {
+      warn(`Rate limited! remaining=${rateLimitResult.remaining}, reset=${new Date(rateLimitResult.reset).toISOString()}`);
       return createRateLimitResponse(rateLimitResult.remaining, rateLimitResult.reset);
     }
+    log(`Rate limit OK (${rateLimitResult.remaining} remaining)`);
 
     // Auth
     const user = await getCurrentUser(request);
     if (!user) {
+      warn(`Auth failed — no user returned from getCurrentUser`);
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    log(`Auth OK — user ${user.id}`);
 
     const body = await request.json().catch(() => ({}));
     const { walletId } = body;
+    log(`Body parsed — walletId=${walletId || "(none, enriching all)"}`);
+
 
     // ── Step 1: Build transaction query ──────────────────────────────
     let where: Prisma.TransactionWhereInput;

@@ -214,16 +214,26 @@ function AccountsContent() {
 
       // Always enrich historical prices
       toast.info("Looking up historical prices...");
-      const enrichResponse = await fetch("/api/prices/enrich-historical", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletId }),
-      });
-      const enrichData = await enrichResponse.json();
-      if (enrichResponse.ok) {
-        toast.success(
-          `Updated ${enrichData.updated} transactions with historical prices`
-        );
+      try {
+        console.log("[Accounts] Calling enrich-historical for wallet:", walletId);
+        const enrichResponse = await fetch("/api/prices/enrich-historical", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ walletId }),
+        });
+        console.log("[Accounts] Enrich response status:", enrichResponse.status);
+        const enrichData = await enrichResponse.json();
+        console.log("[Accounts] Enrich response data:", enrichData);
+        if (enrichResponse.ok) {
+          toast.success(
+            `Updated ${enrichData.updated}/${enrichData.total} transactions with historical prices (${enrichData.fallbackSymbols?.length || 0} symbols unpriced)`
+          );
+        } else {
+          toast.error(`Price enrichment failed: ${enrichData.error || enrichResponse.status}`);
+        }
+      } catch (enrichError) {
+        console.error("[Accounts] Enrich fetch error:", enrichError);
+        toast.error("Price enrichment request failed — check console for details");
       }
 
       fetchWallets();
