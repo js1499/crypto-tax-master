@@ -1,6 +1,8 @@
 import axios from "axios";
 import { Decimal } from "@prisma/client/runtime/library";
 import type { WalletTransaction } from "./moralis-transactions";
+import fs from "fs";
+import path from "path";
 
 // Helius API key from environment
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
@@ -308,6 +310,132 @@ function determineTransferDirection(
 }
 
 // ============================================================
+// Raw Helius dump to CSV (for debugging / comparison)
+// ============================================================
+
+/**
+ * Dump raw Helius enhanced transactions to a CSV file in public/dumps/.
+ * Columns mirror the DB Transaction schema so the two can be compared
+ * side-by-side. Values come straight from the Helius payload — no
+ * type-mapping, price enrichment, or symbol resolution is applied.
+ */
+function dumpRawHeliusToCsv(
+  walletAddress: string,
+  rawTransactions: HeliusEnhancedTransaction[]
+): void {
+  try {
+    const dumpsDir = path.join(process.cwd(), "public", "dumps");
+    fs.mkdirSync(dumpsDir, { recursive: true });
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const shortAddr = walletAddress.slice(0, 8);
+    const filePath = path.join(dumpsDir, `helius-raw-${shortAddr}-${timestamp}.csv`);
+
+    const csvHeader = [
+      "type",
+      "source",
+      "asset_symbol",
+      "amount_value",
+      "price_per_unit",
+      "value_usd",
+      "fee_usd",
+      "tx_timestamp",
+      "tx_hash",
+      "wallet_address",
+      "counterparty_address",
+      "chain",
+      "block_number",
+      "description",
+      "native_transfers_count",
+      "token_transfers_count",
+      "has_swap_event",
+      "has_nft_event",
+    ].join(",");
+
+    const csvRows: string[] = [];
+
+    for (const tx of rawTransactions) {
+      const esc = (val: string) => {
+        if (val.includes(",") || val.includes('"') || val.includes("\n")) {
+          return `"${val.replace(/"/g, '""')}"`;
+        }
+        return val;
+      };
+
+      const feeInSol = lamportsToSol(tx.fee || 0);
+      const txDate = new Date(tx.timestamp * 1000).toISOString();
+
+      // Flatten native transfers to summarise the primary asset movement
+      let nativeAmount = 0;
+      let counterparty = "";
+      if (tx.nativeTransfers && tx.nativeTransfers.length > 0) {
+        for (const nt of tx.nativeTransfers) {
+          if (nt.fromUserAccount === walletAddress && nt.toUserAccount !== walletAddress) {
+            nativeAmount -= lamportsToSol(nt.amount);
+            if (!counterparty) counterparty = nt.toUserAccount;
+          } else if (nt.toUserAccount === walletAddress && nt.fromUserAccount !== walletAddress) {
+            nativeAmount += lamportsToSol(nt.amount);
+            if (!counterparty) counterparty = nt.fromUserAccount;
+          }
+        }
+      }
+
+      // If there are token transfers, pick the first one involving our wallet
+      let tokenSymbol = "";
+      let tokenAmount = 0;
+      let tokenMint = "";
+      if (tx.tokenTransfers && tx.tokenTransfers.length > 0) {
+        for (const tt of tx.tokenTransfers) {
+          if (tt.fromUserAccount === walletAddress || tt.toUserAccount === walletAddress) {
+            tokenMint = tt.mint;
+            tokenSymbol = tt.mint; // raw mint, no resolution
+            tokenAmount = tt.toUserAccount === walletAddress ? tt.tokenAmount : -tt.tokenAmount;
+            if (!counterparty) {
+              counterparty = tt.toUserAccount === walletAddress ? tt.fromUserAccount : tt.toUserAccount;
+            }
+            break;
+          }
+        }
+      }
+
+      // Choose asset: prefer token transfer data, fall back to SOL native
+      const assetSymbol = tokenSymbol || "SOL";
+      const amount = tokenSymbol ? tokenAmount : nativeAmount;
+
+      csvRows.push(
+        [
+          esc(tx.type || ""),
+          esc(tx.source || ""),
+          esc(assetSymbol),
+          amount,
+          "", // price_per_unit — not in raw Helius payload
+          "", // value_usd — not in raw Helius payload
+          feeInSol,
+          esc(txDate),
+          esc(tx.signature),
+          esc(walletAddress),
+          esc(counterparty),
+          "solana",
+          tx.slot,
+          esc(tx.description || ""),
+          tx.nativeTransfers?.length || 0,
+          tx.tokenTransfers?.length || 0,
+          tx.events?.swap ? "true" : "false",
+          tx.events?.nft ? "true" : "false",
+        ].join(",")
+      );
+    }
+
+    const csv = [csvHeader, ...csvRows].join("\n");
+    fs.writeFileSync(filePath, csv, "utf-8");
+    console.log(`[Helius] Raw dump written: ${filePath} (${rawTransactions.length} rows)`);
+  } catch (err) {
+    // Non-fatal — log and continue
+    console.warn("[Helius] Failed to write raw CSV dump:", err);
+  }
+}
+
+// ============================================================
 // Main transaction fetching
 // ============================================================
 
@@ -334,6 +462,7 @@ export async function getSolanaWalletTransactions(
   console.log(`[Helius] Fetching ${walletAddress}${startTime ? ` from ${new Date(startTime).toISOString()}` : ""}${endTime ? ` to ${new Date(endTime).toISOString()}` : ""}`);
 
   const transactions: WalletTransaction[] = [];
+  const rawHeliusTransactions: HeliusEnhancedTransaction[] = [];
   let beforeSignature: string | undefined;
   let pageCount = 0;
   const maxPages = 500; // Safety valve only — loop terminates naturally via empty results, startTime cutoff, or retry exhaustion
@@ -403,6 +532,7 @@ export async function getSolanaWalletTransactions(
     if (results === null) break;
 
     totalRawTx += results.length;
+    rawHeliusTransactions.push(...results);
     if (results.length === 0) break;
 
     // Log progress every 50 pages to stay within log limits
@@ -564,6 +694,11 @@ export async function getSolanaWalletTransactions(
   }
 
   console.log(`[Helius] Fetched ${totalRawTx} raw tx → ${transactions.length} records across ${pageCount} pages`);
+
+  // Dump raw Helius payload to CSV for comparison with DB
+  if (rawHeliusTransactions.length > 0) {
+    dumpRawHeliusToCsv(walletAddress, rawHeliusTransactions);
+  }
 
   // Enrich with USD prices (even for partial results)
   if (transactions.length > 0) {
