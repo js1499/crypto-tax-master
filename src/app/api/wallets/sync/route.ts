@@ -17,6 +17,7 @@ import {
   clearHeliusPriceCache,
   dumpRawHeliusToDb,
 } from "@/lib/helius-transactions";
+import { enrichHistoricalPrices } from "@/lib/enrich-prices";
 
 // Configure for long-running operations on Vercel
 export const maxDuration = 800; // 13 minutes max execution time
@@ -326,12 +327,34 @@ export async function POST(request: NextRequest) {
     const totalDuration = Date.now() - requestStartTime;
     console.log(`[Wallet Sync] Done in ${(totalDuration / 1000).toFixed(1)}s: ${totalAdded} added, ${totalSkipped} skipped, ${totalErrors} errors across ${wallets.length} wallet(s)${errors.length > 0 ? ` | errors: ${errors.join(" | ")}` : ""}`);
 
+    // ── Enrich historical prices (server-side, no client dependency) ──
+    console.log(`[Wallet Sync] Starting price enrichment for ${wallets.length} wallet(s)...`);
+    const enrichResults: Record<string, any> = {};
+    for (const wallet of wallets) {
+      try {
+        const enrichResult = await enrichHistoricalPrices(wallet.address);
+        enrichResults[wallet.name || wallet.address.slice(0, 8)] = {
+          updated: enrichResult.updated,
+          total: enrichResult.total,
+          skipped: enrichResult.skipped,
+          durationMs: enrichResult.durationMs,
+        };
+        console.log(`[Wallet Sync] Enrichment for ${wallet.name}: ${enrichResult.updated}/${enrichResult.total} transactions updated in ${(enrichResult.durationMs / 1000).toFixed(1)}s`);
+      } catch (enrichError) {
+        console.error(`[Wallet Sync] Enrichment failed for ${wallet.name}:`, enrichError);
+        enrichResults[wallet.name || wallet.address.slice(0, 8)] = { error: String(enrichError) };
+      }
+    }
+
+    const finalDuration = Date.now() - requestStartTime;
+
     const response = {
       status: "success",
-      message: `Synced ${wallets.length} wallet(s) in ${(totalDuration / 1000).toFixed(1)}s`,
+      message: `Synced ${wallets.length} wallet(s) in ${(finalDuration / 1000).toFixed(1)}s`,
       transactionsAdded: totalAdded,
       transactionsSkipped: totalSkipped,
       wallets: syncResults,
+      enrichment: enrichResults,
       errors: errors.length > 0 ? errors : undefined,
       metrics: {
         walletsSynced: wallets.length,
@@ -339,6 +362,7 @@ export async function POST(request: NextRequest) {
         transactionsSkipped: totalSkipped,
         errorCount: totalErrors,
         syncDurationMs: totalDuration,
+        enrichDurationMs: finalDuration - totalDuration,
       },
     };
 
