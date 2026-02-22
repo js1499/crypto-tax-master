@@ -324,7 +324,10 @@ function dumpRawHeliusToCsv(
   rawTransactions: HeliusEnhancedTransaction[]
 ): void {
   try {
-    const dumpsDir = path.join(process.cwd(), "public", "dumps");
+    // Use /tmp on Vercel (serverless filesystem is read-only), fall back to public/dumps locally
+    const dumpsDir = process.env.VERCEL
+      ? path.join("/tmp", "helius-dumps")
+      : path.join(process.cwd(), "public", "dumps");
     fs.mkdirSync(dumpsDir, { recursive: true });
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
