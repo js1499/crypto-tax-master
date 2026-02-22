@@ -210,6 +210,7 @@ function TransactionsContent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(50);
   const [isLoadingTransactions, setIsLoadingTransactions] = useState(true);
+  const [isExporting, setIsExporting] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   
@@ -486,8 +487,43 @@ function TransactionsContent() {
     }
   };
 
-  const handleExport = () => {
-    toast.success("Transactions exported successfully!");
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams({
+        ...(searchTerm && { search: searchTerm }),
+        ...(filter !== "all" && { filter }),
+        ...(sortOption && { sort: sortOption }),
+        ...(showOnlyUnlabelled && { showOnlyUnlabelled: "true" }),
+        ...(hideZeroTransactions && { hideZeroTransactions: "true" }),
+        ...(hideSpamTransactions && { hideSpamTransactions: "true" }),
+        ...(walletFilter && { wallet: walletFilter }),
+        ...(dateFrom && { dateFrom: format(dateFrom, "yyyy-MM-dd") }),
+        ...(dateTo && { dateTo: format(dateTo, "yyyy-MM-dd") }),
+      });
+
+      const response = await fetch(`/api/transactions/export?${params.toString()}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Export failed");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "transactions.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast.success("Transactions exported successfully!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to export transactions");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   // Toggle filter handlers
@@ -969,9 +1005,13 @@ function TransactionsContent() {
               </>
             )}
 
-            <Button variant="outline" onClick={handleExport}>
-              <Upload className="mr-2 h-4 w-4" />
-              <span>Export</span>
+            <Button variant="outline" onClick={handleExport} disabled={isExporting}>
+              {isExporting ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="mr-2 h-4 w-4" />
+              )}
+              <span>{isExporting ? "Exporting..." : "Export"}</span>
             </Button>
 
             <Dialog open={isDeleteAllOpen} onOpenChange={setIsDeleteAllOpen}>
