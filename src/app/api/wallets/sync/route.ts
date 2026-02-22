@@ -15,6 +15,7 @@ import {
   getSolanaWalletTransactions,
   isValidSolanaAddress,
   clearHeliusPriceCache,
+  dumpRawHeliusToDb,
 } from "@/lib/helius-transactions";
 
 // Configure for long-running operations on Vercel
@@ -167,13 +168,16 @@ export async function POST(request: NextRequest) {
         // Fetch transactions from the appropriate provider
         const fetchStart = Date.now();
         let transactions: WalletTransaction[] = [];
+        let rawHeliusData: any[] = [];
 
         if (isSolana) {
-          transactions = await getSolanaWalletTransactions(
+          const result = await getSolanaWalletTransactions(
             wallet.address,
             effectiveStartTime,
             endTime
           );
+          transactions = result.transactions;
+          rawHeliusData = result.rawHeliusTransactions;
         } else {
           if (chainsToSync.length === 1) {
             transactions = await getWalletTransactions(
@@ -304,6 +308,11 @@ export async function POST(request: NextRequest) {
           where: { id: wallet.id },
           data: { lastSyncAt: new Date() },
         });
+
+        // Dump raw Helius data to DB AFTER main transactions are saved
+        if (rawHeliusData.length > 0) {
+          await dumpRawHeliusToDb(wallet.address, rawHeliusData);
+        }
 
       } catch (error) {
         console.error(`[Wallet Sync] FAILED ${wallet.name}:`, error);

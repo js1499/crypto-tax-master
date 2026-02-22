@@ -575,7 +575,7 @@ function determineTransferDirection(
  * table. Flattens the primary transfer into DB-equivalent columns and
  * stores the full JSON payload for deep inspection. Non-fatal on error.
  */
-async function dumpRawHeliusToDb(
+export async function dumpRawHeliusToDb(
   walletAddress: string,
   rawTransactions: HeliusEnhancedTransaction[]
 ): Promise<void> {
@@ -661,15 +661,21 @@ async function dumpRawHeliusToDb(
 // Main transaction fetching
 // ============================================================
 
+export interface SolanaWalletResult {
+  transactions: WalletTransaction[];
+  rawHeliusTransactions: any[]; // Raw Helius payloads for dump
+}
+
 /**
  * Fetch Solana wallet transaction history from Helius Enhanced Transactions API.
- * Returns fully populated WalletTransaction objects with USD values.
+ * Returns fully populated WalletTransaction objects with USD values,
+ * plus raw Helius payloads for optional dump to DB.
  */
 export async function getSolanaWalletTransactions(
   walletAddress: string,
   startTime?: number,
   endTime?: number
-): Promise<WalletTransaction[]> {
+): Promise<SolanaWalletResult> {
   if (!HELIUS_API_KEY) {
     throw new Error("HELIUS_API_KEY environment variable is not set");
   }
@@ -917,11 +923,6 @@ export async function getSolanaWalletTransactions(
 
   console.log(`[Helius] Fetched ${totalRawTx} raw tx → ${transactions.length} records across ${pageCount} pages`);
 
-  // Dump raw Helius payload to DB for comparison
-  if (rawHeliusTransactions.length > 0) {
-    await dumpRawHeliusToDb(walletAddress, rawHeliusTransactions);
-  }
-
   // Enrich with USD prices (even for partial results)
   if (transactions.length > 0) {
     await enrichSolanaTransactionsWithPrices(transactions);
@@ -929,7 +930,7 @@ export async function getSolanaWalletTransactions(
 
   // Sort by timestamp
   transactions.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
-  return transactions;
+  return { transactions, rawHeliusTransactions };
 }
 
 /**
