@@ -225,7 +225,10 @@ function lamportsToSol(lamports: number): number {
 }
 
 /**
- * Map Helius transaction type to our type
+ * Map Helius transaction type to our app type.
+ * Comprehensive mapping covering all known Helius Enhanced Transaction types
+ * (~180 types from docs + Rust SDK). Unmapped types fall through to
+ * direction-based detection (Send/Receive/Transfer).
  */
 function mapTransactionType(
   heliusType: string,
@@ -234,39 +237,294 @@ function mapTransactionType(
 ): string {
   const typeUpper = heliusType?.toUpperCase() || "";
 
-  if (typeUpper === "SWAP") return "Swap";
-  if (typeUpper === "TRANSFER") {
-    return determineTransferDirection(walletAddress, tx);
-  }
-  if (typeUpper === "NFT_SALE" || typeUpper === "NFT_LISTING") {
-    return "NFT Sale";
-  }
-  if (typeUpper === "NFT_MINT" || typeUpper === "COMPRESSED_NFT_MINT") return "Receive";
-  if (typeUpper === "COMPRESSED_NFT_TRANSFER" || typeUpper === "NFT_TRANSFER") {
-    return determineTransferDirection(walletAddress, tx);
-  }
-  if (typeUpper === "NFT_BID" || typeUpper === "NFT_CANCEL_LISTING" || typeUpper === "NFT_BID_CANCELLED") {
-    return "NFT Activity";
-  }
-  if (typeUpper === "STAKE" || typeUpper === "STAKE_SOL") return "Stake";
-  if (typeUpper === "UNSTAKE" || typeUpper === "UNSTAKE_SOL") return "Unstake";
-  if (typeUpper === "BURN" || typeUpper === "BURN_NFT") return "Burn";
-  if (typeUpper === "TOKEN_MINT") return "Receive";
+  switch (typeUpper) {
+    // ── Trading / Swaps ───────────────────────────────────────
+    case "SWAP":
+    case "INIT_SWAP":
+    case "CANCEL_SWAP":
+    case "REJECT_SWAP":
+      return "Swap";
 
-  // DeFi types
-  if (typeUpper === "ADD_LIQUIDITY" || typeUpper === "DEPOSIT") return "Deposit";
-  if (typeUpper === "REMOVE_LIQUIDITY" || typeUpper === "WITHDRAW") return "Withdraw";
-  if (typeUpper === "BORROW" || typeUpper === "BORROW_FOX" || typeUpper === "LOAN") return "Borrow";
-  if (typeUpper === "REPAY_LOAN") return "Repay";
-  if (typeUpper === "INIT_BANK" || typeUpper === "CREATE_POOL") return "DeFi Setup";
-  if (typeUpper === "CLAIM_REWARDS" || typeUpper === "HARVEST") return "Reward";
-  if (typeUpper === "CLOSE_POSITION") return "Withdraw";
+    case "BUY":
+    case "BUY_ITEM":
+    case "FILL_ORDER":
+      return "Buy";
 
-  if (typeUpper === "UNKNOWN") {
-    return determineTransferDirection(walletAddress, tx);
+    case "SELL":
+      return "Sell";
+
+    // ── Transfers ─────────────────────────────────────────────
+    case "TRANSFER":
+      return determineTransferDirection(walletAddress, tx);
+
+    // ── NFT Marketplace ───────────────────────────────────────
+    case "NFT_SALE":
+      return "NFT Sale";
+
+    case "NFT_LISTING":
+    case "NFT_CANCEL_LISTING":
+    case "NFT_BID":
+    case "NFT_BID_CANCELLED":
+    case "NFT_GLOBAL_BID":
+    case "NFT_GLOBAL_BID_CANCELLED":
+    case "NFT_AUCTION_CREATED":
+    case "NFT_AUCTION_UPDATED":
+    case "NFT_AUCTION_CANCELLED":
+    case "NFT_PARTICIPATION_REWARD":
+    case "NFT_MINT_REJECTED":
+    case "NFT_RENT_LISTING":
+    case "NFT_RENT_ACTIVATE":
+    case "NFT_RENT_CANCEL_LISTING":
+    case "NFT_RENT_UPDATE_LISTING":
+    case "NFT_RENT_END":
+      return "NFT Activity";
+
+    // ── Minting ───────────────────────────────────────────────
+    case "NFT_MINT":
+    case "COMPRESSED_NFT_MINT":
+    case "SFT_MINT":
+    case "TOKEN_MINT":
+    case "CLAIM_NFT":
+      return "Mint";
+
+    // ── NFT / Compressed NFT Transfers ────────────────────────
+    case "COMPRESSED_NFT_TRANSFER":
+    case "NFT_TRANSFER":
+      return determineTransferDirection(walletAddress, tx);
+
+    // ── Staking ───────────────────────────────────────────────
+    case "STAKE":
+    case "STAKE_SOL":
+    case "STAKE_TOKEN":
+    case "INIT_STAKE":
+    case "MERGE_STAKE":
+    case "SPLIT_STAKE":
+      return "Stake";
+
+    case "UNSTAKE":
+    case "UNSTAKE_SOL":
+    case "UNSTAKE_TOKEN":
+      return "Unstake";
+
+    // ── Burns ─────────────────────────────────────────────────
+    case "BURN":
+    case "BURN_NFT":
+    case "COMPRESSED_NFT_BURN":
+      return "Burn";
+
+    // ── Deposits ──────────────────────────────────────────────
+    case "DEPOSIT":
+    case "DEPOSIT_GEM":
+    case "DEPOSIT_FRACTIONAL_POOL":
+    case "ADD_TOKEN_TO_VAULT":
+      return "Deposit";
+
+    // ── Withdrawals ───────────────────────────────────────────
+    case "WITHDRAW":
+    case "WITHDRAW_GEM":
+    case "CLOSE_POSITION":
+    case "WITHDRAW_LIQUIDITY":
+      return "Withdraw";
+
+    // ── Liquidity ─────────────────────────────────────────────
+    case "ADD_LIQUIDITY":
+    case "ADD_BALANCE_LIQUIDITY":
+    case "INCREASE_LIQUIDITY":
+    case "ADD_TO_POOL":
+      return "Add Liquidity";
+
+    case "REMOVE_LIQUIDITY":
+    case "REMOVE_BALANCE_LIQUIDITY":
+    case "REMOVE_FROM_POOL":
+      return "Remove Liquidity";
+
+    // ── Lending / Borrowing ───────────────────────────────────
+    case "LOAN":
+    case "BORROW":
+    case "BORROW_FOX":
+    case "BORROW_SOL_FOR_NFT":
+    case "REBORROW_SOL_FOR_NFT":
+    case "TAKE_LOAN":
+    case "LEND_FOR_NFT":
+      return "Borrow";
+
+    case "REPAY_LOAN":
+      return "Repay";
+
+    case "OFFER_LOAN":
+    case "REQUEST_LOAN":
+    case "CANCEL_LOAN_REQUEST":
+    case "RESCIND_LOAN":
+    case "FORECLOSE_LOAN":
+      return "DeFi Setup";
+
+    // ── Rewards / Claims ──────────────────────────────────────
+    case "CLAIM_REWARDS":
+    case "HARVEST":
+    case "FUND_REWARD":
+    case "PAYOUT":
+    case "NFT_PARTICIPATION_REWARD":
+      return "Reward";
+
+    // ── Approvals / Revocations ───────────────────────────────
+    case "REVOKE":
+    case "SET_AUTHORITY":
+      return "Approve";
+
+    // ── DeFi Setup / Infrastructure ───────────────────────────
+    case "INIT_BANK":
+    case "CREATE_POOL":
+    case "OPEN_POSITION":
+    case "OPEN_POSITION_WITH_METADATA":
+    case "INIT_FARMER":
+    case "REFRESH_FARMER":
+    case "INIT_FARM":
+    case "UPDATE_FARM":
+    case "INIT_LENDING_ACCOUNT":
+    case "SET_BANK_FLAGS":
+    case "UPDATE_BANK_MANAGER":
+    case "ACTIVATE_VAULT":
+    case "INIT_VAULT":
+    case "SET_VAULT_LOCK":
+    case "UPDATE_VAULT_OWNER":
+    case "AUTHORIZE_FUNDER":
+    case "DEAUTHORIZE_FUNDER":
+    case "CANCEL_REWARD":
+    case "LOCK_REWARD":
+    case "RECORD_RARITY_POINTS":
+    case "ADD_RARITIES_TO_BANK":
+    case "INITIALIZE_ACCOUNT":
+    case "CLOSE_ACCOUNT":
+      return "DeFi Setup";
+
+    // ── Orders ────────────────────────────────────────────────
+    case "CREATE_ORDER":
+    case "INIT_ORDER":
+    case "REGISTER_ORDER":
+    case "CANCEL_ORDER":
+    case "CLOSE_ORDER":
+    case "UPDATE_ORDER":
+    case "SETTLE":
+    case "SETTLE_PNL":
+    case "FULFILL":
+      return "DeFi Setup";
+
+    // ── Gambling / Betting ────────────────────────────────────
+    case "PLACE_BET":
+    case "PLACE_SOL_BET":
+    case "CREATE_BET":
+    case "CREATE_RAFFLE":
+    case "UPDATE_RAFFLE":
+    case "BUY_TICKETS":
+    case "BUY_SUBSCRIPTION":
+      return "Buy";
+
+    // ── Escrow ────────────────────────────────────────────────
+    case "CREATE_ESCROW":
+    case "CANCEL_ESCROW":
+    case "CLOSE_ESCROW_ACCOUNT":
+    case "ACCEPT_ESCROW_ARTIST":
+    case "ACCEPT_ESCROW_USER":
+    case "ACCEPT_REQUEST_ARTIST":
+      return "DeFi Setup";
+
+    // ── Fox Federation ────────────────────────────────────────
+    case "UPGRADE_FOX":
+    case "UPGRADE_FOX_REQUEST":
+    case "LOAN_FOX":
+    case "SWITCH_FOX_REQUEST":
+    case "SWITCH_FOX":
+      return "DeFi Setup";
+
+    // ── Metaplex / Candy Machine ──────────────────────────────
+    case "CANDY_MACHINE_ROUTE":
+    case "CANDY_MACHINE_WRAP":
+    case "CANDY_MACHINE_UNWRAP":
+    case "CANDY_MACHINE_UPDATE":
+    case "CREATE_STORE":
+    case "WHITELIST_CREATOR":
+    case "ADD_TO_WHITELIST":
+    case "REMOVE_FROM_WHITELIST":
+    case "AUCTION_MANAGER_CLAIM_BID":
+    case "EMPTY_PAYMENT_ACCOUNT":
+    case "UPDATE_PRIMARY_SALE_METADATA":
+    case "VALIDATE_SAFETY_DEPOSIT_BOX_V2":
+    case "INIT_AUCTION_MANAGER_V2":
+    case "UPDATE_EXTERNAL_PRICE_ACCOUNT":
+    case "AUCTION_HOUSE_CREATE":
+    case "CREATE_MASTER_EDITION":
+      return "NFT Activity";
+
+    // ── Compressed NFT management ─────────────────────────────
+    case "COMPRESSED_NFT_VERIFY_CREATOR":
+    case "COMPRESSED_NFT_UNVERIFY_CREATOR":
+    case "COMPRESSED_NFT_VERIFY_COLLECTION":
+    case "COMPRESSED_NFT_UNVERIFY_COLLECTION":
+    case "COMPRESSED_NFT_SET_VERIFY_COLLECTION":
+    case "COMPRESSED_NFT_DELEGATE":
+    case "COMPRESSED_NFT_REDEEM":
+    case "COMPRESSED_NFT_CANCEL_REDEEM":
+    case "COMPRESS_NFT":
+    case "DECOMPRESS_NFT":
+    case "CREATE_MERKLE_TREE":
+    case "DELEGATE_MERKLE_TREE":
+    case "DISTRIBUTE_COMPRESSION_REWARDS":
+      return "NFT Activity";
+
+    // ── pNFT Migration ────────────────────────────────────────
+    case "REQUEST_PNFT_MIGRATION":
+    case "START_PNFT_MIGRATION":
+    case "MIGRATE_TO_PNFT":
+      return "NFT Activity";
+
+    // ── Misc platform / metadata ──────────────────────────────
+    case "PLATFORM_FEE":
+      return "Send";
+
+    case "FRACTIONALIZE":
+    case "FUSE":
+    case "CREATE_APPRAISAL":
+    case "CREATE_APPARAISAL":
+    case "ATTACH_METADATA":
+    case "UPDATE_RECORD_AUTHORITY_DATA":
+    case "CHANGE_COMIC_STATE":
+    case "INIT_RENT":
+    case "UPDATE_OFFER":
+    case "CANCEL_OFFER":
+    case "CREATE":
+    case "EXECUTE_INSTRUCTION":
+      return "DeFi Setup";
+
+    // ── Multisig / Governance ─────────────────────────────────
+    case "CREATE_TRANSACTION":
+    case "APPROVE_TRANSACTION":
+    case "EXECUTE_TRANSACTION":
+    case "ACTIVATE_TRANSACTION":
+    case "REJECT_TRANSACTION":
+    case "CANCEL_TRANSACTION":
+    case "ADD_INSTRUCTION":
+      return "Approve";
+
+    // ── Program upgrades ──────────────────────────────────────
+    case "FINALIZE_PROGRAM_INSTRUCTION":
+    case "UPGRADE_PROGRAM_INSTRUCTION":
+      return "DeFi Setup";
+
+    // ── Marketplace items ─────────────────────────────────────
+    case "LIST_ITEM":
+    case "DELIST_ITEM":
+    case "UPDATE_ITEM":
+    case "ADD_ITEM":
+    case "CLOSE_ITEM":
+    case "KICK_ITEM":
+      return "NFT Activity";
+
+    // ── Catch-all ─────────────────────────────────────────────
+    case "UNKNOWN":
+    case "UNLABELED":
+    default:
+      return determineTransferDirection(walletAddress, tx);
   }
-
-  return determineTransferDirection(walletAddress, tx);
 }
 
 /**

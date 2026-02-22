@@ -423,7 +423,11 @@ function fromWei(value: string, decimals: number = 18): number {
 }
 
 /**
- * Determine transaction type based on Moralis category and transfers
+ * Determine transaction type based on Moralis category and transfers.
+ * Covers all known Moralis Wallet History API categories:
+ *   send, receive, nft send, nft receive, token send, token receive,
+ *   token swap, deposit, withdraw, airdrop, mint, burn, nft purchase,
+ *   nft sale, borrow, approve, revoke, contract interaction
  */
 function determineTransactionType(
   tx: MoralisTransaction,
@@ -434,17 +438,66 @@ function determineTransactionType(
   const to = tx.to_address?.toLowerCase();
   const wallet = walletAddress.toLowerCase();
 
+  // ── Exact category matches (highest priority) ──────────────
+  // Swaps / Trading
   if (category.includes("swap") || category.includes("trade")) return "Swap";
+
+  // NFT marketplace
+  if (category === "nft sale") return "NFT Sale";
+  if (category === "nft purchase") return "NFT Purchase";
+
+  // NFT transfers (before generic send/receive)
+  if (category === "nft send") return "Send";
+  if (category === "nft receive") return "Receive";
+
+  // Token transfers
+  if (category === "token send") return "Send";
+  if (category === "token receive") return "Receive";
+
+  // Approvals / Revocations
+  if (category.includes("revoke")) return "Approve";
   if (category.includes("approve")) return "Approve";
+
+  // Minting / Burning
   if (category.includes("mint")) return "Mint";
   if (category.includes("burn")) return "Burn";
-  if (category.includes("stake")) return "Stake";
+
+  // Staking
   if (category.includes("unstake")) return "Unstake";
+  if (category.includes("stake")) return "Stake";
+
+  // Bridge
   if (category.includes("bridge")) return "Bridge";
+
+  // Airdrop
   if (category.includes("airdrop")) return "Airdrop";
+
+  // DeFi
   if (category.includes("deposit")) return "Deposit";
   if (category.includes("withdraw")) return "Withdraw";
+  if (category.includes("borrow")) return "Borrow";
+  if (category.includes("repay")) return "Repay";
+  if (category.includes("liquidat")) return "Liquidation";
 
+  // Liquidity
+  if (category.includes("add liquidity") || category.includes("add_liquidity")) return "Add Liquidity";
+  if (category.includes("remove liquidity") || category.includes("remove_liquidity")) return "Remove Liquidity";
+
+  // Rewards
+  if (category.includes("reward") || category.includes("claim") || category.includes("yield") || category.includes("interest")) return "Reward";
+
+  // Generic send/receive
+  if (category === "send") return "Send";
+  if (category === "receive") return "Receive";
+
+  // Contract interaction (fallback to direction-based)
+  if (category === "contract interaction") {
+    if (from === wallet && to !== wallet) return "Send";
+    if (to === wallet && from !== wallet) return "Receive";
+    return "DeFi Setup";
+  }
+
+  // ── Direction-based fallback ───────────────────────────────
   if (from === wallet && to !== wallet) return "Send";
   if (to === wallet && from !== wallet) return "Receive";
   if (from === wallet && to === wallet) return "Self";
