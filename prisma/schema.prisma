@@ -162,4 +162,44 @@ model Transaction {
 
   // Map model name to table name
   @@map("transactions")
+}
+
+// Raw Helius API response dump — one row per Helius enhanced transaction.
+// Stored during wallet sync so raw payloads can be compared with the
+// processed Transaction table. No type-mapping or price enrichment applied.
+model HeliusRawTransaction {
+  id                    Int       @id @default(autoincrement())
+
+  // Sync metadata
+  wallet_address        String    @db.VarChar(100)
+  synced_at             DateTime  @default(now()) @db.Timestamptz(6)
+
+  // Raw Helius fields (mapped to DB-equivalent column names)
+  helius_type           String    @db.VarChar(50)   // Raw Helius type e.g. "SWAP", "TRANSFER"
+  helius_source         String?   @db.VarChar(100)  // Raw source e.g. "JUPITER", "MAGIC_EDEN"
+  signature             String    @db.VarChar(255)   // tx signature
+  slot                  BigInt                        // block slot
+  tx_timestamp          DateTime  @db.Timestamptz(6)
+  fee_lamports          BigInt                        // fee in lamports (raw)
+  fee_payer             String?   @db.VarChar(100)
+  description           String?   @db.Text
+
+  // Flattened primary transfer (first transfer involving wallet)
+  asset_symbol          String?   @db.VarChar(255)  // mint address for tokens, "SOL" for native
+  amount_value          Decimal?  @db.Decimal(30, 15)
+  counterparty_address  String?   @db.VarChar(100)
+
+  // Event flags
+  has_swap_event        Boolean   @default(false)
+  has_nft_event         Boolean   @default(false)
+  native_transfers_count Int      @default(0)
+  token_transfers_count  Int      @default(0)
+
+  // Full raw payload for deep inspection
+  raw_payload           Json
+
+  @@index([wallet_address])
+  @@index([synced_at])
+  @@index([signature])
+  @@map("helius_raw_transactions")
 } 

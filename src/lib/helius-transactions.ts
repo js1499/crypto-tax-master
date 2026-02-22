@@ -1,8 +1,7 @@
 import axios from "axios";
 import { Decimal } from "@prisma/client/runtime/library";
 import type { WalletTransaction } from "./moralis-transactions";
-import fs from "fs";
-import path from "path";
+import prisma from "@/lib/prisma";
 
 // Helius API key from environment
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
@@ -310,65 +309,23 @@ function determineTransferDirection(
 }
 
 // ============================================================
-// Raw Helius dump to CSV (for debugging / comparison)
+// Raw Helius dump to database (for debugging / comparison)
 // ============================================================
 
 /**
- * Dump raw Helius enhanced transactions to a CSV file in public/dumps/.
- * Columns mirror the DB Transaction schema so the two can be compared
- * side-by-side. Values come straight from the Helius payload — no
- * type-mapping, price enrichment, or symbol resolution is applied.
+ * Persist raw Helius enhanced transactions to the helius_raw_transactions
+ * table. Flattens the primary transfer into DB-equivalent columns and
+ * stores the full JSON payload for deep inspection. Non-fatal on error.
  */
-function dumpRawHeliusToCsv(
+async function dumpRawHeliusToDb(
   walletAddress: string,
   rawTransactions: HeliusEnhancedTransaction[]
-): void {
+): Promise<void> {
   try {
-    // Use /tmp on Vercel (serverless filesystem is read-only), fall back to public/dumps locally
-    const dumpsDir = process.env.VERCEL
-      ? path.join("/tmp", "helius-dumps")
-      : path.join(process.cwd(), "public", "dumps");
-    fs.mkdirSync(dumpsDir, { recursive: true });
+    const rows = rawTransactions.map((tx) => {
+      const txDate = new Date(tx.timestamp * 1000);
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const shortAddr = walletAddress.slice(0, 8);
-    const filePath = path.join(dumpsDir, `helius-raw-${shortAddr}-${timestamp}.csv`);
-
-    const csvHeader = [
-      "type",
-      "source",
-      "asset_symbol",
-      "amount_value",
-      "price_per_unit",
-      "value_usd",
-      "fee_usd",
-      "tx_timestamp",
-      "tx_hash",
-      "wallet_address",
-      "counterparty_address",
-      "chain",
-      "block_number",
-      "description",
-      "native_transfers_count",
-      "token_transfers_count",
-      "has_swap_event",
-      "has_nft_event",
-    ].join(",");
-
-    const csvRows: string[] = [];
-
-    for (const tx of rawTransactions) {
-      const esc = (val: string) => {
-        if (val.includes(",") || val.includes('"') || val.includes("\n")) {
-          return `"${val.replace(/"/g, '""')}"`;
-        }
-        return val;
-      };
-
-      const feeInSol = lamportsToSol(tx.fee || 0);
-      const txDate = new Date(tx.timestamp * 1000).toISOString();
-
-      // Flatten native transfers to summarise the primary asset movement
+      // Flatten native transfers to find primary asset movement
       let nativeAmount = 0;
       let counterparty = "";
       if (tx.nativeTransfers && tx.nativeTransfers.length > 0) {
@@ -383,15 +340,13 @@ function dumpRawHeliusToCsv(
         }
       }
 
-      // If there are token transfers, pick the first one involving our wallet
-      let tokenSymbol = "";
-      let tokenAmount = 0;
+      // Pick the first token transfer involving our wallet
       let tokenMint = "";
+      let tokenAmount = 0;
       if (tx.tokenTransfers && tx.tokenTransfers.length > 0) {
         for (const tt of tx.tokenTransfers) {
           if (tt.fromUserAccount === walletAddress || tt.toUserAccount === walletAddress) {
             tokenMint = tt.mint;
-            tokenSymbol = tt.mint; // raw mint, no resolution
             tokenAmount = tt.toUserAccount === walletAddress ? tt.tokenAmount : -tt.tokenAmount;
             if (!counterparty) {
               counterparty = tt.toUserAccount === walletAddress ? tt.fromUserAccount : tt.toUserAccount;
@@ -401,40 +356,46 @@ function dumpRawHeliusToCsv(
         }
       }
 
-      // Choose asset: prefer token transfer data, fall back to SOL native
-      const assetSymbol = tokenSymbol || "SOL";
-      const amount = tokenSymbol ? tokenAmount : nativeAmount;
+      const assetSymbol = tokenMint || "SOL";
+      const amount = tokenMint ? tokenAmount : nativeAmount;
 
-      csvRows.push(
-        [
-          esc(tx.type || ""),
-          esc(tx.source || ""),
-          esc(assetSymbol),
-          amount,
-          "", // price_per_unit — not in raw Helius payload
-          "", // value_usd — not in raw Helius payload
-          feeInSol,
-          esc(txDate),
-          esc(tx.signature),
-          esc(walletAddress),
-          esc(counterparty),
-          "solana",
-          tx.slot,
-          esc(tx.description || ""),
-          tx.nativeTransfers?.length || 0,
-          tx.tokenTransfers?.length || 0,
-          tx.events?.swap ? "true" : "false",
-          tx.events?.nft ? "true" : "false",
-        ].join(",")
-      );
+      return {
+        wallet_address: walletAddress,
+        helius_type: tx.type || "UNKNOWN",
+        helius_source: tx.source || null,
+        signature: tx.signature,
+        slot: BigInt(tx.slot),
+        tx_timestamp: txDate,
+        fee_lamports: BigInt(tx.fee || 0),
+        fee_payer: tx.feePayer || null,
+        description: tx.description || null,
+        asset_symbol: assetSymbol,
+        amount_value: new Decimal(amount),
+        counterparty_address: counterparty || null,
+        has_swap_event: !!tx.events?.swap,
+        has_nft_event: !!tx.events?.nft,
+        native_transfers_count: tx.nativeTransfers?.length || 0,
+        token_transfers_count: tx.tokenTransfers?.length || 0,
+        raw_payload: tx as any,
+      };
+    });
+
+    // Batch insert in chunks of 500
+    const chunkSize = 500;
+    let inserted = 0;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      const result = await prisma.heliusRawTransaction.createMany({
+        data: chunk,
+        skipDuplicates: true,
+      });
+      inserted += result.count;
     }
 
-    const csv = [csvHeader, ...csvRows].join("\n");
-    fs.writeFileSync(filePath, csv, "utf-8");
-    console.log(`[Helius] Raw dump written: ${filePath} (${rawTransactions.length} rows)`);
+    console.log(`[Helius] Raw dump saved to DB: ${inserted} rows for ${walletAddress.slice(0, 8)}...`);
   } catch (err) {
     // Non-fatal — log and continue
-    console.warn("[Helius] Failed to write raw CSV dump:", err);
+    console.warn("[Helius] Failed to write raw dump to DB:", err);
   }
 }
 
@@ -698,9 +659,9 @@ export async function getSolanaWalletTransactions(
 
   console.log(`[Helius] Fetched ${totalRawTx} raw tx → ${transactions.length} records across ${pageCount} pages`);
 
-  // Dump raw Helius payload to CSV for comparison with DB
+  // Dump raw Helius payload to DB for comparison
   if (rawHeliusTransactions.length > 0) {
-    dumpRawHeliusToCsv(walletAddress, rawHeliusTransactions);
+    await dumpRawHeliusToDb(walletAddress, rawHeliusTransactions);
   }
 
   // Enrich with USD prices (even for partial results)
