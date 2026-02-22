@@ -17,6 +17,9 @@ import * as Sentry from "@sentry/nextjs";
  *   - showOnlyUnlabelled: Show only unlabelled transactions (true/false)
  *   - hideZeroTransactions: Hide zero value transactions (true/false)
  *   - hideSpamTransactions: Hide spam transactions (true/false)
+ *   - wallet: Filter by wallet address
+ *   - dateFrom: Start date filter (yyyy-MM-dd, inclusive)
+ *   - dateTo: End date filter (yyyy-MM-dd, inclusive)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -66,6 +69,8 @@ export async function GET(request: NextRequest) {
     const hideZeroTransactions = searchParams.get("hideZeroTransactions") === "true";
     const hideSpamTransactions = searchParams.get("hideSpamTransactions") === "true";
     const walletFilter = searchParams.get("wallet") || "";
+    const dateFrom = searchParams.get("dateFrom") || "";
+    const dateTo = searchParams.get("dateTo") || "";
 
     // Calculate offset
     const skip = (page - 1) * limit;
@@ -198,6 +203,16 @@ export async function GET(request: NextRequest) {
     // Apply wallet filter
     if (walletFilter) {
       whereConditions.push({ wallet_address: walletFilter });
+    }
+
+    // Apply date range filter
+    if (dateFrom) {
+      whereConditions.push({ tx_timestamp: { gte: new Date(dateFrom) } });
+    }
+    if (dateTo) {
+      const endDate = new Date(dateTo);
+      endDate.setDate(endDate.getDate() + 1); // include full end date
+      whereConditions.push({ tx_timestamp: { lt: endDate } });
     }
 
     // Combine all conditions with AND

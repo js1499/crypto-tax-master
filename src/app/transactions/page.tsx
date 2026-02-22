@@ -191,6 +191,10 @@ function TransactionsContent() {
   const [walletFilter, setWalletFilter] = useState("");
   const [wallets, setWallets] = useState<Array<{ id: string; name: string; address: string; provider: string }>>([]);
 
+  // Date range filter state
+  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
+  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
+
   // Stats state from API
   const [stats, setStats] = useState<{
     buyCount: number;
@@ -271,6 +275,8 @@ function TransactionsContent() {
           ...(hideZeroTransactions && { hideZeroTransactions: "true" }),
           ...(hideSpamTransactions && { hideSpamTransactions: "true" }),
           ...(walletFilter && { wallet: walletFilter }),
+          ...(dateFrom && { dateFrom: format(dateFrom, "yyyy-MM-dd") }),
+          ...(dateTo && { dateTo: format(dateTo, "yyyy-MM-dd") }),
         });
 
         const response = await fetch(`/api/transactions?${params.toString()}`);
@@ -349,6 +355,8 @@ function TransactionsContent() {
     hideZeroTransactions,
     hideSpamTransactions,
     walletFilter,
+    dateFrom,
+    dateTo,
     router,
   ]);
 
@@ -1440,6 +1448,75 @@ function TransactionsContent() {
                   <EyeOff className="mr-2 h-4 w-4" />
                   {hideSpamTransactions ? "Show Spam Tx" : "Hide Spam Tx"}
                 </Button>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        "h-9 transition-colors",
+                        dateFrom && "bg-blue-500 text-white hover:bg-blue-600"
+                      )}
+                    >
+                      <Calendar className="mr-2 h-4 w-4" />
+                      {dateFrom ? format(dateFrom, "MMM d, yyyy") : "From"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={dateFrom}
+                      onSelect={(date) => {
+                        setDateFrom(date);
+                        setCurrentPage(1);
+                      }}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        "h-9 transition-colors",
+                        dateTo && "bg-blue-500 text-white hover:bg-blue-600"
+                      )}
+                    >
+                      <Calendar className="mr-2 h-4 w-4" />
+                      {dateTo ? format(dateTo, "MMM d, yyyy") : "To"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={dateTo}
+                      onSelect={(date) => {
+                        setDateTo(date);
+                        setCurrentPage(1);
+                      }}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                {(dateFrom || dateTo) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 px-2"
+                    onClick={() => {
+                      setDateFrom(undefined);
+                      setDateTo(undefined);
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
 
                 {wallets.length > 0 && (
                   <Select value={walletFilter} onValueChange={(value) => {
