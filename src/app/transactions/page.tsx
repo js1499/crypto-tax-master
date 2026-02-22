@@ -1629,11 +1629,10 @@ function TransactionsContent() {
                   <TabsTrigger value="transfer" className="flex-1">Transfers</TabsTrigger>
                   <TabsTrigger value="swap" className="flex-1">Swaps</TabsTrigger>
                   <TabsTrigger value="stake" className="flex-1">Staking</TabsTrigger>
-                  <TabsTrigger value="liquidity" className="flex-1">Liquidity</TabsTrigger>
+                  <TabsTrigger value="defi" className="flex-1">DeFi</TabsTrigger>
                   <TabsTrigger value="nft" className="flex-1">NFT</TabsTrigger>
-                  <TabsTrigger value="dca" className="flex-1">DCA</TabsTrigger>
-                  <TabsTrigger value="zero" className="flex-1">Zero</TabsTrigger>
-                  <TabsTrigger value="spam" className="flex-1">Spam</TabsTrigger>
+                  <TabsTrigger value="income" className="flex-1">Income</TabsTrigger>
+                  <TabsTrigger value="other" className="flex-1">Other</TabsTrigger>
                 </TabsList>
               </Tabs>
             </div>

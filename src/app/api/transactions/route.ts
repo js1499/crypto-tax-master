@@ -135,33 +135,36 @@ export async function GET(request: NextRequest) {
 
     // Apply transaction type filter
     if (filter !== "all") {
-      if (filter === "transfer") {
-        whereConditions.push({ type: { in: ["Send", "Receive", "Transfer", "Bridge"] } });
+      if (filter === "buy") {
+        whereConditions.push({ type: { in: ["Buy", "Margin Buy", "DCA"] } });
+      } else if (filter === "sell") {
+        whereConditions.push({ type: { in: ["Sell", "Margin Sell", "Liquidation"] } });
+      } else if (filter === "transfer") {
+        whereConditions.push({ type: { in: ["Send", "Receive", "Transfer", "Bridge", "Self"] } });
+      } else if (filter === "swap") {
+        whereConditions.push({ type: { in: ["Swap", "Wrap", "Unwrap"] } });
       } else if (filter === "stake") {
         whereConditions.push({ type: { in: ["Stake", "Unstake"] } });
-      } else if (filter === "liquidity") {
-        whereConditions.push({ type: { contains: "Liquidity", mode: "insensitive" } });
+      } else if (filter === "defi") {
+        whereConditions.push({ type: { in: ["Deposit", "Withdraw", "Borrow", "Repay", "Add Liquidity", "Remove Liquidity", "DeFi Setup"] } });
       } else if (filter === "nft") {
         whereConditions.push({
           OR: [
             { type: { contains: "NFT", mode: "insensitive" } },
-            { type: "NFT Purchase" },
+            { type: "Mint" },
           ],
         });
-      } else if (filter === "dca") {
-        whereConditions.push({ type: "DCA" });
-      } else if (filter === "zero") {
+      } else if (filter === "income") {
+        whereConditions.push({ type: { in: ["Reward", "Airdrop", "Mining", "Yield", "Interest"] } });
+      } else if (filter === "other") {
         whereConditions.push({
           OR: [
+            { type: "Burn" },
+            { type: "Approve" },
             { type: "Zero Transaction" },
-            { value_usd: 0 },
-          ],
-        });
-      } else if (filter === "spam") {
-        whereConditions.push({
-          OR: [
             { type: { contains: "Spam", mode: "insensitive" } },
             { asset_symbol: { contains: "unknown", mode: "insensitive" } },
+            { value_usd: 0 },
           ],
         });
       } else {
