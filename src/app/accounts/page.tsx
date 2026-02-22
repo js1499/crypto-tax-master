@@ -161,6 +161,23 @@ function AccountsContent() {
         toast.success(
           `Synced ${response.data.transactionsAdded} transaction(s) from exchange`
         );
+
+        // Enrich historical prices for all user transactions
+        toast.info("Looking up historical prices...");
+        try {
+          const enrichResponse = await fetch("/api/prices/enrich-historical", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          const enrichData = await enrichResponse.json();
+          if (enrichResponse.ok) {
+            toast.success(`Updated ${enrichData.updated} transactions with historical prices`);
+          }
+        } catch (enrichError) {
+          console.warn("[Price Enrich] Error:", enrichError);
+        }
+
         fetchWallets(); // Refresh to update lastSyncAt
       } else {
         throw new Error(response.data.error || "Failed to sync");
@@ -169,6 +186,51 @@ function AccountsContent() {
       console.error("[Accounts] Error syncing exchange:", error);
       toast.error(
         error instanceof Error ? error.message : "Failed to sync exchange"
+      );
+    } finally {
+      setSyncing(null);
+    }
+  };
+
+  // Function to sync wallet transactions and enrich prices
+  const handleSyncWallet = async (walletId: string) => {
+    setSyncing(walletId);
+    try {
+      toast.info("Syncing wallet transactions...");
+      const syncResponse = await fetch("/api/wallets/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletId }),
+      });
+      const syncData = await syncResponse.json();
+
+      if (!syncResponse.ok) {
+        throw new Error(syncData.error || "Sync failed");
+      }
+
+      toast.success(
+        `Synced ${syncData.transactionsAdded} new, ${syncData.transactionsSkipped || 0} existing`
+      );
+
+      // Always enrich historical prices
+      toast.info("Looking up historical prices...");
+      const enrichResponse = await fetch("/api/prices/enrich-historical", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletId }),
+      });
+      const enrichData = await enrichResponse.json();
+      if (enrichResponse.ok) {
+        toast.success(
+          `Updated ${enrichData.updated} transactions with historical prices`
+        );
+      }
+
+      fetchWallets();
+    } catch (error) {
+      console.error("[Accounts] Error syncing wallet:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to sync wallet"
       );
     } finally {
       setSyncing(null);
@@ -455,6 +517,20 @@ function AccountsContent() {
                             </span>
                           </div>
                           <div className="flex gap-2 pt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1"
+                              onClick={() => handleSyncWallet(account.id)}
+                              disabled={syncing === account.id}
+                            >
+                              {syncing === account.id ? (
+                                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <RefreshCw className="mr-2 h-4 w-4" />
+                              )}
+                              {syncing === account.id ? "Syncing..." : "Sync"}
+                            </Button>
                             <Button
                               size="sm"
                               variant="outline"

@@ -202,25 +202,23 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
 
           const syncData = await syncResponse.json();
           if (syncResponse.ok) {
-            toast.success(`Synced ${syncData.transactionsAdded} transactions`);
+            toast.success(`Synced ${syncData.transactionsAdded} new, ${syncData.transactionsSkipped || 0} existing transactions`);
 
-            // Enrich historical prices
-            if (syncData.transactionsAdded > 0) {
-              toast.info("Looking up historical prices...");
-              try {
-                const enrichResponse = await fetch("/api/prices/enrich-historical", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ walletId: data.wallet.id }),
-                });
-                const enrichData = await enrichResponse.json();
-                if (enrichResponse.ok) {
-                  toast.success(`Updated ${enrichData.updated} transactions with historical prices`);
-                }
-              } catch (enrichError) {
-                // Non-blocking — sync data is saved, prices just use current values
-                console.warn("[Price Enrich] Error:", enrichError);
+            // Always enrich historical prices (even for re-syncs with 0 new)
+            toast.info("Looking up historical prices...");
+            try {
+              const enrichResponse = await fetch("/api/prices/enrich-historical", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ walletId: data.wallet.id }),
+              });
+              const enrichData = await enrichResponse.json();
+              if (enrichResponse.ok) {
+                toast.success(`Updated ${enrichData.updated} transactions with historical prices`);
               }
+            } catch (enrichError) {
+              // Non-blocking — sync data is saved, prices just use current values
+              console.warn("[Price Enrich] Error:", enrichError);
             }
           } else {
             toast.error(syncData.error || "Sync completed with errors");
