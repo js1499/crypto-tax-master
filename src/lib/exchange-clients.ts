@@ -124,7 +124,7 @@ export class BinanceClient {
         for (const deposit of deposits || []) {
           trades.push({
             id: deposit.txId || deposit.id?.toString() || `deposit-${deposit.insertTime}`,
-            type: "Receive",
+            type: "deposit",
             asset_symbol: deposit.coin,
             amount_value: new Decimal(deposit.amount),
             price_per_unit: null,
@@ -140,7 +140,7 @@ export class BinanceClient {
         for (const withdrawal of withdrawals || []) {
           trades.push({
             id: withdrawal.txId || withdrawal.id?.toString() || `withdraw-${withdrawal.applyTime}`,
-            type: "Send",
+            type: "withdrawal",
             asset_symbol: withdrawal.coin,
             amount_value: new Decimal(withdrawal.amount),
             price_per_unit: null,
@@ -348,7 +348,7 @@ export class KrakenClient {
 
           allTrades.push({
             id: txid,
-            type: isBuy ? "Buy" : "Sell",
+            type: isBuy ? "buy" : "sell",
             asset_symbol: base,
             amount_value: new Decimal(Math.abs(vol)),
             price_per_unit: new Decimal(price),
@@ -658,7 +658,7 @@ export class KuCoinClient {
 
           allTrades.push({
             id: trade.tradeId || trade.id,
-            type: isBuy ? "Buy" : "Sell",
+            type: isBuy ? "buy" : "sell",
             asset_symbol: base,
             amount_value: new Decimal(Math.abs(size)),
             price_per_unit: new Decimal(price),
@@ -721,7 +721,7 @@ export class KuCoinClient {
 
           deposits.push({
             id: deposit.id || `deposit-${deposit.createdAt}`,
-            type: "Receive",
+            type: "deposit",
             asset_symbol: deposit.currency,
             amount_value: new Decimal(amount),
             price_per_unit: null,
@@ -780,7 +780,7 @@ export class KuCoinClient {
 
           withdrawals.push({
             id: withdrawal.id || `withdrawal-${withdrawal.createdAt}`,
-            type: "Send",
+            type: "withdrawal",
             asset_symbol: withdrawal.currency,
             amount_value: new Decimal(amount),
             price_per_unit: null,
@@ -977,7 +977,7 @@ export class GeminiClient {
 
           allTrades.push({
             id: trade.tid?.toString() || trade.timestampms.toString(),
-            type: isBuy ? "Buy" : "Sell",
+            type: isBuy ? "buy" : "sell",
             asset_symbol: base,
             amount_value: new Decimal(Math.abs(amount)),
             price_per_unit: new Decimal(price),
@@ -1034,7 +1034,7 @@ export class GeminiClient {
 
           transfers.push({
             id: transfer.eid?.toString() || transfer.timestampms.toString(),
-            type: isDeposit ? "Receive" : "Send",
+            type: isDeposit ? "deposit" : "withdrawal",
             asset_symbol: transfer.currency.toUpperCase(),
             amount_value: new Decimal(Math.abs(amount)),
             price_per_unit: null, // Would need price lookup

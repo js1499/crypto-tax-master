@@ -1,346 +1,462 @@
-import { Decimal } from "@prisma/client/runtime/library";
-
 /**
- * Transaction categories
+ * Exhaustive map: raw provider type string → UI category.
+ *
+ * Every raw type from Helius (SCREAMING_SNAKE), Moralis (lowercase),
+ * Coinbase (lowercase), exchange clients, CSV parsers, AND legacy app
+ * types (Title Case) maps to exactly one of 9 categories.
+ *
+ * Categories: buy, sell, transfer, swap, staking, defi, nft, income, other
  */
-export type TransactionCategory =
-  | "buy"
-  | "sell"
-  | "transfer"
-  | "swap"
-  | "staking"
-  | "liquidity"
-  | "nft"
-  | "dca"
-  | "zero"
-  | "spam"
-  | "borrow"
-  | "repay"
-  | "liquidation"
-  | "margin"
-  | "unstake"
-  | "bridge";
+const CATEGORY_MAP: Record<string, string> = {
+  // ================================================================
+  // Helius raw types (SCREAMING_SNAKE_CASE)
+  // ================================================================
 
-/**
- * Categorize a transaction based on its type, notes, and other attributes
- * Returns the category and whether the transaction should be marked as identified
- */
-export function categorizeTransaction(
-  type: string,
-  notes?: string | null,
-  valueUsd?: Decimal | number | null,
-  assetSymbol?: string | null,
-  incomingAssetSymbol?: string | null
-): {
-  category: TransactionCategory;
-  identified: boolean;
-  finalType: string;
-  subtype?: string;
-} {
-  const typeLower = (type || "").toLowerCase();
-  const notesLower = (notes || "").toLowerCase();
-  const assetLower = (assetSymbol || "").toLowerCase();
-  const combinedText = `${typeLower} ${notesLower} ${assetLower}`.toLowerCase();
+  // -- Swaps / Trading --
+  "SWAP": "swap",
+  "INIT_SWAP": "swap",
+  "CANCEL_SWAP": "swap",
+  "REJECT_SWAP": "swap",
+  "FILL_ORDER": "swap",
 
-  // Zero value transactions
-  // M-7 fix: Don't categorize income-type transactions as "Zero Transaction" even
-  // if value_usd is 0 — they may still have non-zero amounts worth tracking.
-  const value = valueUsd ? Number(valueUsd) : 0;
-  const incomeTypeKeywords = ["airdrop", "reward", "mining", "yield", "interest", "stake"];
-  const isIncomeType = incomeTypeKeywords.some(k => typeLower.includes(k));
-  if ((value === 0 && !isIncomeType) || typeLower.includes("zero")) {
-    return {
-      category: "zero",
-      identified: true,
-      finalType: "Zero Transaction",
-    };
-  }
+  // -- Buy / Sell --
+  "BUY": "buy",
+  "BUY_ITEM": "buy",
+  "SELL": "sell",
 
-  // Spam transactions
-  if (
-    typeLower.includes("spam") ||
-    assetLower.includes("unknown") ||
-    notesLower.includes("spam") ||
-    combinedText.includes("airdrop spam") ||
-    combinedText.includes("dust")
-  ) {
-    return {
-      category: "spam",
-      identified: true,
-      finalType: "Spam",
-    };
-  }
+  // -- Transfers --
+  "TRANSFER": "transfer",
+  "TRANSFER_IN": "transfer",
+  "TRANSFER_OUT": "transfer",
+  "TRANSFER_SELF": "transfer",
+  "COMPRESSED_NFT_TRANSFER": "transfer",
+  "NFT_TRANSFER": "transfer",
+  "PLATFORM_FEE": "transfer",
 
-  // Margin and liquidation transactions
-  if (
-    typeLower.includes("liquidation") ||
-    notesLower.includes("liquidation") ||
-    notesLower.includes("liquidated") ||
-    combinedText.includes("margin call") ||
-    combinedText.includes("forced liquidation") ||
-    combinedText.includes("position liquidated")
-  ) {
-    return {
-      category: "liquidation",
-      identified: true,
-      finalType: "Liquidation",
-    };
-  }
+  // -- NFT Marketplace --
+  "NFT_SALE": "nft",
+  "NFT_LISTING": "nft",
+  "NFT_CANCEL_LISTING": "nft",
+  "NFT_BID": "nft",
+  "NFT_BID_CANCELLED": "nft",
+  "NFT_GLOBAL_BID": "nft",
+  "NFT_GLOBAL_BID_CANCELLED": "nft",
+  "NFT_AUCTION_CREATED": "nft",
+  "NFT_AUCTION_UPDATED": "nft",
+  "NFT_AUCTION_CANCELLED": "nft",
+  "NFT_PARTICIPATION_REWARD": "nft",
+  "NFT_MINT_REJECTED": "nft",
+  "NFT_RENT_LISTING": "nft",
+  "NFT_RENT_ACTIVATE": "nft",
+  "NFT_RENT_CANCEL_LISTING": "nft",
+  "NFT_RENT_UPDATE_LISTING": "nft",
+  "NFT_RENT_END": "nft",
 
-  // Margin trading transactions
-  if (
-    typeLower.includes("margin") ||
-    notesLower.includes("margin") ||
-    notesLower.includes("margin trade") ||
-    notesLower.includes("margin position") ||
-    combinedText.includes("leveraged trade") ||
-    combinedText.includes("margin buy") ||
-    combinedText.includes("margin sell") ||
-    combinedText.includes("short position") ||
-    combinedText.includes("long position")
-  ) {
-    // Determine if it's a margin buy or sell
-    const isMarginSell = 
-      typeLower.includes("sell") ||
-      notesLower.includes("margin sell") ||
-      notesLower.includes("short") ||
-      (value > 0 && !typeLower.includes("buy"));
-    
-    return {
-      category: "margin",
-      identified: true,
-      finalType: isMarginSell ? "Margin Sell" : "Margin Buy",
-    };
-  }
+  // -- Minting --
+  "NFT_MINT": "nft",
+  "COMPRESSED_NFT_MINT": "nft",
+  "SFT_MINT": "nft",
+  "TOKEN_MINT": "nft",
+  "CLAIM_NFT": "nft",
 
-  // NFT transactions
-  if (
-    typeLower.includes("nft") ||
-    notesLower.includes("nft") ||
-    combinedText.includes("non-fungible") ||
-    typeLower === "nft purchase" ||
-    typeLower === "nft sale"
-  ) {
-    return {
-      category: "nft",
-      identified: true,
-      finalType: typeLower.includes("sale") ? "NFT Sale" : "NFT Purchase",
-    };
-  }
+  // -- Staking --
+  "STAKE": "staking",
+  "STAKE_SOL": "staking",
+  "STAKE_TOKEN": "staking",
+  "INIT_STAKE": "staking",
+  "MERGE_STAKE": "staking",
+  "SPLIT_STAKE": "staking",
+  "UNSTAKE": "staking",
+  "UNSTAKE_SOL": "staking",
+  "UNSTAKE_TOKEN": "staking",
 
-  // Unstake transactions (must be checked before staking - "unstake" contains "stake")
-  if (
-    typeLower.includes("unstake") ||
-    typeLower.includes("unstaking") ||
-    notesLower.includes("unstake") ||
-    notesLower.includes("unstaking")
-  ) {
-    return {
-      category: "unstake",
-      identified: true,
-      finalType: "Unstake",
-    };
-  }
+  // -- Burns --
+  "BURN": "other",
+  "BURN_NFT": "nft",
+  "COMPRESSED_NFT_BURN": "nft",
 
-  // Staking transactions
-  if (
-    typeLower.includes("stake") ||
-    typeLower.includes("staking") ||
-    typeLower.includes("reward") ||
-    notesLower.includes("staking") ||
-    notesLower.includes("stake reward") ||
-    notesLower.includes("validator") ||
-    combinedText.includes("delegation reward")
-  ) {
-    return {
-      category: "staking",
-      identified: true,
-      finalType: "Stake",
-      subtype: "Reward",
-    };
-  }
+  // -- Deposits / Withdrawals --
+  "DEPOSIT": "defi",
+  "DEPOSIT_GEM": "defi",
+  "DEPOSIT_FRACTIONAL_POOL": "defi",
+  "ADD_TOKEN_TO_VAULT": "defi",
+  "WITHDRAW": "defi",
+  "WITHDRAW_GEM": "defi",
+  "CLOSE_POSITION": "defi",
+  "WITHDRAW_LIQUIDITY": "defi",
 
-  // Liquidity transactions
-  if (
-    typeLower.includes("liquidity") ||
-    notesLower.includes("liquidity") ||
-    notesLower.includes("lp") ||
-    notesLower.includes("liquidity pool") ||
-    combinedText.includes("add liquidity") ||
-    combinedText.includes("remove liquidity") ||
-    combinedText.includes("liquidity provision")
-  ) {
-    return {
-      category: "liquidity",
-      identified: true,
-      finalType: typeLower.includes("add") || notesLower.includes("add") 
-        ? "Add Liquidity" 
-        : "Remove Liquidity",
-    };
-  }
+  // -- Liquidity --
+  "ADD_LIQUIDITY": "defi",
+  "ADD_BALANCE_LIQUIDITY": "defi",
+  "INCREASE_LIQUIDITY": "defi",
+  "ADD_TO_POOL": "defi",
+  "REMOVE_LIQUIDITY": "defi",
+  "REMOVE_BALANCE_LIQUIDITY": "defi",
+  "REMOVE_FROM_POOL": "defi",
 
-  // DCA (Dollar Cost Averaging) transactions
-  if (
-    typeLower === "dca" ||
-    notesLower.includes("dca") ||
-    notesLower.includes("dollar cost average") ||
-    combinedText.includes("recurring buy")
-  ) {
-    return {
-      category: "dca",
-      identified: true,
-      finalType: "DCA",
-    };
-  }
+  // -- Lending / Borrowing --
+  "LOAN": "defi",
+  "BORROW": "defi",
+  "BORROW_FOX": "defi",
+  "BORROW_SOL_FOR_NFT": "defi",
+  "REBORROW_SOL_FOR_NFT": "defi",
+  "TAKE_LOAN": "defi",
+  "LEND_FOR_NFT": "defi",
+  "REPAY_LOAN": "defi",
+  "OFFER_LOAN": "defi",
+  "REQUEST_LOAN": "defi",
+  "CANCEL_LOAN_REQUEST": "defi",
+  "RESCIND_LOAN": "defi",
+  "FORECLOSE_LOAN": "defi",
 
-  // Swap transactions
-  if (
-    typeLower.includes("swap") ||
-    typeLower.includes("trade") ||
-    notesLower.includes("swap") ||
-    notesLower.includes("jupiter swap") ||
-    notesLower.includes("uniswap") ||
-    notesLower.includes("exchange") ||
-    incomingAssetSymbol ||
-    combinedText.includes("swapped") ||
-    combinedText.includes("traded")
-  ) {
-    return {
-      category: "swap",
-      identified: true,
-      finalType: "Swap",
-    };
-  }
+  // -- Rewards / Claims --
+  "CLAIM_REWARDS": "income",
+  "HARVEST": "income",
+  "FUND_REWARD": "income",
+  "PAYOUT": "income",
 
-  // Bridge transactions (must be checked before transfer - bridges are taxable events)
-  if (
-    typeLower.includes("bridge") ||
-    notesLower.includes("bridge") ||
-    combinedText.includes("cross-chain") ||
-    combinedText.includes("bridge transfer")
-  ) {
-    return {
-      category: "bridge",
-      identified: true,
-      finalType: "Bridge",
-    };
-  }
+  // -- Approvals / Revocations --
+  "REVOKE": "defi",
+  "SET_AUTHORITY": "defi",
 
-  // Transfer transactions (Send/Receive)
-  if (
-    typeLower.includes("send") ||
-    typeLower.includes("receive") ||
-    typeLower.includes("transfer") ||
-    notesLower.includes("transfer") ||
-    notesLower.includes("sent") ||
-    notesLower.includes("received")
-  ) {
-    const isReceive = 
-      typeLower.includes("receive") ||
-      notesLower.includes("received") ||
-      (value > 0 && !typeLower.includes("send"));
-    
-    return {
-      category: "transfer",
-      identified: true,
-      finalType: isReceive ? "Receive" : "Send",
-    };
-  }
+  // -- DeFi Setup / Infrastructure --
+  "INIT_BANK": "defi",
+  "CREATE_POOL": "defi",
+  "OPEN_POSITION": "defi",
+  "OPEN_POSITION_WITH_METADATA": "defi",
+  "INIT_FARMER": "defi",
+  "REFRESH_FARMER": "defi",
+  "INIT_FARM": "defi",
+  "UPDATE_FARM": "defi",
+  "INIT_LENDING_ACCOUNT": "defi",
+  "SET_BANK_FLAGS": "defi",
+  "UPDATE_BANK_MANAGER": "defi",
+  "ACTIVATE_VAULT": "defi",
+  "INIT_VAULT": "defi",
+  "SET_VAULT_LOCK": "defi",
+  "UPDATE_VAULT_OWNER": "defi",
+  "AUTHORIZE_FUNDER": "defi",
+  "DEAUTHORIZE_FUNDER": "defi",
+  "CANCEL_REWARD": "defi",
+  "LOCK_REWARD": "defi",
+  "RECORD_RARITY_POINTS": "defi",
+  "ADD_RARITIES_TO_BANK": "defi",
+  "INITIALIZE_ACCOUNT": "defi",
+  "CLOSE_ACCOUNT": "defi",
 
-  // Buy transactions
-  if (
-    typeLower.includes("buy") ||
-    typeLower.includes("purchase") ||
-    typeLower.includes("acquire") ||
-    notesLower.includes("bought") ||
-    notesLower.includes("purchased") ||
-    (value < 0 && !typeLower.includes("sell")) // Negative value usually means outgoing (buy)
-  ) {
-    return {
-      category: "buy",
-      identified: true,
-      finalType: "Buy",
-    };
-  }
+  // -- Orders --
+  "CREATE_ORDER": "defi",
+  "INIT_ORDER": "defi",
+  "REGISTER_ORDER": "defi",
+  "CANCEL_ORDER": "defi",
+  "CLOSE_ORDER": "defi",
+  "UPDATE_ORDER": "defi",
+  "SETTLE": "defi",
+  "SETTLE_PNL": "defi",
+  "FULFILL": "defi",
 
-  // Sell transactions
-  if (
-    typeLower.includes("sell") ||
-    typeLower.includes("sale") ||
-    notesLower.includes("sold") ||
-    typeLower.includes("disposal") ||
-    notesLower.includes("proceeds") ||
-    notesLower.includes("cost basis") // Tax report format indicates a sell
-  ) {
-    return {
-      category: "sell",
-      identified: true,
-      finalType: "Sell",
-    };
-  }
+  // -- Gambling / Betting --
+  "PLACE_BET": "buy",
+  "PLACE_SOL_BET": "buy",
+  "CREATE_BET": "buy",
+  "CREATE_RAFFLE": "buy",
+  "UPDATE_RAFFLE": "buy",
+  "BUY_TICKETS": "buy",
+  "BUY_SUBSCRIPTION": "buy",
 
-  // Borrow transactions (DeFi lending)
-  if (
-    typeLower.includes("borrow") ||
-    notesLower.includes("borrow")
-  ) {
-    return {
-      category: "borrow",
-      identified: true,
-      finalType: "Borrow",
-    };
-  }
+  // -- Escrow --
+  "CREATE_ESCROW": "defi",
+  "CANCEL_ESCROW": "defi",
+  "CLOSE_ESCROW_ACCOUNT": "defi",
+  "ACCEPT_ESCROW_ARTIST": "defi",
+  "ACCEPT_ESCROW_USER": "defi",
+  "ACCEPT_REQUEST_ARTIST": "defi",
 
-  // Repay transactions (DeFi lending)
-  if (
-    typeLower.includes("repay") ||
-    notesLower.includes("repay") ||
-    notesLower.includes("repayment")
-  ) {
-    return {
-      category: "repay",
-      identified: true,
-      finalType: "Repay",
-    };
-  }
+  // -- Fox Federation --
+  "UPGRADE_FOX": "defi",
+  "UPGRADE_FOX_REQUEST": "defi",
+  "LOAN_FOX": "defi",
+  "SWITCH_FOX_REQUEST": "defi",
+  "SWITCH_FOX": "defi",
 
-  // Default: not identified, keep original type
-  // L-4 fix: Don't default to "buy" — that creates phantom cost basis lots in the
-  // tax engine for unknown transaction types. Use "transfer" as a neutral fallback
-  // so the tax engine skips it, and leave identified=false for user review.
-  return {
-    category: "transfer", // Neutral fallback — tax engine skips transfers
-    identified: false,
-    finalType: type, // Keep original type so user can review
-  };
+  // -- Metaplex / Candy Machine --
+  "CANDY_MACHINE_ROUTE": "nft",
+  "CANDY_MACHINE_WRAP": "nft",
+  "CANDY_MACHINE_UNWRAP": "nft",
+  "CANDY_MACHINE_UPDATE": "nft",
+  "CREATE_STORE": "nft",
+  "WHITELIST_CREATOR": "nft",
+  "ADD_TO_WHITELIST": "nft",
+  "REMOVE_FROM_WHITELIST": "nft",
+  "AUCTION_MANAGER_CLAIM_BID": "nft",
+  "EMPTY_PAYMENT_ACCOUNT": "nft",
+  "UPDATE_PRIMARY_SALE_METADATA": "nft",
+  "VALIDATE_SAFETY_DEPOSIT_BOX_V2": "nft",
+  "INIT_AUCTION_MANAGER_V2": "nft",
+  "UPDATE_EXTERNAL_PRICE_ACCOUNT": "nft",
+  "AUCTION_HOUSE_CREATE": "nft",
+  "CREATE_MASTER_EDITION": "nft",
+
+  // -- Compressed NFT management --
+  "COMPRESSED_NFT_VERIFY_CREATOR": "nft",
+  "COMPRESSED_NFT_UNVERIFY_CREATOR": "nft",
+  "COMPRESSED_NFT_VERIFY_COLLECTION": "nft",
+  "COMPRESSED_NFT_UNVERIFY_COLLECTION": "nft",
+  "COMPRESSED_NFT_SET_VERIFY_COLLECTION": "nft",
+  "COMPRESSED_NFT_DELEGATE": "nft",
+  "COMPRESSED_NFT_REDEEM": "nft",
+  "COMPRESSED_NFT_CANCEL_REDEEM": "nft",
+  "COMPRESS_NFT": "nft",
+  "DECOMPRESS_NFT": "nft",
+  "CREATE_MERKLE_TREE": "nft",
+  "DELEGATE_MERKLE_TREE": "nft",
+  "DISTRIBUTE_COMPRESSION_REWARDS": "nft",
+
+  // -- pNFT Migration --
+  "REQUEST_PNFT_MIGRATION": "nft",
+  "START_PNFT_MIGRATION": "nft",
+  "MIGRATE_TO_PNFT": "nft",
+
+  // -- Misc platform / metadata --
+  "FRACTIONALIZE": "defi",
+  "FUSE": "defi",
+  "CREATE_APPRAISAL": "defi",
+  "CREATE_APPARAISAL": "defi",
+  "ATTACH_METADATA": "defi",
+  "UPDATE_RECORD_AUTHORITY_DATA": "defi",
+  "CHANGE_COMIC_STATE": "defi",
+  "INIT_RENT": "defi",
+  "UPDATE_OFFER": "defi",
+  "CANCEL_OFFER": "defi",
+  "CREATE": "defi",
+  "EXECUTE_INSTRUCTION": "defi",
+
+  // -- Multisig / Governance --
+  "CREATE_TRANSACTION": "defi",
+  "APPROVE_TRANSACTION": "defi",
+  "EXECUTE_TRANSACTION": "defi",
+  "ACTIVATE_TRANSACTION": "defi",
+  "REJECT_TRANSACTION": "defi",
+  "CANCEL_TRANSACTION": "defi",
+  "ADD_INSTRUCTION": "defi",
+
+  // -- Program upgrades --
+  "FINALIZE_PROGRAM_INSTRUCTION": "defi",
+  "UPGRADE_PROGRAM_INSTRUCTION": "defi",
+
+  // -- Marketplace items --
+  "LIST_ITEM": "nft",
+  "DELIST_ITEM": "nft",
+  "UPDATE_ITEM": "nft",
+  "ADD_ITEM": "nft",
+  "CLOSE_ITEM": "nft",
+  "KICK_ITEM": "nft",
+
+  // -- Catch-all Helius --
+  "UNKNOWN": "other",
+  "UNLABELED": "other",
+
+  // ================================================================
+  // Moralis raw types (lowercase)
+  // ================================================================
+  "send": "transfer",
+  "receive": "transfer",
+  "token send": "transfer",
+  "token receive": "transfer",
+  "token swap": "swap",
+  "nft send": "transfer",
+  "nft receive": "transfer",
+  "nft sale": "nft",
+  "nft purchase": "nft",
+  "deposit": "defi",
+  "withdraw": "defi",
+  "airdrop": "income",
+  "mint": "nft",
+  "burn": "other",
+  "approve": "defi",
+  "revoke": "defi",
+  "borrow": "defi",
+  "repay": "defi",
+  "contract interaction": "defi",
+  "stake": "staking",
+  "unstake": "staking",
+  "bridge": "transfer",
+  "wrap": "swap",
+  "unwrap": "swap",
+  "add liquidity": "defi",
+  "remove liquidity": "defi",
+  "reward": "income",
+  "claim": "income",
+  "yield": "income",
+  "interest": "income",
+  "liquidation": "sell",
+
+  // ================================================================
+  // Coinbase raw types
+  // ================================================================
+  "buy": "buy",
+  "sell": "sell",
+  "exchange": "swap",
+  "trade": "swap",
+
+  // ================================================================
+  // Exchange client types (Kraken, KuCoin, Gemini, Binance)
+  // ================================================================
+  "withdrawal": "transfer",
+  "transfer": "transfer",
+  "Staking Reward": "income",
+  "Margin": "buy",
+
+  // ================================================================
+  // Legacy app types (backward compat with existing DB records)
+  // ================================================================
+  "Buy": "buy",
+  "Sell": "sell",
+  "Swap": "swap",
+  "Send": "transfer",
+  "Receive": "transfer",
+  "Transfer": "transfer",
+  "Bridge": "transfer",
+  "Self": "transfer",
+  "Stake": "staking",
+  "Unstake": "staking",
+  "DCA": "buy",
+  "Margin Buy": "buy",
+  "Margin Sell": "sell",
+  "Liquidation": "sell",
+  "NFT Purchase": "nft",
+  "NFT Sale": "nft",
+  "NFT Activity": "nft",
+  "Mint": "nft",
+  "Deposit": "defi",
+  "Withdraw": "defi",
+  "Borrow": "defi",
+  "Repay": "defi",
+  "Add Liquidity": "defi",
+  "Remove Liquidity": "defi",
+  "DeFi Setup": "defi",
+  "Approve": "defi",
+  "Wrap": "swap",
+  "Unwrap": "swap",
+  "Reward": "income",
+  "Airdrop": "income",
+  "Mining": "income",
+  "Yield": "income",
+  "Interest": "income",
+  "Burn": "other",
+  "Zero Transaction": "other",
+  "Spam": "other",
+  "Fee": "other",
+  "Staking": "staking",
+};
+
+// Pre-built reverse index: category → list of raw type strings
+const _categoryIndex: Record<string, string[]> = {};
+for (const [rawType, category] of Object.entries(CATEGORY_MAP)) {
+  if (!_categoryIndex[category]) _categoryIndex[category] = [];
+  _categoryIndex[category].push(rawType);
+}
+
+// ================================================================
+// Public helpers
+// ================================================================
+
+/** Look up the UI category for any raw type string. Falls back to "other". */
+export function getCategory(rawType: string): string {
+  return CATEGORY_MAP[rawType] || "other";
+}
+
+/** Return all raw type strings that belong to a given category. */
+export function getTypesForCategory(category: string): string[] {
+  return _categoryIndex[category] || [];
+}
+
+/** True for categories where crypto/money is leaving (outflow). */
+export function isOutflow(rawType: string): boolean {
+  const cat = getCategory(rawType);
+  return cat === "buy" || cat === "swap" || cat === "defi";
+}
+
+/** True for categories where crypto/money is arriving (inflow). */
+export function isInflow(rawType: string): boolean {
+  const cat = getCategory(rawType);
+  return cat === "sell" || cat === "income";
+}
+
+/** Types that create cost basis lots in the tax engine. */
+export function isTaxableBuy(rawType: string): boolean {
+  const cat = getCategory(rawType);
+  if (cat === "buy") return true;
+  // NFT Purchase is a buy (cost basis for future sale)
+  if (rawType === "NFT Purchase" || rawType === "nft purchase") return true;
+  return false;
+}
+
+/** Types that are disposals — trigger capital gain/loss calculation. */
+export function isTaxableSell(rawType: string): boolean {
+  const cat = getCategory(rawType);
+  if (cat === "sell") return true;
+  // NFT Sale is a sell
+  if (rawType === "NFT Sale" || rawType === "nft sale" || rawType === "NFT_SALE") return true;
+  return false;
+}
+
+/** Types the tax engine should skip entirely (internal movements). */
+export function isTransferSkip(rawType: string): boolean {
+  return getCategory(rawType) === "transfer";
 }
 
 /**
- * Categorize and update transaction data
+ * Format a raw type string for display.
+ * "TRANSFER_IN" → "Transfer In"
+ * "token swap"  → "Token Swap"
+ * "Buy"         → "Buy" (already formatted)
  */
-export function categorizeTransactionData(data: {
-  type: string;
-  notes?: string | null;
-  value_usd?: Decimal | number | null;
-  asset_symbol?: string | null;
-  incoming_asset_symbol?: string | null;
-  subtype?: string | null;
-}): {
-  type: string;
-  subtype?: string | null;
-  identified: boolean;
-} {
-  const categorization = categorizeTransaction(
-    data.type,
-    data.notes,
-    data.value_usd,
-    data.asset_symbol,
-    data.incoming_asset_symbol
-  );
+export function formatTypeForDisplay(rawType: string): string {
+  if (!rawType) return "Unknown";
+  // If it looks like SCREAMING_SNAKE_CASE, convert
+  if (rawType === rawType.toUpperCase() && rawType.includes("_")) {
+    return rawType
+      .split("_")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join(" ");
+  }
+  // If it's all lowercase with spaces (Moralis style), title-case it
+  if (rawType === rawType.toLowerCase()) {
+    return rawType
+      .split(" ")
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(" ");
+  }
+  // Already formatted (legacy Title Case)
+  return rawType;
+}
 
-  return {
-    type: categorization.finalType,
-    subtype: categorization.subtype || data.subtype || null,
-    identified: categorization.identified,
-  };
+/**
+ * Get badge color classes for a category.
+ * Returns Tailwind classes for light + dark mode.
+ */
+export function getCategoryBadgeColor(rawType: string): string {
+  const cat = getCategory(rawType);
+  switch (cat) {
+    case "buy":
+      return "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400";
+    case "sell":
+      return "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400";
+    case "transfer":
+      return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400";
+    case "swap":
+      return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400";
+    case "staking":
+      return "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400";
+    case "defi":
+      return "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400";
+    case "nft":
+      return "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/30 dark:text-fuchsia-400";
+    case "income":
+      return "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400";
+    case "other":
+    default:
+      return "bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-400";
+  }
 }

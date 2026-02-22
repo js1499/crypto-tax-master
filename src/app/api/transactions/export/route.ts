@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
+import { getTypesForCategory } from "@/lib/transaction-categorizer";
 
 /**
  * GET /api/transactions/export
@@ -117,37 +118,23 @@ export async function GET(request: NextRequest) {
 
     if (filter !== "all") {
       if (filter === "buy") {
-        whereConditions.push({ type: { in: ["Buy", "Margin Buy", "DCA"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("buy") } });
       } else if (filter === "sell") {
-        whereConditions.push({ type: { in: ["Sell", "Margin Sell", "Liquidation"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("sell") } });
       } else if (filter === "transfer") {
-        whereConditions.push({ type: { in: ["Send", "Receive", "Transfer", "Bridge", "Self"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("transfer") } });
       } else if (filter === "swap") {
-        whereConditions.push({ type: { in: ["Swap", "Wrap", "Unwrap"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("swap") } });
       } else if (filter === "stake") {
-        whereConditions.push({ type: { in: ["Stake", "Unstake"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("staking") } });
       } else if (filter === "defi") {
-        whereConditions.push({ type: { in: ["Deposit", "Withdraw", "Borrow", "Repay", "Add Liquidity", "Remove Liquidity", "DeFi Setup"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("defi") } });
       } else if (filter === "nft") {
-        whereConditions.push({
-          OR: [
-            { type: { contains: "NFT", mode: "insensitive" } },
-            { type: "Mint" },
-          ],
-        });
+        whereConditions.push({ type: { in: getTypesForCategory("nft") } });
       } else if (filter === "income") {
-        whereConditions.push({ type: { in: ["Reward", "Airdrop", "Mining", "Yield", "Interest"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("income") } });
       } else if (filter === "other") {
-        whereConditions.push({
-          OR: [
-            { type: "Burn" },
-            { type: "Approve" },
-            { type: "Zero Transaction" },
-            { type: { contains: "Spam", mode: "insensitive" } },
-            { asset_symbol: { contains: "unknown", mode: "insensitive" } },
-            { value_usd: 0 },
-          ],
-        });
+        whereConditions.push({ type: { in: getTypesForCategory("other") } });
       } else {
         whereConditions.push({
           type: { contains: filter, mode: "insensitive" },

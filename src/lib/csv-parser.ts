@@ -216,17 +216,8 @@ export abstract class ExchangeCSVParser {
   }
 
   protected parseTransactionType(typeStr: string): string {
-    const lower = typeStr.toLowerCase();
-    if (lower.includes("buy") || lower.includes("purchase")) return "Buy";
-    if (lower.includes("sell")) return "Sell";
-    if (lower.includes("send")) return "Send";
-    if (lower.includes("receive")) return "Receive";
-    if (lower.includes("swap") || lower.includes("trade")) return "Swap";
-    if (lower.includes("deposit")) return "Deposit";
-    if (lower.includes("withdraw")) return "Withdraw";
-    if (lower.includes("reward") || lower.includes("staking")) return "Reward";
-    if (lower.includes("fee")) return "Fee";
-    return typeStr;
+    // Store raw CSV type as-is (trimmed). The category layer handles mapping.
+    return typeStr.trim() || "Unknown";
   }
 
   protected extractAssetSymbol(assetStr: string): string {

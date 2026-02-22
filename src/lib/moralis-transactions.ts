@@ -423,86 +423,24 @@ function fromWei(value: string, decimals: number = 18): number {
 }
 
 /**
- * Determine transaction type based on Moralis category and transfers.
- * Covers all known Moralis Wallet History API categories:
- *   send, receive, nft send, nft receive, token send, token receive,
- *   token swap, deposit, withdraw, airdrop, mint, burn, nft purchase,
- *   nft sale, borrow, approve, revoke, contract interaction
+ * Resolve the raw Moralis type to store in the DB.
+ * Returns the Moralis category as-is (lowercase). Falls back to
+ * direction-based "send"/"receive" if no category is provided.
  */
-function determineTransactionType(
+function resolveMoralisType(
   tx: MoralisTransaction,
   walletAddress: string
 ): string {
   const category = tx.category?.toLowerCase() || "";
+  if (category) return category;
+
+  // Direction-based fallback when Moralis provides no category
   const from = tx.from_address?.toLowerCase();
   const to = tx.to_address?.toLowerCase();
   const wallet = walletAddress.toLowerCase();
-
-  // ── Exact category matches (highest priority) ──────────────
-  // Swaps / Trading
-  if (category.includes("swap") || category.includes("trade")) return "Swap";
-
-  // NFT marketplace
-  if (category === "nft sale") return "NFT Sale";
-  if (category === "nft purchase") return "NFT Purchase";
-
-  // NFT transfers (before generic send/receive)
-  if (category === "nft send") return "Send";
-  if (category === "nft receive") return "Receive";
-
-  // Token transfers
-  if (category === "token send") return "Send";
-  if (category === "token receive") return "Receive";
-
-  // Approvals / Revocations
-  if (category.includes("revoke")) return "Approve";
-  if (category.includes("approve")) return "Approve";
-
-  // Minting / Burning
-  if (category.includes("mint")) return "Mint";
-  if (category.includes("burn")) return "Burn";
-
-  // Staking
-  if (category.includes("unstake")) return "Unstake";
-  if (category.includes("stake")) return "Stake";
-
-  // Bridge
-  if (category.includes("bridge")) return "Bridge";
-
-  // Airdrop
-  if (category.includes("airdrop")) return "Airdrop";
-
-  // DeFi
-  if (category.includes("deposit")) return "Deposit";
-  if (category.includes("withdraw")) return "Withdraw";
-  if (category.includes("borrow")) return "Borrow";
-  if (category.includes("repay")) return "Repay";
-  if (category.includes("liquidat")) return "Liquidation";
-
-  // Liquidity
-  if (category.includes("add liquidity") || category.includes("add_liquidity")) return "Add Liquidity";
-  if (category.includes("remove liquidity") || category.includes("remove_liquidity")) return "Remove Liquidity";
-
-  // Rewards
-  if (category.includes("reward") || category.includes("claim") || category.includes("yield") || category.includes("interest")) return "Reward";
-
-  // Generic send/receive
-  if (category === "send") return "Send";
-  if (category === "receive") return "Receive";
-
-  // Contract interaction (fallback to direction-based)
-  if (category === "contract interaction") {
-    if (from === wallet && to !== wallet) return "Send";
-    if (to === wallet && from !== wallet) return "Receive";
-    return "DeFi Setup";
-  }
-
-  // ── Direction-based fallback ───────────────────────────────
-  if (from === wallet && to !== wallet) return "Send";
-  if (to === wallet && from !== wallet) return "Receive";
-  if (from === wallet && to === wallet) return "Self";
-
-  return "Transfer";
+  if (from === wallet && to !== wallet) return "send";
+  if (to === wallet && from !== wallet) return "receive";
+  return "contract interaction";
 }
 
 /**
@@ -522,11 +460,13 @@ function postProcessTransaction(
   if (!chainInfo) return txRecords;
 
   const wallet = walletAddress.toLowerCase();
+  const outTypes = ["send", "token send", "nft send"];
+  const inTypes = ["receive", "token receive", "nft receive"];
   const outgoing = txRecords.filter(
-    (r) => r.type === "Send" && parseFloat(r.amount_value.toString()) > 0
+    (r) => outTypes.includes(r.type) && parseFloat(r.amount_value.toString()) > 0
   );
   const incoming = txRecords.filter(
-    (r) => r.type === "Receive" && parseFloat(r.amount_value.toString()) > 0
+    (r) => inTypes.includes(r.type) && parseFloat(r.amount_value.toString()) > 0
   );
 
   // Need at least one outgoing and one incoming to be a swap/wrap
@@ -546,7 +486,7 @@ function postProcessTransaction(
     // Wrap: ETH → WETH
     return [{
       ...outRecord,
-      type: "Wrap",
+      type: "wrap",
       notes: `Wrap ${chainInfo.nativeToken} → W${chainInfo.nativeToken}`,
       incoming_asset_symbol: inRecord.asset_symbol,
       incoming_amount_value: inRecord.amount_value,
@@ -558,7 +498,7 @@ function postProcessTransaction(
     // Unwrap: WETH → ETH
     return [{
       ...outRecord,
-      type: "Unwrap",
+      type: "unwrap",
       notes: `Unwrap W${chainInfo.nativeToken} → ${chainInfo.nativeToken}`,
       incoming_asset_symbol: inRecord.asset_symbol,
       incoming_amount_value: inRecord.amount_value,
@@ -581,7 +521,7 @@ function postProcessTransaction(
 
     const swapRecord: WalletTransaction = {
       ...outRecord,
-      type: "Swap",
+      type: "token swap",
       notes: tx.summary || `Swap ${outRecord.asset_symbol} → ${inRecord.asset_symbol}`,
       incoming_asset_symbol: inRecord.asset_symbol,
       incoming_amount_value: inRecord.amount_value,
@@ -677,7 +617,7 @@ export async function getWalletTransactions(
           continue;
         }
 
-        const txType = determineTransactionType(tx, walletAddress);
+        const txType = resolveMoralisType(tx, walletAddress);
         const blockNumber = parseInt(tx.block_number) || 0;
         const timestamp = new Date(tx.block_timestamp);
 
@@ -698,7 +638,7 @@ export async function getWalletTransactions(
 
             txRecords.push({
               id: `${tx.hash}-native-${transfer.from_address}-${transfer.to_address}`,
-              type: isIncoming ? "Receive" : "Send",
+              type: isIncoming ? "receive" : "send",
               asset_symbol: chainInfo.nativeToken,
               asset_chain: chain,
               amount_value: new Decimal(Math.abs(amount)),
@@ -736,7 +676,7 @@ export async function getWalletTransactions(
 
             txRecords.push({
               id: `${tx.hash}-erc20-${transfer.log_index}`,
-              type: isIncoming ? "Receive" : "Send",
+              type: isIncoming ? "token receive" : "token send",
               asset_symbol: transfer.token_symbol || "UNKNOWN",
               asset_address: transfer.address,
               asset_chain: chain,
@@ -774,7 +714,7 @@ export async function getWalletTransactions(
 
             txRecords.push({
               id: `${tx.hash}-nft-${transfer.token_address}-${transfer.token_id}`,
-              type: isIncoming ? "Receive" : "Send",
+              type: isIncoming ? "nft receive" : "nft send",
               asset_symbol: transfer.token_symbol || "NFT",
               asset_address: transfer.token_address,
               asset_chain: chain,
@@ -803,7 +743,7 @@ export async function getWalletTransactions(
           (!tx.nft_transfers || tx.nft_transfers.length === 0)
         ) {
           const value = fromWei(tx.value || "0", chainInfo.decimals);
-          if (value > 0 || txType !== "Transfer") {
+          if (value > 0 || !["send", "receive"].includes(txType)) {
             txRecords.push({
               id: `${tx.hash}-main`,
               type: txType,

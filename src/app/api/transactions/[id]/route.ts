@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { Decimal } from "@prisma/client/runtime/library";
+import { isOutflow } from "@/lib/transaction-categorizer";
 
 /**
  * PATCH /api/transactions/:id
@@ -155,12 +156,7 @@ export async function PATCH(
     const price = `$${pricePerUnit.toFixed(2)}`;
 
     let value = `$${Math.abs(valueUsd).toFixed(2)}`;
-    if (
-      updatedTransaction.type === "Buy" ||
-      updatedTransaction.type === "DCA"
-    ) {
-      value = `-${value}`;
-    } else if (updatedTransaction.type === "Sell" && valueUsd < 0) {
+    if (isOutflow(updatedTransaction.type)) {
       value = `-${value}`;
     }
 

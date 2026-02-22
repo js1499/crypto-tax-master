@@ -5,7 +5,7 @@ import { CoinbaseUser } from "@/lib/coinbase";
 import { parseCSV, ExchangeCSVParser } from "@/lib/csv-parser";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
-import { categorizeTransactionData } from "@/lib/transaction-categorizer";
+import { getCategory } from "@/lib/transaction-categorizer";
 import * as Sentry from "@sentry/nextjs";
 import { logBuffer } from "@/lib/log-buffer";
 
@@ -430,15 +430,7 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Categorize the transaction
-        const categorized = categorizeTransactionData({
-          type: tx.type,
-          notes: tx.notes,
-          value_usd: tx.value_usd,
-          asset_symbol: tx.asset_symbol,
-          incoming_asset_symbol: tx.incoming_asset_symbol,
-          subtype: tx.subtype,
-        });
+        const identified = getCategory(tx.type) !== "other";
 
         // Log notes for first few transactions to debug
         if (i < 5 && (tx.type === "Sell" || tx.type === "sell")) {
@@ -446,8 +438,8 @@ export async function POST(request: NextRequest) {
         }
 
         transactionsToCreate.push({
-          type: categorized.type,
-          subtype: categorized.subtype,
+          type: tx.type,
+          subtype: tx.subtype || null,
           status: tx.status || "confirmed",
           source: exchange,
           source_type: "csv_import",
@@ -465,7 +457,7 @@ export async function POST(request: NextRequest) {
           block_number: tx.block_number || null,
           explorer_url: tx.explorer_url || null,
           tx_timestamp: tx.tx_timestamp,
-          identified: categorized.identified, // Auto-identified if categorized
+          identified: identified, // Auto-identified if category is known
           notes: tx.notes || null, // Preserve notes from parser - CRITICAL for cost basis
           // Swap fields
           incoming_asset_symbol: tx.incoming_asset_symbol || null,

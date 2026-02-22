@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
-import { categorizeTransactionData } from "@/lib/transaction-categorizer";
+import { getCategory } from "@/lib/transaction-categorizer";
 import * as Sentry from "@sentry/nextjs";
 
 /**
  * POST /api/transactions/categorize
  * Re-categorize all transactions for the authenticated user
- * This will update transaction types and mark them as identified if they match a category
+ * This will mark transactions as identified if their raw type maps to a known category
  */
 export async function POST(request: NextRequest) {
   try {
@@ -94,11 +93,6 @@ export async function POST(request: NextRequest) {
       select: {
         id: true,
         type: true,
-        subtype: true,
-        notes: true,
-        value_usd: true,
-        asset_symbol: true,
-        incoming_asset_symbol: true,
         identified: true,
       },
     });
@@ -112,48 +106,29 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Categorize each transaction
+    // Categorize each transaction — only update the identified flag based on the raw type
     let categorized = 0;
     let updated = 0;
     const batchSize = 100;
 
     for (let i = 0; i < transactions.length; i += batchSize) {
       const batch = transactions.slice(i, i + batchSize);
-      
-      const updates = await Promise.all(
-        batch.map(async (tx) => {
-          const categorization = categorizeTransactionData({
-            type: tx.type,
-            notes: tx.notes || null,
-            value_usd: tx.value_usd,
-            asset_symbol: tx.asset_symbol,
-            incoming_asset_symbol: tx.incoming_asset_symbol || null,
-            subtype: tx.subtype || null,
-          });
 
-          // Only update if categorization changed something
-          if (
-            categorization.type !== tx.type ||
-            categorization.subtype !== tx.subtype ||
-            (categorization.identified && !tx.identified)
-          ) {
+      await Promise.all(
+        batch.map(async (tx) => {
+          const identified = getCategory(tx.type) !== "other";
+
+          if (identified !== tx.identified) {
             await prisma.transaction.update({
               where: { id: tx.id },
-              data: {
-                type: categorization.type,
-                subtype: categorization.subtype,
-                identified: categorization.identified,
-              },
+              data: { identified },
             });
             updated++;
-            if (categorization.identified) {
-              categorized++;
-            }
-          } else if (categorization.identified) {
-            categorized++;
           }
 
-          return categorization;
+          if (identified) {
+            categorized++;
+          }
         })
       );
     }

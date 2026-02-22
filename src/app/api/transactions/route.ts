@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
+import { getCategory, getTypesForCategory, isOutflow, formatTypeForDisplay } from "@/lib/transaction-categorizer";
 
 /**
  * GET /api/transactions
@@ -136,37 +137,23 @@ export async function GET(request: NextRequest) {
     // Apply transaction type filter
     if (filter !== "all") {
       if (filter === "buy") {
-        whereConditions.push({ type: { in: ["Buy", "Margin Buy", "DCA"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("buy") } });
       } else if (filter === "sell") {
-        whereConditions.push({ type: { in: ["Sell", "Margin Sell", "Liquidation"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("sell") } });
       } else if (filter === "transfer") {
-        whereConditions.push({ type: { in: ["Send", "Receive", "Transfer", "Bridge", "Self"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("transfer") } });
       } else if (filter === "swap") {
-        whereConditions.push({ type: { in: ["Swap", "Wrap", "Unwrap"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("swap") } });
       } else if (filter === "stake") {
-        whereConditions.push({ type: { in: ["Stake", "Unstake"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("staking") } });
       } else if (filter === "defi") {
-        whereConditions.push({ type: { in: ["Deposit", "Withdraw", "Borrow", "Repay", "Add Liquidity", "Remove Liquidity", "DeFi Setup"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("defi") } });
       } else if (filter === "nft") {
-        whereConditions.push({
-          OR: [
-            { type: { contains: "NFT", mode: "insensitive" } },
-            { type: "Mint" },
-          ],
-        });
+        whereConditions.push({ type: { in: getTypesForCategory("nft") } });
       } else if (filter === "income") {
-        whereConditions.push({ type: { in: ["Reward", "Airdrop", "Mining", "Yield", "Interest"] } });
+        whereConditions.push({ type: { in: getTypesForCategory("income") } });
       } else if (filter === "other") {
-        whereConditions.push({
-          OR: [
-            { type: "Burn" },
-            { type: "Approve" },
-            { type: "Zero Transaction" },
-            { type: { contains: "Spam", mode: "insensitive" } },
-            { asset_symbol: { contains: "unknown", mode: "insensitive" } },
-            { value_usd: 0 },
-          ],
-        });
+        whereConditions.push({ type: { in: getTypesForCategory("other") } });
       } else {
         whereConditions.push({ type: { contains: filter, mode: "insensitive" } });
       }
@@ -279,18 +266,6 @@ export async function GET(request: NextRequest) {
       prisma.transaction.count({ where }),
     ]);
 
-    // Known transaction types for identification
-    const KNOWN_TYPES = new Set([
-      "Buy", "Sell", "Swap", "Send", "Receive", "Transfer", "Bridge",
-      "Stake", "DCA", "NFT Purchase", "NFT Sale",
-      "Margin Buy", "Margin Sell", "Liquidation",
-      "Add Liquidity", "Remove Liquidity",
-      "Borrow", "Repay", "Unstake", "Zero Transaction", "Spam",
-      "Airdrop", "Mining", "Yield", "Interest", "Reward",
-      "Deposit", "Withdraw", "Burn", "Wrap", "Unwrap",
-      "Self", "Approve", "Mint", "NFT Activity", "DeFi Setup",
-    ]);
-
     // Format transactions for frontend
     const formattedTransactions = transactions.map((tx) => {
       const amountValue = Number(tx.amount_value);
@@ -307,28 +282,16 @@ export async function GET(request: NextRequest) {
       const price = `$${pricePerUnit.toFixed(2)}`;
 
       // Format value with correct sign based on transaction type
-      // OUTFLOWS (money/crypto leaving): Buy, DCA, Send, Withdraw - NEGATIVE
-      // INFLOWS (money/crypto coming in): Sell, Receive - POSITIVE
-      // NEUTRAL (no net flow): Swap, Transfer - show absolute value
       let value = `$${Math.abs(valueUsd).toFixed(2)}`;
-      const outflowTypes = ["Buy", "DCA", "Send", "Withdraw", "Bridge"];
-      const inflowTypes = ["Sell", "Receive"];
-
-      if (outflowTypes.includes(tx.type)) {
-        // Outflows are negative (spending money or sending crypto out)
-        value = `-${value}`;
-      } else if (inflowTypes.includes(tx.type)) {
-        // Inflows stay positive (receiving money or crypto)
-        // value is already positive
-      } else if (tx.type === "Swap") {
-        // Swaps: show the outgoing value as negative (you're disposing of assets)
+      if (isOutflow(tx.type)) {
         value = `-${value}`;
       }
-      // For Transfer and other types, keep as positive (neutral display)
+      // For Transfer and income types, keep as positive
 
       return {
         id: tx.id,
         type: tx.type,
+        displayType: formatTypeForDisplay(tx.type),
         asset: tx.asset_symbol,
         amount,
         price,
@@ -336,7 +299,7 @@ export async function GET(request: NextRequest) {
         date: tx.tx_timestamp.toISOString(),
         status: tx.status,
         exchange: tx.source || "Unknown",
-        identified: KNOWN_TYPES.has(tx.type),
+        identified: getCategory(tx.type) !== "other",
         valueIdentified: true, // Can be enhanced later
         chain: tx.chain,
         txHash: tx.tx_hash,
@@ -346,12 +309,17 @@ export async function GET(request: NextRequest) {
 
     // Stats queries (run in parallel)
     // Outflow types match the sign logic used in the value column above
-    const OUTFLOW_TYPES = ["Buy", "DCA", "Send", "Withdraw", "Bridge", "Swap"];
-    const knownTypesArray = Array.from(KNOWN_TYPES);
+    const OUTFLOW_TYPES = [...getTypesForCategory("buy"), ...getTypesForCategory("swap"), ...getTypesForCategory("defi")];
+    const allKnownTypes = [
+      ...getTypesForCategory("buy"), ...getTypesForCategory("sell"),
+      ...getTypesForCategory("transfer"), ...getTypesForCategory("swap"),
+      ...getTypesForCategory("staking"), ...getTypesForCategory("defi"),
+      ...getTypesForCategory("nft"), ...getTypesForCategory("income"),
+    ];
     const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, outflowAgg, inflowAgg] = await Promise.all([
       prisma.transaction.count({ where: { ...where, type: "Buy" } }),
       prisma.transaction.count({ where: { ...where, type: "Sell" } }),
-      prisma.transaction.count({ where: { ...where, type: { in: knownTypesArray } } }),
+      prisma.transaction.count({ where: { ...where, type: { in: allKnownTypes } } }),
       prisma.transaction.count({ where: { ...where, NOT: { value_usd: 0 } } }),
       prisma.transaction.aggregate({ where: { ...where, type: { in: OUTFLOW_TYPES } }, _sum: { value_usd: true } }),
       prisma.transaction.aggregate({ where: { ...where, type: { notIn: OUTFLOW_TYPES }, NOT: { value_usd: 0 } }, _sum: { value_usd: true } }),

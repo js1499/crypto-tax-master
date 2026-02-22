@@ -1,5 +1,6 @@
 import { PrismaClient, Transaction, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
+import { isTaxableBuy, isTaxableSell, isTransferSkip, getCategory } from "@/lib/transaction-categorizer";
 
 // L-1 fix: Debug-guarded logging — only emit verbose logs in development
 const TAX_DEBUG = process.env.NODE_ENV === "development" || process.env.TAX_DEBUG === "1";
@@ -449,8 +450,8 @@ export async function calculateTaxReport(
   debugLog(`[Tax Calculator] Found ${allTransactions.length} total transactions`);
   
   // L-6 fix: removed redundant case-sensitive checks (txType is already lowercased)
-  const buyTransactions = allTransactions.filter(tx => (tx.type || "").toLowerCase() === "buy");
-  const sellTransactions = allTransactions.filter(tx => (tx.type || "").toLowerCase() === "sell");
+  const buyTransactions = allTransactions.filter(tx => isTaxableBuy(tx.type || ""));
+  const sellTransactions = allTransactions.filter(tx => isTaxableSell(tx.type || ""));
   debugLog(`[Tax Calculator] Transaction breakdown: ${buyTransactions.length} buy, ${sellTransactions.length} sell, ${allTransactions.length - buyTransactions.length - sellTransactions.length} other`);
   
   // Log first few buy transactions to verify they're included
@@ -867,7 +868,7 @@ function processTransactionsForTax(
 
     // Skip "Transfer" type transactions - these are internal transfers or bank transfers
     // that don't create taxable events
-    if (txType === "transfer") {
+    if (isTransferSkip(tx.type || "")) {
       if (valueUsd !== 0 && processedCount < 20) {
         console.warn(`[Tax Calculator] ⚠️  Skipping transfer transaction ${tx.id} with non-zero value ($${valueUsd.toFixed(2)}) for ${amount} ${asset}. If this is a receive, re-categorize it.`);
       }
@@ -886,8 +887,7 @@ function processTransactionsForTax(
 
     // Handle buys - add to cost basis (including fees per IRS rules)
     // NFT Purchase is treated as a buy (cost basis for future sale)
-    if (txType === "buy" || txType === "dca" ||
-        txType === "nft purchase") {
+    if (isTaxableBuy(tx.type || "")) {
       // IRS Rule: Fees are added to cost basis for purchases
       // For CSV imports with tax report format, value_usd is NEGATIVE (cost basis as negative value)
       // For standard format, value_usd might be negative, so use absolute value
@@ -934,7 +934,7 @@ function processTransactionsForTax(
     }
     // Handle sells - calculate capital gains/losses
     // NFT Sale is treated as a sell (taxable disposal event)
-    else if (txType === "sell" || txType === "nft sale") {
+    else if (isTaxableSell(tx.type || "")) {
       // Use the processDisposal helper to calculate disposal details
       const disposal = processDisposal(
         tx,
@@ -1010,7 +1010,7 @@ function processTransactionsForTax(
     }
     // Handle swaps - treat as sell of one asset and buy of another
     // IRS: Swaps are taxable events (like-kind exchange rules eliminated for crypto after 2017)
-    else if (txType === "swap") {
+    else if (getCategory(tx.type || "") === "swap") {
       // First, try to use stored swap information from database
       let outgoingAsset = asset; // Already normalized above
       let incomingAsset = tx.incoming_asset_symbol ? (tx.incoming_asset_symbol.trim().toUpperCase()) : null;

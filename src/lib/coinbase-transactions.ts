@@ -291,13 +291,8 @@ export async function getCoinbaseTransactionsWithApiKey(
             continue;
           }
 
-          // Determine transaction type
-          let type = "Transfer";
-          if (tx.type === "buy") type = "Buy";
-          else if (tx.type === "sell") type = "Sell";
-          else if (tx.type === "send") type = "Send";
-          else if (tx.type === "receive") type = "Receive";
-          else if (tx.type === "exchange" || tx.type === "trade") type = "Swap";
+          // Store raw Coinbase type directly (e.g., "buy", "sell", "send", "receive", "exchange", "trade")
+          const type = tx.type || "transfer";
 
           // For sends, the value should be stored as the outgoing value
           // Sends reduce holdings but don't create taxable events (treated as gifts/transfers)
@@ -524,13 +519,8 @@ export async function getCoinbaseTransactions(
             continue;
           }
 
-          // Determine transaction type
-          let type = "Transfer";
-          if (tx.type === "buy") type = "Buy";
-          else if (tx.type === "sell") type = "Sell";
-          else if (tx.type === "send") type = "Send";
-          else if (tx.type === "receive") type = "Receive";
-          else if (tx.type === "exchange") type = "Swap";
+          // Store raw Coinbase type directly (e.g., "buy", "sell", "send", "receive", "exchange")
+          const type = tx.type || "transfer";
 
           transactions.push({
             id: tx.id,

@@ -75,6 +75,7 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { getCategoryBadgeColor, formatTypeForDisplay, isOutflow } from "@/lib/transaction-categorizer";
 import {
   Pagination,
   PaginationContent,
@@ -619,7 +620,7 @@ function TransactionsContent() {
         updatePayload.price_per_unit = parseFloat(editingValue);
       } else if (field === 'value') {
         const numValue = parseFloat(editingValue);
-        const isNegative = (tx.type === "Buy" || tx.type === "DCA");
+        const isNegative = isOutflow(tx.type);
         updatePayload.value_usd = isNegative ? -numValue : numValue;
       } else if (field === 'date') {
         const originalDate = new Date(tx.date);
@@ -684,8 +685,7 @@ function TransactionsContent() {
         // OUTFLOWS (money/crypto leaving): Buy, DCA, Send, Withdraw, Bridge, Swap - stored as negative
         // INFLOWS (money/crypto coming in): Sell, Receive - stored as positive
         const currentValue = parseFloat(tx.value.replace(/[-$,]/g, ''));
-        const outflowTypes = ['Buy', 'DCA', 'Send', 'Withdraw', 'Bridge', 'Swap'];
-        if (outflowTypes.includes(newValue)) {
+        if (isOutflow(newValue)) {
           updatePayload.value_usd = -Math.abs(currentValue);
         } else {
           updatePayload.value_usd = Math.abs(currentValue);
@@ -1751,47 +1751,9 @@ function TransactionsContent() {
                               onMouseLeave={() => handleMouseLeave('type')}
                             >
                           <span
-                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${
-                              transaction.type === "Buy" || transaction.type === "DCA"
-                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                : transaction.type === "Sell"
-                                ? "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-400"
-                                : transaction.type === "Receive" || transaction.type === "Send" || transaction.type === "Transfer"
-                                ? "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-                                : transaction.type === "Swap"
-                                ? "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400" 
-                                : transaction.type === "Bridge"
-                                ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400"
-                                : transaction.type === "Stake" || transaction.type === "Unstake"
-                                ? "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/30 dark:text-cyan-400"
-                                : transaction.type === "Add Liquidity" || transaction.type === "Remove Liquidity"
-                                ? "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400"
-                                : transaction.type === "NFT Purchase" || transaction.type.includes("NFT")
-                                ? "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/30 dark:text-fuchsia-400"
-                                : transaction.type === "Zero Transaction"
-                                ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
-                                : transaction.type === "Spam"
-                                ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400"
-                                : transaction.type === "Deposit"
-                                ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                                : transaction.type === "Withdraw"
-                                ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400"
-                                : transaction.type === "Burn"
-                                ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                                : transaction.type === "Mint"
-                                ? "bg-lime-100 text-lime-800 dark:bg-lime-900/30 dark:text-lime-400"
-                                : transaction.type === "Wrap" || transaction.type === "Unwrap"
-                                ? "bg-sky-100 text-sky-800 dark:bg-sky-900/30 dark:text-sky-400"
-                                : transaction.type === "Approve" || transaction.type === "Self"
-                                ? "bg-slate-100 text-slate-800 dark:bg-slate-900/30 dark:text-slate-400"
-                                : transaction.type === "NFT Activity"
-                                ? "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400"
-                                : transaction.type === "DeFi Setup"
-                                ? "bg-stone-100 text-stone-800 dark:bg-stone-900/30 dark:text-stone-400"
-                                : "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400"
-                            }`}
+                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${getCategoryBadgeColor(transaction.type)}`}
                           >
-                            {transaction.type}
+                            {formatTypeForDisplay(transaction.type)}
                           </span>
                               
                               {editableFields.type && (
@@ -2586,7 +2548,7 @@ function TransactionsContent() {
                           return (
                             <div key={id} className="flex items-center justify-between p-2 border rounded">
                               <div className="flex-1">
-                                <div className="font-medium">{tx.type} - {tx.asset}</div>
+                                <div className="font-medium">{formatTypeForDisplay(tx.type)} - {tx.asset}</div>
                                 <div className="text-sm text-muted-foreground">
                                   {tx.amount} • {tx.value} • {format(new Date(tx.date), "MMM dd, yyyy")}
                                 </div>
