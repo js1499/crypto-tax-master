@@ -6,6 +6,9 @@ import { enrichHistoricalPrices } from "@/lib/enrich-prices";
 
 export const maxDuration = 800; // 13 min Vercel timeout
 
+// Prevent concurrent enrichment runs (CoinGecko has a shared rate limit)
+let enrichmentRunning = false;
+
 /**
  * POST /api/prices/enrich-historical
  * Enriches transactions with CoinGecko historical prices.
@@ -19,6 +22,14 @@ export async function POST(request: NextRequest) {
   const warn = (msg: string) => console.warn(`[Enrich API] ${msg}`);
 
   log(`── Endpoint called at ${new Date().toISOString()} ──`);
+
+  if (enrichmentRunning) {
+    warn(`Enrichment already in progress — rejecting concurrent request`);
+    return NextResponse.json(
+      { status: "error", error: "Enrichment already in progress. Please wait for it to complete." },
+      { status: 409 }
+    );
+  }
 
   try {
     // Rate limiting
@@ -50,12 +61,15 @@ export async function POST(request: NextRequest) {
       walletAddress = wallet.address;
     }
 
+    enrichmentRunning = true;
     const result = await enrichHistoricalPrices(walletAddress, user.id);
+    enrichmentRunning = false;
 
     return NextResponse.json(result, {
       status: result.status === "success" ? 200 : 500,
     });
   } catch (error) {
+    enrichmentRunning = false;
     console.error("[Enrich API] Error:", error);
     return NextResponse.json(
       {

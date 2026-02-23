@@ -188,52 +188,61 @@ const contractCache = new Map<string, { id: string; symbol: string; name: string
  */
 export async function getTokenByContract(
   contractAddress: string,
-  platform: string = "solana"
+  platform: string = "solana",
+  maxRetries: number = 3,
 ): Promise<{ id: string; symbol: string; name: string } | null> {
   // Check cache first
   if (contractCache.has(contractAddress)) {
     return contractCache.get(contractAddress) || null;
   }
 
-  try {
-    await rateLimit();
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await rateLimit();
 
-    const url = `${API_BASE}/coins/${platform}/contract/${contractAddress}`;
-    const params: any = {};
-    if (COINGECKO_API_KEY) {
-      params.x_cg_pro_api_key = COINGECKO_API_KEY;
-    }
+      const url = `${API_BASE}/coins/${platform}/contract/${contractAddress}`;
+      const params: any = {};
+      if (COINGECKO_API_KEY) {
+        params.x_cg_pro_api_key = COINGECKO_API_KEY;
+      }
 
-    const response = await axios.get(url, { params, timeout: 10000 });
-    const data = response.data;
+      const response = await axios.get(url, { params, timeout: 10000 });
+      const data = response.data;
 
-    if (data && data.id && data.symbol) {
-      const result = {
-        id: data.id,
-        symbol: data.symbol.toUpperCase(),
-        name: data.name || data.symbol,
-      };
-      contractCache.set(contractAddress, result);
-      // Also populate dynamic ID cache so getPriceRange/getCoinGeckoId work
-      dynamicIdCache.set(result.symbol, result.id);
-      return result;
-    }
+      if (data && data.id && data.symbol) {
+        const result = {
+          id: data.id,
+          symbol: data.symbol.toUpperCase(),
+          name: data.name || data.symbol,
+        };
+        contractCache.set(contractAddress, result);
+        dynamicIdCache.set(result.symbol, result.id);
+        return result;
+      }
 
-    contractCache.set(contractAddress, null);
-    return null;
-  } catch (error) {
-    if (axios.isAxiosError(error) && error.response?.status === 404) {
-      // Token not on CoinGecko — cache the miss
       contractCache.set(contractAddress, null);
       return null;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        contractCache.set(contractAddress, null);
+        return null;
+      }
+      // 429 = rate limited — wait with exponential backoff and retry
+      if (axios.isAxiosError(error) && error.response?.status === 429 && attempt < maxRetries) {
+        const backoffMs = Math.min(2000 * Math.pow(2, attempt), 30000); // 2s, 4s, 8s... max 30s
+        console.warn(`[CoinGecko] 429 rate limited, retrying in ${backoffMs / 1000}s (attempt ${attempt + 1}/${maxRetries})...`);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      // Other error or max retries exhausted
+      console.warn(
+        `[CoinGecko] Contract lookup failed for ${contractAddress}:`,
+        axios.isAxiosError(error) ? `${error.response?.status} ${error.message}` : error
+      );
+      return null;
     }
-    // Transient error — don't cache so we can retry later
-    console.warn(
-      `[CoinGecko] Contract lookup failed for ${contractAddress}:`,
-      axios.isAxiosError(error) ? `${error.response?.status} ${error.message}` : error
-    );
-    return null;
   }
+  return null;
 }
 
 /**
@@ -607,7 +616,8 @@ export async function getPriceRange(
   symbol: string,
   fromDate: Date,
   toDate: Date,
-  currency: string = "usd"
+  currency: string = "usd",
+  maxRetries: number = 3,
 ): Promise<{ date: string; price: number }[] | null> {
   const coinId = getCoinGeckoId(symbol);
   if (!coinId) {
@@ -615,41 +625,46 @@ export async function getPriceRange(
     return null;
   }
 
-  try {
-    await rateLimit();
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      await rateLimit();
 
-    // Convert dates to Unix timestamps
-    const fromTimestamp = Math.floor(fromDate.getTime() / 1000);
-    const toTimestamp = Math.floor(toDate.getTime() / 1000);
+      const fromTimestamp = Math.floor(fromDate.getTime() / 1000);
+      const toTimestamp = Math.floor(toDate.getTime() / 1000);
 
-    const url = `${API_BASE}/coins/${coinId}/market_chart/range`;
-    const params: any = {
-      vs_currency: currency,
-      from: fromTimestamp,
-      to: toTimestamp,
-    };
+      const url = `${API_BASE}/coins/${coinId}/market_chart/range`;
+      const params: any = {
+        vs_currency: currency,
+        from: fromTimestamp,
+        to: toTimestamp,
+      };
 
-    if (COINGECKO_API_KEY) {
-      params.x_cg_pro_api_key = COINGECKO_API_KEY;
+      if (COINGECKO_API_KEY) {
+        params.x_cg_pro_api_key = COINGECKO_API_KEY;
+      }
+
+      const response = await axios.get(url, { params });
+
+      if (response.data && response.data.prices) {
+        return response.data.prices.map(([timestamp, price]: [number, number]) => ({
+          date: new Date(timestamp).toISOString(),
+          price,
+        }));
+      }
+
+      return null;
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 429 && attempt < maxRetries) {
+        const backoffMs = Math.min(2000 * Math.pow(2, attempt), 30000);
+        console.warn(`[CoinGecko] 429 on getPriceRange(${symbol}), retrying in ${backoffMs / 1000}s...`);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        continue;
+      }
+      console.error(`[CoinGecko] Error fetching price range for ${symbol}:`, error);
+      return null;
     }
-
-    const response = await axios.get(url, { params });
-
-    if (response.data && response.data.prices) {
-      return response.data.prices.map(([timestamp, price]: [number, number]) => ({
-        date: new Date(timestamp).toISOString(),
-        price,
-      }));
-    }
-
-    return null;
-  } catch (error) {
-    console.error(
-      `[CoinGecko] Error fetching price range for ${symbol}:`,
-      error
-    );
-    return null;
   }
+  return null;
 }
 
 /**
