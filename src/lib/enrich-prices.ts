@@ -2,7 +2,6 @@ import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { getCoinGeckoId, getPriceRange, getCurrentPrice } from "@/lib/coingecko";
 import { batchGetTokenOHLCV } from "./onchain-prices";
-import { Decimal } from "@prisma/client/runtime/library";
 
 const log = (msg: string) => console.log(`[Enrich] ${msg}`);
 const warn = (msg: string) => console.warn(`[Enrich] ${msg}`);
@@ -198,8 +197,8 @@ export async function enrichHistoricalPrices(
       return null;
     }
 
-    // Step 7: Update ALL transactions with known-symbol prices
-    log(`Phase A: Updating transactions with known-symbol prices...`);
+    // Step 7: Update ALL transactions with known-symbol prices (bulk SQL)
+    log(`Phase A: Computing price updates for ${transactions.length} transactions...`);
 
     let updated = 0;
     let skipped = 0;
@@ -207,84 +206,102 @@ export async function enrichHistoricalPrices(
     let feeCorrected = 0;
     let incomingPriced = 0;
     const fallbackSymbols = new Set<string>();
-    const BATCH_SIZE = 100;
+    const BATCH_SIZE = 500;
 
     // Track which transactions still need pricing (for Phase B)
     const unpricedTxIds = new Set<number>();
 
-    for (let i = 0; i < transactions.length; i += BATCH_SIZE) {
-      const batch = transactions.slice(i, i + BATCH_SIZE);
-      const updates: Array<ReturnType<typeof prisma.transaction.update>> = [];
+    // Pre-compute all updates in memory first (no DB calls)
+    interface BulkRow {
+      id: number;
+      price_per_unit: number | null;
+      value_usd: number | null;
+      fee_usd: number | null;
+      incoming_value_usd: number | null;
+    }
+    const bulkRows: BulkRow[] = [];
 
-      for (const tx of batch) {
-        const updateData: Record<string, any> = {};
-        let didUpdate = false;
-        let mainUnpriced = false;
-        let incomingUnpriced = false;
+    for (const tx of transactions) {
+      let mainUnpriced = false;
+      let incomingUnpriced = false;
+      let ppu: number | null = null;
+      let vusd: number | null = null;
+      let fusd: number | null = null;
+      let iusd: number | null = null;
+      let didUpdate = false;
 
-        // Main asset price
-        const historicalPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
-        if (historicalPrice !== null) {
-          updateData.price_per_unit = new Decimal(historicalPrice);
-          updateData.value_usd = new Decimal(
-            Math.abs(Number(tx.amount_value) * historicalPrice)
-          );
+      // Main asset price
+      const historicalPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
+      if (historicalPrice !== null) {
+        ppu = historicalPrice;
+        vusd = Math.abs(Number(tx.amount_value) * historicalPrice);
+        didUpdate = true;
+        mainPriced++;
+      } else {
+        mainUnpriced = true;
+      }
+
+      // Fee correction using historical SOL price
+      if (tx.fee_usd && currentSolPrice && currentSolPrice > 0) {
+        const historicalSolPrice = lookupPrice("SOL", tx.tx_timestamp);
+        if (historicalSolPrice !== null) {
+          const feeSol = Number(tx.fee_usd) / currentSolPrice;
+          fusd = feeSol * historicalSolPrice;
           didUpdate = true;
-          mainPriced++;
+          feeCorrected++;
+        }
+      }
+
+      // Incoming asset price
+      if (tx.incoming_asset_symbol && tx.incoming_amount_value) {
+        const incomingPrice = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
+        if (incomingPrice !== null) {
+          iusd = Math.abs(Number(tx.incoming_amount_value) * incomingPrice);
+          didUpdate = true;
+          incomingPriced++;
         } else {
-          mainUnpriced = true;
-        }
-
-        // Fee correction using historical SOL price
-        if (tx.fee_usd && currentSolPrice && currentSolPrice > 0) {
-          const historicalSolPrice = lookupPrice("SOL", tx.tx_timestamp);
-          if (historicalSolPrice !== null) {
-            const feeSol = Number(tx.fee_usd) / currentSolPrice;
-            updateData.fee_usd = new Decimal(feeSol * historicalSolPrice);
-            didUpdate = true;
-            feeCorrected++;
-          }
-        }
-
-        // Incoming asset price
-        if (tx.incoming_asset_symbol && tx.incoming_amount_value) {
-          const incomingPrice = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
-          if (incomingPrice !== null) {
-            updateData.incoming_value_usd = new Decimal(
-              Math.abs(Number(tx.incoming_amount_value) * incomingPrice)
-            );
-            didUpdate = true;
-            incomingPriced++;
-          } else {
-            incomingUnpriced = true;
-          }
-        }
-
-        if (didUpdate) {
-          updates.push(
-            prisma.transaction.update({
-              where: { id: tx.id },
-              data: updateData,
-            })
-          );
-          updated++;
-        }
-
-        // Track if this transaction still needs pricing from Phase B
-        if (mainUnpriced || incomingUnpriced) {
-          unpricedTxIds.add(tx.id);
-          if (!didUpdate) skipped++;
-        } else if (!didUpdate) {
-          skipped++;
+          incomingUnpriced = true;
         }
       }
 
-      if (updates.length > 0) {
-        await prisma.$transaction(updates);
+      if (didUpdate) {
+        bulkRows.push({ id: tx.id, price_per_unit: ppu, value_usd: vusd, fee_usd: fusd, incoming_value_usd: iusd });
+        updated++;
       }
 
-      if ((i + BATCH_SIZE) % 200 === 0 || i + BATCH_SIZE >= transactions.length) {
-        log(`  Phase A progress: ${Math.min(i + BATCH_SIZE, transactions.length)}/${transactions.length} processed (${updated} updated, ${skipped} skipped)`);
+      if (mainUnpriced || incomingUnpriced) {
+        unpricedTxIds.add(tx.id);
+        if (!didUpdate) skipped++;
+      } else if (!didUpdate) {
+        skipped++;
+      }
+    }
+
+    log(`Phase A: ${bulkRows.length} rows to update, ${skipped} skipped — writing to DB in batches of ${BATCH_SIZE}...`);
+
+    // Bulk SQL UPDATE using VALUES + JOIN (one query per batch instead of N individual UPDATEs)
+    for (let i = 0; i < bulkRows.length; i += BATCH_SIZE) {
+      const batch = bulkRows.slice(i, i + BATCH_SIZE);
+
+      const valuesClauses = batch.map(
+        (r) =>
+          `(${r.id}, ${r.price_per_unit ?? "NULL"}::decimal, ${r.value_usd ?? "NULL"}::decimal, ${r.fee_usd ?? "NULL"}::decimal, ${r.incoming_value_usd ?? "NULL"}::decimal)`
+      );
+
+      const sql = `
+        UPDATE "Transaction" AS t SET
+          price_per_unit = COALESCE(v.new_ppu, t.price_per_unit),
+          value_usd = COALESCE(v.new_vusd, t.value_usd),
+          fee_usd = COALESCE(v.new_fusd, t.fee_usd),
+          incoming_value_usd = COALESCE(v.new_iusd, t.incoming_value_usd)
+        FROM (VALUES ${valuesClauses.join(",")})
+          AS v(id, new_ppu, new_vusd, new_fusd, new_iusd)
+        WHERE t.id = v.id
+      `;
+      await prisma.$executeRawUnsafe(sql);
+
+      if ((i + BATCH_SIZE) % 2000 === 0 || i + BATCH_SIZE >= bulkRows.length) {
+        log(`  Phase A DB progress: ${Math.min(i + BATCH_SIZE, bulkRows.length)}/${bulkRows.length} rows written`);
       }
     }
 
@@ -333,74 +350,75 @@ export async function enrichHistoricalPrices(
       const unpricedTransactions = transactions.filter((tx) => unpricedTxIds.has(tx.id));
 
       if (unpricedTransactions.length > 0 && onchainResolved > 0) {
-        log(`Phase B: Updating ${unpricedTransactions.length} previously-unpriced transactions...`);
+        log(`Phase B: Computing updates for ${unpricedTransactions.length} previously-unpriced transactions...`);
 
         let phaseBUpdated = 0;
         let phaseBMainPriced = 0;
         let phaseBIncomingPriced = 0;
+        const phaseBRows: BulkRow[] = [];
 
-        for (let i = 0; i < unpricedTransactions.length; i += BATCH_SIZE) {
-          const batch = unpricedTransactions.slice(i, i + BATCH_SIZE);
-          const updates: Array<ReturnType<typeof prisma.transaction.update>> = [];
+        for (const tx of unpricedTransactions) {
+          let ppu: number | null = null;
+          let vusd: number | null = null;
+          let iusd: number | null = null;
+          let didUpdate = false;
 
-          for (const tx of batch) {
-            const updateData: Record<string, any> = {};
-            let didUpdate = false;
-
-            // Try main asset price (may now be in priceMap from OHLCV data)
-            const historicalPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
-            if (historicalPrice !== null) {
-              // Only update if not already priced in Phase A
-              const existingPrice = priceMap.get(`${tx.asset_symbol.toUpperCase()}:${tx.tx_timestamp.toISOString().split("T")[0]}`);
-              if (existingPrice !== undefined) {
-                updateData.price_per_unit = new Decimal(historicalPrice);
-                updateData.value_usd = new Decimal(
-                  Math.abs(Number(tx.amount_value) * historicalPrice)
-                );
-                didUpdate = true;
-                phaseBMainPriced++;
-              }
-            } else {
-              if (!getCoinGeckoId(tx.asset_symbol)) {
-                fallbackSymbols.add(tx.asset_symbol);
-              }
-            }
-
-            // Try incoming asset price
-            if (tx.incoming_asset_symbol && tx.incoming_amount_value) {
-              const incomingPrice = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
-              if (incomingPrice !== null) {
-                updateData.incoming_value_usd = new Decimal(
-                  Math.abs(Number(tx.incoming_amount_value) * incomingPrice)
-                );
-                didUpdate = true;
-                phaseBIncomingPriced++;
-              } else if (!getCoinGeckoId(tx.incoming_asset_symbol)) {
-                fallbackSymbols.add(tx.incoming_asset_symbol);
-              }
-            }
-
-            if (didUpdate) {
-              updates.push(
-                prisma.transaction.update({
-                  where: { id: tx.id },
-                  data: updateData,
-                })
-              );
-              phaseBUpdated++;
+          // Try main asset price (may now be in priceMap from OHLCV data)
+          const historicalPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
+          if (historicalPrice !== null) {
+            ppu = historicalPrice;
+            vusd = Math.abs(Number(tx.amount_value) * historicalPrice);
+            didUpdate = true;
+            phaseBMainPriced++;
+          } else {
+            if (!getCoinGeckoId(tx.asset_symbol)) {
+              fallbackSymbols.add(tx.asset_symbol);
             }
           }
 
-          if (updates.length > 0) {
-            await prisma.$transaction(updates);
+          // Try incoming asset price
+          if (tx.incoming_asset_symbol && tx.incoming_amount_value) {
+            const incomingPrice = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
+            if (incomingPrice !== null) {
+              iusd = Math.abs(Number(tx.incoming_amount_value) * incomingPrice);
+              didUpdate = true;
+              phaseBIncomingPriced++;
+            } else if (!getCoinGeckoId(tx.incoming_asset_symbol)) {
+              fallbackSymbols.add(tx.incoming_asset_symbol);
+            }
           }
+
+          if (didUpdate) {
+            phaseBRows.push({ id: tx.id, price_per_unit: ppu, value_usd: vusd, fee_usd: null, incoming_value_usd: iusd });
+            phaseBUpdated++;
+          }
+        }
+
+        // Bulk SQL UPDATE for Phase B
+        log(`Phase B: ${phaseBRows.length} rows to update — writing to DB...`);
+        for (let i = 0; i < phaseBRows.length; i += BATCH_SIZE) {
+          const batch = phaseBRows.slice(i, i + BATCH_SIZE);
+          const valuesClauses = batch.map(
+            (r) =>
+              `(${r.id}, ${r.price_per_unit ?? "NULL"}::decimal, ${r.value_usd ?? "NULL"}::decimal, ${r.fee_usd ?? "NULL"}::decimal, ${r.incoming_value_usd ?? "NULL"}::decimal)`
+          );
+          const sql = `
+            UPDATE "Transaction" AS t SET
+              price_per_unit = COALESCE(v.new_ppu, t.price_per_unit),
+              value_usd = COALESCE(v.new_vusd, t.value_usd),
+              fee_usd = COALESCE(v.new_fusd, t.fee_usd),
+              incoming_value_usd = COALESCE(v.new_iusd, t.incoming_value_usd)
+            FROM (VALUES ${valuesClauses.join(",")})
+              AS v(id, new_ppu, new_vusd, new_fusd, new_iusd)
+            WHERE t.id = v.id
+          `;
+          await prisma.$executeRawUnsafe(sql);
         }
 
         // Adjust totals
         updated += phaseBUpdated;
         mainPriced += phaseBMainPriced;
         incomingPriced += phaseBIncomingPriced;
-        // Reduce skipped count by whatever we just priced
         skipped = Math.max(0, skipped - phaseBUpdated);
 
         const phaseBDuration = ((Date.now() - phaseBStart) / 1000).toFixed(1);
