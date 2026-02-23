@@ -164,32 +164,6 @@ export async function GET(request: NextRequest) {
       whereConditions.push({ identified: false });
     }
 
-    // Apply zero transactions filter
-    // Filter out transactions that display as $0.00 (value_usd < 0.005 rounds to 0.00)
-    if (hideZeroTransactions) {
-      whereConditions.push({
-        NOT: {
-          OR: [
-            { type: "Zero Transaction" },
-            { value_usd: { lt: 0.005 } },
-          ],
-        },
-      });
-    }
-
-    // Apply spam transactions filter
-    // BUG-019 fix: Use correct NOT with OR logic to filter out matching records
-    if (hideSpamTransactions) {
-      whereConditions.push({
-        NOT: {
-          OR: [
-            { type: { contains: "Spam", mode: "insensitive" } },
-            { asset_symbol: { contains: "unknown", mode: "insensitive" } },
-          ],
-        },
-      });
-    }
-
     // Apply wallet filter
     if (walletFilter) {
       whereConditions.push({ wallet_address: walletFilter });
@@ -203,6 +177,35 @@ export async function GET(request: NextRequest) {
       const endDate = new Date(dateTo);
       endDate.setDate(endDate.getDate() + 1); // include full end date
       whereConditions.push({ tx_timestamp: { lt: endDate } });
+    }
+
+    // Build stats-only where (before cosmetic filters like hideZero/hideSpam)
+    const statsWhereConditions = [...whereConditions];
+    const statsWhere: Prisma.TransactionWhereInput =
+      statsWhereConditions.length > 0 ? { AND: statsWhereConditions } : {};
+
+    // Apply zero transactions filter (cosmetic — only affects displayed list, not stats)
+    if (hideZeroTransactions) {
+      whereConditions.push({
+        NOT: {
+          OR: [
+            { type: "Zero Transaction" },
+            { value_usd: { lt: 0.005 } },
+          ],
+        },
+      });
+    }
+
+    // Apply spam transactions filter (cosmetic — only affects displayed list, not stats)
+    if (hideSpamTransactions) {
+      whereConditions.push({
+        NOT: {
+          OR: [
+            { type: { contains: "Spam", mode: "insensitive" } },
+            { asset_symbol: { contains: "unknown", mode: "insensitive" } },
+          ],
+        },
+      });
     }
 
     // Combine all conditions with AND
@@ -324,15 +327,16 @@ export async function GET(request: NextRequest) {
       ...getTypesForCategory("staking"), ...getTypesForCategory("defi"),
       ...getTypesForCategory("nft"), ...getTypesForCategory("income"),
     ];
+    // Stats use statsWhere (excludes cosmetic filters like hideZero/hideSpam so cash flow is stable)
     const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, outflowAgg, inflowAgg, swapIncomingAgg] = await Promise.all([
-      prisma.transaction.count({ where: { ...where, type: { in: [...getTypesForCategory("buy"), ...PNL_OUTFLOW_TYPES.filter(t => t === "NFT_PURCHASE")] } } }),
-      prisma.transaction.count({ where: { ...where, type: { in: [...getTypesForCategory("sell"), ...PNL_INFLOW_TYPES.filter(t => t === "NFT_SALE")] } } }),
-      prisma.transaction.count({ where: { ...where, type: { in: allKnownTypes } } }),
-      prisma.transaction.count({ where: { ...where, NOT: { value_usd: 0 } } }),
-      prisma.transaction.aggregate({ where: { ...where, type: { in: PNL_OUTFLOW_TYPES } }, _sum: { value_usd: true } }),
-      prisma.transaction.aggregate({ where: { ...where, type: { in: PNL_INFLOW_TYPES }, NOT: { value_usd: 0 } }, _sum: { value_usd: true } }),
+      prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("buy"), ...PNL_OUTFLOW_TYPES.filter(t => t === "NFT_PURCHASE")] } } }),
+      prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("sell"), ...PNL_INFLOW_TYPES.filter(t => t === "NFT_SALE")] } } }),
+      prisma.transaction.count({ where: { ...statsWhere, type: { in: allKnownTypes } } }),
+      prisma.transaction.count({ where: { ...statsWhere, NOT: { value_usd: 0 } } }),
+      prisma.transaction.aggregate({ where: { ...statsWhere, type: { in: PNL_OUTFLOW_TYPES } }, _sum: { value_usd: true } }),
+      prisma.transaction.aggregate({ where: { ...statsWhere, type: { in: PNL_INFLOW_TYPES }, NOT: { value_usd: 0 } }, _sum: { value_usd: true } }),
       // Sum incoming_value_usd for swaps (the received side of a swap)
-      prisma.transaction.aggregate({ where: { ...where, type: { in: SWAP_TYPES }, NOT: { incoming_value_usd: null } }, _sum: { incoming_value_usd: true } }),
+      prisma.transaction.aggregate({ where: { ...statsWhere, type: { in: SWAP_TYPES }, NOT: { incoming_value_usd: null } }, _sum: { incoming_value_usd: true } }),
     ]);
 
     const otherCount = totalCount - buyCount - sellCount;
