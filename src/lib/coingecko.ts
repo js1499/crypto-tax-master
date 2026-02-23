@@ -298,12 +298,12 @@ export async function resolveByContractAddress(
       if (currentSymbol !== result.symbol) {
         symbolUpdates.set(currentSymbol, result.symbol);
       }
-      // Log progress every 50
-      if ((i + 1) % 50 === 0) {
-        console.log(`[CoinGecko]   Contract resolution progress: ${i + 1}/${toResolve.length}`);
-      }
     } else {
       failed.push(contractAddress);
+    }
+    // Log progress every 200
+    if ((i + 1) % 200 === 0) {
+      console.log(`[CoinGecko]   Contract resolution progress: ${i + 1}/${toResolve.length} (${resolved.size} resolved, ${failed.length} failed)`);
     }
   }
 

@@ -314,8 +314,8 @@ export async function enrichHistoricalPrices(
         await prisma.$transaction(updates);
       }
 
-      if ((i + BATCH_SIZE) % 500 === 0 || i + BATCH_SIZE >= transactions.length) {
-        log(`  Progress: ${Math.min(i + BATCH_SIZE, transactions.length)}/${transactions.length} processed`);
+      if ((i + BATCH_SIZE) % 200 === 0 || i + BATCH_SIZE >= transactions.length) {
+        log(`  Progress: ${Math.min(i + BATCH_SIZE, transactions.length)}/${transactions.length} processed (${updated} updated, ${skipped} skipped)`);
       }
     }
 
