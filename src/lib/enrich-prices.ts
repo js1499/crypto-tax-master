@@ -1,6 +1,7 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { getCoinGeckoId, getPriceRange, getCurrentPrice, resolveUnknownSymbols, resolveByContractAddress } from "@/lib/coingecko";
+import { getCoinGeckoId, getPriceRange, getCurrentPrice } from "@/lib/coingecko";
+import { batchGetTokenOHLCV } from "./onchain-prices";
 import { Decimal } from "@prisma/client/runtime/library";
 
 const log = (msg: string) => console.log(`[Enrich] ${msg}`);
@@ -14,8 +15,8 @@ export interface EnrichResult {
   mainPriced: number;
   feeCorrected: number;
   incomingPriced: number;
-  symbolsFixed: number;
-  contractResolved: number;
+  onchainResolved: number;
+  onchainFailed: number;
   fallbackSymbols: string[];
   durationMs: number;
   error?: string;
@@ -23,7 +24,9 @@ export interface EnrichResult {
 
 /**
  * Enrich transactions with CoinGecko historical prices.
- * Can be called from the API route or directly from the sync route.
+ * Two-phase approach:
+ *   Phase A: Price known symbols (SOL, USDC, etc.) immediately
+ *   Phase B: Price unknown tokens via on-chain OHLCV by mint address
  *
  * @param walletAddress - if provided, only enrich transactions for this wallet address
  * @param userId - required for all-transactions mode (when walletAddress is omitted)
@@ -76,7 +79,7 @@ export async function enrichHistoricalPrices(
       label = `user ${userId} (all transactions)`;
     } else {
       log(`No walletAddress or userId provided, nothing to enrich`);
-      return { status: "success", updated: 0, total: 0, skipped: 0, mainPriced: 0, feeCorrected: 0, incomingPriced: 0, symbolsFixed: 0, contractResolved: 0, fallbackSymbols: [], durationMs: 0 };
+      return { status: "success", updated: 0, total: 0, skipped: 0, mainPriced: 0, feeCorrected: 0, incomingPriced: 0, onchainResolved: 0, onchainFailed: 0, fallbackSymbols: [], durationMs: 0 };
     }
 
     // ── Step 2: Fetch transactions ───────────────────────────────────
@@ -104,7 +107,7 @@ export async function enrichHistoricalPrices(
     log(`Found ${transactions.length} transactions`);
 
     if (transactions.length === 0) {
-      return { status: "success", updated: 0, total: 0, skipped: 0, mainPriced: 0, feeCorrected: 0, incomingPriced: 0, symbolsFixed: 0, contractResolved: 0, fallbackSymbols: [], durationMs: Date.now() - startTime };
+      return { status: "success", updated: 0, total: 0, skipped: 0, mainPriced: 0, feeCorrected: 0, incomingPriced: 0, onchainResolved: 0, onchainFailed: 0, fallbackSymbols: [], durationMs: Date.now() - startTime };
     }
 
     // ── Step 3: Date range ───────────────────────────────────────────
@@ -119,71 +122,39 @@ export async function enrichHistoricalPrices(
 
     log(`Date range: ${rangeStart.toISOString().split("T")[0]} → ${rangeEnd.toISOString().split("T")[0]}`);
 
-    // ── Step 4: Collect unique symbols and contract addresses ─────────
+    // ── Step 4: Collect symbols + split known vs unknown ─────────────
     const allSymbols = new Set<string>();
     allSymbols.add("SOL");
-    const contractsToResolve = new Map<string, string>();
 
     for (const tx of transactions) {
       if (tx.asset_symbol) allSymbols.add(tx.asset_symbol.toUpperCase());
       if (tx.incoming_asset_symbol) allSymbols.add(tx.incoming_asset_symbol.toUpperCase());
+    }
+
+    const knownSymbols = Array.from(allSymbols).filter((s) => getCoinGeckoId(s));
+    const unknownMints = new Map<string, string>(); // mint address → symbol
+    for (const tx of transactions) {
       if (tx.asset_address && !getCoinGeckoId(tx.asset_symbol)) {
-        contractsToResolve.set(tx.asset_address, tx.asset_symbol);
+        unknownMints.set(tx.asset_address, tx.asset_symbol);
       }
       if (tx.incoming_asset_address && tx.incoming_asset_symbol && !getCoinGeckoId(tx.incoming_asset_symbol)) {
-        contractsToResolve.set(tx.incoming_asset_address, tx.incoming_asset_symbol);
+        unknownMints.set(tx.incoming_asset_address, tx.incoming_asset_symbol);
       }
     }
 
-    log(`${allSymbols.size} unique symbol(s), ${contractsToResolve.size} with contract addresses to resolve`);
+    log(`${allSymbols.size} unique symbols: ${knownSymbols.length} known, ${unknownMints.size} unknown mints`);
 
-    // ── Step 5a: Resolve tokens by contract address ──────────────────
-    const symbolMap = new Map<string, string>();
-    let contractResolved = 0;
+    // ══════════════════════════════════════════════════════════════════
+    // ── PHASE A: Price known symbols (fast) ──────────────────────────
+    // ══════════════════════════════════════════════════════════════════
+    log(`── Phase A: Pricing ${knownSymbols.length} known symbols ──`);
 
-    if (contractsToResolve.size > 0) {
-      log(`Resolving ${contractsToResolve.size} token(s) by contract address...`);
-      const contractEntries = Array.from(contractsToResolve.entries()).map(
-        ([addr, sym]) => ({ contractAddress: addr, currentSymbol: sym })
-      );
-      const { resolved: contractResults, failed: contractFailed, symbolUpdates } =
-        await resolveByContractAddress(contractEntries);
-      contractResolved = contractResults.size;
-
-      for (const [, tokenInfo] of contractResults) {
-        allSymbols.add(tokenInfo.symbol);
-      }
-      for (const [oldSym, newSym] of symbolUpdates) {
-        symbolMap.set(oldSym, newSym);
-      }
-
-      log(`Contract resolution: ${contractResolved} found on CoinGecko, ${contractFailed.length} not found`);
-    }
-
-    // ── Step 5b: Resolve remaining unknown symbols via search ─────────
-    const stillUnknown = Array.from(allSymbols).filter(
-      (s) => !getCoinGeckoId(s) && !s.includes("...")
-    );
-    if (stillUnknown.length > 0) {
-      log(`${stillUnknown.length} symbol(s) still unresolved, searching by name...`);
-      const { resolved, failed } = await resolveUnknownSymbols(stillUnknown);
-      if (resolved.length > 0) log(`Search resolved: ${resolved.join(", ")}`);
-      if (failed.length > 0) warn(`Search failed: ${failed.join(", ")}`);
-    }
-
-    const priceableSymbols = Array.from(allSymbols).filter((s) => getCoinGeckoId(s));
-    const unpriceableSymbols = Array.from(allSymbols).filter((s) => !getCoinGeckoId(s));
-
-    log(`Priceable: ${priceableSymbols.length} symbols | Unpriceable: ${unpriceableSymbols.length} symbols`);
-
-    // ── Step 6: Fetch historical price ranges ────────────────────────
-    log(`Fetching price ranges for ${priceableSymbols.length} symbol(s)...`);
-
+    // Step 5: Fetch historical price ranges for known symbols
     const priceMap = new Map<string, number>();
     const priceFetchFailed: string[] = [];
 
-    for (let idx = 0; idx < priceableSymbols.length; idx++) {
-      const symbol = priceableSymbols[idx];
+    for (let idx = 0; idx < knownSymbols.length; idx++) {
+      const symbol = knownSymbols[idx];
       try {
         const prices = await getPriceRange(symbol, rangeStart, rangeEnd);
         if (prices && prices.length > 0) {
@@ -191,23 +162,23 @@ export async function enrichHistoricalPrices(
             const dateKey = entry.date.split("T")[0];
             priceMap.set(`${symbol}:${dateKey}`, entry.price);
           }
-          log(`  [${idx + 1}/${priceableSymbols.length}] ${symbol}: ${prices.length} daily prices fetched`);
+          log(`  [${idx + 1}/${knownSymbols.length}] ${symbol}: ${prices.length} daily prices fetched`);
         } else {
           priceFetchFailed.push(symbol);
-          warn(`  [${idx + 1}/${priceableSymbols.length}] ${symbol}: no price data returned`);
+          warn(`  [${idx + 1}/${knownSymbols.length}] ${symbol}: no price data returned`);
         }
       } catch (err) {
         priceFetchFailed.push(symbol);
-        warn(`  [${idx + 1}/${priceableSymbols.length}] ${symbol}: fetch error — ${err instanceof Error ? err.message : err}`);
+        warn(`  [${idx + 1}/${knownSymbols.length}] ${symbol}: fetch error — ${err instanceof Error ? err.message : err}`);
       }
     }
 
-    log(`Price map built: ${priceMap.size} date-price entries`);
+    log(`Phase A price map: ${priceMap.size} date-price entries`);
     if (priceFetchFailed.length > 0) {
       warn(`Failed to fetch prices for: ${priceFetchFailed.join(", ")}`);
     }
 
-    // ── Step 7: Current SOL price for fee correction ─────────────────
+    // Step 6: Current SOL price for fee correction
     const currentSolPrice = await getCurrentPrice("SOL");
     log(`Current SOL price for fee correction: $${currentSolPrice?.toFixed(2) || "N/A"}`);
 
@@ -227,17 +198,19 @@ export async function enrichHistoricalPrices(
       return null;
     }
 
-    // ── Step 8: Update transactions in batches ───────────────────────
-    log(`Updating transactions in batches of 100...`);
+    // Step 7: Update ALL transactions with known-symbol prices
+    log(`Phase A: Updating transactions with known-symbol prices...`);
 
     let updated = 0;
     let skipped = 0;
     let mainPriced = 0;
     let feeCorrected = 0;
     let incomingPriced = 0;
-    let symbolsFixed = 0;
     const fallbackSymbols = new Set<string>();
     const BATCH_SIZE = 100;
+
+    // Track which transactions still need pricing (for Phase B)
+    const unpricedTxIds = new Set<number>();
 
     for (let i = 0; i < transactions.length; i += BATCH_SIZE) {
       const batch = transactions.slice(i, i + BATCH_SIZE);
@@ -246,17 +219,11 @@ export async function enrichHistoricalPrices(
       for (const tx of batch) {
         const updateData: Record<string, any> = {};
         let didUpdate = false;
+        let mainUnpriced = false;
+        let incomingUnpriced = false;
 
-        let effectiveSymbol = tx.asset_symbol;
-        const betterSymbol = symbolMap.get(tx.asset_symbol);
-        if (betterSymbol) {
-          effectiveSymbol = betterSymbol;
-          updateData.asset_symbol = betterSymbol;
-          didUpdate = true;
-          symbolsFixed++;
-        }
-
-        const historicalPrice = lookupPrice(effectiveSymbol, tx.tx_timestamp);
+        // Main asset price
+        const historicalPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
         if (historicalPrice !== null) {
           updateData.price_per_unit = new Decimal(historicalPrice);
           updateData.value_usd = new Decimal(
@@ -265,11 +232,10 @@ export async function enrichHistoricalPrices(
           didUpdate = true;
           mainPriced++;
         } else {
-          if (!getCoinGeckoId(effectiveSymbol)) {
-            fallbackSymbols.add(effectiveSymbol);
-          }
+          mainUnpriced = true;
         }
 
+        // Fee correction using historical SOL price
         if (tx.fee_usd && currentSolPrice && currentSolPrice > 0) {
           const historicalSolPrice = lookupPrice("SOL", tx.tx_timestamp);
           if (historicalSolPrice !== null) {
@@ -280,20 +246,17 @@ export async function enrichHistoricalPrices(
           }
         }
 
+        // Incoming asset price
         if (tx.incoming_asset_symbol && tx.incoming_amount_value) {
-          const effectiveIncoming = symbolMap.get(tx.incoming_asset_symbol) || tx.incoming_asset_symbol;
-          if (effectiveIncoming !== tx.incoming_asset_symbol) {
-            updateData.incoming_asset_symbol = effectiveIncoming;
-          }
-          const incomingPrice = lookupPrice(effectiveIncoming, tx.tx_timestamp);
+          const incomingPrice = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
           if (incomingPrice !== null) {
             updateData.incoming_value_usd = new Decimal(
               Math.abs(Number(tx.incoming_amount_value) * incomingPrice)
             );
             didUpdate = true;
             incomingPriced++;
-          } else if (!getCoinGeckoId(effectiveIncoming)) {
-            fallbackSymbols.add(effectiveIncoming);
+          } else {
+            incomingUnpriced = true;
           }
         }
 
@@ -305,7 +268,13 @@ export async function enrichHistoricalPrices(
             })
           );
           updated++;
-        } else {
+        }
+
+        // Track if this transaction still needs pricing from Phase B
+        if (mainUnpriced || incomingUnpriced) {
+          unpricedTxIds.add(tx.id);
+          if (!didUpdate) skipped++;
+        } else if (!didUpdate) {
           skipped++;
         }
       }
@@ -315,11 +284,136 @@ export async function enrichHistoricalPrices(
       }
 
       if ((i + BATCH_SIZE) % 200 === 0 || i + BATCH_SIZE >= transactions.length) {
-        log(`  Progress: ${Math.min(i + BATCH_SIZE, transactions.length)}/${transactions.length} processed (${updated} updated, ${skipped} skipped)`);
+        log(`  Phase A progress: ${Math.min(i + BATCH_SIZE, transactions.length)}/${transactions.length} processed (${updated} updated, ${skipped} skipped)`);
       }
     }
 
-    // ── Step 9: Summary ──────────────────────────────────────────────
+    const phaseADuration = ((Date.now() - startTime) / 1000).toFixed(1);
+    log(`── Phase A complete (${phaseADuration}s) ──`);
+    log(`  Known-symbol prices: ${mainPriced} main, ${feeCorrected} fees, ${incomingPriced} incoming`);
+    log(`  Unpriced transactions: ${unpricedTxIds.size} (candidates for Phase B)`);
+
+    // ══════════════════════════════════════════════════════════════════
+    // ── PHASE B: On-chain OHLCV for unknown tokens ───────────────────
+    // ══════════════════════════════════════════════════════════════════
+    let onchainResolved = 0;
+    let onchainFailed = 0;
+
+    if (unknownMints.size > 0) {
+      log(`── Phase B: Fetching on-chain OHLCV for ${unknownMints.size} unknown mints ──`);
+
+      const phaseBStart = Date.now();
+      const mintAddresses = Array.from(unknownMints.keys());
+
+      const ohlcvResults = await batchGetTokenOHLCV(
+        mintAddresses,
+        rangeStart,
+        rangeEnd,
+        (done, total) => {
+          log(`  Phase B OHLCV progress: ${done}/${total} mints processed (${onchainResolved} resolved)`);
+        },
+      );
+
+      // Build price entries from OHLCV close prices
+      for (const [mint, entries] of ohlcvResults) {
+        const symbol = unknownMints.get(mint);
+        if (!symbol) continue;
+        onchainResolved++;
+
+        for (const entry of entries) {
+          const dateStr = new Date(entry.timestamp * 1000).toISOString().split("T")[0];
+          priceMap.set(`${symbol.toUpperCase()}:${dateStr}`, entry.close);
+        }
+      }
+
+      onchainFailed = unknownMints.size - onchainResolved;
+      log(`Phase B OHLCV: ${onchainResolved} tokens resolved, ${onchainFailed} not found`);
+
+      // Step 10: Update remaining unpriced transactions with Phase B prices
+      const unpricedTransactions = transactions.filter((tx) => unpricedTxIds.has(tx.id));
+
+      if (unpricedTransactions.length > 0 && onchainResolved > 0) {
+        log(`Phase B: Updating ${unpricedTransactions.length} previously-unpriced transactions...`);
+
+        let phaseBUpdated = 0;
+        let phaseBMainPriced = 0;
+        let phaseBIncomingPriced = 0;
+
+        for (let i = 0; i < unpricedTransactions.length; i += BATCH_SIZE) {
+          const batch = unpricedTransactions.slice(i, i + BATCH_SIZE);
+          const updates: Array<ReturnType<typeof prisma.transaction.update>> = [];
+
+          for (const tx of batch) {
+            const updateData: Record<string, any> = {};
+            let didUpdate = false;
+
+            // Try main asset price (may now be in priceMap from OHLCV data)
+            const historicalPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
+            if (historicalPrice !== null) {
+              // Only update if not already priced in Phase A
+              const existingPrice = priceMap.get(`${tx.asset_symbol.toUpperCase()}:${tx.tx_timestamp.toISOString().split("T")[0]}`);
+              if (existingPrice !== undefined) {
+                updateData.price_per_unit = new Decimal(historicalPrice);
+                updateData.value_usd = new Decimal(
+                  Math.abs(Number(tx.amount_value) * historicalPrice)
+                );
+                didUpdate = true;
+                phaseBMainPriced++;
+              }
+            } else {
+              if (!getCoinGeckoId(tx.asset_symbol)) {
+                fallbackSymbols.add(tx.asset_symbol);
+              }
+            }
+
+            // Try incoming asset price
+            if (tx.incoming_asset_symbol && tx.incoming_amount_value) {
+              const incomingPrice = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
+              if (incomingPrice !== null) {
+                updateData.incoming_value_usd = new Decimal(
+                  Math.abs(Number(tx.incoming_amount_value) * incomingPrice)
+                );
+                didUpdate = true;
+                phaseBIncomingPriced++;
+              } else if (!getCoinGeckoId(tx.incoming_asset_symbol)) {
+                fallbackSymbols.add(tx.incoming_asset_symbol);
+              }
+            }
+
+            if (didUpdate) {
+              updates.push(
+                prisma.transaction.update({
+                  where: { id: tx.id },
+                  data: updateData,
+                })
+              );
+              phaseBUpdated++;
+            }
+          }
+
+          if (updates.length > 0) {
+            await prisma.$transaction(updates);
+          }
+        }
+
+        // Adjust totals
+        updated += phaseBUpdated;
+        mainPriced += phaseBMainPriced;
+        incomingPriced += phaseBIncomingPriced;
+        // Reduce skipped count by whatever we just priced
+        skipped = Math.max(0, skipped - phaseBUpdated);
+
+        const phaseBDuration = ((Date.now() - phaseBStart) / 1000).toFixed(1);
+        log(`── Phase B complete (${phaseBDuration}s) ──`);
+        log(`  On-chain prices applied: ${phaseBMainPriced} main, ${phaseBIncomingPriced} incoming`);
+      } else {
+        log(`Phase B: No new prices to apply (${onchainResolved} resolved but 0 unpriced transactions)`);
+      }
+    } else {
+      log(`── Phase B: Skipped (no unknown mints) ──`);
+    }
+
+    // ── Summary ──────────────────────────────────────────────────────
     const fallbackList = Array.from(fallbackSymbols);
     const durationMs = Date.now() - startTime;
 
@@ -327,8 +421,7 @@ export async function enrichHistoricalPrices(
     log(`  Duration:        ${(durationMs / 1000).toFixed(1)}s`);
     log(`  Transactions:    ${transactions.length} total`);
     log(`  Updated:         ${updated} (${mainPriced} main prices, ${feeCorrected} fees, ${incomingPriced} incoming prices)`);
-    log(`  Symbols fixed:   ${symbolsFixed} (truncated mints → real names)`);
-    log(`  Contracts resolved: ${contractResolved} via on-chain address`);
+    log(`  On-chain OHLCV:  ${onchainResolved} tokens resolved, ${onchainFailed} not found`);
     log(`  Skipped:         ${skipped} (no price data available)`);
     if (fallbackList.length > 0) {
       log(`  Unpriceable:     ${fallbackList.join(", ")}`);
@@ -342,8 +435,8 @@ export async function enrichHistoricalPrices(
       mainPriced,
       feeCorrected,
       incomingPriced,
-      symbolsFixed,
-      contractResolved,
+      onchainResolved,
+      onchainFailed,
       fallbackSymbols: fallbackList,
       durationMs,
     };
@@ -357,8 +450,8 @@ export async function enrichHistoricalPrices(
       mainPriced: 0,
       feeCorrected: 0,
       incomingPriced: 0,
-      symbolsFixed: 0,
-      contractResolved: 0,
+      onchainResolved: 0,
+      onchainFailed: 0,
       fallbackSymbols: [],
       durationMs: Date.now() - startTime,
       error: error instanceof Error ? error.message : "Unknown error",

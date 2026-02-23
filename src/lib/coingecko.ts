@@ -6,10 +6,10 @@ const COINGECKO_API_BASE = "https://api.coingecko.com/api/v3";
 const COINGECKO_PRO_API_BASE = "https://pro-api.coingecko.com/api/v3";
 
 // Get API key from environment (optional - free tier works without key)
-const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY || "";
+export const COINGECKO_API_KEY = process.env.COINGECKO_API_KEY || "";
 
 // Use Pro API if key is provided, otherwise use free API
-const API_BASE = COINGECKO_API_KEY
+export const API_BASE = COINGECKO_API_KEY
   ? COINGECKO_PRO_API_BASE
   : COINGECKO_API_BASE;
 
@@ -316,7 +316,7 @@ export async function resolveByContractAddress(
 /**
  * Rate limiting helper
  */
-async function rateLimit(): Promise<void> {
+export async function rateLimit(): Promise<void> {
   const now = Date.now();
   const timeSinceLastCall = now - lastApiCall;
   if (timeSinceLastCall < RATE_LIMIT_DELAY) {
