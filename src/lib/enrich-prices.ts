@@ -289,7 +289,7 @@ export async function enrichHistoricalPrices(
       );
 
       const sql = `
-        UPDATE "Transaction" AS t SET
+        UPDATE "transactions" AS t SET
           price_per_unit = COALESCE(v.new_ppu, t.price_per_unit),
           value_usd = COALESCE(v.new_vusd, t.value_usd),
           fee_usd = COALESCE(v.new_fusd, t.fee_usd),
@@ -403,7 +403,7 @@ export async function enrichHistoricalPrices(
               `(${r.id}, ${r.price_per_unit ?? "NULL"}::decimal, ${r.value_usd ?? "NULL"}::decimal, ${r.fee_usd ?? "NULL"}::decimal, ${r.incoming_value_usd ?? "NULL"}::decimal)`
           );
           const sql = `
-            UPDATE "Transaction" AS t SET
+            UPDATE "transactions" AS t SET
               price_per_unit = COALESCE(v.new_ppu, t.price_per_unit),
               value_usd = COALESCE(v.new_vusd, t.value_usd),
               fee_usd = COALESCE(v.new_fusd, t.fee_usd),
