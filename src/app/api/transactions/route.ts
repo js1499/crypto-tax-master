@@ -165,13 +165,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Apply zero transactions filter
-    // BUG-019 fix: Use correct NOT with OR logic to filter out matching records
+    // Filter out transactions that display as $0.00 (value_usd < 0.005 rounds to 0.00)
     if (hideZeroTransactions) {
       whereConditions.push({
         NOT: {
           OR: [
             { type: "Zero Transaction" },
-            { value_usd: 0 },
+            { value_usd: { lt: 0.005 } },
           ],
         },
       });
