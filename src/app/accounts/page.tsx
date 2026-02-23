@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PlusCircle, Wallet, Building, ExternalLink, AlertCircle, CheckCircle, RefreshCw, RotateCw, Trash2, Link2 } from "lucide-react";
+import { PlusCircle, Wallet, Building, ExternalLink, AlertCircle, CheckCircle, RefreshCw, RotateCw, Trash2, Link2, DollarSign } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -62,6 +62,7 @@ function AccountsContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [enriching, setEnriching] = useState<string | null>(null);
   
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -192,7 +193,7 @@ function AccountsContent() {
     }
   };
 
-  // Function to sync wallet transactions and enrich prices
+  // Function to sync wallet transactions (sync only, no enrichment)
   const handleSyncWallet = async (walletId: string) => {
     setSyncing(walletId);
     try {
@@ -211,31 +212,6 @@ function AccountsContent() {
       toast.success(
         `Synced ${syncData.transactionsAdded} new, ${syncData.transactionsSkipped || 0} existing`
       );
-
-      // Always enrich historical prices
-      toast.info("Looking up historical prices...");
-      try {
-        console.log("[Accounts] Calling enrich-historical for wallet:", walletId);
-        const enrichResponse = await fetch("/api/prices/enrich-historical", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ walletId }),
-        });
-        console.log("[Accounts] Enrich response status:", enrichResponse.status);
-        const enrichData = await enrichResponse.json();
-        console.log("[Accounts] Enrich response data:", enrichData);
-        if (enrichResponse.ok) {
-          toast.success(
-            `Updated ${enrichData.updated}/${enrichData.total} transactions with historical prices (${enrichData.fallbackSymbols?.length || 0} symbols unpriced)`
-          );
-        } else {
-          toast.error(`Price enrichment failed: ${enrichData.error || enrichResponse.status}`);
-        }
-      } catch (enrichError) {
-        console.error("[Accounts] Enrich fetch error:", enrichError);
-        toast.error("Price enrichment request failed — check console for details");
-      }
-
       fetchWallets();
     } catch (error) {
       console.error("[Accounts] Error syncing wallet:", error);
@@ -244,6 +220,36 @@ function AccountsContent() {
       );
     } finally {
       setSyncing(null);
+    }
+  };
+
+  // Function to enrich wallet transactions with historical prices (separate from sync)
+  const handleEnrichWallet = async (walletId: string) => {
+    setEnriching(walletId);
+    try {
+      toast.info("Looking up historical prices — this may take a few minutes...");
+      const enrichResponse = await fetch("/api/prices/enrich-historical", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ walletId }),
+      });
+      const enrichData = await enrichResponse.json();
+      console.log("[Accounts] Enrich response:", enrichData);
+      if (enrichResponse.ok) {
+        toast.success(
+          `Updated ${enrichData.updated}/${enrichData.total} transactions with historical prices`
+        );
+        if (enrichData.fallbackSymbols?.length > 0) {
+          toast.info(`${enrichData.fallbackSymbols.length} symbols could not be priced`);
+        }
+      } else {
+        toast.error(`Price enrichment failed: ${enrichData.error || enrichResponse.status}`);
+      }
+    } catch (error) {
+      console.error("[Accounts] Enrich error:", error);
+      toast.error("Price enrichment request failed");
+    } finally {
+      setEnriching(null);
     }
   };
 
@@ -526,25 +532,40 @@ function AccountsContent() {
                               {new Date(account.createdAt).toLocaleDateString()}
                             </span>
                           </div>
-                          <div className="flex gap-2 pt-2">
+                          <div className="flex flex-col gap-2 pt-2">
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1"
+                                onClick={() => handleSyncWallet(account.id)}
+                                disabled={syncing === account.id || enriching === account.id}
+                              >
+                                {syncing === account.id ? (
+                                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="mr-2 h-4 w-4" />
+                                )}
+                                {syncing === account.id ? "Syncing..." : "Sync"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1"
+                                onClick={() => handleEnrichWallet(account.id)}
+                                disabled={enriching === account.id || syncing === account.id}
+                              >
+                                {enriching === account.id ? (
+                                  <DollarSign className="mr-2 h-4 w-4 animate-pulse" />
+                                ) : (
+                                  <DollarSign className="mr-2 h-4 w-4" />
+                                )}
+                                {enriching === account.id ? "Enriching..." : "Enrich Prices"}
+                              </Button>
+                            </div>
                             <Button
                               size="sm"
                               variant="outline"
-                              className="flex-1"
-                              onClick={() => handleSyncWallet(account.id)}
-                              disabled={syncing === account.id}
-                            >
-                              {syncing === account.id ? (
-                                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                              ) : (
-                                <RefreshCw className="mr-2 h-4 w-4" />
-                              )}
-                              {syncing === account.id ? "Syncing..." : "Sync"}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex-1"
                               onClick={() => handleDisconnectWallet(account.id)}
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
