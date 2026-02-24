@@ -16,6 +16,7 @@ export interface EnrichResult {
   incomingPriced: number;
   onchainResolved: number;
   onchainFailed: number;
+  mirrorPriced: number;
   fallbackSymbols: string[];
   durationMs: number;
   error?: string;
@@ -78,7 +79,7 @@ export async function enrichHistoricalPrices(
       label = `user ${userId} (all transactions)`;
     } else {
       log(`No walletAddress or userId provided, nothing to enrich`);
-      return { status: "success", updated: 0, total: 0, skipped: 0, mainPriced: 0, feeCorrected: 0, incomingPriced: 0, onchainResolved: 0, onchainFailed: 0, fallbackSymbols: [], durationMs: 0 };
+      return { status: "success", updated: 0, total: 0, skipped: 0, mainPriced: 0, feeCorrected: 0, incomingPriced: 0, onchainResolved: 0, onchainFailed: 0, mirrorPriced: 0, fallbackSymbols: [], durationMs: 0 };
     }
 
     // ── Step 2: Fetch transactions ───────────────────────────────────
@@ -106,7 +107,7 @@ export async function enrichHistoricalPrices(
     log(`Found ${transactions.length} transactions`);
 
     if (transactions.length === 0) {
-      return { status: "success", updated: 0, total: 0, skipped: 0, mainPriced: 0, feeCorrected: 0, incomingPriced: 0, onchainResolved: 0, onchainFailed: 0, fallbackSymbols: [], durationMs: Date.now() - startTime };
+      return { status: "success", updated: 0, total: 0, skipped: 0, mainPriced: 0, feeCorrected: 0, incomingPriced: 0, onchainResolved: 0, onchainFailed: 0, mirrorPriced: 0, fallbackSymbols: [], durationMs: Date.now() - startTime };
     }
 
     // ── Step 3: Date range ───────────────────────────────────────────
@@ -436,6 +437,81 @@ export async function enrichHistoricalPrices(
       log(`── Phase B: Skipped (no unknown mints) ──`);
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    // ── PHASE C: Mirror priced side to unpriced side (swaps/NFTs) ────
+    // ══════════════════════════════════════════════════════════════════
+    // For two-sided transactions (swaps, NFT buys/sells), if one side
+    // is priced and the other isn't, the unpriced side equals the priced
+    // side (it's the same trade — what you paid = what you received).
+    log(`── Phase C: Mirroring swap sides for unpriced assets ──`);
+
+    let mirrorPriced = 0;
+    const mirrorRows: BulkRow[] = [];
+
+    for (const tx of transactions) {
+      if (!tx.incoming_asset_symbol || !tx.incoming_amount_value) continue;
+
+      const mainPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
+      const incomingPrice = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
+
+      // Both sides priced or both unpriced — nothing to mirror
+      if ((mainPrice !== null) === (incomingPrice !== null)) continue;
+
+      if (mainPrice !== null && incomingPrice === null) {
+        // Main side priced, incoming side not → mirror value_usd to incoming_value_usd
+        const vusd = Math.abs(Number(tx.amount_value) * mainPrice);
+        mirrorRows.push({
+          id: tx.id,
+          price_per_unit: null, // already set
+          value_usd: null,      // already set
+          fee_usd: null,
+          incoming_value_usd: vusd,
+        });
+        mirrorPriced++;
+      } else if (incomingPrice !== null && mainPrice === null) {
+        // Incoming side priced, main side not → mirror incoming_value_usd to value_usd
+        const iusd = Math.abs(Number(tx.incoming_amount_value) * incomingPrice);
+        const amountAbs = Math.abs(Number(tx.amount_value));
+        const derivedPpu = amountAbs > 0 ? iusd / amountAbs : 0;
+        mirrorRows.push({
+          id: tx.id,
+          price_per_unit: derivedPpu,
+          value_usd: iusd,
+          fee_usd: null,
+          incoming_value_usd: null, // already set
+        });
+        mirrorPriced++;
+      }
+    }
+
+    if (mirrorRows.length > 0) {
+      log(`Phase C: ${mirrorRows.length} swap sides to mirror — writing to DB...`);
+      for (let i = 0; i < mirrorRows.length; i += BATCH_SIZE) {
+        const batch = mirrorRows.slice(i, i + BATCH_SIZE);
+        const valuesClauses = batch.map(
+          (r) =>
+            `(${r.id}, ${r.price_per_unit ?? "NULL"}::decimal, ${r.value_usd ?? "NULL"}::decimal, ${r.fee_usd ?? "NULL"}::decimal, ${r.incoming_value_usd ?? "NULL"}::decimal)`
+        );
+        const sql = `
+          UPDATE "transactions" AS t SET
+            price_per_unit = COALESCE(v.new_ppu, t.price_per_unit),
+            value_usd = COALESCE(v.new_vusd, t.value_usd),
+            fee_usd = COALESCE(v.new_fusd, t.fee_usd),
+            incoming_value_usd = COALESCE(v.new_iusd, t.incoming_value_usd)
+          FROM (VALUES ${valuesClauses.join(",")})
+            AS v(id, new_ppu, new_vusd, new_fusd, new_iusd)
+          WHERE t.id = v.id
+        `;
+        await prisma.$executeRawUnsafe(sql);
+      }
+      updated += mirrorRows.length;
+      incomingPriced += mirrorRows.filter((r) => r.incoming_value_usd !== null).length;
+      mainPriced += mirrorRows.filter((r) => r.value_usd !== null).length;
+      log(`── Phase C complete: ${mirrorPriced} swap sides mirrored ──`);
+    } else {
+      log(`── Phase C: No swap sides to mirror ──`);
+    }
+
     // ── Summary ──────────────────────────────────────────────────────
     const fallbackList = Array.from(fallbackSymbols);
     const durationMs = Date.now() - startTime;
@@ -445,6 +521,7 @@ export async function enrichHistoricalPrices(
     log(`  Transactions:    ${transactions.length} total`);
     log(`  Updated:         ${updated} (${mainPriced} main prices, ${feeCorrected} fees, ${incomingPriced} incoming prices)`);
     log(`  On-chain OHLCV:  ${onchainResolved} tokens resolved, ${onchainFailed} not found`);
+    log(`  Swap mirroring:  ${mirrorPriced} sides priced via counterparty`);
     log(`  Skipped:         ${skipped} (no price data available)`);
     if (fallbackList.length > 0) {
       log(`  Unpriceable:     ${fallbackList.join(", ")}`);
@@ -460,6 +537,7 @@ export async function enrichHistoricalPrices(
       incomingPriced,
       onchainResolved,
       onchainFailed,
+      mirrorPriced,
       fallbackSymbols: fallbackList,
       durationMs,
     };
@@ -475,6 +553,7 @@ export async function enrichHistoricalPrices(
       incomingPriced: 0,
       onchainResolved: 0,
       onchainFailed: 0,
+      mirrorPriced: 0,
       fallbackSymbols: [],
       durationMs: Date.now() - startTime,
       error: error instanceof Error ? error.message : "Unknown error",
