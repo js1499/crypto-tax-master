@@ -114,7 +114,7 @@ export async function batchGetTokenOHLCV(
   mints: string[],
   fromDate: Date,
   toDate: Date,
-  onProgress?: (done: number, total: number) => void,
+  onProgress?: (done: number, total: number, resolved: number) => void,
 ): Promise<Map<string, OHLCVEntry[]>> {
   const results = new Map<string, OHLCVEntry[]>();
 
@@ -126,13 +126,13 @@ export async function batchGetTokenOHLCV(
     }
 
     if (onProgress && (i + 1) % 200 === 0) {
-      onProgress(i + 1, mints.length);
+      onProgress(i + 1, mints.length, results.size);
     }
   }
 
   // Final progress callback
   if (onProgress) {
-    onProgress(mints.length, mints.length);
+    onProgress(mints.length, mints.length, results.size);
   }
 
   return results;

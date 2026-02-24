@@ -326,16 +326,18 @@ export async function enrichHistoricalPrices(
         mintAddresses,
         rangeStart,
         rangeEnd,
-        (done, total) => {
-          log(`  Phase B OHLCV progress: ${done}/${total} mints processed (${onchainResolved} resolved)`);
+        (done, total, resolved) => {
+          log(`  Phase B OHLCV progress: ${done}/${total} mints processed (${resolved} resolved)`);
         },
       );
 
       // Build price entries from OHLCV close prices
+      const resolvedTokens: string[] = [];
       for (const [mint, entries] of ohlcvResults) {
         const symbol = unknownMints.get(mint);
         if (!symbol) continue;
         onchainResolved++;
+        resolvedTokens.push(`${symbol} (${mint.slice(0, 8)}…)`);
 
         for (const entry of entries) {
           const dateStr = new Date(entry.timestamp * 1000).toISOString().split("T")[0];
@@ -344,7 +346,10 @@ export async function enrichHistoricalPrices(
       }
 
       onchainFailed = unknownMints.size - onchainResolved;
-      log(`Phase B OHLCV: ${onchainResolved} tokens resolved, ${onchainFailed} not found`);
+      log(`Phase B OHLCV: ${onchainResolved} tokens resolved, ${onchainFailed} not found (likely NFTs or dead tokens without DEX pools)`);
+      if (resolvedTokens.length > 0) {
+        log(`  Resolved tokens: ${resolvedTokens.join(", ")}`);
+      }
 
       // Step 10: Update remaining unpriced transactions with Phase B prices
       const unpricedTransactions = transactions.filter((tx) => unpricedTxIds.has(tx.id));
