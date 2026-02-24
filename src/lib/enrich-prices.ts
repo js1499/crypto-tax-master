@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { getCoinGeckoId, getPriceRange, getCurrentPrice } from "@/lib/coingecko";
+import { getCoinGeckoId, getPriceRange, getCurrentPrice, getTokenByContract } from "@/lib/coingecko";
 import { batchGetTokenOHLCV } from "./onchain-prices";
 
 const log = (msg: string) => console.log(`[Enrich] ${msg}`);
@@ -145,6 +145,37 @@ export async function enrichHistoricalPrices(
 
     log(`${allSymbols.size} unique symbols: ${knownSymbols.length} known, ${unknownMints.size} unknown mints`);
 
+    // ── Verify mints with known-symbol names ────────────────────────
+    // Prevent impostor tokens (e.g. pump.fun "DOGE") from being priced
+    // as the real coin. Verify via CoinGecko contract address lookup.
+    const knownSymbolMints = new Map<string, string>(); // mint → symbol
+    for (const tx of transactions) {
+      if (tx.asset_address && getCoinGeckoId(tx.asset_symbol)) {
+        knownSymbolMints.set(tx.asset_address, tx.asset_symbol);
+      }
+      if (tx.incoming_asset_address && tx.incoming_asset_symbol && getCoinGeckoId(tx.incoming_asset_symbol)) {
+        knownSymbolMints.set(tx.incoming_asset_address, tx.incoming_asset_symbol);
+      }
+    }
+
+    const fakeMints = new Set<string>();
+    if (knownSymbolMints.size > 0) {
+      log(`Verifying ${knownSymbolMints.size} mint(s) with known-symbol names...`);
+      for (const [mint, symbol] of knownSymbolMints) {
+        const result = await getTokenByContract(mint);
+        if (!result) {
+          fakeMints.add(mint);
+          unknownMints.set(mint, symbol); // let mirror/OHLCV handle it
+          log(`  IMPOSTOR ${symbol}: mint ${mint.slice(0, 8)}... not found on CoinGecko`);
+        } else {
+          log(`  Verified ${symbol}: mint ${mint.slice(0, 8)}... -> ${result.name} (${result.id})`);
+        }
+      }
+      if (fakeMints.size > 0) {
+        log(`Blocked ${fakeMints.size} impostor token(s) from known-symbol pricing`);
+      }
+    }
+
     // ══════════════════════════════════════════════════════════════════
     // ── PHASE A: Price known symbols (fast) ──────────────────────────
     // ══════════════════════════════════════════════════════════════════
@@ -232,8 +263,9 @@ export async function enrichHistoricalPrices(
       let iusd: number | null = null;
       let didUpdate = false;
 
-      // Main asset price
-      const historicalPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
+      // Main asset price (skip if mint is a known impostor)
+      const mainIsFake = tx.asset_address ? fakeMints.has(tx.asset_address) : false;
+      const historicalPrice = mainIsFake ? null : lookupPrice(tx.asset_symbol, tx.tx_timestamp);
       if (historicalPrice !== null) {
         ppu = historicalPrice;
         vusd = Math.abs(Number(tx.amount_value) * historicalPrice);
@@ -254,9 +286,10 @@ export async function enrichHistoricalPrices(
         }
       }
 
-      // Incoming asset price
+      // Incoming asset price (skip if mint is a known impostor)
       if (tx.incoming_asset_symbol && tx.incoming_amount_value) {
-        const incomingPrice = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
+        const incomingFake = tx.incoming_asset_address ? fakeMints.has(tx.incoming_asset_address) : false;
+        const incomingPrice = incomingFake ? null : lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
         if (incomingPrice !== null) {
           iusd = Math.abs(Number(tx.incoming_amount_value) * incomingPrice);
           didUpdate = true;
