@@ -24,9 +24,10 @@ export interface EnrichResult {
 
 /**
  * Enrich transactions with CoinGecko historical prices.
- * Two-phase approach:
+ * Three-phase approach:
  *   Phase A: Price known symbols (SOL, USDC, etc.) immediately
- *   Phase B: Price unknown tokens via on-chain OHLCV by mint address
+ *   Phase B: Mirror priced swap sides to unpriced sides (instant, 0 API calls)
+ *   Phase C: Price remaining unknown tokens via on-chain OHLCV by mint address
  *
  * @param walletAddress - if provided, only enrich transactions for this wallet address
  * @param userId - required for all-transactions mode (when walletAddress is omitted)
@@ -309,144 +310,21 @@ export async function enrichHistoricalPrices(
     const phaseADuration = ((Date.now() - startTime) / 1000).toFixed(1);
     log(`── Phase A complete (${phaseADuration}s) ──`);
     log(`  Known-symbol prices: ${mainPriced} main, ${feeCorrected} fees, ${incomingPriced} incoming`);
-    log(`  Unpriced transactions: ${unpricedTxIds.size} (candidates for Phase B)`);
+    log(`  Unpriced transactions: ${unpricedTxIds.size} (candidates for Phase B/C)`);
 
     // ══════════════════════════════════════════════════════════════════
-    // ── PHASE B: On-chain OHLCV for unknown tokens ───────────────────
-    // ══════════════════════════════════════════════════════════════════
-    let onchainResolved = 0;
-    let onchainFailed = 0;
-
-    if (unknownMints.size > 0) {
-      log(`── Phase B: Fetching on-chain OHLCV for ${unknownMints.size} unknown mints ──`);
-
-      const phaseBStart = Date.now();
-      const mintAddresses = Array.from(unknownMints.keys());
-
-      const ohlcvResults = await batchGetTokenOHLCV(
-        mintAddresses,
-        rangeStart,
-        rangeEnd,
-        (done, total, resolved) => {
-          log(`  Phase B OHLCV progress: ${done}/${total} mints processed (${resolved} resolved)`);
-        },
-      );
-
-      // Build price entries from OHLCV close prices
-      const resolvedTokens: string[] = [];
-      for (const [mint, entries] of ohlcvResults) {
-        const symbol = unknownMints.get(mint);
-        if (!symbol) continue;
-        onchainResolved++;
-        resolvedTokens.push(`${symbol} (${mint.slice(0, 8)}…)`);
-
-        for (const entry of entries) {
-          const dateStr = new Date(entry.timestamp * 1000).toISOString().split("T")[0];
-          priceMap.set(`${symbol.toUpperCase()}:${dateStr}`, entry.close);
-        }
-      }
-
-      onchainFailed = unknownMints.size - onchainResolved;
-      log(`Phase B OHLCV: ${onchainResolved} tokens resolved, ${onchainFailed} not found (likely NFTs or dead tokens without DEX pools)`);
-      if (resolvedTokens.length > 0) {
-        log(`  Resolved tokens: ${resolvedTokens.join(", ")}`);
-      }
-
-      // Step 10: Update remaining unpriced transactions with Phase B prices
-      const unpricedTransactions = transactions.filter((tx) => unpricedTxIds.has(tx.id));
-
-      if (unpricedTransactions.length > 0 && onchainResolved > 0) {
-        log(`Phase B: Computing updates for ${unpricedTransactions.length} previously-unpriced transactions...`);
-
-        let phaseBUpdated = 0;
-        let phaseBMainPriced = 0;
-        let phaseBIncomingPriced = 0;
-        const phaseBRows: BulkRow[] = [];
-
-        for (const tx of unpricedTransactions) {
-          let ppu: number | null = null;
-          let vusd: number | null = null;
-          let iusd: number | null = null;
-          let didUpdate = false;
-
-          // Try main asset price (may now be in priceMap from OHLCV data)
-          const historicalPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
-          if (historicalPrice !== null) {
-            ppu = historicalPrice;
-            vusd = Math.abs(Number(tx.amount_value) * historicalPrice);
-            didUpdate = true;
-            phaseBMainPriced++;
-          } else {
-            if (!getCoinGeckoId(tx.asset_symbol)) {
-              fallbackSymbols.add(tx.asset_symbol);
-            }
-          }
-
-          // Try incoming asset price
-          if (tx.incoming_asset_symbol && tx.incoming_amount_value) {
-            const incomingPrice = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
-            if (incomingPrice !== null) {
-              iusd = Math.abs(Number(tx.incoming_amount_value) * incomingPrice);
-              didUpdate = true;
-              phaseBIncomingPriced++;
-            } else if (!getCoinGeckoId(tx.incoming_asset_symbol)) {
-              fallbackSymbols.add(tx.incoming_asset_symbol);
-            }
-          }
-
-          if (didUpdate) {
-            phaseBRows.push({ id: tx.id, price_per_unit: ppu, value_usd: vusd, fee_usd: null, incoming_value_usd: iusd });
-            phaseBUpdated++;
-          }
-        }
-
-        // Bulk SQL UPDATE for Phase B
-        log(`Phase B: ${phaseBRows.length} rows to update — writing to DB...`);
-        for (let i = 0; i < phaseBRows.length; i += BATCH_SIZE) {
-          const batch = phaseBRows.slice(i, i + BATCH_SIZE);
-          const valuesClauses = batch.map(
-            (r) =>
-              `(${r.id}, ${r.price_per_unit ?? "NULL"}::decimal, ${r.value_usd ?? "NULL"}::decimal, ${r.fee_usd ?? "NULL"}::decimal, ${r.incoming_value_usd ?? "NULL"}::decimal)`
-          );
-          const sql = `
-            UPDATE "transactions" AS t SET
-              price_per_unit = COALESCE(v.new_ppu, t.price_per_unit),
-              value_usd = COALESCE(v.new_vusd, t.value_usd),
-              fee_usd = COALESCE(v.new_fusd, t.fee_usd),
-              incoming_value_usd = COALESCE(v.new_iusd, t.incoming_value_usd)
-            FROM (VALUES ${valuesClauses.join(",")})
-              AS v(id, new_ppu, new_vusd, new_fusd, new_iusd)
-            WHERE t.id = v.id
-          `;
-          await prisma.$executeRawUnsafe(sql);
-        }
-
-        // Adjust totals
-        updated += phaseBUpdated;
-        mainPriced += phaseBMainPriced;
-        incomingPriced += phaseBIncomingPriced;
-        skipped = Math.max(0, skipped - phaseBUpdated);
-
-        const phaseBDuration = ((Date.now() - phaseBStart) / 1000).toFixed(1);
-        log(`── Phase B complete (${phaseBDuration}s) ──`);
-        log(`  On-chain prices applied: ${phaseBMainPriced} main, ${phaseBIncomingPriced} incoming`);
-      } else {
-        log(`Phase B: No new prices to apply (${onchainResolved} resolved but 0 unpriced transactions)`);
-      }
-    } else {
-      log(`── Phase B: Skipped (no unknown mints) ──`);
-    }
-
-    // ══════════════════════════════════════════════════════════════════
-    // ── PHASE C: Mirror priced side to unpriced side (swaps/NFTs) ────
+    // ── PHASE B: Mirror priced side to unpriced side (swaps) ────────
     // ══════════════════════════════════════════════════════════════════
     // For two-sided transactions (swaps, NFT buys/sells), if one side
     // is priced and the other isn't, the unpriced side equals the priced
     // side (it's the same trade — what you paid = what you received).
-    log(`── Phase C: Mirroring swap sides for unpriced assets ──`);
+    // Run this BEFORE OHLCV to reduce the number of mints needing API calls.
+    log(`── Phase B: Mirroring swap sides for unpriced assets ──`);
 
     let mirrorPriced = 0;
     const mirrorRows: BulkRow[] = [];
+    const mirroredMainIds = new Set<number>();
+    const mirroredIncomingIds = new Set<number>();
 
     for (const tx of transactions) {
       if (!tx.incoming_asset_symbol || !tx.incoming_amount_value) continue;
@@ -462,11 +340,12 @@ export async function enrichHistoricalPrices(
         const vusd = Math.abs(Number(tx.amount_value) * mainPrice);
         mirrorRows.push({
           id: tx.id,
-          price_per_unit: null, // already set
-          value_usd: null,      // already set
+          price_per_unit: null,
+          value_usd: null,
           fee_usd: null,
           incoming_value_usd: vusd,
         });
+        mirroredIncomingIds.add(tx.id);
         mirrorPriced++;
       } else if (incomingPrice !== null && mainPrice === null) {
         // Incoming side priced, main side not → mirror incoming_value_usd to value_usd
@@ -478,14 +357,15 @@ export async function enrichHistoricalPrices(
           price_per_unit: derivedPpu,
           value_usd: iusd,
           fee_usd: null,
-          incoming_value_usd: null, // already set
+          incoming_value_usd: null,
         });
+        mirroredMainIds.add(tx.id);
         mirrorPriced++;
       }
     }
 
     if (mirrorRows.length > 0) {
-      log(`Phase C: ${mirrorRows.length} swap sides to mirror — writing to DB...`);
+      log(`Phase B: ${mirrorRows.length} swap sides to mirror — writing to DB...`);
       for (let i = 0; i < mirrorRows.length; i += BATCH_SIZE) {
         const batch = mirrorRows.slice(i, i + BATCH_SIZE);
         const valuesClauses = batch.map(
@@ -507,9 +387,148 @@ export async function enrichHistoricalPrices(
       updated += mirrorRows.length;
       incomingPriced += mirrorRows.filter((r) => r.incoming_value_usd !== null).length;
       mainPriced += mirrorRows.filter((r) => r.value_usd !== null).length;
-      log(`── Phase C complete: ${mirrorPriced} swap sides mirrored ──`);
+      log(`── Phase B complete: ${mirrorPriced} swap sides mirrored ──`);
     } else {
-      log(`── Phase C: No swap sides to mirror ──`);
+      log(`── Phase B: No swap sides to mirror ──`);
+    }
+
+    // ── Recompute which mints still need OHLCV after mirroring ──────
+    const remainingMints = new Map<string, string>();
+    for (const tx of transactions) {
+      if (tx.asset_address && !getCoinGeckoId(tx.asset_symbol)) {
+        const mainResolved = lookupPrice(tx.asset_symbol, tx.tx_timestamp) !== null || mirroredMainIds.has(tx.id);
+        if (!mainResolved) remainingMints.set(tx.asset_address, tx.asset_symbol);
+      }
+      if (tx.incoming_asset_address && tx.incoming_asset_symbol && !getCoinGeckoId(tx.incoming_asset_symbol)) {
+        const incomingResolved = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp) !== null || mirroredIncomingIds.has(tx.id);
+        if (!incomingResolved) remainingMints.set(tx.incoming_asset_address, tx.incoming_asset_symbol);
+      }
+    }
+
+    log(`After mirroring: ${remainingMints.size} unknown mints still need OHLCV (was ${unknownMints.size} before mirroring)`);
+
+    // ══════════════════════════════════════════════════════════════════
+    // ── PHASE C: On-chain OHLCV for remaining unknown tokens ────────
+    // ══════════════════════════════════════════════════════════════════
+    let onchainResolved = 0;
+    let onchainFailed = 0;
+
+    if (remainingMints.size > 0) {
+      log(`── Phase C: Fetching on-chain OHLCV for ${remainingMints.size} remaining unknown mints ──`);
+
+      const phaseCStart = Date.now();
+      const mintAddresses = Array.from(remainingMints.keys());
+
+      const ohlcvResults = await batchGetTokenOHLCV(
+        mintAddresses,
+        rangeStart,
+        rangeEnd,
+        (done, total, resolved) => {
+          log(`  Phase C OHLCV progress: ${done}/${total} mints processed (${resolved} resolved)`);
+        },
+      );
+
+      // Build price entries from OHLCV close prices
+      const resolvedTokens: string[] = [];
+      for (const [mint, entries] of ohlcvResults) {
+        const symbol = remainingMints.get(mint);
+        if (!symbol) continue;
+        onchainResolved++;
+        resolvedTokens.push(`${symbol} (${mint.slice(0, 8)}…)`);
+
+        for (const entry of entries) {
+          const dateStr = new Date(entry.timestamp * 1000).toISOString().split("T")[0];
+          priceMap.set(`${symbol.toUpperCase()}:${dateStr}`, entry.close);
+        }
+      }
+
+      onchainFailed = remainingMints.size - onchainResolved;
+      log(`Phase C OHLCV: ${onchainResolved} tokens resolved, ${onchainFailed} not found`);
+      if (resolvedTokens.length > 0) {
+        log(`  Resolved tokens: ${resolvedTokens.join(", ")}`);
+      }
+
+      // Apply OHLCV prices to still-unpriced transactions (not already mirrored)
+      const stillUnpriced = transactions.filter((tx) =>
+        unpricedTxIds.has(tx.id) && !mirroredMainIds.has(tx.id) && !mirroredIncomingIds.has(tx.id)
+      );
+
+      if (stillUnpriced.length > 0 && onchainResolved > 0) {
+        log(`Phase C: Computing updates for ${stillUnpriced.length} still-unpriced transactions...`);
+
+        let phaseCUpdated = 0;
+        let phaseCMainPriced = 0;
+        let phaseCIncomingPriced = 0;
+        const phaseCRows: BulkRow[] = [];
+
+        for (const tx of stillUnpriced) {
+          let ppu: number | null = null;
+          let vusd: number | null = null;
+          let iusd: number | null = null;
+          let didUpdate = false;
+
+          const historicalPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
+          if (historicalPrice !== null) {
+            ppu = historicalPrice;
+            vusd = Math.abs(Number(tx.amount_value) * historicalPrice);
+            didUpdate = true;
+            phaseCMainPriced++;
+          } else {
+            if (!getCoinGeckoId(tx.asset_symbol)) {
+              fallbackSymbols.add(tx.asset_symbol);
+            }
+          }
+
+          if (tx.incoming_asset_symbol && tx.incoming_amount_value) {
+            const incomingPrice = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
+            if (incomingPrice !== null) {
+              iusd = Math.abs(Number(tx.incoming_amount_value) * incomingPrice);
+              didUpdate = true;
+              phaseCIncomingPriced++;
+            } else if (!getCoinGeckoId(tx.incoming_asset_symbol)) {
+              fallbackSymbols.add(tx.incoming_asset_symbol);
+            }
+          }
+
+          if (didUpdate) {
+            phaseCRows.push({ id: tx.id, price_per_unit: ppu, value_usd: vusd, fee_usd: null, incoming_value_usd: iusd });
+            phaseCUpdated++;
+          }
+        }
+
+        log(`Phase C: ${phaseCRows.length} rows to update — writing to DB...`);
+        for (let i = 0; i < phaseCRows.length; i += BATCH_SIZE) {
+          const batch = phaseCRows.slice(i, i + BATCH_SIZE);
+          const valuesClauses = batch.map(
+            (r) =>
+              `(${r.id}, ${r.price_per_unit ?? "NULL"}::decimal, ${r.value_usd ?? "NULL"}::decimal, ${r.fee_usd ?? "NULL"}::decimal, ${r.incoming_value_usd ?? "NULL"}::decimal)`
+          );
+          const sql = `
+            UPDATE "transactions" AS t SET
+              price_per_unit = COALESCE(v.new_ppu, t.price_per_unit),
+              value_usd = COALESCE(v.new_vusd, t.value_usd),
+              fee_usd = COALESCE(v.new_fusd, t.fee_usd),
+              incoming_value_usd = COALESCE(v.new_iusd, t.incoming_value_usd)
+            FROM (VALUES ${valuesClauses.join(",")})
+              AS v(id, new_ppu, new_vusd, new_fusd, new_iusd)
+            WHERE t.id = v.id
+          `;
+          await prisma.$executeRawUnsafe(sql);
+        }
+
+        updated += phaseCUpdated;
+        mainPriced += phaseCMainPriced;
+        incomingPriced += phaseCIncomingPriced;
+        skipped = Math.max(0, skipped - phaseCUpdated);
+
+        const phaseCDuration = ((Date.now() - phaseCStart) / 1000).toFixed(1);
+        log(`── Phase C complete (${phaseCDuration}s) ──`);
+        log(`  On-chain prices applied: ${phaseCMainPriced} main, ${phaseCIncomingPriced} incoming`);
+      } else {
+        log(`Phase C: No new prices to apply`);
+      }
+    } else {
+      log(`── Phase C: Skipped (no remaining unknown mints after mirroring) ──`);
     }
 
     // ── Summary ──────────────────────────────────────────────────────
