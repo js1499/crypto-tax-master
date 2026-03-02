@@ -577,6 +577,8 @@ export async function getSolanaWalletTransactions(
             continue;
           }
           if (transfer.tokenAmount <= 0) continue;
+          // Skip wrapped SOL token transfers — already captured by nativeTransfers
+          if (transfer.mint === SOL_MINT) continue;
           // Skip self-transfers
           if (transfer.fromUserAccount === walletAddress && transfer.toUserAccount === walletAddress) {
             continue;
