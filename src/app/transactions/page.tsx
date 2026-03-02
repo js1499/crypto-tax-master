@@ -75,7 +75,7 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { getCategoryBadgeColor, formatTypeForDisplay, isOutflow } from "@/lib/transaction-categorizer";
+import { getCategoryBadgeColor, formatTypeForDisplay, isOutflow, getCategory } from "@/lib/transaction-categorizer";
 import {
   Pagination,
   PaginationContent,
@@ -1820,7 +1820,12 @@ function TransactionsContent() {
                               onMouseEnter={() => handleMouseEnter('asset')}
                               onMouseLeave={() => handleMouseLeave('asset')}
                             >
-                              <div className="text-xs">{transaction.asset}</div>
+                              <div className="text-xs">
+                                {transaction.asset}
+                                {getCategory(transaction.type) === "swap" && transaction.incomingAsset && (
+                                  <span className="text-muted-foreground">{" → "}{transaction.incomingAsset}</span>
+                                )}
+                              </div>
                               {editableFields.asset && (
                                 <Button 
                                   variant="ghost" 
@@ -1868,8 +1873,16 @@ function TransactionsContent() {
                               onMouseEnter={() => handleMouseEnter('amount')}
                               onMouseLeave={() => handleMouseLeave('amount')}
                             >
-                              <div className="flex items-center justify-end">
+                              <div className="flex flex-col items-end">
                                 <span className="crypto-amount font-mono">{transaction.amount}</span>
+                                {getCategory(transaction.type) === "swap" && transaction.incomingAsset && transaction.incomingAmount != null && transaction.incomingAmount > 0 && (
+                                  <span className="crypto-amount font-mono text-xs text-emerald-600 dark:text-emerald-400">
+                                    +{transaction.incomingAmount < 0.01
+                                      ? transaction.incomingAmount.toExponential(2)
+                                      : transaction.incomingAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })
+                                    } {transaction.incomingAsset}
+                                  </span>
+                                )}
                               </div>
                               {editableFields.amount && (
                                 <Button 
@@ -1978,10 +1991,22 @@ function TransactionsContent() {
                               onMouseEnter={() => handleMouseEnter('value')}
                               onMouseLeave={() => handleMouseLeave('value')}
                             >
+                          {getCategory(transaction.type) === "swap" && transaction.incomingValueUsd != null && transaction.incomingValueUsd > 0 ? (
+                            <div className="flex flex-col items-end numeric-column">
+                              <div className="flex items-center text-rose-600 dark:text-rose-400">
+                                <ArrowDownRight className="mr-0.5 h-2.5 w-2.5" />
+                                <span className="crypto-amount font-mono">{transaction.value}</span>
+                              </div>
+                              <div className="flex items-center text-emerald-600 dark:text-emerald-400">
+                                <ArrowUpRight className="mr-0.5 h-2.5 w-2.5" />
+                                <span className="crypto-amount font-mono">+${transaction.incomingValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                              </div>
+                            </div>
+                          ) : (
                           <div className={cn(
                                 "flex items-center justify-end numeric-column",
-                            parseFloat(transaction.value.replace(/[-$,]/g, "")) > 0 && !transaction.value.startsWith("-") 
-                              ? "text-emerald-600 dark:text-emerald-400" 
+                            parseFloat(transaction.value.replace(/[-$,]/g, "")) > 0 && !transaction.value.startsWith("-")
+                              ? "text-emerald-600 dark:text-emerald-400"
                               : "text-rose-600 dark:text-rose-400"
                           )}>
                             {parseFloat(transaction.value.replace(/[-$,]/g, "")) > 0 && !transaction.value.startsWith("-") ? (
@@ -1990,15 +2015,8 @@ function TransactionsContent() {
                                   <ArrowDownRight className="mr-0.5 h-2.5 w-2.5" />
                             )}
                                 <span className="crypto-amount font-mono">{transaction.value}</span>
-                                {transaction.incomingAsset && transaction.incomingAmount != null && transaction.incomingAmount > 0 && (
-                                  <span className="ml-1 text-xs text-muted-foreground">
-                                    {" \u2192 "}{transaction.incomingAmount < 0.01
-                                      ? transaction.incomingAmount.toExponential(2)
-                                      : transaction.incomingAmount.toLocaleString(undefined, { maximumFractionDigits: 4 })
-                                    }{" "}{transaction.incomingAsset}
-                                  </span>
-                                )}
                           </div>
+                          )}
                               {editableFields.value && (
                                 <Button 
                                   variant="ghost" 
