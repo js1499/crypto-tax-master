@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
-import { getCategory, getTypesForCategory, isOutflow, formatTypeForDisplay, getPnlOutflowTypes, getPnlInflowTypes } from "@/lib/transaction-categorizer";
+import { getCategory, getTypesForCategory, isOutflow, formatTypeForDisplay, getPnlOutflowTypes, getPnlInflowTypes, getPrimaryAssetDirection } from "@/lib/transaction-categorizer";
 
 /**
  * GET /api/transactions
@@ -123,11 +123,12 @@ export async function GET(request: NextRequest) {
       whereConditions.push({ OR: userTransactionConditions });
     }
 
-    // Apply search filter
+    // Apply search filter (search both outgoing and incoming asset symbols)
     if (search) {
       whereConditions.push({
         OR: [
           { asset_symbol: { contains: search, mode: "insensitive" } },
+          { incoming_asset_symbol: { contains: search, mode: "insensitive" } },
           { source: { contains: search, mode: "insensitive" } },
           { type: { contains: search, mode: "insensitive" } },
         ],
@@ -272,7 +273,7 @@ export async function GET(request: NextRequest) {
       prisma.transaction.count({ where }),
     ]);
 
-    // Format transactions for frontend
+    // Format transactions for frontend with structured out/in fields
     const formattedTransactions = transactions.map((tx) => {
       const amountValue = Number(tx.amount_value);
       const valueUsd = Number(tx.value_usd);
@@ -281,23 +282,64 @@ export async function GET(request: NextRequest) {
         ? Number(tx.price_per_unit)
         : (amountValue > 0 ? valueUsd / amountValue : 0);
 
-      // Format amount
+      const incomingAmount = tx.incoming_amount_value ? Number(tx.incoming_amount_value) : null;
+      const incomingValueUsd = tx.incoming_value_usd ? Number(tx.incoming_value_usd) : null;
+      const incomingPricePerUnit = (incomingAmount && incomingAmount > 0 && incomingValueUsd)
+        ? incomingValueUsd / incomingAmount
+        : null;
+
+      // Determine out/in field mapping based on transaction type
+      const hasTwoSides = !!tx.incoming_asset_symbol;
+      const direction = getPrimaryAssetDirection(tx.type);
+
+      let outAsset: string | null = null;
+      let outAmount: number | null = null;
+      let outPricePerUnit: number | null = null;
+      let inAsset: string | null = null;
+      let inAmount: number | null = null;
+      let inPricePerUnit: number | null = null;
+
+      if (hasTwoSides) {
+        // Two-sided: primary = out, incoming = in
+        outAsset = tx.asset_symbol;
+        outAmount = amountValue;
+        outPricePerUnit = pricePerUnit;
+        inAsset = tx.incoming_asset_symbol;
+        inAmount = incomingAmount;
+        inPricePerUnit = incomingPricePerUnit;
+      } else if (direction === "in") {
+        // Single-sided incoming (BUY, TRANSFER_IN, income, etc.)
+        inAsset = tx.asset_symbol;
+        inAmount = amountValue;
+        inPricePerUnit = pricePerUnit;
+      } else {
+        // Single-sided outgoing (TRANSFER_OUT, SELL, STAKE, etc.)
+        outAsset = tx.asset_symbol;
+        outAmount = amountValue;
+        outPricePerUnit = pricePerUnit;
+      }
+
+      // Legacy formatted fields (for detail sheet / edit compatibility)
       const amount = `${amountValue} ${tx.asset_symbol}`;
-
-      // Format price
       const price = `$${pricePerUnit.toFixed(2)}`;
-
-      // Format value with correct sign based on transaction type
       let value = `$${Math.abs(valueUsd).toFixed(2)}`;
       if (isOutflow(tx.type)) {
         value = `-${value}`;
       }
-      // For Transfer and income types, keep as positive
 
       return {
         id: tx.id,
         type: tx.type,
         displayType: formatTypeForDisplay(tx.type),
+        // Structured out/in fields
+        outAsset,
+        outAmount,
+        outPricePerUnit,
+        inAsset,
+        inAmount,
+        inPricePerUnit,
+        valueUsd,
+        // Legacy fields (detail sheet compatibility)
         asset: tx.asset_symbol,
         amount,
         price,
@@ -306,13 +348,13 @@ export async function GET(request: NextRequest) {
         status: tx.status,
         exchange: tx.source || "Unknown",
         identified: getCategory(tx.type) !== "other",
-        valueIdentified: true, // Can be enhanced later
+        valueIdentified: true,
         chain: tx.chain,
         txHash: tx.tx_hash,
         notes: tx.notes || "",
         incomingAsset: tx.incoming_asset_symbol || null,
-        incomingAmount: tx.incoming_amount_value ? Number(tx.incoming_amount_value) : null,
-        incomingValueUsd: tx.incoming_value_usd ? Number(tx.incoming_value_usd) : null,
+        incomingAmount,
+        incomingValueUsd,
       };
     });
 

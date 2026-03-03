@@ -436,6 +436,46 @@ export function isTransferSkip(rawType: string): boolean {
   return getCategory(rawType) === "transfer";
 }
 
+// Types where the primary asset_symbol represents something the user RECEIVES.
+// Everything else defaults to "out" (asset is leaving the user).
+const ASSET_INCOMING_RAW_TYPES = new Set([
+  // Transfers in
+  "TRANSFER_IN", "Receive", "receive", "token receive", "nft receive",
+  // Buys (you receive the asset, pay cash)
+  "BUY", "buy", "Buy", "BUY_ITEM", "DCA", "Margin Buy", "Margin",
+  "PLACE_BET", "PLACE_SOL_BET", "CREATE_BET", "BUY_TICKETS", "BUY_SUBSCRIPTION",
+  // Unstaking (asset returns to you)
+  "UNSTAKE", "UNSTAKE_SOL", "UNSTAKE_TOKEN", "Unstake",
+  // Withdrawals (you get tokens back from DeFi)
+  "WITHDRAW", "WITHDRAW_GEM", "WITHDRAW_LIQUIDITY", "Withdraw",
+  "CLOSE_POSITION", "REMOVE_LIQUIDITY", "REMOVE_BALANCE_LIQUIDITY", "REMOVE_FROM_POOL",
+  "Remove Liquidity",
+  // Minting (you receive the NFT/token)
+  "NFT_MINT", "COMPRESSED_NFT_MINT", "SFT_MINT", "TOKEN_MINT", "CLAIM_NFT", "Mint",
+  "NFT_PARTICIPATION_REWARD",
+  // Income/Rewards
+  "CLAIM_REWARDS", "HARVEST", "FUND_REWARD", "PAYOUT",
+  "Reward", "Airdrop", "Mining", "Yield", "Interest",
+]);
+
+/**
+ * Determine whether the primary asset_symbol field represents an outgoing
+ * or incoming asset for display purposes.
+ *
+ * "out" = the user is sending/spending/disposing of the primary asset
+ * "in"  = the user is receiving/earning/buying the primary asset
+ *
+ * Two-sided transactions (swaps, NFT trades) are handled at the caller
+ * level by checking for incoming_asset_symbol.
+ */
+export function getPrimaryAssetDirection(rawType: string): "out" | "in" {
+  if (ASSET_INCOMING_RAW_TYPES.has(rawType)) return "in";
+  // Category-level fallbacks
+  const cat = getCategory(rawType);
+  if (cat === "income") return "in";
+  return "out";
+}
+
 /**
  * Format a raw type string for display.
  * "TRANSFER_IN" → "Transfer In"

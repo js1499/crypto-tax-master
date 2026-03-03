@@ -107,6 +107,15 @@ const allTransactions: any[] = [];
 interface Transaction {
   id: number;
   type: string;
+  // Structured out/in fields
+  outAsset: string | null;
+  outAmount: number | null;
+  outPricePerUnit: number | null;
+  inAsset: string | null;
+  inAmount: number | null;
+  inPricePerUnit: number | null;
+  valueUsd: number;
+  // Legacy fields (detail sheet / edit)
   asset: string;
   amount: string;
   price: string;
@@ -122,7 +131,7 @@ interface Transaction {
   incomingAsset?: string | null;
   incomingAmount?: number | null;
   incomingValueUsd?: number | null;
-  [key: string]: any; // Add index signature to allow string-based property access
+  [key: string]: any;
 }
 
 // Add interface for editable fields
@@ -1682,9 +1691,8 @@ function TransactionsContent() {
                         </TableHead>
                       )}
                       <TableHead className="font-medium font-mono">Type</TableHead>
-                      <TableHead className="font-medium font-mono">Asset</TableHead>
-                      <TableHead className="text-right font-medium font-mono">Amount</TableHead>
-                      <TableHead className="text-right font-medium font-mono">Price</TableHead>
+                      <TableHead className="font-medium font-mono">Sent</TableHead>
+                      <TableHead className="font-medium font-mono">Received</TableHead>
                       <TableHead className="text-right font-medium font-mono">Value</TableHead>
                       <TableHead className="text-right font-medium font-mono">Exchange</TableHead>
                       <TableHead className="text-right font-medium font-mono">Date</TableHead>
@@ -1789,246 +1797,61 @@ function TransactionsContent() {
                           )}
                         </TableCell>
                         
-                        <TableCell className="asset-column font-mono text-xs">
-                          {editingTransactionId === transaction.id && editingField === 'asset' ? (
-                            <div className="flex items-center space-x-2">
-                              <Input 
-                                value={editingValue} 
-                                onChange={(e) => setEditingValue(e.target.value)}
-                                className="h-8 w-full text-xs"
-                              />
-                              <Button 
-                                onClick={() => handleSaveEdit(transaction.id, 'asset')} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <Check className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                onClick={handleCancelEditing} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <div 
-                              className="relative group"
-                              onMouseEnter={() => handleMouseEnter('asset')}
-                              onMouseLeave={() => handleMouseLeave('asset')}
-                            >
-                              <div className="text-xs">
-                                {transaction.asset}
-                                {getCategory(transaction.type) === "swap" && transaction.incomingAsset && (
-                                  <span className="text-muted-foreground">{" → "}{transaction.incomingAsset}</span>
+                        {/* Sent (Out) Column */}
+                        <TableCell className="font-mono text-xs">
+                          {transaction.outAsset ? (
+                            <div className="flex flex-col">
+                              <span className="font-medium text-rose-600 dark:text-rose-400">{transaction.outAsset}</span>
+                              <span className="text-muted-foreground">
+                                {transaction.outAmount != null && (
+                                  transaction.outAmount < 0.01 && transaction.outAmount > 0
+                                    ? transaction.outAmount.toExponential(2)
+                                    : transaction.outAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })
                                 )}
-                              </div>
-                              {editableFields.asset && (
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="absolute right-0 top-0 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => handleStartEditing(transaction.id, 'asset', transaction.asset)}
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </Button>
+                              </span>
+                              {transaction.outPricePerUnit != null && transaction.outPricePerUnit > 0 && (
+                                <span className="text-muted-foreground text-[10px]">
+                                  @ ${transaction.outPricePerUnit < 0.01
+                                    ? transaction.outPricePerUnit.toFixed(6)
+                                    : transaction.outPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
                               )}
                             </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        
-                        <TableCell className="text-right numeric-column crypto-amount font-mono">
-                          {editingTransactionId === transaction.id && editingField === 'amount' ? (
-                            <div className="flex items-center justify-end space-x-2">
-                              <Input 
-                                value={editingValue} 
-                                onChange={(e) => setEditingValue(e.target.value)}
-                                className="h-8 w-24 text-right"
-                                type="number"
-                                step="0.000001"
-                              />
-                              <Button 
-                                onClick={() => handleSaveEdit(transaction.id, 'amount')} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <Check className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                onClick={handleCancelEditing} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <div 
-                              className="relative group"
-                              onMouseEnter={() => handleMouseEnter('amount')}
-                              onMouseLeave={() => handleMouseLeave('amount')}
-                            >
-                              <div className="flex flex-col items-end">
-                                <span className="crypto-amount font-mono">{transaction.amount}</span>
-                                {getCategory(transaction.type) === "swap" && transaction.incomingAsset && transaction.incomingAmount != null && transaction.incomingAmount > 0 && (
-                                  <span className="crypto-amount font-mono text-xs text-emerald-600 dark:text-emerald-400">
-                                    +{transaction.incomingAmount < 0.01
-                                      ? transaction.incomingAmount.toExponential(2)
-                                      : transaction.incomingAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })
-                                    } {transaction.incomingAsset}
-                                  </span>
+
+                        {/* Received (In) Column */}
+                        <TableCell className="font-mono text-xs">
+                          {transaction.inAsset ? (
+                            <div className="flex flex-col">
+                              <span className="font-medium text-emerald-600 dark:text-emerald-400">{transaction.inAsset}</span>
+                              <span className="text-muted-foreground">
+                                {transaction.inAmount != null && (
+                                  transaction.inAmount < 0.01 && transaction.inAmount > 0
+                                    ? transaction.inAmount.toExponential(2)
+                                    : transaction.inAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })
                                 )}
-                              </div>
-                              {editableFields.amount && (
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="absolute left-0 top-0 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => handleStartEditing(transaction.id, 'amount', transaction.amount)}
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </Button>
+                              </span>
+                              {transaction.inPricePerUnit != null && transaction.inPricePerUnit > 0 && (
+                                <span className="text-muted-foreground text-[10px]">
+                                  @ ${transaction.inPricePerUnit < 0.01
+                                    ? transaction.inPricePerUnit.toFixed(6)
+                                    : transaction.inPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
                               )}
-                            </div>
-                          )}
-                        </TableCell>
-                        
-                        <TableCell className="text-right numeric-column crypto-amount font-mono">
-                          {editingTransactionId === transaction.id && editingField === 'price' ? (
-                            <div className="flex items-center justify-end space-x-2">
-                              <div className="relative flex-1">
-                                <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none">
-                                  <span className="text-gray-500">$</span>
-                                </div>
-                                <Input 
-                                  value={editingValue} 
-                                  onChange={(e) => setEditingValue(e.target.value)}
-                                  className="h-8 w-24 pl-6 text-right"
-                                  type="number"
-                                  step="0.01"
-                                />
-                              </div>
-                              <Button 
-                                onClick={() => handleSaveEdit(transaction.id, 'price')} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <Check className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                onClick={handleCancelEditing} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
                             </div>
                           ) : (
-                            <div 
-                              className="relative group"
-                              onMouseEnter={() => handleMouseEnter('price')}
-                              onMouseLeave={() => handleMouseLeave('price')}
-                            >
-                              <div className="flex items-center justify-end">
-                                <span className="crypto-amount font-mono">{transaction.price}</span>
-                              </div>
-                              {editableFields.price && (
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="absolute left-0 top-0 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => handleStartEditing(transaction.id, 'price', transaction.price)}
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </Button>
-                              )}
-                            </div>
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </TableCell>
-                        
+
+                        {/* Value Column */}
                         <TableCell className="text-right font-mono">
-                          {editingTransactionId === transaction.id && editingField === 'value' ? (
-                            <div className="flex items-center justify-end space-x-2">
-                              <div className="relative flex-1">
-                                <div className="absolute inset-y-0 left-0 flex items-center pl-2 pointer-events-none">
-                                  <span className="text-gray-500">$</span>
-                                </div>
-                                <Input 
-                                  value={editingValue} 
-                                  onChange={(e) => setEditingValue(e.target.value)}
-                                  className="h-8 w-24 pl-6 text-right"
-                                  type="number"
-                                  step="0.01"
-                                />
-                              </div>
-                              <Button 
-                                onClick={() => handleSaveEdit(transaction.id, 'value')} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <Check className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                onClick={handleCancelEditing} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <div 
-                              className="relative group"
-                              onMouseEnter={() => handleMouseEnter('value')}
-                              onMouseLeave={() => handleMouseLeave('value')}
-                            >
-                          {getCategory(transaction.type) === "swap" && transaction.incomingValueUsd != null && transaction.incomingValueUsd > 0 ? (
-                            <div className="flex flex-col items-end numeric-column">
-                              <div className="flex items-center text-rose-600 dark:text-rose-400">
-                                <ArrowDownRight className="mr-0.5 h-2.5 w-2.5" />
-                                <span className="crypto-amount font-mono">{transaction.value}</span>
-                              </div>
-                              <div className="flex items-center text-emerald-600 dark:text-emerald-400">
-                                <ArrowUpRight className="mr-0.5 h-2.5 w-2.5" />
-                                <span className="crypto-amount font-mono">+${transaction.incomingValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                              </div>
-                            </div>
-                          ) : (
-                          <div className={cn(
-                                "flex items-center justify-end numeric-column",
-                            parseFloat(transaction.value.replace(/[-$,]/g, "")) > 0 && !transaction.value.startsWith("-")
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-rose-600 dark:text-rose-400"
-                          )}>
-                            {parseFloat(transaction.value.replace(/[-$,]/g, "")) > 0 && !transaction.value.startsWith("-") ? (
-                                  <ArrowUpRight className="mr-0.5 h-2.5 w-2.5" />
-                            ) : (
-                                  <ArrowDownRight className="mr-0.5 h-2.5 w-2.5" />
-                            )}
-                                <span className="crypto-amount font-mono">{transaction.value}</span>
-                          </div>
-                          )}
-                              {editableFields.value && (
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="absolute left-0 top-0 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => handleStartEditing(transaction.id, 'value', transaction.value)}
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </Button>
-                              )}
-                            </div>
-                          )}
+                          <span className="crypto-amount">
+                            ${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
                         </TableCell>
                         
                         <TableCell className="text-right font-mono text-xs">
