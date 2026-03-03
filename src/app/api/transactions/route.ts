@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
-import { getCategory, getTypesForCategory, isOutflow, formatTypeForDisplay, getPnlOutflowTypes, getPnlInflowTypes, getPrimaryAssetDirection } from "@/lib/transaction-categorizer";
+import { getCategory, getTypesForCategory, isOutflow, formatTypeForDisplay, getPnlOutflowTypes, getPnlInflowTypes, getPrimaryAssetDirection, getPositiveValueTypes } from "@/lib/transaction-categorizer";
 
 /**
  * GET /api/transactions
@@ -319,6 +319,11 @@ export async function GET(request: NextRequest) {
         outPricePerUnit = pricePerUnit;
       }
 
+      // Sign the value: positive for inflows (Received only), negative for outflows (Sent, or both)
+      const signedValueUsd = direction === "in" && !hasTwoSides
+        ? Math.abs(valueUsd)
+        : -Math.abs(valueUsd);
+
       // Legacy formatted fields (for detail sheet / edit compatibility)
       const amount = `${amountValue} ${tx.asset_symbol}`;
       const price = `$${pricePerUnit.toFixed(2)}`;
@@ -338,7 +343,7 @@ export async function GET(request: NextRequest) {
         inAsset,
         inAmount,
         inPricePerUnit,
-        valueUsd,
+        valueUsd: signedValueUsd,
         // Legacy fields (detail sheet compatibility)
         asset: tx.asset_symbol,
         amount,
@@ -359,37 +364,34 @@ export async function GET(request: NextRequest) {
     });
 
     // Stats queries (run in parallel)
-    // Use explicit P&L type lists derived from isOutflow()/isInflow()
-    const PNL_OUTFLOW_TYPES = getPnlOutflowTypes();
-    const PNL_INFLOW_TYPES = getPnlInflowTypes();
-    const SWAP_TYPES = getTypesForCategory("swap");
+    // Positive value types = types where asset flows IN (TRANSFER_IN, BUY, income, etc.)
+    // Everything else = negative value (outflows, swaps, etc.)
+    const POSITIVE_VALUE_TYPES = getPositiveValueTypes();
     const allKnownTypes = [
       ...getTypesForCategory("buy"), ...getTypesForCategory("sell"),
       ...getTypesForCategory("transfer"), ...getTypesForCategory("swap"),
       ...getTypesForCategory("staking"), ...getTypesForCategory("defi"),
       ...getTypesForCategory("nft"), ...getTypesForCategory("income"),
     ];
-    // Stats use statsWhere (excludes cosmetic filters like hideZero/hideSpam so cash flow is stable)
-    const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, outflowAgg, inflowAgg, swapIncomingAgg] = await Promise.all([
-      prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("buy"), ...PNL_OUTFLOW_TYPES.filter(t => t === "NFT_PURCHASE")] } } }),
-      prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("sell"), ...PNL_INFLOW_TYPES.filter(t => t === "NFT_SALE")] } } }),
+    // Stats use statsWhere (includes search/filter/wallet/date but excludes cosmetic hideZero/hideSpam)
+    const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, inflowAgg, outflowAgg] = await Promise.all([
+      prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("buy"), ...getTypesForCategory("nft").filter(t => t === "NFT_PURCHASE" || t === "NFT Purchase" || t === "nft purchase")] } } }),
+      prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("sell"), ...getTypesForCategory("nft").filter(t => t === "NFT_SALE" || t === "NFT Sale" || t === "nft sale")] } } }),
       prisma.transaction.count({ where: { ...statsWhere, type: { in: allKnownTypes } } }),
       prisma.transaction.count({ where: { ...statsWhere, NOT: { value_usd: 0 } } }),
-      prisma.transaction.aggregate({ where: { ...statsWhere, type: { in: PNL_OUTFLOW_TYPES } }, _sum: { value_usd: true } }),
-      prisma.transaction.aggregate({ where: { ...statsWhere, type: { in: PNL_INFLOW_TYPES }, NOT: { value_usd: 0 } }, _sum: { value_usd: true } }),
-      // Sum incoming_value_usd for swaps (the received side of a swap)
-      prisma.transaction.aggregate({ where: { ...statsWhere, type: { in: SWAP_TYPES }, NOT: { incoming_value_usd: null } }, _sum: { incoming_value_usd: true } }),
+      // Inflow = sum of value_usd for positive-value types (asset incoming)
+      prisma.transaction.aggregate({ where: { ...statsWhere, type: { in: POSITIVE_VALUE_TYPES } }, _sum: { value_usd: true } }),
+      // Outflow = sum of value_usd for all other types (asset outgoing)
+      prisma.transaction.aggregate({ where: { ...statsWhere, NOT: { type: { in: POSITIVE_VALUE_TYPES } } }, _sum: { value_usd: true } }),
     ]);
 
     const otherCount = totalCount - buyCount - sellCount;
     const unlabelledCount = totalCount - identifiedTypeCount;
     const identifiedPercentage = totalCount > 0 ? Math.round((identifiedTypeCount / totalCount) * 100) : 0;
     const valueIdentifiedPercentage = totalCount > 0 ? Math.round((valueIdentifiedCount / totalCount) * 100) : 100;
-    // P&L cash-flow sums — NOT capital gains. Includes non-taxable movements.
+    // Cash flow: inflow = positive value txns, outflow = negative value txns
+    const totalInflow = Math.abs(Number(inflowAgg._sum.value_usd || 0));
     const totalOutflow = Math.abs(Number(outflowAgg._sum.value_usd || 0));
-    const rawInflow = Math.abs(Number(inflowAgg._sum.value_usd || 0));
-    const swapIncoming = Math.abs(Number(swapIncomingAgg._sum.incoming_value_usd || 0));
-    const totalInflow = rawInflow + swapIncoming;
     const netCashFlow = totalInflow - totalOutflow;
 
     // Calculate pagination metadata

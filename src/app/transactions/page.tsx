@@ -1861,8 +1861,13 @@ function TransactionsContent() {
 
                         {/* Value Column */}
                         <TableCell className="text-right font-mono">
-                          <span className="crypto-amount">
-                            ${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <span className={cn(
+                            "crypto-amount",
+                            transaction.valueUsd >= 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-rose-600 dark:text-rose-400"
+                          )}>
+                            {transaction.valueUsd >= 0 ? "+" : "-"}${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </TableCell>
                         

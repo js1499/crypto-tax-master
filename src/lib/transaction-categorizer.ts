@@ -476,6 +476,11 @@ export function getPrimaryAssetDirection(rawType: string): "out" | "in" {
   return "out";
 }
 
+/** All raw type strings where the value should be positive (asset incoming). */
+export function getPositiveValueTypes(): string[] {
+  return Object.keys(CATEGORY_MAP).filter(t => getPrimaryAssetDirection(t) === "in");
+}
+
 /**
  * Format a raw type string for display.
  * "TRANSFER_IN" → "Transfer In"
