@@ -313,6 +313,15 @@ function TransactionsContent() {
           const apiTransactions: Transaction[] = data.transactions.map((tx: any) => ({
             id: tx.id,
             type: tx.type,
+            // Structured out/in fields
+            outAsset: tx.outAsset ?? null,
+            outAmount: tx.outAmount ?? null,
+            outPricePerUnit: tx.outPricePerUnit ?? null,
+            inAsset: tx.inAsset ?? null,
+            inAmount: tx.inAmount ?? null,
+            inPricePerUnit: tx.inPricePerUnit ?? null,
+            valueUsd: tx.valueUsd ?? 0,
+            // Legacy fields
             asset: tx.asset,
             amount: tx.amount,
             price: tx.price,
@@ -325,6 +334,9 @@ function TransactionsContent() {
             notes: tx.notes || "",
             chain: tx.chain,
             txHash: tx.txHash,
+            incomingAsset: tx.incomingAsset ?? null,
+            incomingAmount: tx.incomingAmount ?? null,
+            incomingValueUsd: tx.incomingValueUsd ?? null,
           }));
 
           setTransactions(apiTransactions);
