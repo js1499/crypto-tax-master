@@ -899,16 +899,34 @@ function processTransactionsForTax(
       continue;
     }
 
-    // Skip "Transfer" type transactions - these are internal transfers or bank transfers
-    // that don't create taxable events
+    // Remap TRANSFER_IN/TRANSFER_OUT to receive/send so they go through
+    // proper cost basis handling. Only skip true self-transfers (TRANSFER_SELF)
+    // and generic "transfer" types with no direction.
     if (isTransferSkip(tx.type || "")) {
-      if (valueUsd !== 0 && processedCount < 20) {
-        console.warn(`[Tax Calculator] ⚠️  Skipping transfer transaction ${tx.id} with non-zero value ($${valueUsd.toFixed(2)}) for ${amount} ${asset}. If this is a receive, re-categorize it.`);
+      const typeUpper = (tx.type || "").toUpperCase();
+      const isSelfTransfer = typeUpper === "TRANSFER_SELF" || (
+        tx.counterparty_address && walletAddresses.some(addr =>
+          addr.toLowerCase() === tx.counterparty_address?.toLowerCase()
+        )
+      );
+
+      if (typeUpper === "TRANSFER_IN" && !isSelfTransfer) {
+        // External transfer in = acquisition, remap to "receive" handler
+        typeCounts["receive"] = (typeCounts["receive"] || 0) + 1;
+        typeCounts[txType] = (typeCounts[txType] || 1) - 1;
+        // Fall through — the receive branch below will handle it
+      } else if (typeUpper === "TRANSFER_OUT" && !isSelfTransfer) {
+        // External transfer out = disposal, remap to "send" handler
+        typeCounts["send"] = (typeCounts["send"] || 0) + 1;
+        typeCounts[txType] = (typeCounts[txType] || 1) - 1;
+        // Fall through — the send branch below will handle it
+      } else {
+        // True self-transfer or generic transfer — skip
+        if (costBasisResults) {
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        }
+        continue;
       }
-      if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
-      }
-      continue;
     }
 
     // Log first few sell transactions for debugging
@@ -1241,7 +1259,7 @@ function processTransactionsForTax(
     // H-5 fix: Handle "receive" separately — non-income transfer by default.
     // Creates a cost basis lot at FMV for tracking purposes, but does NOT
     // generate an income event. Self-transfer detection still applies.
-    else if (txType === "receive") {
+    else if (txType === "receive" || txType === "transfer_in") {
       // Check if this is a self-transfer (sender address is in user's wallets)
       const isSelfTransfer = (
         tx.notes?.toLowerCase().includes("self transfer") ||
@@ -1298,7 +1316,7 @@ function processTransactionsForTax(
     // H-2 fix: Detect self-transfer BEFORE consuming lots.
     // Sends to own wallets = non-taxable transfer (cost basis preserved in place)
     // Sends to others = cost basis consumed (gift or transfer out)
-    else if (txType === "send") {
+    else if (txType === "send" || txType === "transfer_out") {
       const isSelfTransfer = (
         tx.notes?.toLowerCase().includes("self transfer") ||
         tx.notes?.toLowerCase().includes("internal transfer") ||
@@ -1311,6 +1329,9 @@ function processTransactionsForTax(
         // Self-transfer: cost basis lots remain untouched — the user still owns
         // the tokens on a different wallet. The receive side should be a no-op.
         debugLog(`[Tax Calculator] Send ${tx.id}: Self-transfer of ${amount} ${asset} — cost basis preserved.`);
+        if (costBasisResults) {
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        }
       } else {
         // Non-self send: consume lots (gift or transfer out)
         const sendAmount = amount;
@@ -1346,9 +1367,14 @@ function processTransactionsForTax(
             lots: consumedLots,
           });
         }
-      }
-      if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+
+        // External send = disposal. Record cost basis and gain/loss.
+        // Proceeds = value_usd (FMV at time of send), gain = proceeds - cost basis
+        const proceeds = Math.abs(valueUsd);
+        const gainLoss = proceeds - consumedCostBasis;
+        if (costBasisResults) {
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: consumedCostBasis, gainLossUsd: gainLoss });
+        }
       }
     }
     // H-1 fix: Unstake is the return of staked tokens — NOT a disposal.
