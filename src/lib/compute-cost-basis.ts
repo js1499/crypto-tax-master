@@ -57,21 +57,25 @@ export async function recomputeCostBasis(userId: string): Promise<void> {
       walletAddresses
     );
 
-    // Batch update
-    const BATCH_SIZE = 500;
-    for (let i = 0; i < results.length; i += BATCH_SIZE) {
-      const batch = results.slice(i, i + BATCH_SIZE);
-      await prisma.$transaction(
-        batch.map(r =>
-          prisma.transaction.update({
-            where: { id: r.transactionId },
-            data: {
-              cost_basis_usd: r.costBasisUsd !== null ? new Prisma.Decimal(r.costBasisUsd) : null,
-              gain_loss_usd: r.gainLossUsd !== null ? new Prisma.Decimal(r.gainLossUsd) : null,
-            },
-          })
-        )
-      );
+    // Bulk update via single raw SQL using VALUES list
+    // This replaces 77+ sequential Prisma batch calls with one DB round trip
+    if (results.length === 0) return;
+
+    const CHUNK_SIZE = 5000; // Postgres can handle large VALUES lists efficiently
+    for (let i = 0; i < results.length; i += CHUNK_SIZE) {
+      const chunk = results.slice(i, i + CHUNK_SIZE);
+      const valuesList = chunk.map(r => {
+        const cb = r.costBasisUsd !== null ? r.costBasisUsd.toString() : 'NULL';
+        const gl = r.gainLossUsd !== null ? r.gainLossUsd.toString() : 'NULL';
+        return `(${r.transactionId}, ${cb}::numeric(30,15), ${gl}::numeric(30,15))`;
+      }).join(',\n');
+
+      await prisma.$executeRawUnsafe(`
+        UPDATE transactions AS t
+        SET cost_basis_usd = v.cb, gain_loss_usd = v.gl
+        FROM (VALUES ${valuesList}) AS v(id, cb, gl)
+        WHERE t.id = v.id
+      `);
     }
 
     console.log(`[Cost Basis] Auto-computed for ${results.length} transactions (${costBasisMethod})`);
