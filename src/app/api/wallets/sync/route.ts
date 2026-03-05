@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
+import { recomputeCostBasis } from "@/lib/compute-cost-basis";
 import {
   getWalletTransactions,
   getWalletTransactionsAllChains,
@@ -325,6 +326,9 @@ export async function POST(request: NextRequest) {
     // Summary
     const totalDuration = Date.now() - requestStartTime;
     console.log(`[Wallet Sync] Done in ${(totalDuration / 1000).toFixed(1)}s: ${totalAdded} added, ${totalSkipped} skipped, ${totalErrors} errors across ${wallets.length} wallet(s)${errors.length > 0 ? ` | errors: ${errors.join(" | ")}` : ""}`);
+
+    // Auto-recompute cost basis after sync
+    await recomputeCostBasis(user.id);
 
     const response = {
       status: "success",

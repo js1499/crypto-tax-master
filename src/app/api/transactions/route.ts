@@ -265,6 +265,8 @@ export async function GET(request: NextRequest) {
           chain: true,
           tx_hash: true,
           notes: true, // BUG-010/BUG-017 fix: Include notes in select
+          cost_basis_usd: true,
+          gain_loss_usd: true,
           incoming_asset_symbol: true,
           incoming_amount_value: true,
           incoming_value_usd: true,
@@ -319,10 +321,23 @@ export async function GET(request: NextRequest) {
         outPricePerUnit = pricePerUnit;
       }
 
-      // Sign the value: positive for inflows (Received only), negative for outflows (Sent, or both)
-      const signedValueUsd = direction === "in" && !hasTwoSides
-        ? Math.abs(valueUsd)
-        : -Math.abs(valueUsd);
+      // Use persisted cost basis/gain-loss when available (fixes swap value display)
+      const costBasisUsdVal = tx.cost_basis_usd ? Number(tx.cost_basis_usd) : null;
+      const gainLossUsdVal = tx.gain_loss_usd ? Number(tx.gain_loss_usd) : null;
+
+      let signedValueUsd: number;
+      if (gainLossUsdVal !== null) {
+        // Disposal (sell, swap, burn, etc.): show realized gain/loss
+        signedValueUsd = gainLossUsdVal;
+      } else if (costBasisUsdVal !== null && costBasisUsdVal > 0) {
+        // Acquisition (buy): show negative cost (money spent)
+        signedValueUsd = -costBasisUsdVal;
+      } else {
+        // Fallback when cost basis not yet computed
+        signedValueUsd = direction === "in" && !hasTwoSides
+          ? Math.abs(valueUsd)
+          : -Math.abs(valueUsd);
+      }
 
       // Legacy formatted fields (for detail sheet / edit compatibility)
       const amount = `${amountValue} ${tx.asset_symbol}`;
@@ -344,6 +359,9 @@ export async function GET(request: NextRequest) {
         inAmount,
         inPricePerUnit,
         valueUsd: signedValueUsd,
+        costBasisUsd: costBasisUsdVal,
+        gainLossUsd: gainLossUsdVal,
+        costBasisComputed: costBasisUsdVal !== null || gainLossUsdVal !== null,
         // Legacy fields (detail sheet compatibility)
         asset: tx.asset_symbol,
         amount,
@@ -364,9 +382,6 @@ export async function GET(request: NextRequest) {
     });
 
     // Stats queries (run in parallel)
-    // Positive value types = types where asset flows IN (TRANSFER_IN, BUY, income, etc.)
-    // Everything else = negative value (outflows, swaps, etc.)
-    const POSITIVE_VALUE_TYPES = getPositiveValueTypes();
     const allKnownTypes = [
       ...getTypesForCategory("buy"), ...getTypesForCategory("sell"),
       ...getTypesForCategory("transfer"), ...getTypesForCategory("swap"),
@@ -374,25 +389,23 @@ export async function GET(request: NextRequest) {
       ...getTypesForCategory("nft"), ...getTypesForCategory("income"),
     ];
     // Stats use statsWhere (includes search/filter/wallet/date but excludes cosmetic hideZero/hideSpam)
-    const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, inflowAgg, outflowAgg] = await Promise.all([
+    const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, disposalAgg] = await Promise.all([
       prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("buy"), ...getTypesForCategory("nft").filter(t => t === "NFT_PURCHASE" || t === "NFT Purchase" || t === "nft purchase")] } } }),
       prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("sell"), ...getTypesForCategory("nft").filter(t => t === "NFT_SALE" || t === "NFT Sale" || t === "nft sale")] } } }),
       prisma.transaction.count({ where: { ...statsWhere, type: { in: allKnownTypes } } }),
       prisma.transaction.count({ where: { ...statsWhere, NOT: { value_usd: 0 } } }),
-      // Inflow = sum of value_usd for positive-value types (asset incoming)
-      prisma.transaction.aggregate({ where: { ...statsWhere, type: { in: POSITIVE_VALUE_TYPES } }, _sum: { value_usd: true } }),
-      // Outflow = sum of value_usd for all other types (asset outgoing)
-      prisma.transaction.aggregate({ where: { ...statsWhere, NOT: { type: { in: POSITIVE_VALUE_TYPES } } }, _sum: { value_usd: true } }),
+      // Cost basis stats: aggregate disposal transactions (where gain_loss_usd has been computed)
+      prisma.transaction.aggregate({ where: { ...statsWhere, gain_loss_usd: { not: null } }, _sum: { cost_basis_usd: true, gain_loss_usd: true } }),
     ]);
 
     const otherCount = totalCount - buyCount - sellCount;
     const unlabelledCount = totalCount - identifiedTypeCount;
     const identifiedPercentage = totalCount > 0 ? Math.round((identifiedTypeCount / totalCount) * 100) : 0;
     const valueIdentifiedPercentage = totalCount > 0 ? Math.round((valueIdentifiedCount / totalCount) * 100) : 100;
-    // Cash flow: inflow = positive value txns, outflow = negative value txns
-    const totalInflow = Math.abs(Number(inflowAgg._sum.value_usd || 0));
-    const totalOutflow = Math.abs(Number(outflowAgg._sum.value_usd || 0));
-    const netCashFlow = totalInflow - totalOutflow;
+    // Cost basis stats: totalCostBasis, totalProceeds (cost + gain), netGain
+    const totalCostBasis = Math.abs(Number(disposalAgg._sum.cost_basis_usd || 0));
+    const netGain = Number(disposalAgg._sum.gain_loss_usd || 0);
+    const totalProceeds = totalCostBasis + netGain;
 
     // Calculate pagination metadata
     const totalPages = Math.ceil(totalCount / limit);
@@ -418,9 +431,9 @@ export async function GET(request: NextRequest) {
         identifiedPercentage,
         valueIdentifiedPercentage,
         pnl: {
-          totalInflow,
-          totalOutflow,
-          netCashFlow,
+          totalCostBasis,
+          totalProceeds,
+          netGain,
         },
       },
     });

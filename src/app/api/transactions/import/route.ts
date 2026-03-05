@@ -8,6 +8,7 @@ import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/ra
 import { getCategory } from "@/lib/transaction-categorizer";
 import * as Sentry from "@sentry/nextjs";
 import { logBuffer } from "@/lib/log-buffer";
+import { recomputeCostBasis } from "@/lib/compute-cost-basis";
 
 // Increase body size limit for large CSV uploads (50MB)
 export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
@@ -563,6 +564,9 @@ export async function POST(request: NextRequest) {
         },
       });
     }
+
+    // Auto-recompute cost basis after import
+    await recomputeCostBasis(user.id);
 
     return NextResponse.json({
       status: "success",

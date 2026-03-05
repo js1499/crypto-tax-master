@@ -115,6 +115,10 @@ interface Transaction {
   inAmount: number | null;
   inPricePerUnit: number | null;
   valueUsd: number;
+  // Cost basis tracking
+  costBasisUsd: number | null;
+  gainLossUsd: number | null;
+  costBasisComputed: boolean;
   // Legacy fields (detail sheet / edit)
   asset: string;
   amount: string;
@@ -164,7 +168,8 @@ function TransactionsContent() {
   const [hideZeroTransactions, setHideZeroTransactions] = useState(false);
   const [hideSpamTransactions, setHideSpamTransactions] = useState(false);
   const [isAddTransactionOpen, setIsAddTransactionOpen] = useState(false);
-  
+  const [isComputingCostBasis, setIsComputingCostBasis] = useState(false);
+
   // Added states for transaction editing
   const [editingTransactionId, setEditingTransactionId] = useState<number | null>(null);
   const [editingField, setEditingField] = useState<string | null>(null);
@@ -216,7 +221,7 @@ function TransactionsContent() {
     unlabelledCount: number;
     identifiedPercentage: number;
     valueIdentifiedPercentage: number;
-    pnl: { totalInflow: number; totalOutflow: number; netCashFlow: number };
+    pnl: { totalCostBasis: number; totalProceeds: number; netGain: number };
   } | null>(null);
 
   // Pagination state
@@ -321,6 +326,10 @@ function TransactionsContent() {
             inAmount: tx.inAmount ?? null,
             inPricePerUnit: tx.inPricePerUnit ?? null,
             valueUsd: tx.valueUsd ?? 0,
+            // Cost basis tracking
+            costBasisUsd: tx.costBasisUsd ?? null,
+            gainLossUsd: tx.gainLossUsd ?? null,
+            costBasisComputed: tx.costBasisComputed ?? false,
             // Legacy fields
             asset: tx.asset,
             amount: tx.amount,
@@ -446,6 +455,25 @@ function TransactionsContent() {
   const handleItemsPerPageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setItemsPerPage(parseInt(e.target.value));
     setCurrentPage(1); // Reset to first page when changing items per page
+  };
+
+  // Handle cost basis computation
+  const handleComputeCostBasis = async () => {
+    setIsComputingCostBasis(true);
+    try {
+      const response = await fetch("/api/cost-basis/compute", { method: "POST" });
+      const data = await response.json();
+      if (data.status === "success") {
+        toast.success(`Cost basis computed for ${data.updatedTransactions} transactions (${data.method})`);
+        setCurrentPage(1); // Refresh transactions
+      } else {
+        toast.error(data.error || "Failed to compute cost basis");
+      }
+    } catch (error) {
+      toast.error("Failed to compute cost basis");
+    } finally {
+      setIsComputingCostBasis(false);
+    }
   };
 
   // Handle import completion
@@ -1095,6 +1123,19 @@ function TransactionsContent() {
               </DialogContent>
             </Dialog>
 
+            <Button
+              variant="outline"
+              onClick={handleComputeCostBasis}
+              disabled={isComputingCostBasis}
+            >
+              {isComputingCostBasis ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CreditCard className="mr-2 h-4 w-4" />
+              )}
+              <span>{isComputingCostBasis ? "Computing..." : "Cost Basis"}</span>
+            </Button>
+
             <Sheet open={isImportOpen} onOpenChange={setIsImportOpen}>
               <SheetTrigger asChild>
                 <Button data-onboarding="import-transactions">
@@ -1381,35 +1422,35 @@ function TransactionsContent() {
           </Card>
         </div>
 
-        {/* P&L Summary Card */}
+        {/* Cost Basis Summary Card */}
         {stats?.pnl && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg font-semibold">Cash Flow Summary</CardTitle>
+              <CardTitle className="text-lg font-semibold">Capital Gains Summary</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Inflow</p>
-                  <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                    ${stats.pnl.totalInflow.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <p className="text-sm text-muted-foreground">Cost Basis</p>
+                  <p className="text-xl font-bold text-muted-foreground">
+                    ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Outflow</p>
-                  <p className="text-xl font-bold text-rose-600 dark:text-rose-400">
-                    ${stats.pnl.totalOutflow.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <p className="text-sm text-muted-foreground">Proceeds</p>
+                  <p className="text-xl font-bold text-muted-foreground">
+                    ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div>
-                  <p className="text-sm text-muted-foreground">Net Cash Flow</p>
+                  <p className="text-sm text-muted-foreground">Net Gain / Loss</p>
                   <p className={cn(
                     "text-xl font-bold",
-                    stats.pnl.netCashFlow >= 0
+                    stats.pnl.netGain >= 0
                       ? "text-emerald-600 dark:text-emerald-400"
                       : "text-rose-600 dark:text-rose-400"
                   )}>
-                    {stats.pnl.netCashFlow >= 0 ? "+" : ""}${stats.pnl.netCashFlow.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
               </div>
@@ -1861,14 +1902,21 @@ function TransactionsContent() {
 
                         {/* Value Column */}
                         <TableCell className="text-right font-mono">
-                          <span className={cn(
-                            "crypto-amount",
-                            transaction.valueUsd >= 0
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-rose-600 dark:text-rose-400"
-                          )}>
-                            {transaction.valueUsd >= 0 ? "+" : "-"}${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
+                          <div className="flex flex-col items-end">
+                            <span className={cn(
+                              "crypto-amount",
+                              transaction.valueUsd >= 0
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-rose-600 dark:text-rose-400"
+                            )}>
+                              {transaction.valueUsd >= 0 ? "+" : "-"}${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                            {transaction.costBasisComputed && transaction.costBasisUsd !== null && transaction.costBasisUsd > 0 && (
+                              <span className="text-muted-foreground text-[10px]">
+                                basis: ${transaction.costBasisUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                            )}
+                          </div>
                         </TableCell>
                         
                         <TableCell className="text-right font-mono text-xs">

@@ -128,6 +128,10 @@ model Transaction {
   value_usd          Decimal   @db.Decimal(30, 15)
   fee_usd            Decimal?  @db.Decimal(30, 15) // Transaction fees in USD
 
+  // Cost basis tracking (populated by /api/cost-basis/compute)
+  cost_basis_usd     Decimal?  @db.Decimal(30, 15) // Cost basis in USD for this transaction
+  gain_loss_usd      Decimal?  @db.Decimal(30, 15) // Realized gain/loss in USD (proceeds - cost basis)
+
   // Swap transaction details (for crypto-to-crypto swaps)
   incoming_asset_symbol   String?   @db.VarChar(50) // Asset received in swap
   incoming_asset_address  String?   @db.VarChar(255) // Contract/mint address of incoming asset

@@ -66,6 +66,13 @@ export interface Form8949Entry {
   holdingPeriod: "short" | "long";
 }
 
+// Per-transaction cost basis result (for persisting to DB)
+export interface TransactionCostBasisResult {
+  transactionId: number;
+  costBasisUsd: number | null;  // null = not applicable (transfers, etc.)
+  gainLossUsd: number | null;   // null = not a disposal event
+}
+
 // FIFO queue for tracking cost basis
 interface CostBasisLot {
   id: number;
@@ -781,13 +788,36 @@ export async function calculateTaxReport(
 }
 
 /**
+ * Compute cost basis and gain/loss for all transactions.
+ * Reuses the same lot-tracking logic as processTransactionsForTax().
+ * Returns per-transaction results suitable for writing back to DB.
+ */
+export function computeCostBasisForTransactions(
+  transactions: Transaction[],
+  method: "FIFO" | "LIFO" | "HIFO",
+  walletAddresses: string[] = []
+): TransactionCostBasisResult[] {
+  const resultMap = new Map<number, TransactionCostBasisResult>();
+
+  // Use the max year found in data so all transactions pass through the full processing loop
+  const maxYear = transactions.length > 0
+    ? Math.max(...transactions.map(tx => tx.tx_timestamp.getFullYear()))
+    : 9999;
+
+  processTransactionsForTax(transactions, maxYear, method, walletAddresses, resultMap);
+
+  return Array.from(resultMap.values());
+}
+
+/**
  * Process transactions to calculate taxable events and income
  */
 function processTransactionsForTax(
   transactions: Transaction[],
   taxYear: number,
   method: "FIFO" | "LIFO" | "HIFO",
-  walletAddresses: string[] = [] // For detecting self-transfers
+  walletAddresses: string[] = [], // For detecting self-transfers
+  costBasisResults?: Map<number, TransactionCostBasisResult> // Per-transaction cost basis collector
 ): {
   taxableEvents: TaxableEvent[];
   incomeEvents: IncomeEvent[];
@@ -863,6 +893,9 @@ function processTransactionsForTax(
       if (processedCount < 20) {
         debugLog(`[Tax Calculator] Skipping fiat currency transaction: ${tx.type} ${amount} ${asset}`);
       }
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      }
       continue;
     }
 
@@ -871,6 +904,9 @@ function processTransactionsForTax(
     if (isTransferSkip(tx.type || "")) {
       if (valueUsd !== 0 && processedCount < 20) {
         console.warn(`[Tax Calculator] ⚠️  Skipping transfer transaction ${tx.id} with non-zero value ($${valueUsd.toFixed(2)}) for ${amount} ${asset}. If this is a receive, re-categorize it.`);
+      }
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
       }
       continue;
     }
@@ -931,6 +967,10 @@ function processTransactionsForTax(
       if (processedCount < 10 || costBasisLots[asset].length <= 3) {
         debugLog(`[processTransactionsForTax] Added buy transaction ${tx.id} to cost basis: asset=${asset} (original: "${tx.asset_symbol}"), amount=${amount}, costBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, lotsForAsset=${costBasisLots[asset].length}`);
       }
+
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: totalCostBasis, gainLossUsd: 0 });
+      }
     }
     // Handle sells - calculate capital gains/losses
     // NFT Sale is treated as a sell (taxable disposal event)
@@ -962,6 +1002,10 @@ function processTransactionsForTax(
           holdingPeriod: disposal.holdingPeriod,
           remainingLoss: Math.abs(disposal.gainLoss),
         });
+      }
+
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
       }
 
       // Only include in tax year if the sale occurred in that year
@@ -1061,6 +1105,10 @@ function processTransactionsForTax(
           holdingPeriod: disposal.holdingPeriod,
           remainingLoss: Math.abs(disposal.gainLoss),
         });
+      }
+
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
       }
 
       // Create taxable events with proper holding period splitting
@@ -1184,6 +1232,11 @@ function processTransactionsForTax(
           pricePerUnit,
         });
       }
+
+      // Cost basis = FMV at receipt (becomes basis for future capital gains)
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: Math.abs(valueUsd), gainLossUsd: null });
+      }
     }
     // H-5 fix: Handle "receive" separately — non-income transfer by default.
     // Creates a cost basis lot at FMV for tracking purposes, but does NOT
@@ -1238,6 +1291,9 @@ function processTransactionsForTax(
           });
         }
       }
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: Math.abs(valueUsd), gainLossUsd: null });
+      }
     }
     // H-2 fix: Detect self-transfer BEFORE consuming lots.
     // Sends to own wallets = non-taxable transfer (cost basis preserved in place)
@@ -1291,6 +1347,9 @@ function processTransactionsForTax(
           });
         }
       }
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      }
     }
     // H-1 fix: Unstake is the return of staked tokens — NOT a disposal.
     // Cost basis lots must remain untouched so they're available when the user
@@ -1300,6 +1359,9 @@ function processTransactionsForTax(
       // No-op: cost basis lots are preserved. The tokens are simply "unstaked"
       // and still owned by the user with their original acquisition cost basis.
       debugLog(`[Tax Calculator] Unstake ${tx.id}: ${amount} ${asset} — cost basis preserved (non-taxable).`);
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      }
     }
     // C-4 fix: Handle bridge as non-taxable transfer for same-token bridges.
     // Bridging the same token to another chain is economically equivalent to a
@@ -1316,6 +1378,9 @@ function processTransactionsForTax(
         // Non-taxable: cost basis lots remain unchanged, no disposal event.
         // The tokens are the same asset on a different chain.
         debugLog(`[Tax Calculator] Bridge ${tx.id}: Same-token bridge for ${asset} — non-taxable transfer, cost basis preserved.`);
+        if (costBasisResults) {
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        }
       } else {
         // Different-token bridge (e.g., ETH → WETH): treated as a swap/disposal
         const disposal = processDisposal(
@@ -1341,6 +1406,10 @@ function processTransactionsForTax(
             taxableEventCount++;
             taxableEvents.push(event);
           }
+        }
+
+        if (costBasisResults) {
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
         }
 
         // Create cost basis lot for the incoming asset at FMV
@@ -1369,6 +1438,9 @@ function processTransactionsForTax(
         costBasis: totalValueProvided,
         pricePerUnit: lpTokenPrice,
       });
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: totalValueProvided, gainLossUsd: 0 });
+      }
     }
     // Handle liquidity removal - LP token disposal
     // IRS: Removing liquidity disposes of LP tokens, may have impermanent loss
@@ -1395,6 +1467,10 @@ function processTransactionsForTax(
           holdingPeriod: disposal.holdingPeriod,
           remainingLoss: Math.abs(disposal.gainLoss),
         });
+      }
+
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
       }
 
       if (txYear === taxYear) {
@@ -1427,6 +1503,9 @@ function processTransactionsForTax(
         fees: feeUsd,
         washSaleAdjustment: washSaleAdjustment > 0 ? washSaleAdjustment : undefined,
       });
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: totalCostBasis, gainLossUsd: 0 });
+      }
     }
     else if (txType === "margin sell") {
       // Margin sell is treated as a regular sell (taxable disposal)
@@ -1456,6 +1535,10 @@ function processTransactionsForTax(
           holdingPeriod: disposal.holdingPeriod,
           remainingLoss: Math.abs(disposal.gainLoss),
         });
+      }
+
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
       }
 
       if (txYear === taxYear) {
@@ -1498,6 +1581,10 @@ function processTransactionsForTax(
         });
       }
 
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
+      }
+
       if (txYear === taxYear) {
         const events = createDisposalTaxEvents(tx, asset, amount, disposal, date);
         for (const event of events) {
@@ -1526,6 +1613,9 @@ function processTransactionsForTax(
       // - Prevent borrowed assets from being used in cost basis calculations
       // - Ensure repayments reduce borrowed pool, not owned pool
       debugLog(`[Tax Calculator] Borrow transaction ${tx.id}: Borrowing is not currently tracked. Ensure you don't mix borrowed and owned crypto.`);
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      }
     }
     // Handle repay - not taxable but affects holdings tracking
     else if (txType === "repay") {
@@ -1533,6 +1623,9 @@ function processTransactionsForTax(
       // Reduces borrowed amount (which is not currently tracked)
       // See borrow handler above for full explanation of limitations
       debugLog(`[Tax Calculator] Repay transaction ${tx.id}: Repayment is not currently tracked. Ensure you don't mix borrowed and owned crypto.`);
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      }
     }
     // Handle deposit — treat as acquisition (same as buy: creates cost basis lot)
     // H-3 fix: Deposit/Withdraw are transfers (e.g., to/from exchange), NOT
@@ -1541,10 +1634,16 @@ function processTransactionsForTax(
     else if (txType === "deposit") {
       // No-op: tokens moved to exchange. Cost basis lots are already tracked.
       debugLog(`[Tax Calculator] Deposit ${tx.id}: ${amount} ${asset} to exchange — non-taxable transfer.`);
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      }
     }
     else if (txType === "withdraw") {
       // No-op: tokens moved from exchange. Cost basis lots are already tracked.
       debugLog(`[Tax Calculator] Withdraw ${tx.id}: ${amount} ${asset} from exchange — non-taxable transfer.`);
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      }
     }
     // Handle burn — disposal at $0 proceeds (capital loss = full cost basis)
     // C-1/C-2/H-7 fix: Use processDisposal for consistent lot consumption,
@@ -1566,6 +1665,10 @@ function processTransactionsForTax(
           holdingPeriod: disposal.holdingPeriod,
           remainingLoss: Math.abs(disposal.gainLoss),
         });
+      }
+
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
       }
 
       if (txYear === taxYear) {
@@ -1606,6 +1709,9 @@ function processTransactionsForTax(
         debugLog(`[Tax Calculator] ${txType} ${tx.id}: Transferred cost basis from ${asset} to ${incomingAsset} — non-taxable.`);
       }
       // If no incoming asset data, it's a no-op (cost basis stays on same symbol)
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      }
     }
     // Skip economically neutral types — no taxable event, no cost basis change
     else if (
@@ -1617,6 +1723,9 @@ function processTransactionsForTax(
       txType === "spam"
     ) {
       // These types are economically neutral and require no tax processing
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      }
     }
     // Handle yield farming rewards - income recognition
     else if (txType === "yield farming" || txType === "farm reward") {
@@ -1647,6 +1756,11 @@ function processTransactionsForTax(
           costBasis: rewardValue,
           pricePerUnit,
         });
+      }
+
+      // Cost basis = FMV at receipt (becomes basis for future capital gains)
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: rewardValue, gainLossUsd: null });
       }
     }
   }
