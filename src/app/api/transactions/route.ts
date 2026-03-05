@@ -330,8 +330,13 @@ export async function GET(request: NextRequest) {
         // Disposal (sell, swap, burn, etc.): show realized gain/loss
         signedValueUsd = gainLossUsdVal;
       } else if (costBasisUsdVal !== null && costBasisUsdVal > 0) {
-        // Acquisition (buy): show negative cost (money spent)
-        signedValueUsd = -costBasisUsdVal;
+        // Acquisition with cost basis — sign depends on type:
+        // Buys = negative (you spent money), receives/transfers-in/income = positive (you gained value)
+        const txType = (tx.type || "").toLowerCase();
+        const isInboundTransfer = txType === "receive" || txType === "transfer_in"
+          || txType === "token receive" || txType === "nft receive";
+        const isIncome = getCategory(tx.type) === "income";
+        signedValueUsd = (isInboundTransfer || isIncome) ? costBasisUsdVal : -costBasisUsdVal;
       } else {
         // Fallback when cost basis not yet computed
         signedValueUsd = direction === "in" && !hasTwoSides
