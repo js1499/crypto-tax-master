@@ -1216,7 +1216,12 @@ function processTransactionsForTax(
       txType === "mining" ||
       txType === "yield" ||
       txType === "interest" ||
-      txType === "mint"
+      txType === "mint" ||
+      txType === "claim_rewards" ||
+      txType === "harvest" ||
+      txType === "payout" ||
+      txType === "fund_reward" ||
+      getCategory(tx.type || "") === "income"
     ) {
       // Determine income type per IRS guidance
       let incomeType: IncomeEvent["type"] = "other";

@@ -526,6 +526,14 @@ export async function getSolanaWalletTransactions(
         continue;
       }
 
+      // Determine the stored type for transfer sub-transactions.
+      // If Helius gave a specific type (STAKE_TOKEN, NFT_LISTING, etc.),
+      // preserve it instead of flattening to TRANSFER_IN/TRANSFER_OUT.
+      // Only use direction-based types for actual transfers.
+      const isDirectionType = txType === "TRANSFER_IN" || txType === "TRANSFER_OUT" || txType === "TRANSFER_SELF";
+      const resolvedInType = isDirectionType ? "TRANSFER_IN" : txType;
+      const resolvedOutType = isDirectionType ? "TRANSFER_OUT" : txType;
+
       // Process native SOL transfers
       let hasTransfers = false;
       if (tx.nativeTransfers && tx.nativeTransfers.length > 0) {
@@ -547,7 +555,7 @@ export async function getSolanaWalletTransactions(
           const subTxId = `${tx.signature}-native-${transfer.fromUserAccount.slice(0, 8)}-${transfer.toUserAccount.slice(0, 8)}`;
           transactions.push({
             id: subTxId,
-            type: isIncoming ? "TRANSFER_IN" : "TRANSFER_OUT",
+            type: isIncoming ? resolvedInType : resolvedOutType,
             asset_symbol: "SOL",
             asset_chain: "solana",
             amount_value: new Decimal(solAmount),
@@ -589,7 +597,7 @@ export async function getSolanaWalletTransactions(
           const tokenSubTxId = `${tx.signature}-token-${transfer.mint.slice(0, 8)}-${transfer.fromUserAccount.slice(0, 8)}`;
           transactions.push({
             id: tokenSubTxId,
-            type: isIncoming ? "TRANSFER_IN" : "TRANSFER_OUT",
+            type: isIncoming ? resolvedInType : resolvedOutType,
             asset_symbol: resolveTokenSymbol(transfer.mint),
             asset_address: transfer.mint,
             asset_chain: "solana",
