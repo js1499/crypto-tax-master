@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { getCoinGeckoId, getPriceRange, getCurrentPrice, resolveUnknownSymbols } from "@/lib/coingecko";
+import { getCoinGeckoId, getPriceRange, getCurrentPrice } from "@/lib/coingecko";
 import { batchGetTokenOHLCV } from "./onchain-prices";
 
 const log = (msg: string) => console.log(`[Enrich] ${msg}`);
@@ -329,23 +329,7 @@ export async function enrichHistoricalPrices(
     // ══════════════════════════════════════════════════════════════════
     log(`── Phase 3: Pricing transfers via known symbols ──`);
 
-    // Collect ALL unique symbols from unpriced transactions, then resolve unknown ones
-    const allUnpricedSymbols = new Set<string>();
-    for (const tx of transactions) {
-      if (pricedIds.has(tx.id)) continue;
-      if (tx.asset_symbol && !(tx.asset_address?.endsWith("pump"))) allUnpricedSymbols.add(tx.asset_symbol.toUpperCase());
-      if (tx.incoming_asset_symbol && !(tx.incoming_asset_address?.endsWith("pump"))) allUnpricedSymbols.add(tx.incoming_asset_symbol.toUpperCase());
-    }
-    // Filter to real-looking symbols (skip truncated addresses like "Chr8hN...", "4cNQQi...")
-    const unknownSymbols = Array.from(allUnpricedSymbols)
-      .filter(s => !getCoinGeckoId(s) && !s.includes(".") && s.length <= 12);
-    if (unknownSymbols.length > 0) {
-      log(`  Resolving ${unknownSymbols.length} unknown symbols via CoinGecko search...`);
-      const { resolved, failed } = await resolveUnknownSymbols(unknownSymbols);
-      log(`  Resolved ${resolved.length} symbols, ${failed.length} not found on CoinGecko`);
-    }
-
-    // Collect symbols that now have CoinGecko IDs (including newly resolved ones)
+    // Collect known symbols needed for transfers
     const symbolsNeeded = new Set<string>();
     for (const tx of transactions) {
       if (pricedIds.has(tx.id)) continue;
