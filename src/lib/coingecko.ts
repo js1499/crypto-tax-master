@@ -245,13 +245,48 @@ export async function getTokenByContract(
   return null;
 }
 
+// In-memory cache for the full CoinGecko coin list with platform addresses.
+// Map key: "platform:contractAddress" (lowercase), value: { id, symbol, name }
+let coinListByContract: Map<string, { id: string; symbol: string; name: string }> | null = null;
+
 /**
- * Resolve multiple contract addresses in bulk.
- * Calls getTokenByContract() sequentially (respecting rate limits).
- * Returns maps of resolved and failed addresses.
- *
- * @param addresses Array of { contractAddress, currentSymbol } pairs
- * @param platform Blockchain platform ID (default: "solana")
+ * Fetch the full CoinGecko coin list with platform contract addresses.
+ * Single API call that returns ~15K coins. Cached in memory for the process lifetime.
+ */
+async function loadCoinListWithPlatforms(): Promise<Map<string, { id: string; symbol: string; name: string }>> {
+  if (coinListByContract) return coinListByContract;
+
+  console.log("[CoinGecko] Fetching full coin list with platforms (1 API call)...");
+  await rateLimit();
+
+  const params: any = { include_platform: true };
+  if (COINGECKO_API_KEY) params.x_cg_pro_api_key = COINGECKO_API_KEY;
+
+  const response = await axios.get(`${API_BASE}/coins/list`, { params, timeout: 30000 });
+  const coins: Array<{ id: string; symbol: string; name: string; platforms?: Record<string, string> }> = response.data;
+
+  coinListByContract = new Map();
+  for (const coin of coins) {
+    if (!coin.platforms) continue;
+    for (const [platform, address] of Object.entries(coin.platforms)) {
+      if (!address) continue;
+      const key = `${platform}:${address.toLowerCase()}`;
+      coinListByContract.set(key, {
+        id: coin.id,
+        symbol: coin.symbol.toUpperCase(),
+        name: coin.name,
+      });
+    }
+  }
+
+  console.log(`[CoinGecko] Coin list loaded: ${coins.length} coins, ${coinListByContract.size} contract mappings`);
+  return coinListByContract;
+}
+
+/**
+ * Resolve multiple contract addresses in bulk using the coin list.
+ * Uses 1 API call (coin list) instead of N individual contract lookups.
+ * Matches addresses locally by platform + contract address.
  */
 export async function resolveByContractAddress(
   addresses: Array<{ contractAddress: string; currentSymbol: string }>,
@@ -259,24 +294,25 @@ export async function resolveByContractAddress(
 ): Promise<{
   resolved: Map<string, { id: string; symbol: string; name: string }>;
   failed: string[];
-  symbolUpdates: Map<string, string>; // old truncated symbol → new real symbol
+  symbolUpdates: Map<string, string>;
 }> {
   const resolved = new Map<string, { id: string; symbol: string; name: string }>();
   const failed: string[] = [];
   const symbolUpdates = new Map<string, string>();
 
-  // Filter to only addresses not already cached
-  const toResolve = addresses.filter((a) => !contractCache.has(a.contractAddress));
-  const alreadyCached = addresses.filter((a) => contractCache.has(a.contractAddress));
-
-  // Process already-cached entries
-  for (const { contractAddress, currentSymbol } of alreadyCached) {
-    const cached = contractCache.get(contractAddress);
-    if (cached) {
-      resolved.set(contractAddress, cached);
-      if (currentSymbol !== cached.symbol) {
-        symbolUpdates.set(currentSymbol, cached.symbol);
+  // Check in-memory contract cache first
+  const toResolve: Array<{ contractAddress: string; currentSymbol: string }> = [];
+  for (const entry of addresses) {
+    const cached = contractCache.get(entry.contractAddress);
+    if (cached !== undefined) {
+      if (cached) {
+        resolved.set(entry.contractAddress, cached);
+        if (entry.currentSymbol !== cached.symbol) {
+          symbolUpdates.set(entry.currentSymbol, cached.symbol);
+        }
       }
+    } else {
+      toResolve.push(entry);
     }
   }
 
@@ -285,31 +321,39 @@ export async function resolveByContractAddress(
     return { resolved, failed, symbolUpdates };
   }
 
-  console.log(
-    `[CoinGecko] Resolving ${toResolve.length} contract addresses (${alreadyCached.length} cached)...`
-  );
+  try {
+    const coinList = await loadCoinListWithPlatforms();
 
-  for (let i = 0; i < toResolve.length; i++) {
-    const { contractAddress, currentSymbol } = toResolve[i];
-    const result = await getTokenByContract(contractAddress, platform);
+    console.log(`[CoinGecko] Matching ${toResolve.length} addresses against coin list (platform: ${platform})...`);
 
-    if (result) {
-      resolved.set(contractAddress, result);
-      if (currentSymbol !== result.symbol) {
-        symbolUpdates.set(currentSymbol, result.symbol);
+    for (const { contractAddress, currentSymbol } of toResolve) {
+      const key = `${platform}:${contractAddress.toLowerCase()}`;
+      const match = coinList.get(key);
+
+      if (match) {
+        resolved.set(contractAddress, match);
+        contractCache.set(contractAddress, match);
+        dynamicIdCache.set(match.symbol, match.id);
+        if (currentSymbol !== match.symbol) {
+          symbolUpdates.set(currentSymbol, match.symbol);
+        }
+      } else {
+        contractCache.set(contractAddress, null);
+        failed.push(contractAddress);
       }
-    } else {
-      failed.push(contractAddress);
     }
-    // Log progress every 200
-    if ((i + 1) % 200 === 0) {
-      console.log(`[CoinGecko]   Contract resolution progress: ${i + 1}/${toResolve.length} (${resolved.size} resolved, ${failed.length} failed)`);
+
+    console.log(
+      `[CoinGecko] Contract resolution complete: ${resolved.size} resolved, ${failed.length} not on CoinGecko`
+    );
+  } catch (error) {
+    console.warn("[CoinGecko] Failed to load coin list:", error instanceof Error ? error.message : error);
+    // All unresolved become failed
+    for (const { contractAddress } of toResolve) {
+      if (!resolved.has(contractAddress)) failed.push(contractAddress);
     }
   }
 
-  console.log(
-    `[CoinGecko] Contract resolution complete: ${resolved.size} resolved, ${failed.length} not on CoinGecko`
-  );
   return { resolved, failed, symbolUpdates };
 }
 
