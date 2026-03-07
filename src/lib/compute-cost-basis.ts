@@ -71,14 +71,17 @@ export async function recomputeCostBasis(userId: string): Promise<void> {
         return `(${r.transactionId}, ${cb}::numeric(30,15), ${gl}::numeric(30,15))`;
       }).join(',\n');
 
-      await prisma.$executeRawUnsafe(`
-        SELECT pg_advisory_lock(${TX_UPDATE_LOCK_ID});
-        UPDATE transactions AS t
-        SET cost_basis_usd = v.cb, gain_loss_usd = v.gl
-        FROM (VALUES ${valuesList}) AS v(id, cb, gl)
-        WHERE t.id = v.id;
-        SELECT pg_advisory_unlock(${TX_UPDATE_LOCK_ID});
-      `);
+      await prisma.$executeRawUnsafe(`SELECT pg_advisory_lock(${TX_UPDATE_LOCK_ID})`);
+      try {
+        await prisma.$executeRawUnsafe(`
+          UPDATE transactions AS t
+          SET cost_basis_usd = v.cb, gain_loss_usd = v.gl
+          FROM (VALUES ${valuesList}) AS v(id, cb, gl)
+          WHERE t.id = v.id
+        `);
+      } finally {
+        await prisma.$executeRawUnsafe(`SELECT pg_advisory_unlock(${TX_UPDATE_LOCK_ID})`);
+      }
     }
 
     console.log(`[Cost Basis] Auto-computed for ${results.length} transactions (${costBasisMethod})`);
