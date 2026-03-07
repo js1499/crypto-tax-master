@@ -464,27 +464,31 @@ export async function enrichHistoricalPrices(
     const mirroredMainIds = new Set<number>();
     const mirroredIncomingIds = new Set<number>();
 
-    for (const tx of transactions) {
-      if (!tx.incoming_asset_symbol || !tx.incoming_amount_value) continue;
-      if (pricedIds.has(tx.id)) continue;
+    // Re-read current DB values for swap transactions so we can mirror
+    // even for transactions already touched by Phase 1/2/3
+    const swapTransactions = transactions.filter(tx =>
+      tx.incoming_asset_symbol && tx.incoming_amount_value
+    );
 
-      const mainPrice = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
-      const incomingPrice = tx.incoming_asset_symbol
-        ? lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp)
-        : null;
+    for (const tx of swapTransactions) {
+      const currentValueUsd = Number(tx.value_usd || 0);
+      const currentIncomingValueUsd = Number(tx.incoming_value_usd || 0);
 
-      if ((mainPrice !== null) === (incomingPrice !== null)) continue;
+      // Both sides priced or both sides unpriced — nothing to mirror
+      const mainHasValue = currentValueUsd > 0;
+      const incomingHasValue = currentIncomingValueUsd > 0;
+      if (mainHasValue === incomingHasValue) continue;
 
-      if (mainPrice !== null && incomingPrice === null) {
-        const vusd = Math.abs(Number(tx.amount_value) * mainPrice);
-        mirrorRows.push({ id: tx.id, price_per_unit: null, value_usd: null, fee_usd: null, incoming_value_usd: vusd });
+      if (mainHasValue && !incomingHasValue) {
+        // Main side priced, incoming side not — copy main value to incoming
+        mirrorRows.push({ id: tx.id, price_per_unit: null, value_usd: null, fee_usd: null, incoming_value_usd: currentValueUsd });
         mirroredIncomingIds.add(tx.id);
         mirrorPriced++;
-      } else if (incomingPrice !== null && mainPrice === null) {
-        const iusd = Math.abs(Number(tx.incoming_amount_value) * incomingPrice);
+      } else if (incomingHasValue && !mainHasValue) {
+        // Incoming side priced, main side not — copy incoming value to main
         const amountAbs = Math.abs(Number(tx.amount_value));
-        const derivedPpu = amountAbs > 0 ? iusd / amountAbs : 0;
-        mirrorRows.push({ id: tx.id, price_per_unit: derivedPpu, value_usd: iusd, fee_usd: null, incoming_value_usd: null });
+        const derivedPpu = amountAbs > 0 ? currentIncomingValueUsd / amountAbs : 0;
+        mirrorRows.push({ id: tx.id, price_per_unit: derivedPpu, value_usd: currentIncomingValueUsd, fee_usd: null, incoming_value_usd: null });
         mirroredMainIds.add(tx.id);
         mirrorPriced++;
       }

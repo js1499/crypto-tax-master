@@ -1095,13 +1095,19 @@ function processTransactionsForTax(
         costBasisLots[incomingAsset] = [];
       }
 
+      // For swaps, both sides are equal in value. If the outgoing asset is unpriced
+      // (value_usd = 0) but the incoming side has a known value, use that as proceeds.
+      const swapProceeds = (valueUsd === 0 && incomingValueUsd && incomingValueUsd > 0)
+        ? Math.abs(incomingValueUsd)
+        : valueUsd;
+
       // Handle outgoing asset disposal using processDisposal for consistency
       // This ensures: fee deduction, rounding, lotDisposals tracking, mixed holding period split
       const disposal = processDisposal(
         tx,
         outgoingAsset,
         outgoingAmount,
-        valueUsd,
+        swapProceeds,
         feeUsd,
         date,
         costBasisLots,
