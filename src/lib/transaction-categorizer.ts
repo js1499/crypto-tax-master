@@ -200,6 +200,7 @@ const CATEGORY_MAP: Record<string, string> = {
 
   // -- Compressed NFT management --
   "COMPRESSED_NFT_VERIFY_CREATOR": "nft",
+  "COMPRESSED_NFT_UPDATE_METADATA": "nft",
   "COMPRESSED_NFT_UNVERIFY_CREATOR": "nft",
   "COMPRESSED_NFT_VERIFY_COLLECTION": "nft",
   "COMPRESSED_NFT_UNVERIFY_COLLECTION": "nft",
