@@ -54,8 +54,6 @@ interface BulkRow {
 }
 
 const BATCH_SIZE = 5000;
-// Shared advisory lock ID used by enrichment and cost basis to prevent deadlocks
-export const TX_UPDATE_LOCK_ID = 839271;
 
 async function bulkUpdateTransactions(rows: BulkRow[]): Promise<void> {
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
@@ -64,21 +62,17 @@ async function bulkUpdateTransactions(rows: BulkRow[]): Promise<void> {
       (r) =>
         `(${r.id}, ${r.price_per_unit ?? "NULL"}::decimal, ${r.value_usd ?? "NULL"}::decimal, ${r.fee_usd ?? "NULL"}::decimal, ${r.incoming_value_usd ?? "NULL"}::decimal)`
     );
-    await prisma.$executeRawUnsafe(`SELECT pg_advisory_lock(${TX_UPDATE_LOCK_ID})`);
-    try {
-      await prisma.$executeRawUnsafe(`
-        UPDATE "transactions" AS t SET
-          price_per_unit = COALESCE(v.new_ppu, t.price_per_unit),
-          value_usd = COALESCE(v.new_vusd, t.value_usd),
-          fee_usd = COALESCE(v.new_fusd, t.fee_usd),
-          incoming_value_usd = COALESCE(v.new_iusd, t.incoming_value_usd)
-        FROM (VALUES ${valuesClauses.join(",")})
-          AS v(id, new_ppu, new_vusd, new_fusd, new_iusd)
-        WHERE t.id = v.id
-      `);
-    } finally {
-      await prisma.$executeRawUnsafe(`SELECT pg_advisory_unlock(${TX_UPDATE_LOCK_ID})`);
-    }
+    const sql = `
+      UPDATE "transactions" AS t SET
+        price_per_unit = COALESCE(v.new_ppu, t.price_per_unit),
+        value_usd = COALESCE(v.new_vusd, t.value_usd),
+        fee_usd = COALESCE(v.new_fusd, t.fee_usd),
+        incoming_value_usd = COALESCE(v.new_iusd, t.incoming_value_usd)
+      FROM (VALUES ${valuesClauses.join(",")})
+        AS v(id, new_ppu, new_vusd, new_fusd, new_iusd)
+      WHERE t.id = v.id
+    `;
+    await prisma.$executeRawUnsafe(sql);
   }
 }
 
