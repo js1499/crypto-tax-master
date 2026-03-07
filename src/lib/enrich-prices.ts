@@ -31,7 +31,7 @@ interface BulkRow {
   incoming_value_usd: number | null;
 }
 
-const BATCH_SIZE = 500;
+const BATCH_SIZE = 5000;
 
 async function bulkUpdateTransactions(rows: BulkRow[]): Promise<void> {
   for (let i = 0; i < rows.length; i += BATCH_SIZE) {
@@ -503,15 +503,37 @@ export async function enrichHistoricalPrices(
     }
 
     // Recompute remaining unknown mints after mirroring
+    // Also filter out NFTs (amount=1) and pump.fun tokens (mint ends in "pump")
     const remainingMints = new Map<string, string>();
+    let filteredNfts = 0;
+    let filteredPump = 0;
     for (const [mint, symbol] of unknownMints) {
-      const stillNeeded = transactions.some(tx => {
-        if (pricedIds.has(tx.id) || mirroredMainIds.has(tx.id) || mirroredIncomingIds.has(tx.id)) return false;
-        return tx.asset_address === mint || tx.incoming_asset_address === mint;
-      });
-      if (stillNeeded) remainingMints.set(mint, symbol);
+      // Skip pump.fun tokens — they won't have OHLCV data
+      if (isPumpFun(mint)) { filteredPump++; continue; }
+
+      // Check if any unpriced transaction still needs this mint
+      // and filter out NFT-like mints (amount = 1, typically non-fungible)
+      let stillNeeded = false;
+      let isNftLike = true;
+      for (const tx of transactions) {
+        if (pricedIds.has(tx.id) || mirroredMainIds.has(tx.id) || mirroredIncomingIds.has(tx.id)) continue;
+        const matchesMain = tx.asset_address === mint;
+        const matchesIncoming = tx.incoming_asset_address === mint;
+        if (!matchesMain && !matchesIncoming) continue;
+        stillNeeded = true;
+        // If any transaction with this mint has amount != 1, it's fungible
+        if (matchesMain && Math.abs(Number(tx.amount_value)) !== 1) isNftLike = false;
+        if (matchesIncoming && tx.incoming_amount_value && Math.abs(Number(tx.incoming_amount_value)) !== 1) isNftLike = false;
+        if (!isNftLike) break; // Found fungible usage, no need to keep checking
+      }
+
+      if (!stillNeeded) continue;
+      if (isNftLike) { filteredNfts++; continue; }
+      remainingMints.set(mint, symbol);
     }
     log(`After mirroring: ${remainingMints.size} unknown mints still need OHLCV (was ${unknownMints.size})`);
+    if (filteredNfts > 0) log(`  Filtered ${filteredNfts} NFT-like mints (amount=1)`);
+    if (filteredPump > 0) log(`  Filtered ${filteredPump} pump.fun mints`);
 
     // ══════════════════════════════════════════════════════════════════
     // ── PHASE 5: OHLCV fallback for remaining unknown tokens ─────────

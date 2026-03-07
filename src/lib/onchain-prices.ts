@@ -1,4 +1,5 @@
 import axios from "axios";
+import prisma from "@/lib/prisma";
 import { rateLimit, API_BASE, COINGECKO_API_KEY } from "./coingecko";
 
 interface OHLCVEntry {
@@ -20,7 +21,7 @@ export async function getTokenOHLCVByMint(
   toDate: Date,
   maxRetries: number = 3,
 ): Promise<OHLCVEntry[] | null> {
-  // Check cache first
+  // Check in-memory cache first
   if (ohlcvCache.has(mintAddress)) {
     return ohlcvCache.get(mintAddress) || null;
   }
@@ -106,8 +107,52 @@ export async function getTokenOHLCVByMint(
 }
 
 /**
+ * Load persistent cache from DB: mints that previously returned 404/no data.
+ * Returns a Set of mint addresses to skip.
+ */
+async function loadFailedMintsFromDB(): Promise<Set<string>> {
+  try {
+    const rows = await prisma.ohlcvMintCache.findMany({
+      where: { has_data: false },
+      select: { mint_address: true },
+    });
+    return new Set(rows.map(r => r.mint_address));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Persist OHLCV lookup results to DB cache.
+ * Inserts mints with has_data=true/false so future runs can skip 404s.
+ */
+async function persistOHLCVResults(
+  results: Map<string, OHLCVEntry[]>,
+  allQueriedMints: string[],
+): Promise<void> {
+  if (allQueriedMints.length === 0) return;
+
+  try {
+    const values = allQueriedMints.map(mint => {
+      const hasData = results.has(mint);
+      return `('${mint}', ${hasData}, NOW())`;
+    }).join(",\n");
+
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO "ohlcv_mint_cache" (mint_address, has_data, checked_at)
+      VALUES ${values}
+      ON CONFLICT (mint_address)
+      DO UPDATE SET has_data = EXCLUDED.has_data, checked_at = EXCLUDED.checked_at
+    `);
+  } catch (error) {
+    console.warn("[OnChain] Failed to persist OHLCV cache:", error);
+  }
+}
+
+/**
  * Batch-fetch OHLCV for multiple mint addresses.
  * Processes sequentially respecting shared rate limit.
+ * Skips mints that previously returned 404 (persisted in DB).
  * Returns Map<mintAddress, OHLCVEntry[]>.
  */
 export async function batchGetTokenOHLCV(
@@ -118,22 +163,37 @@ export async function batchGetTokenOHLCV(
 ): Promise<Map<string, OHLCVEntry[]>> {
   const results = new Map<string, OHLCVEntry[]>();
 
-  for (let i = 0; i < mints.length; i++) {
-    const mint = mints[i];
+  // Load persistent cache of previously failed mints
+  const failedMints = await loadFailedMintsFromDB();
+  const skippedFromCache = mints.filter(m => failedMints.has(m));
+  const mintsToQuery = mints.filter(m => !failedMints.has(m));
+
+  if (skippedFromCache.length > 0) {
+    console.log(`[OnChain] Skipping ${skippedFromCache.length}/${mints.length} mints (previously failed, cached in DB)`);
+  }
+
+  const queriedMints: string[] = [];
+
+  for (let i = 0; i < mintsToQuery.length; i++) {
+    const mint = mintsToQuery[i];
     const entries = await getTokenOHLCVByMint(mint, fromDate, toDate);
+    queriedMints.push(mint);
     if (entries && entries.length > 0) {
       results.set(mint, entries);
     }
 
     if (onProgress && (i + 1) % 200 === 0) {
-      onProgress(i + 1, mints.length, results.size);
+      onProgress(i + 1, mintsToQuery.length, results.size);
     }
   }
 
   // Final progress callback
   if (onProgress) {
-    onProgress(mints.length, mints.length, results.size);
+    onProgress(mintsToQuery.length, mintsToQuery.length, results.size);
   }
+
+  // Persist results to DB for future runs
+  await persistOHLCVResults(results, queriedMints);
 
   return results;
 }

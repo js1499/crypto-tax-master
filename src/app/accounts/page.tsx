@@ -63,6 +63,7 @@ function AccountsContent() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [enriching, setEnriching] = useState<string | null>(null);
+  const [enrichingAll, setEnrichingAll] = useState(false);
   
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -250,6 +251,36 @@ function AccountsContent() {
       toast.error("Price enrichment request failed");
     } finally {
       setEnriching(null);
+    }
+  };
+
+  // Function to enrich ALL transactions across all wallets
+  const handleEnrichAll = async () => {
+    setEnrichingAll(true);
+    try {
+      toast.info("Enriching prices for all transactions — this may take several minutes...");
+      const enrichResponse = await fetch("/api/prices/enrich-historical", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const enrichData = await enrichResponse.json();
+      console.log("[Accounts] Enrich All response:", enrichData);
+      if (enrichResponse.ok) {
+        toast.success(
+          `Updated ${enrichData.updated}/${enrichData.total} transactions with historical prices`
+        );
+        if (enrichData.fallbackSymbols?.length > 0) {
+          toast.info(`${enrichData.fallbackSymbols.length} symbols could not be priced`);
+        }
+      } else {
+        toast.error(`Price enrichment failed: ${enrichData.error || enrichResponse.status}`);
+      }
+    } catch (error) {
+      console.error("[Accounts] Enrich All error:", error);
+      toast.error("Price enrichment request failed");
+    } finally {
+      setEnrichingAll(false);
     }
   };
 
@@ -553,7 +584,7 @@ function AccountsContent() {
                                 variant="outline"
                                 className="flex-1"
                                 onClick={() => handleEnrichWallet(account.id)}
-                                disabled={enriching === account.id || syncing === account.id}
+                                disabled={enriching === account.id || syncing === account.id || enrichingAll}
                               >
                                 {enriching === account.id ? (
                                   <DollarSign className="mr-2 h-4 w-4 animate-pulse" />
@@ -701,6 +732,24 @@ function AccountsContent() {
                   )}
                 </Button>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleEnrichAll}
+                disabled={enrichingAll || !!enriching}
+              >
+                {enrichingAll ? (
+                  <>
+                    <DollarSign className="mr-2 h-4 w-4 animate-pulse" />
+                    Enriching...
+                  </>
+                ) : (
+                  <>
+                    <DollarSign className="mr-2 h-4 w-4" />
+                    Enrich All Prices
+                  </>
+                )}
+              </Button>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={handleRefresh}>
