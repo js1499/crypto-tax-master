@@ -24,12 +24,7 @@
 - **Problem:** CoinGecko doesn't track most Solana DEX tokens (FLTH, DUST, JUP airdrop, memecoins).
 - **Fix:** Add GeckoTerminal API (or Birdeye/Jupiter) as a fallback price source for Solana tokens. Query by mint address for historical OHLCV data.
 
-## 5. Unpriced NFT transfers — 7,959 txns
-- **Status:** Non-issue (investigated)
-- **Impact:** Minimal — mostly staking, listings, and spam airdrops. Not missing sales.
-- **Analysis:** Transfers are NFT staking (Cardinal), marketplace listings (Tensor), and wallet movements. Actual sales are captured as NFT_SALE. No missing income.
-
-## 6. USDC deficit from untracked sources — $981K phantom gain
+## 5. USDC deficit from untracked sources — $981K phantom gain
 - **Status:** User action needed
 - **Impact:** $1.5M USDC deficit → $981K phantom gain from $0 cost basis disposals (2,463 txns)
 - **Problem:** More USDC left tracked wallets than entered. Missing sources: exchange withdrawals, fiat on-ramps, other wallets.

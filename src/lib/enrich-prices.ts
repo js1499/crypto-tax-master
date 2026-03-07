@@ -542,7 +542,7 @@ export async function enrichHistoricalPrices(
     let onchainFailed = 0;
 
     if (remainingMints.size > 0) {
-      log(`── Phase 5: Fetching OHLCV for ${remainingMints.size} unknown mints ──`);
+      log(`── Phase 5: Fetching OHLCV for ${remainingMints.size} unknown mints (CoinGecko Pro + GeckoTerminal fallback) ──`);
       const mintAddresses = Array.from(remainingMints.keys());
 
       const ohlcvResults = await batchGetTokenOHLCV(

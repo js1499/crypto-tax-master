@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
   output   = "../node_modules/.prisma/client"
@@ -11,45 +8,41 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User model for authentication (NextAuth compatible)
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  passwordHash  String?   // For credentials provider
-  image         String?
-  costBasisMethod String   @default("FIFO")
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  accounts      Account[]
-  sessions      Session[]
-  wallets       Wallet[]
-  exchanges     Exchange[]
+  id              String     @id @default(cuid())
+  name            String?
+  email           String?    @unique
+  emailVerified   DateTime?
+  passwordHash    String?
+  image           String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  costBasisMethod String     @default("FIFO")
+  accounts        Account[]
+  exchanges       Exchange[]
+  sessions        Session[]
+  wallets         Wallet[]
 }
 
-// NextAuth Account model (for OAuth providers)
 model Account {
   id                String  @id @default(cuid())
   userId            String
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
   @@index([userId])
 }
 
-// NextAuth Session model
 model Session {
   id           String   @id @default(cuid())
   sessionToken String   @unique
@@ -60,7 +53,6 @@ model Session {
   @@index([userId])
 }
 
-// NextAuth VerificationToken model
 model VerificationToken {
   identifier String
   token      String   @unique
@@ -69,139 +61,103 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// Wallet model to track different wallets
 model Wallet {
-  id           String   @id @default(cuid())
-  name         String
-  address      String
-  provider     String   // e.g., "ethereum", "polygon", "bsc", etc.
-  chains       String?  // Comma-separated list of chains to sync, e.g., "eth,polygon,arbitrum"
-  lastSyncAt   DateTime? // Last successful sync time
-  userId       String
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id         String    @id @default(cuid())
+  name       String
+  address    String
+  provider   String
+  userId     String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  chains     String?
+  lastSyncAt DateTime?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([address, provider])
   @@index([userId])
 }
 
-// Exchange model to track different exchanges
 model Exchange {
-  id            String   @id @default(cuid())
-  name          String
-  apiKey        String?  // Encrypted API key
-  apiSecret     String?  // Encrypted API secret
-  apiPassphrase String?  // Encrypted API passphrase (for KuCoin)
-  refreshToken  String?  // For OAuth exchanges (Coinbase)
-  accessToken   String?  // For OAuth exchanges (temporary)
-  tokenExpiresAt DateTime? // Token expiration
-  isConnected   Boolean  @default(false)
-  lastSyncAt    DateTime? // Last successful sync
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id             String    @id @default(cuid())
+  name           String
+  apiKey         String?
+  apiSecret      String?
+  apiPassphrase  String?
+  refreshToken   String?
+  accessToken    String?
+  tokenExpiresAt DateTime?
+  isConnected    Boolean   @default(false)
+  lastSyncAt     DateTime?
+  userId         String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId])
   @@unique([name, userId])
+  @@index([userId])
 }
 
-// Updated Transaction model based on user's SQL schema
 model Transaction {
-  // Core fields
-  id                 Int       @id @default(autoincrement())
-  type               String    @db.VarChar(50)
-  subtype            String?   @db.VarChar(50)
-  status             String    @default("pending") @db.VarChar(30)
-  source             String?   @db.VarChar(100)
-  source_type        String?   @db.VarChar(30)
+  id                     Int      @id @default(autoincrement())
+  type                   String   @db.VarChar(50)
+  subtype                String?  @db.VarChar(50)
+  status                 String   @default("pending") @db.VarChar(30)
+  source                 String?  @db.VarChar(100)
+  source_type            String?  @db.VarChar(30)
+  asset_symbol           String   @db.VarChar(50)
+  asset_address          String?  @db.VarChar(255)
+  asset_chain            String?  @db.VarChar(30)
+  amount_value           Decimal  @db.Decimal(30, 15)
+  price_per_unit         Decimal? @db.Decimal(30, 15)
+  value_usd              Decimal  @db.Decimal(30, 15)
+  fee_usd                Decimal? @db.Decimal(30, 15)
+  incoming_asset_symbol  String?  @db.VarChar(50)
+  incoming_amount_value  Decimal? @db.Decimal(30, 15)
+  incoming_value_usd     Decimal? @db.Decimal(30, 15)
+  wallet_address         String?  @db.VarChar(100)
+  counterparty_address   String?  @db.VarChar(100)
+  tx_hash                String?  @unique @db.VarChar(255)
+  chain                  String?  @db.VarChar(30)
+  block_number           BigInt?
+  explorer_url           String?
+  tx_timestamp           DateTime @db.Timestamptz(6)
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  identified             Boolean  @default(false)
+  notes                  String?
+  incoming_asset_address String?  @db.VarChar(255)
+  cost_basis_usd         Decimal? @db.Decimal(30, 15)
+  gain_loss_usd          Decimal? @db.Decimal(30, 15)
 
-  // Asset details
-  asset_symbol       String    @db.VarChar(50)
-  asset_address      String?   @db.VarChar(255)
-  asset_chain        String?   @db.VarChar(30)
-
-  // Financial details
-  amount_value       Decimal   @db.Decimal(30, 15)
-  price_per_unit     Decimal?  @db.Decimal(30, 15)
-  value_usd          Decimal   @db.Decimal(30, 15)
-  fee_usd            Decimal?  @db.Decimal(30, 15) // Transaction fees in USD
-
-  // Cost basis tracking (populated by /api/cost-basis/compute)
-  cost_basis_usd     Decimal?  @db.Decimal(30, 15) // Cost basis in USD for this transaction
-  gain_loss_usd      Decimal?  @db.Decimal(30, 15) // Realized gain/loss in USD (proceeds - cost basis)
-
-  // Swap transaction details (for crypto-to-crypto swaps)
-  incoming_asset_symbol   String?   @db.VarChar(50) // Asset received in swap
-  incoming_asset_address  String?   @db.VarChar(255) // Contract/mint address of incoming asset
-  incoming_amount_value  Decimal?  @db.Decimal(30, 15) // Amount of incoming asset
-  incoming_value_usd      Decimal?  @db.Decimal(30, 15) // USD value of incoming asset at swap time
-
-  // Wallet/Counterparty details
-  wallet_address       String?   @db.VarChar(100)
-  counterparty_address String?   @db.VarChar(100)
-
-  // On-chain details
-  tx_hash            String?   @unique @db.VarChar(255)
-  chain              String?   @db.VarChar(30)
-  block_number       BigInt?
-  explorer_url       String?   @db.Text
-
-  // Timestamps
-  tx_timestamp       DateTime  @db.Timestamptz(6)
-  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  // Review/Notes
-  identified         Boolean   @default(false)
-  notes              String?   @db.Text
-
-  // Indexes
   @@index([wallet_address])
   @@index([tx_timestamp])
   @@index([type])
   @@index([identified])
   @@index([chain])
-  @@index([source_type]) // BUG-022 fix: Add index for source_type
-
-  // Map model name to table name
+  @@index([source_type])
   @@map("transactions")
 }
 
-// Raw Helius API response dump — one row per Helius enhanced transaction.
-// Stored during wallet sync so raw payloads can be compared with the
-// processed Transaction table. No type-mapping or price enrichment applied.
 model HeliusRawTransaction {
-  id                    Int       @id @default(autoincrement())
-
-  // Sync metadata
-  wallet_address        String    @db.VarChar(100)
-  synced_at             DateTime  @default(now()) @db.Timestamptz(6)
-
-  // Raw Helius fields (mapped to DB-equivalent column names)
-  helius_type           String    @db.VarChar(50)   // Raw Helius type e.g. "SWAP", "TRANSFER"
-  helius_source         String?   @db.VarChar(100)  // Raw source e.g. "JUPITER", "MAGIC_EDEN"
-  signature             String    @db.VarChar(255)   // tx signature
-  slot                  BigInt                        // block slot
-  tx_timestamp          DateTime  @db.Timestamptz(6)
-  fee_lamports          BigInt                        // fee in lamports (raw)
-  fee_payer             String?   @db.VarChar(100)
-  description           String?   @db.Text
-
-  // Flattened primary transfer (first transfer involving wallet)
-  asset_symbol          String?   @db.VarChar(255)  // mint address for tokens, "SOL" for native
-  amount_value          Decimal?  @db.Decimal(30, 15)
-  counterparty_address  String?   @db.VarChar(100)
-
-  // Event flags
-  has_swap_event        Boolean   @default(false)
-  has_nft_event         Boolean   @default(false)
+  id                     Int      @id @default(autoincrement())
+  wallet_address         String   @db.VarChar(100)
+  synced_at              DateTime @default(now()) @db.Timestamptz(6)
+  helius_type            String   @db.VarChar(50)
+  helius_source          String?  @db.VarChar(100)
+  signature              String   @db.VarChar(255)
+  slot                   BigInt
+  tx_timestamp           DateTime @db.Timestamptz(6)
+  fee_lamports           BigInt
+  fee_payer              String?  @db.VarChar(100)
+  description            String?
+  asset_symbol           String?  @db.VarChar(255)
+  amount_value           Decimal? @db.Decimal(30, 15)
+  counterparty_address   String?  @db.VarChar(100)
+  has_swap_event         Boolean  @default(false)
+  has_nft_event          Boolean  @default(false)
   native_transfers_count Int      @default(0)
   token_transfers_count  Int      @default(0)
-
-  // Full raw payload for deep inspection
-  raw_payload           Json
+  raw_payload            Json
 
   @@index([wallet_address])
   @@index([synced_at])
@@ -215,6 +171,7 @@ model HeliusRawTransaction {
 model OhlcvMintCache {
   mint_address String   @id @db.VarChar(255)
   has_data     Boolean  @default(false)
+  gt_tried     Boolean  @default(false)
   checked_at   DateTime @default(now()) @db.Timestamptz(6)
 
   @@map("ohlcv_mint_cache")
