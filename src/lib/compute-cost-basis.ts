@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { computeCostBasisForTransactions } from "@/lib/tax-calculator";
+import { TX_UPDATE_LOCK_ID } from "@/lib/enrich-prices";
 
 /**
  * Recompute cost basis and gain/loss for all of a user's transactions.
@@ -71,10 +72,12 @@ export async function recomputeCostBasis(userId: string): Promise<void> {
       }).join(',\n');
 
       await prisma.$executeRawUnsafe(`
+        SELECT pg_advisory_lock(${TX_UPDATE_LOCK_ID});
         UPDATE transactions AS t
         SET cost_basis_usd = v.cb, gain_loss_usd = v.gl
         FROM (VALUES ${valuesList}) AS v(id, cb, gl)
-        WHERE t.id = v.id
+        WHERE t.id = v.id;
+        SELECT pg_advisory_unlock(${TX_UPDATE_LOCK_ID});
       `);
     }
 
