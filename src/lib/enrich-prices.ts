@@ -1,10 +1,31 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { getCoinGeckoId, getPriceRange, getCurrentPrice } from "@/lib/coingecko";
+import { getCoinGeckoId, getPriceRange, getCurrentPrice, resolveByContractAddress } from "@/lib/coingecko";
 import { batchGetTokenOHLCV } from "./onchain-prices";
 
 const log = (msg: string) => console.log(`[Enrich] ${msg}`);
 const warn = (msg: string) => console.warn(`[Enrich] ${msg}`);
+
+// Map our chain identifiers to CoinGecko platform IDs
+const CHAIN_TO_PLATFORM: Record<string, string> = {
+  SOL: "solana",
+  SOLANA: "solana",
+  ETH: "ethereum",
+  ETHEREUM: "ethereum",
+  BASE: "base",
+  ARBITRUM: "arbitrum-one",
+  ARB: "arbitrum-one",
+  POLYGON: "polygon-pos",
+  MATIC: "polygon-pos",
+  BSC: "binance-smart-chain",
+  BNB: "binance-smart-chain",
+  AVAX: "avalanche",
+  AVALANCHE: "avalanche",
+  OPTIMISM: "optimistic-ethereum",
+  OP: "optimistic-ethereum",
+  FTM: "fantom",
+  FANTOM: "fantom",
+};
 
 export interface EnrichResult {
   status: "success" | "error";
@@ -16,6 +37,7 @@ export interface EnrichResult {
   transferPriced: number;
   feeCorrected: number;
   mirrorPriced: number;
+  contractResolved: number;
   onchainResolved: number;
   onchainFailed: number;
   fallbackSymbols: string[];
@@ -73,7 +95,7 @@ export async function enrichHistoricalPrices(
     status: "success", updated: 0, total: 0, skipped: 0,
     swapPriced: 0, nftPriced: 0, transferPriced: 0,
     feeCorrected: 0, mirrorPriced: 0,
-    onchainResolved: 0, onchainFailed: 0,
+    contractResolved: 0, onchainResolved: 0, onchainFailed: 0,
     fallbackSymbols: [], durationMs: Date.now() - startTime,
   });
 
@@ -456,6 +478,112 @@ export async function enrichHistoricalPrices(
     log(`  Phase 3 complete: ${transferPriced} transfers priced, ${feeCorrected} fees corrected`);
 
     // ══════════════════════════════════════════════════════════════════
+    // ── PHASE 3.5: Resolve unpriced tokens by contract address ───────
+    // ══════════════════════════════════════════════════════════════════
+    let contractResolved = 0;
+
+    // Collect unpriced tokens that have a contract address and chain
+    const contractCandidates = new Map<string, { address: string; symbol: string; platform: string }>();
+    for (const tx of transactions) {
+      if (pricedIds.has(tx.id)) continue;
+      const chain = (tx.chain || "SOL").toUpperCase();
+      const platform = CHAIN_TO_PLATFORM[chain];
+      if (!platform) continue;
+
+      if (tx.asset_address && !getCoinGeckoId(tx.asset_symbol) && !isPumpFun(tx.asset_address)) {
+        contractCandidates.set(tx.asset_address, { address: tx.asset_address, symbol: tx.asset_symbol, platform });
+      }
+      if (tx.incoming_asset_address && tx.incoming_asset_symbol &&
+          !getCoinGeckoId(tx.incoming_asset_symbol) && !isPumpFun(tx.incoming_asset_address)) {
+        contractCandidates.set(tx.incoming_asset_address, { address: tx.incoming_asset_address, symbol: tx.incoming_asset_symbol, platform });
+      }
+    }
+
+    if (contractCandidates.size > 0) {
+      log(`── Phase 3.5: Resolving ${contractCandidates.size} tokens by contract address ──`);
+
+      // Group by platform for batch resolution
+      const byPlatform = new Map<string, Array<{ contractAddress: string; currentSymbol: string }>>();
+      for (const [, { address, symbol, platform }] of contractCandidates) {
+        if (!byPlatform.has(platform)) byPlatform.set(platform, []);
+        byPlatform.get(platform)!.push({ contractAddress: address, currentSymbol: symbol });
+      }
+
+      // Resolve each platform group
+      const resolvedSymbols = new Set<string>();
+      for (const [platform, addresses] of byPlatform) {
+        log(`  Resolving ${addresses.length} contracts on ${platform}...`);
+        const { resolved } = await resolveByContractAddress(addresses, platform);
+        for (const [, info] of resolved) {
+          resolvedSymbols.add(info.symbol);
+          contractResolved++;
+        }
+      }
+
+      // Fetch price ranges for newly resolved symbols
+      if (resolvedSymbols.size > 0) {
+        log(`  Fetching price ranges for ${resolvedSymbols.size} newly resolved tokens...`);
+        let fetched = 0;
+        for (const symbol of resolvedSymbols) {
+          if (priceMap.has(`${symbol}:${rangeStart.toISOString().split("T")[0]}`)) continue;
+          try {
+            const prices = await getPriceRange(symbol, rangeStart, rangeEnd);
+            if (prices && prices.length > 0) {
+              for (const entry of prices) {
+                priceMap.set(`${symbol}:${entry.date.split("T")[0]}`, entry.price);
+              }
+              fetched++;
+            }
+          } catch (err) {
+            warn(`  ${symbol}: price range error — ${err instanceof Error ? err.message : err}`);
+          }
+        }
+        log(`  Fetched price ranges for ${fetched}/${resolvedSymbols.size} resolved tokens`);
+
+        // Apply prices to still-unpriced transactions
+        const phase35Rows: BulkRow[] = [];
+        for (const tx of transactions) {
+          if (pricedIds.has(tx.id)) continue;
+
+          let ppu: number | null = null;
+          let vusd: number | null = null;
+          let iusd: number | null = null;
+          let didPrice = false;
+
+          if (getCoinGeckoId(tx.asset_symbol)) {
+            const price = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
+            if (price !== null) {
+              ppu = price;
+              vusd = Math.abs(Number(tx.amount_value) * price);
+              didPrice = true;
+            }
+          }
+
+          if (tx.incoming_asset_symbol && tx.incoming_amount_value && getCoinGeckoId(tx.incoming_asset_symbol)) {
+            const price = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
+            if (price !== null) {
+              iusd = Math.abs(Number(tx.incoming_amount_value) * price);
+              didPrice = true;
+            }
+          }
+
+          if (didPrice) {
+            phase35Rows.push({ id: tx.id, price_per_unit: ppu, value_usd: vusd, fee_usd: null, incoming_value_usd: iusd });
+            pricedIds.add(tx.id);
+          }
+        }
+
+        if (phase35Rows.length > 0) {
+          await bulkUpdateTransactions(phase35Rows);
+          updated += phase35Rows.length;
+        }
+        log(`  Phase 3.5 complete: ${contractResolved} tokens resolved, ${phase35Rows.length} transactions priced`);
+      }
+    } else {
+      log(`── Phase 3.5: Skipped (no unpriced tokens with contract addresses) ──`);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     // ── PHASE 4: Mirror priced side to unpriced side (swaps) ─────────
     // ══════════════════════════════════════════════════════════════════
     log(`── Phase 4: Mirroring swap sides for remaining unpriced assets ──`);
@@ -621,6 +749,7 @@ export async function enrichHistoricalPrices(
     log(`  Phase 1 (swaps):  ${swapPriced} priced from on-chain data`);
     log(`  Phase 2 (NFTs):   ${nftPriced} priced from on-chain data`);
     log(`  Phase 3 (xfers):  ${transferPriced} priced via known symbols`);
+    log(`  Phase 3.5 (contract): ${contractResolved} tokens resolved by address`);
     log(`  Phase 4 (mirror): ${mirrorPriced} swap sides mirrored`);
     log(`  Phase 5 (OHLCV):  ${onchainResolved} resolved, ${onchainFailed} not found`);
     log(`  Fee corrections:  ${feeCorrected}`);
@@ -639,6 +768,7 @@ export async function enrichHistoricalPrices(
       transferPriced,
       feeCorrected,
       mirrorPriced,
+      contractResolved,
       onchainResolved,
       onchainFailed,
       fallbackSymbols: fallbackList,
@@ -651,7 +781,7 @@ export async function enrichHistoricalPrices(
       updated: 0, total: 0, skipped: 0,
       swapPriced: 0, nftPriced: 0, transferPriced: 0,
       feeCorrected: 0, mirrorPriced: 0,
-      onchainResolved: 0, onchainFailed: 0,
+      contractResolved: 0, onchainResolved: 0, onchainFailed: 0,
       fallbackSymbols: [],
       durationMs: Date.now() - startTime,
       error: error instanceof Error ? error.message : "Unknown error",
