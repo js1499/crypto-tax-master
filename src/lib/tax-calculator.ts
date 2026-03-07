@@ -1072,7 +1072,8 @@ function processTransactionsForTax(
     }
     // Handle swaps - treat as sell of one asset and buy of another
     // IRS: Swaps are taxable events (like-kind exchange rules eliminated for crypto after 2017)
-    else if (getCategory(tx.type || "") === "swap") {
+    // NFT trades are two-sided (SOL↔NFT) and handled identically to swaps
+    else if (getCategory(tx.type || "") === "swap" || txType === "nft_purchase" || txType === "nft_sale") {
       // First, try to use stored swap information from database
       let outgoingAsset = asset; // Already normalized above
       let incomingAsset = tx.incoming_asset_symbol ? (tx.incoming_asset_symbol.trim().toUpperCase()) : null;

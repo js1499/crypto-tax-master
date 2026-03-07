@@ -417,8 +417,8 @@ export function getPnlInflowTypes(): string[] {
 export function isTaxableBuy(rawType: string): boolean {
   const cat = getCategory(rawType);
   if (cat === "buy") return true;
-  // NFT Purchase is a buy (cost basis for future sale)
-  if (rawType === "NFT Purchase" || rawType === "nft purchase" || rawType === "NFT_PURCHASE") return true;
+  // NFT_PURCHASE is NOT a simple buy — it's a two-sided trade (SOL→NFT)
+  // and is handled by the swap branch in the tax calculator.
   return false;
 }
 
@@ -426,8 +426,8 @@ export function isTaxableBuy(rawType: string): boolean {
 export function isTaxableSell(rawType: string): boolean {
   const cat = getCategory(rawType);
   if (cat === "sell") return true;
-  // NFT Sale is a sell
-  if (rawType === "NFT Sale" || rawType === "nft sale" || rawType === "NFT_SALE") return true;
+  // NFT_SALE is NOT a simple sell — it's a two-sided trade (NFT→SOL)
+  // and is handled by the swap branch in the tax calculator.
   return false;
 }
 
