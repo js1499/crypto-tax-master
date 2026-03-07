@@ -28,15 +28,16 @@ const prisma = global.prisma || new PrismaClient({
 });
 
 /**
- * Append connection_limit=1 to the DATABASE_URL if not already set.
+ * Append connection pool params to the DATABASE_URL if not already set.
  * Serverless functions behind a connection pooler (Supabase/PgBouncer)
- * should each hold at most 1 connection to avoid exhausting the pool.
+ * should keep a small pool. pool_timeout gives queries more time to
+ * acquire a connection under load.
  */
 function appendConnectionLimit(url: string | undefined): string | undefined {
   if (!url) return url;
   if (url.includes("connection_limit")) return url;
   const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}connection_limit=1`;
+  return `${url}${separator}connection_limit=5&pool_timeout=30`;
 }
 
 // In development, store the instance globally to prevent
