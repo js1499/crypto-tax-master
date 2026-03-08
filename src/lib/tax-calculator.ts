@@ -274,12 +274,12 @@ function processDisposal(
       console.warn(`[Tax Calculator] ${tx.type} transaction ${tx.id}: No cost basis lots available. Asset: ${asset}`);
     }
 
-    // Stablecoin override: use $1/unit as cost basis.
-    // Stablecoins are pegged to $1, so capital gains are ~$0.
+    // Stablecoin override: force gain/loss to $0.
+    // Stablecoins are pegged to $1 — disposals don't produce capital gains.
     // Without this, lot depletion from protocol deposits (games, DeFi)
-    // causes phantom gains when lots run out.
+    // causes phantom gains, and mispriced value_usd causes phantom losses.
     if (STABLECOINS.has(asset)) {
-      totalCostBasis = Math.round(sellAmount * 100) / 100;
+      totalCostBasis = netProceeds; // break-even: cost basis = proceeds
     }
 
     gainLoss = Math.round((netProceeds - totalCostBasis) * 100) / 100;
