@@ -1396,9 +1396,11 @@ function processTransactionsForTax(
         // External send = disposal. Record cost basis and gain/loss.
         // Proceeds = value_usd (FMV at time of send), gain = proceeds - cost basis
         const proceeds = Math.abs(valueUsd);
-        const gainLoss = proceeds - consumedCostBasis;
+        // Stablecoin override: force break-even (no capital gains on stablecoins)
+        const sendCostBasis = STABLECOINS.has(asset) ? proceeds : consumedCostBasis;
+        const gainLoss = proceeds - sendCostBasis;
         if (costBasisResults) {
-          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: consumedCostBasis, gainLossUsd: gainLoss });
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: sendCostBasis, gainLossUsd: gainLoss });
         }
       }
     }
