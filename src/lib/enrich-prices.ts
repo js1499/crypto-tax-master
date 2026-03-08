@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { getCoinGeckoId, getPriceRange } from "@/lib/coingecko";
+import { getCoinGeckoId, getPriceRange, resolveByContractAddress } from "@/lib/coingecko";
 import { batchGetTokenOHLCV } from "./onchain-prices";
 
 const log = (msg: string) => console.log(`[Enrich] ${msg}`);
@@ -16,6 +16,8 @@ export interface EnrichResult {
   transferPriced: number;
   feeCorrected: number;
   mirrorPriced: number;
+  contractResolved: number;
+  contractFailed: number;
   onchainResolved: number;
   onchainFailed: number;
   fallbackSymbols: string[];
@@ -73,6 +75,7 @@ export async function enrichHistoricalPrices(
     status: "success", updated: 0, total: 0, skipped: 0,
     swapPriced: 0, nftPriced: 0, transferPriced: 0,
     feeCorrected: 0, mirrorPriced: 0,
+    contractResolved: 0, contractFailed: 0,
     onchainResolved: 0, onchainFailed: 0,
     fallbackSymbols: [], durationMs: Date.now() - startTime,
   });
@@ -456,6 +459,117 @@ export async function enrichHistoricalPrices(
     log(`  Phase 3 complete: ${transferPriced} transfers priced, ${feeCorrected} fees corrected`);
 
     // ══════════════════════════════════════════════════════════════════
+    // ── PHASE 3.5: Resolve unknown tokens by contract address ────────
+    // ══════════════════════════════════════════════════════════════════
+    let contractResolved = 0;
+    let contractFailed = 0;
+
+    // Filter unknown mints: skip pump.fun tokens and NFTs (amount=1)
+    const contractMints = new Map<string, string>();
+    for (const [mint, symbol] of unknownMints) {
+      if (isPumpFun(mint)) continue;
+      // Check if any unpriced transaction with this mint has amount != 1 (fungible)
+      let isFungible = false;
+      for (const tx of transactions) {
+        if (pricedIds.has(tx.id)) continue;
+        const matchesMain = tx.asset_address === mint;
+        const matchesIncoming = tx.incoming_asset_address === mint;
+        if (!matchesMain && !matchesIncoming) continue;
+        if (matchesMain && Math.abs(Number(tx.amount_value)) !== 1) { isFungible = true; break; }
+        if (matchesIncoming && tx.incoming_amount_value && Math.abs(Number(tx.incoming_amount_value)) !== 1) { isFungible = true; break; }
+      }
+      if (isFungible) contractMints.set(mint, symbol);
+    }
+
+    if (contractMints.size > 0) {
+      log(`── Phase 3.5: Resolving ${contractMints.size} unknown tokens by contract address ──`);
+
+      const addressPairs = Array.from(contractMints.entries()).map(([mint, symbol]) => ({
+        contractAddress: mint,
+        currentSymbol: symbol,
+      }));
+
+      const { resolved: contractResults, failed: contractFailedList } =
+        await resolveByContractAddress(addressPairs, "solana");
+
+      contractResolved = contractResults.size;
+      contractFailed = contractFailedList.length;
+      log(`  Contract resolution: ${contractResolved} resolved, ${contractFailed} failed`);
+
+      // Fetch price ranges for newly resolved tokens
+      if (contractResolved > 0) {
+        const newSymbols = new Set<string>();
+        for (const [, info] of contractResults) {
+          newSymbols.add(info.symbol.toUpperCase());
+        }
+
+        let pricesFetched = 0;
+        for (const symbol of newSymbols) {
+          // getCoinGeckoId should now return the ID (resolveByContractAddress populates dynamicIdCache)
+          if (!getCoinGeckoId(symbol)) continue;
+          try {
+            const prices = await getPriceRange(symbol, rangeStart, rangeEnd);
+            if (prices && prices.length > 0) {
+              for (const entry of prices) {
+                priceMap.set(`${symbol}:${entry.date.split("T")[0]}`, entry.price);
+              }
+              pricesFetched++;
+              log(`  [Phase 3.5] ${symbol}: ${prices.length} daily prices loaded`);
+            }
+          } catch (err) {
+            warn(`  [Phase 3.5] ${symbol}: price fetch error — ${err instanceof Error ? err.message : err}`);
+          }
+        }
+        log(`  Phase 3.5: Fetched price ranges for ${pricesFetched}/${newSymbols.size} resolved tokens`);
+
+        // Apply prices to unpriced transactions
+        const phase35Rows: BulkRow[] = [];
+        for (const tx of transactions) {
+          if (pricedIds.has(tx.id)) continue;
+
+          let ppu: number | null = null;
+          let vusd: number | null = null;
+          let iusd: number | null = null;
+          let didPrice = false;
+
+          // Try main asset
+          if (tx.asset_address && contractResults.has(tx.asset_address)) {
+            const resolvedSymbol = contractResults.get(tx.asset_address)!.symbol.toUpperCase();
+            const price = lookupPrice(resolvedSymbol, tx.tx_timestamp);
+            if (price !== null) {
+              ppu = price;
+              vusd = Math.abs(Number(tx.amount_value) * price);
+              didPrice = true;
+            }
+          }
+
+          // Try incoming asset
+          if (tx.incoming_asset_address && tx.incoming_amount_value && contractResults.has(tx.incoming_asset_address)) {
+            const resolvedSymbol = contractResults.get(tx.incoming_asset_address)!.symbol.toUpperCase();
+            const price = lookupPrice(resolvedSymbol, tx.tx_timestamp);
+            if (price !== null) {
+              iusd = Math.abs(Number(tx.incoming_amount_value) * price);
+              didPrice = true;
+            }
+          }
+
+          if (didPrice) {
+            phase35Rows.push({ id: tx.id, price_per_unit: ppu, value_usd: vusd, fee_usd: null, incoming_value_usd: iusd });
+            pricedIds.add(tx.id);
+          }
+        }
+
+        if (phase35Rows.length > 0) {
+          await bulkUpdateTransactions(phase35Rows);
+          updated += phase35Rows.length;
+          log(`  Phase 3.5 applied: ${phase35Rows.length} transactions updated`);
+        }
+      }
+    } else {
+      log(`── Phase 3.5: Skipped (no unknown contract addresses to resolve) ──`);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     // ── PHASE 4: Mirror priced side to unpriced side (swaps) ─────────
     // ══════════════════════════════════════════════════════════════════
     log(`── Phase 4: Mirroring swap sides for remaining unpriced assets ──`);
@@ -621,6 +735,7 @@ export async function enrichHistoricalPrices(
     log(`  Phase 1 (swaps):  ${swapPriced} priced from on-chain data`);
     log(`  Phase 2 (NFTs):   ${nftPriced} priced from on-chain data`);
     log(`  Phase 3 (xfers):  ${transferPriced} priced via known symbols`);
+    log(`  Phase 3.5 (contract): ${contractResolved} resolved, ${contractFailed} failed`);
     log(`  Phase 4 (mirror): ${mirrorPriced} swap sides mirrored`);
     log(`  Phase 5 (OHLCV):  ${onchainResolved} resolved, ${onchainFailed} not found`);
     log(`  Fee corrections:  ${feeCorrected}`);
@@ -639,6 +754,8 @@ export async function enrichHistoricalPrices(
       transferPriced,
       feeCorrected,
       mirrorPriced,
+      contractResolved,
+      contractFailed,
       onchainResolved,
       onchainFailed,
       fallbackSymbols: fallbackList,
@@ -651,6 +768,7 @@ export async function enrichHistoricalPrices(
       updated: 0, total: 0, skipped: 0,
       swapPriced: 0, nftPriced: 0, transferPriced: 0,
       feeCorrected: 0, mirrorPriced: 0,
+      contractResolved: 0, contractFailed: 0,
       onchainResolved: 0, onchainFailed: 0,
       fallbackSymbols: [],
       durationMs: Date.now() - startTime,
