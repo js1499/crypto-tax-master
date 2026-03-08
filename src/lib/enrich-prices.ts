@@ -1,31 +1,10 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { getCoinGeckoId, getPriceRange, getCurrentPrice, resolveByContractAddress } from "@/lib/coingecko";
+import { getCoinGeckoId, getPriceRange, getCurrentPrice } from "@/lib/coingecko";
 import { batchGetTokenOHLCV } from "./onchain-prices";
 
 const log = (msg: string) => console.log(`[Enrich] ${msg}`);
 const warn = (msg: string) => console.warn(`[Enrich] ${msg}`);
-
-// Map our chain identifiers to CoinGecko platform IDs
-const CHAIN_TO_PLATFORM: Record<string, string> = {
-  SOL: "solana",
-  SOLANA: "solana",
-  ETH: "ethereum",
-  ETHEREUM: "ethereum",
-  BASE: "base",
-  ARBITRUM: "arbitrum-one",
-  ARB: "arbitrum-one",
-  POLYGON: "polygon-pos",
-  MATIC: "polygon-pos",
-  BSC: "binance-smart-chain",
-  BNB: "binance-smart-chain",
-  AVAX: "avalanche",
-  AVALANCHE: "avalanche",
-  OPTIMISM: "optimistic-ethereum",
-  OP: "optimistic-ethereum",
-  FTM: "fantom",
-  FANTOM: "fantom",
-};
 
 export interface EnrichResult {
   status: "success" | "error";
@@ -37,7 +16,6 @@ export interface EnrichResult {
   transferPriced: number;
   feeCorrected: number;
   mirrorPriced: number;
-  contractResolved: number;
   onchainResolved: number;
   onchainFailed: number;
   fallbackSymbols: string[];
@@ -95,7 +73,7 @@ export async function enrichHistoricalPrices(
     status: "success", updated: 0, total: 0, skipped: 0,
     swapPriced: 0, nftPriced: 0, transferPriced: 0,
     feeCorrected: 0, mirrorPriced: 0,
-    contractResolved: 0, onchainResolved: 0, onchainFailed: 0,
+    onchainResolved: 0, onchainFailed: 0,
     fallbackSymbols: [], durationMs: Date.now() - startTime,
   });
 
@@ -227,69 +205,53 @@ export async function enrichHistoricalPrices(
     if (swapTxIds.length > 0 && solPriceMap.size > 0) {
       const phase1Rows: BulkRow[] = [];
 
-      // Build signature → tx id mapping (extract base signature before '-' suffix)
-      const sigToTxIds = new Map<string, number[]>();
-      for (const txId of swapTxIds) {
-        const tx = txById.get(txId);
-        if (!tx?.tx_hash) continue;
-        const sig = tx.tx_hash.split("-")[0];
-        if (!sigToTxIds.has(sig)) sigToTxIds.set(sig, []);
-        sigToTxIds.get(sig)!.push(txId);
-      }
-
-      const allSigs = Array.from(sigToTxIds.keys());
-      for (let i = 0; i < allSigs.length; i += 1000) {
-        const batchSigs = allSigs.slice(i, i + 1000);
-        const sigList = batchSigs.map(s => `'${s}'`).join(",");
+      for (let i = 0; i < swapTxIds.length; i += 1000) {
+        const batchIds = swapTxIds.slice(i, i + 1000);
 
         const heliusRows = await prisma.$queryRawUnsafe<Array<{
-          signature: string;
+          id: number;
           native_input_lamports: string | null;
           native_output_lamports: string | null;
         }>>(`
-          SELECT DISTINCT ON (h.signature)
-            h.signature,
+          SELECT DISTINCT ON (t.id)
+            t.id,
             (h.raw_payload->'events'->'swap'->'nativeInput'->>'amount') as native_input_lamports,
             (h.raw_payload->'events'->'swap'->'nativeOutput'->>'amount') as native_output_lamports
-          FROM helius_raw_transactions h
-          WHERE h.signature IN (${sigList})
+          FROM transactions t
+          JOIN helius_raw_transactions h ON SPLIT_PART(t.tx_hash, '-', 1) = h.signature
+          WHERE t.id IN (${batchIds.join(",")})
           AND h.raw_payload->'events'->'swap' IS NOT NULL
-          ORDER BY h.signature
+          ORDER BY t.id
         `);
 
         for (const row of heliusRows) {
-          const txIds = sigToTxIds.get(row.signature);
-          if (!txIds) continue;
+          const tx = txById.get(row.id);
+          if (!tx) continue;
 
           const solLamports = row.native_output_lamports || row.native_input_lamports;
           if (!solLamports) continue;
 
-          for (const txId of txIds) {
-            const tx = txById.get(txId);
-            if (!tx) continue;
+          const solAmount = Number(solLamports) / 1e9;
+          const solPrice = lookupSolPrice(tx.tx_timestamp);
+          if (solPrice === null) continue;
 
-            const solAmount = Number(solLamports) / 1e9;
-            const solPrice = lookupSolPrice(tx.tx_timestamp);
-            if (solPrice === null) continue;
+          const tradeValueUsd = solAmount * solPrice;
+          const mainAmount = Math.abs(Number(tx.amount_value));
+          const ppu = mainAmount > 0 ? tradeValueUsd / mainAmount : 0;
 
-            const tradeValueUsd = solAmount * solPrice;
-            const mainAmount = Math.abs(Number(tx.amount_value));
-            const ppu = mainAmount > 0 ? tradeValueUsd / mainAmount : 0;
-
-            phase1Rows.push({
-              id: tx.id,
-              price_per_unit: ppu,
-              value_usd: tradeValueUsd,
-              fee_usd: null,
-              incoming_value_usd: tradeValueUsd,
-            });
-            pricedIds.add(tx.id);
-            swapPriced++;
-          }
+          phase1Rows.push({
+            id: tx.id,
+            price_per_unit: ppu,
+            value_usd: tradeValueUsd,
+            fee_usd: null,
+            incoming_value_usd: tradeValueUsd,
+          });
+          pricedIds.add(tx.id);
+          swapPriced++;
         }
 
-        if (i + 1000 < allSigs.length) {
-          log(`  Phase 1 progress: ${Math.min(i + 1000, allSigs.length)}/${allSigs.length} signatures queried`);
+        if (i + 1000 < swapTxIds.length) {
+          log(`  Phase 1 progress: ${Math.min(i + 1000, swapTxIds.length)}/${swapTxIds.length} queried`);
         }
       }
 
@@ -312,62 +274,46 @@ export async function enrichHistoricalPrices(
     if (nftTxIds.length > 0 && solPriceMap.size > 0) {
       const phase2Rows: BulkRow[] = [];
 
-      // Build signature → tx id mapping for NFTs
-      const nftSigToTxIds = new Map<string, number[]>();
-      for (const txId of nftTxIds) {
-        const tx = txById.get(txId);
-        if (!tx?.tx_hash) continue;
-        const sig = tx.tx_hash.split("-")[0];
-        if (!nftSigToTxIds.has(sig)) nftSigToTxIds.set(sig, []);
-        nftSigToTxIds.get(sig)!.push(txId);
-      }
-
-      const allNftSigs = Array.from(nftSigToTxIds.keys());
-      for (let i = 0; i < allNftSigs.length; i += 1000) {
-        const batchSigs = allNftSigs.slice(i, i + 1000);
-        const sigList = batchSigs.map(s => `'${s}'`).join(",");
+      for (let i = 0; i < nftTxIds.length; i += 1000) {
+        const batchIds = nftTxIds.slice(i, i + 1000);
 
         const heliusRows = await prisma.$queryRawUnsafe<Array<{
-          signature: string;
+          id: number;
           nft_amount_lamports: string | null;
         }>>(`
-          SELECT DISTINCT ON (h.signature)
-            h.signature,
+          SELECT DISTINCT ON (t.id)
+            t.id,
             (h.raw_payload->'events'->'nft'->>'amount')::text as nft_amount_lamports
-          FROM helius_raw_transactions h
-          WHERE h.signature IN (${sigList})
+          FROM transactions t
+          JOIN helius_raw_transactions h ON SPLIT_PART(t.tx_hash, '-', 1) = h.signature
+          WHERE t.id IN (${batchIds.join(",")})
           AND h.raw_payload->'events'->'nft' IS NOT NULL
-          ORDER BY h.signature
+          ORDER BY t.id
         `);
 
         for (const row of heliusRows) {
-          const txIds = nftSigToTxIds.get(row.signature);
-          if (!txIds || !row.nft_amount_lamports) continue;
+          const tx = txById.get(row.id);
+          if (!tx || !row.nft_amount_lamports) continue;
 
           const solAmount = Number(row.nft_amount_lamports) / 1e9;
           if (solAmount <= 0) continue;
 
-          for (const txId of txIds) {
-            const tx = txById.get(txId);
-            if (!tx) continue;
+          const solPrice = lookupSolPrice(tx.tx_timestamp);
+          if (solPrice === null) continue;
 
-            const solPrice = lookupSolPrice(tx.tx_timestamp);
-            if (solPrice === null) continue;
+          const valueUsd = solAmount * solPrice;
+          const mainAmount = Math.abs(Number(tx.amount_value));
+          const ppu = mainAmount > 0 ? valueUsd / mainAmount : solPrice;
 
-            const valueUsd = solAmount * solPrice;
-            const mainAmount = Math.abs(Number(tx.amount_value));
-            const ppu = mainAmount > 0 ? valueUsd / mainAmount : solPrice;
-
-            phase2Rows.push({
-              id: tx.id,
-              price_per_unit: ppu,
-              value_usd: valueUsd,
-              fee_usd: null,
-              incoming_value_usd: null,
-            });
-            pricedIds.add(tx.id);
-            nftPriced++;
-          }
+          phase2Rows.push({
+            id: tx.id,
+            price_per_unit: ppu,
+            value_usd: valueUsd,
+            fee_usd: null,
+            incoming_value_usd: null,
+          });
+          pricedIds.add(tx.id);
+          nftPriced++;
         }
       }
 
@@ -508,112 +454,6 @@ export async function enrichHistoricalPrices(
       updated += phase3Rows.filter(r => r.price_per_unit !== null || r.value_usd !== null).length;
     }
     log(`  Phase 3 complete: ${transferPriced} transfers priced, ${feeCorrected} fees corrected`);
-
-    // ══════════════════════════════════════════════════════════════════
-    // ── PHASE 3.5: Resolve unpriced tokens by contract address ───────
-    // ══════════════════════════════════════════════════════════════════
-    let contractResolved = 0;
-
-    // Collect unpriced tokens that have a contract address and chain
-    const contractCandidates = new Map<string, { address: string; symbol: string; platform: string }>();
-    for (const tx of transactions) {
-      if (pricedIds.has(tx.id)) continue;
-      const chain = (tx.chain || "SOL").toUpperCase();
-      const platform = CHAIN_TO_PLATFORM[chain];
-      if (!platform) continue;
-
-      if (tx.asset_address && !getCoinGeckoId(tx.asset_symbol) && !isPumpFun(tx.asset_address)) {
-        contractCandidates.set(tx.asset_address, { address: tx.asset_address, symbol: tx.asset_symbol, platform });
-      }
-      if (tx.incoming_asset_address && tx.incoming_asset_symbol &&
-          !getCoinGeckoId(tx.incoming_asset_symbol) && !isPumpFun(tx.incoming_asset_address)) {
-        contractCandidates.set(tx.incoming_asset_address, { address: tx.incoming_asset_address, symbol: tx.incoming_asset_symbol, platform });
-      }
-    }
-
-    if (contractCandidates.size > 0) {
-      log(`── Phase 3.5: Resolving ${contractCandidates.size} tokens by contract address ──`);
-
-      // Group by platform for batch resolution
-      const byPlatform = new Map<string, Array<{ contractAddress: string; currentSymbol: string }>>();
-      for (const [, { address, symbol, platform }] of contractCandidates) {
-        if (!byPlatform.has(platform)) byPlatform.set(platform, []);
-        byPlatform.get(platform)!.push({ contractAddress: address, currentSymbol: symbol });
-      }
-
-      // Resolve each platform group
-      const resolvedSymbols = new Set<string>();
-      for (const [platform, addresses] of byPlatform) {
-        log(`  Resolving ${addresses.length} contracts on ${platform}...`);
-        const { resolved } = await resolveByContractAddress(addresses, platform);
-        for (const [, info] of resolved) {
-          resolvedSymbols.add(info.symbol);
-          contractResolved++;
-        }
-      }
-
-      // Fetch price ranges for newly resolved symbols
-      if (resolvedSymbols.size > 0) {
-        log(`  Fetching price ranges for ${resolvedSymbols.size} newly resolved tokens...`);
-        let fetched = 0;
-        for (const symbol of resolvedSymbols) {
-          if (priceMap.has(`${symbol}:${rangeStart.toISOString().split("T")[0]}`)) continue;
-          try {
-            const prices = await getPriceRange(symbol, rangeStart, rangeEnd);
-            if (prices && prices.length > 0) {
-              for (const entry of prices) {
-                priceMap.set(`${symbol}:${entry.date.split("T")[0]}`, entry.price);
-              }
-              fetched++;
-            }
-          } catch (err) {
-            warn(`  ${symbol}: price range error — ${err instanceof Error ? err.message : err}`);
-          }
-        }
-        log(`  Fetched price ranges for ${fetched}/${resolvedSymbols.size} resolved tokens`);
-
-        // Apply prices to still-unpriced transactions
-        const phase35Rows: BulkRow[] = [];
-        for (const tx of transactions) {
-          if (pricedIds.has(tx.id)) continue;
-
-          let ppu: number | null = null;
-          let vusd: number | null = null;
-          let iusd: number | null = null;
-          let didPrice = false;
-
-          if (getCoinGeckoId(tx.asset_symbol)) {
-            const price = lookupPrice(tx.asset_symbol, tx.tx_timestamp);
-            if (price !== null) {
-              ppu = price;
-              vusd = Math.abs(Number(tx.amount_value) * price);
-              didPrice = true;
-            }
-          }
-
-          if (tx.incoming_asset_symbol && tx.incoming_amount_value && getCoinGeckoId(tx.incoming_asset_symbol)) {
-            const price = lookupPrice(tx.incoming_asset_symbol, tx.tx_timestamp);
-            if (price !== null) {
-              iusd = Math.abs(Number(tx.incoming_amount_value) * price);
-              didPrice = true;
-            }
-          }
-
-          if (didPrice) {
-            phase35Rows.push({ id: tx.id, price_per_unit: ppu, value_usd: vusd, fee_usd: null, incoming_value_usd: iusd });
-            pricedIds.add(tx.id);
-          }
-        }
-
-        if (phase35Rows.length > 0) {
-          await bulkUpdateTransactions(phase35Rows);
-          updated += phase35Rows.length;
-        }
-        log(`  Phase 3.5 complete: ${contractResolved} tokens resolved, ${phase35Rows.length} transactions priced`);
-      }
-    } else {
-      log(`── Phase 3.5: Skipped (no unpriced tokens with contract addresses) ──`);
-    }
 
     // ══════════════════════════════════════════════════════════════════
     // ── PHASE 4: Mirror priced side to unpriced side (swaps) ─────────
@@ -781,7 +621,6 @@ export async function enrichHistoricalPrices(
     log(`  Phase 1 (swaps):  ${swapPriced} priced from on-chain data`);
     log(`  Phase 2 (NFTs):   ${nftPriced} priced from on-chain data`);
     log(`  Phase 3 (xfers):  ${transferPriced} priced via known symbols`);
-    log(`  Phase 3.5 (contract): ${contractResolved} tokens resolved by address`);
     log(`  Phase 4 (mirror): ${mirrorPriced} swap sides mirrored`);
     log(`  Phase 5 (OHLCV):  ${onchainResolved} resolved, ${onchainFailed} not found`);
     log(`  Fee corrections:  ${feeCorrected}`);
@@ -800,7 +639,6 @@ export async function enrichHistoricalPrices(
       transferPriced,
       feeCorrected,
       mirrorPriced,
-      contractResolved,
       onchainResolved,
       onchainFailed,
       fallbackSymbols: fallbackList,
@@ -813,7 +651,7 @@ export async function enrichHistoricalPrices(
       updated: 0, total: 0, skipped: 0,
       swapPriced: 0, nftPriced: 0, transferPriced: 0,
       feeCorrected: 0, mirrorPriced: 0,
-      contractResolved: 0, onchainResolved: 0, onchainFailed: 0,
+      onchainResolved: 0, onchainFailed: 0,
       fallbackSymbols: [],
       durationMs: Date.now() - startTime,
       error: error instanceof Error ? error.message : "Unknown error",

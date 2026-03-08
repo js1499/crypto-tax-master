@@ -6,8 +6,8 @@ import { enrichHistoricalPrices } from "@/lib/enrich-prices";
 
 export const maxDuration = 800; // 13 min Vercel timeout
 
-// DB-level lock ID for enrichment (prevents concurrent runs across instances)
-const ENRICHMENT_LOCK_ID = 748392;
+// Prevent concurrent enrichment runs (CoinGecko has a shared rate limit)
+let enrichmentRunning = false;
 
 /**
  * POST /api/prices/enrich-historical
@@ -22,6 +22,14 @@ export async function POST(request: NextRequest) {
   const warn = (msg: string) => console.warn(`[Enrich API] ${msg}`);
 
   log(`── Endpoint called at ${new Date().toISOString()} ──`);
+
+  if (enrichmentRunning) {
+    warn(`Enrichment already in progress — rejecting concurrent request`);
+    return NextResponse.json(
+      { status: "error", error: "Enrichment already in progress. Please wait for it to complete." },
+      { status: 409 }
+    );
+  }
 
   try {
     // Rate limiting
@@ -39,45 +47,29 @@ export async function POST(request: NextRequest) {
     }
     log(`Auth OK — user ${user.id}`);
 
-    // Acquire DB-level advisory lock (non-blocking — returns false if already held)
-    const lockResult = await prisma.$queryRawUnsafe<Array<{ pg_try_advisory_lock: boolean }>>(
-      `SELECT pg_try_advisory_lock(${ENRICHMENT_LOCK_ID})`
-    );
-    const gotLock = lockResult[0]?.pg_try_advisory_lock === true;
+    const body = await request.json().catch(() => ({}));
+    const { walletId } = body;
 
-    if (!gotLock) {
-      warn(`Enrichment already in progress (advisory lock held) — rejecting`);
-      return NextResponse.json(
-        { status: "error", error: "Enrichment already in progress. Please wait for it to complete." },
-        { status: 409 }
-      );
-    }
-
-    try {
-      const body = await request.json().catch(() => ({}));
-      const { walletId } = body;
-
-      let walletAddress: string | undefined;
-      if (walletId) {
-        const wallet = await prisma.wallet.findFirst({
-          where: { id: walletId, userId: user.id },
-        });
-        if (!wallet) {
-          return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
-        }
-        walletAddress = wallet.address;
-      }
-
-      const result = await enrichHistoricalPrices(walletAddress, user.id);
-
-      return NextResponse.json(result, {
-        status: result.status === "success" ? 200 : 500,
+    let walletAddress: string | undefined;
+    if (walletId) {
+      const wallet = await prisma.wallet.findFirst({
+        where: { id: walletId, userId: user.id },
       });
-    } finally {
-      // Always release the lock
-      await prisma.$queryRawUnsafe(`SELECT pg_advisory_unlock(${ENRICHMENT_LOCK_ID})`).catch(() => {});
+      if (!wallet) {
+        return NextResponse.json({ error: "Wallet not found" }, { status: 404 });
+      }
+      walletAddress = wallet.address;
     }
+
+    enrichmentRunning = true;
+    const result = await enrichHistoricalPrices(walletAddress, user.id);
+    enrichmentRunning = false;
+
+    return NextResponse.json(result, {
+      status: result.status === "success" ? 200 : 500,
+    });
   } catch (error) {
+    enrichmentRunning = false;
     console.error("[Enrich API] Error:", error);
     return NextResponse.json(
       {
