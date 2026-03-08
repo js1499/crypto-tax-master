@@ -247,13 +247,14 @@ export async function enrichHistoricalPrices(
           native_input_lamports: string | null;
           native_output_lamports: string | null;
         }>>(`
-          SELECT
+          SELECT DISTINCT ON (h.signature)
             h.signature,
             (h.raw_payload->'events'->'swap'->'nativeInput'->>'amount') as native_input_lamports,
             (h.raw_payload->'events'->'swap'->'nativeOutput'->>'amount') as native_output_lamports
           FROM helius_raw_transactions h
           WHERE h.signature IN (${sigList})
           AND h.raw_payload->'events'->'swap' IS NOT NULL
+          ORDER BY h.signature
         `);
 
         for (const row of heliusRows) {
@@ -330,12 +331,13 @@ export async function enrichHistoricalPrices(
           signature: string;
           nft_amount_lamports: string | null;
         }>>(`
-          SELECT
+          SELECT DISTINCT ON (h.signature)
             h.signature,
             (h.raw_payload->'events'->'nft'->>'amount')::text as nft_amount_lamports
           FROM helius_raw_transactions h
           WHERE h.signature IN (${sigList})
           AND h.raw_payload->'events'->'nft' IS NOT NULL
+          ORDER BY h.signature
         `);
 
         for (const row of heliusRows) {
