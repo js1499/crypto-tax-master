@@ -1,6 +1,6 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { getCoinGeckoId, getPriceRange, getCurrentPrice } from "@/lib/coingecko";
+import { getCoinGeckoId, getPriceRange } from "@/lib/coingecko";
 import { batchGetTokenOHLCV } from "./onchain-prices";
 
 const log = (msg: string) => console.log(`[Enrich] ${msg}`);
@@ -376,10 +376,6 @@ export async function enrichHistoricalPrices(
              priceMap.get(`${symbol.toUpperCase()}:${next}`) ?? null;
     }
 
-    // Current SOL price for fee correction
-    const currentSolPrice = await getCurrentPrice("SOL");
-    log(`Current SOL price for fee correction: $${currentSolPrice?.toFixed(2) || "N/A"}`);
-
     // Pump.fun impostor check: tokens with mint ending in "pump" shouldn't
     // be priced via known-symbol CoinGecko lookup
     const isPumpFun = (addr: string | null): boolean => addr ? addr.endsWith("pump") : false;
@@ -389,12 +385,16 @@ export async function enrichHistoricalPrices(
     const fallbackSymbols = new Set<string>();
 
     for (const tx of transactions) {
-      // Fee correction for ALL transactions
+      // Fee correction: convert fee stored in SOL to USD using historical SOL price.
+      // Only apply once — skip if fee_usd already looks like a USD value (> 0.1).
+      // Original Helius fees are in SOL (typically 0.000005–0.01 SOL).
       let fusd: number | null = null;
-      if (tx.fee_usd && currentSolPrice && currentSolPrice > 0) {
+      const rawFee = tx.fee_usd ? Number(tx.fee_usd) : 0;
+      if (rawFee > 0 && rawFee < 0.1) {
+        // Fee is still in SOL units — convert to USD
         const historicalSolPrice = lookupSolPrice(tx.tx_timestamp);
         if (historicalSolPrice !== null) {
-          fusd = (Number(tx.fee_usd) / currentSolPrice) * historicalSolPrice;
+          fusd = rawFee * historicalSolPrice;
           feeCorrected++;
         }
       }
