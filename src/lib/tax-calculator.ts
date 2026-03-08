@@ -73,6 +73,11 @@ export interface TransactionCostBasisResult {
   gainLossUsd: number | null;   // null = not a disposal event
 }
 
+// Stablecoins: use face value ($1/unit) as cost basis for disposals.
+// Lot tracking for stablecoins creates artifacts when tokens cycle through
+// DeFi protocols (deposits/withdrawals deplete lots, causing phantom gains).
+const STABLECOINS = new Set(["USDC", "USDT", "PYUSD", "DAI", "BUSD", "TUSD", "USDP", "FRAX", "USD1"]);
+
 // FIFO queue for tracking cost basis
 interface CostBasisLot {
   id: number;
@@ -269,10 +274,18 @@ function processDisposal(
       console.warn(`[Tax Calculator] ${tx.type} transaction ${tx.id}: No cost basis lots available. Asset: ${asset}`);
     }
 
+    // Stablecoin override: use $1/unit as cost basis.
+    // Stablecoins are pegged to $1, so capital gains are ~$0.
+    // Without this, lot depletion from protocol deposits (games, DeFi)
+    // causes phantom gains when lots run out.
+    if (STABLECOINS.has(asset)) {
+      totalCostBasis = Math.round(sellAmount * 100) / 100;
+    }
+
     gainLoss = Math.round((netProceeds - totalCostBasis) * 100) / 100;
 
     if (processedCount < 10) {
-      debugLog(`[Tax Calculator] ${tx.type} transaction ${tx.id} (from lots): proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, lotsUsed=${selectedLots.length}`);
+      debugLog(`[Tax Calculator] ${tx.type} transaction ${tx.id} (from lots): proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, lotsUsed=${selectedLots.length}${STABLECOINS.has(asset) ? ' [stablecoin override]' : ''}`);
     }
 
     return {
