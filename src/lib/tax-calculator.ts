@@ -78,6 +78,13 @@ export interface TransactionCostBasisResult {
 // DeFi protocols (deposits/withdrawals deplete lots, causing phantom gains).
 const STABLECOINS = new Set(["USDC", "USDT", "PYUSD", "DAI", "BUSD", "TUSD", "USDP", "FRAX", "USD1"]);
 
+// Known staking/governance contract addresses that should be treated as
+// self-transfers (non-taxable). Tokens sent to these addresses are locked,
+// not sold — they come back to the user later.
+const STAKING_CONTRACT_ADDRESSES = new Set([
+  "6a5vURu4cRdaJHfdq6JYcsk3MQ1FJBRoQ5zmrVbT1G5G", // JUP DAO staking/governance
+]);
+
 // FIFO queue for tracking cost basis
 interface CostBasisLot {
   id: number;
@@ -1285,13 +1292,14 @@ function processTransactionsForTax(
     // Creates a cost basis lot at FMV for tracking purposes, but does NOT
     // generate an income event. Self-transfer detection still applies.
     else if (txType === "receive" || txType === "transfer_in") {
-      // Check if this is a self-transfer (sender address is in user's wallets)
+      // Check if this is a self-transfer (sender address is in user's wallets or is a known staking contract)
       const isSelfTransfer = (
         tx.notes?.toLowerCase().includes("self transfer") ||
         tx.notes?.toLowerCase().includes("internal transfer") ||
         (tx.counterparty_address && walletAddresses.some(addr =>
           addr.toLowerCase() === tx.counterparty_address?.toLowerCase()
         )) ||
+        (tx.counterparty_address && STAKING_CONTRACT_ADDRESSES.has(tx.counterparty_address)) ||
         false
       );
 
@@ -1347,7 +1355,9 @@ function processTransactionsForTax(
         tx.notes?.toLowerCase().includes("internal transfer") ||
         (tx.counterparty_address && walletAddresses.some(addr =>
           addr.toLowerCase() === tx.counterparty_address?.toLowerCase()
-        )) || false
+        )) ||
+        (tx.counterparty_address && STAKING_CONTRACT_ADDRESSES.has(tx.counterparty_address)) ||
+        false
       );
 
       if (isSelfTransfer) {
