@@ -394,13 +394,15 @@ export async function GET(request: NextRequest) {
       ...getTypesForCategory("nft"), ...getTypesForCategory("income"),
     ];
     // Stats use statsWhere (includes search/filter/wallet/date but excludes cosmetic hideZero/hideSpam)
-    const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, disposalAgg] = await Promise.all([
+    const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, disposalAgg, incomeAgg] = await Promise.all([
       prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("buy"), ...getTypesForCategory("nft").filter(t => t === "NFT_PURCHASE" || t === "NFT Purchase" || t === "nft purchase")] } } }),
       prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("sell"), ...getTypesForCategory("nft").filter(t => t === "NFT_SALE" || t === "NFT Sale" || t === "nft sale")] } } }),
       prisma.transaction.count({ where: { ...statsWhere, type: { in: allKnownTypes } } }),
       prisma.transaction.count({ where: { ...statsWhere, NOT: { value_usd: 0 } } }),
       // Cost basis stats: aggregate disposal transactions (where gain_loss_usd has been computed)
       prisma.transaction.aggregate({ where: { ...statsWhere, gain_loss_usd: { not: null } }, _sum: { cost_basis_usd: true, gain_loss_usd: true } }),
+      // Income stats: aggregate income transactions (airdrops, rewards, vesting)
+      prisma.transaction.aggregate({ where: { ...statsWhere, is_income: true }, _count: true, _sum: { value_usd: true } }),
     ]);
 
     const otherCount = totalCount - buyCount - sellCount;
@@ -439,6 +441,10 @@ export async function GET(request: NextRequest) {
           totalCostBasis,
           totalProceeds,
           netGain,
+        },
+        income: {
+          count: incomeAgg._count,
+          totalValueUsd: Number(incomeAgg._sum.value_usd || 0),
         },
       },
     });

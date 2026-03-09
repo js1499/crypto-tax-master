@@ -79,8 +79,83 @@ export async function recomputeCostBasis(userId: string): Promise<void> {
     }
 
     console.log(`[Cost Basis] Auto-computed for ${results.length} transactions (${costBasisMethod})`);
+
+    // ── Auto-detect income (airdrops, rewards, vesting claims) ──
+    await detectIncomeTransactions(walletAddresses);
   } catch (error) {
     // Never throw — this runs as a background step after sync/import
     console.error("[Cost Basis] Auto-compute failed:", error);
+  }
+}
+
+/**
+ * Known airdrop / merkle distributor program IDs.
+ */
+const AIRDROP_PROGRAM_IDS = [
+  "meRjbQXFNf5En86FXT2YPz1dQzLj4Yb3xK8u1MVgqpb", // Jupiter Merkle Distributor
+  "MERLuDFBMmsHnsBPZw2sDQZHvXFMwp8EdjudcU2HKky",  // Merkle Distributor v2
+];
+
+/**
+ * Detect and flag income transactions (airdrops, rewards, vesting claims).
+ * Idempotent — resets and re-detects every time.
+ */
+async function detectIncomeTransactions(walletAddresses: string[]): Promise<void> {
+  try {
+    if (walletAddresses.length === 0) return;
+
+    // Reset existing flags
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions SET is_income = false
+      WHERE wallet_address = ANY($1::text[]) AND is_income = true
+    `, walletAddresses);
+
+    // Rule 1: CLAIM_REWARDS type (staking rewards, etc.)
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions SET is_income = true
+      WHERE wallet_address = ANY($1::text[]) AND type = 'CLAIM_REWARDS'
+    `, walletAddresses);
+
+    // Rule 2: Streamflow vesting claims
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions t SET is_income = true
+      WHERE t.wallet_address = ANY($1::text[])
+        AND t.type = 'WITHDRAW'
+        AND t.is_income = false
+        AND EXISTS (
+          SELECT 1 FROM helius_raw_transactions h
+          WHERE h.wallet_address = t.wallet_address
+            AND h.helius_source = 'STREAMFLOW_TIMELOCK'
+            AND h.helius_type = 'WITHDRAW'
+            AND t.tx_hash LIKE h.signature || '%'
+        )
+    `, walletAddresses);
+
+    // Rule 3: Known airdrop program IDs (Jupiter Merkle Distributor, etc.)
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions t SET is_income = true
+      WHERE t.wallet_address = ANY($1::text[])
+        AND t.type IN ('TRANSFER_IN', 'INITIALIZE_ACCOUNT')
+        AND t.is_income = false
+        AND EXISTS (
+          SELECT 1 FROM helius_raw_transactions h
+          WHERE h.wallet_address = t.wallet_address
+            AND t.tx_hash LIKE h.signature || '%'
+            AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements(h.raw_payload->'instructions') instr
+              WHERE instr->>'programId' = ANY($2::text[])
+            )
+        )
+    `, walletAddresses, AIRDROP_PROGRAM_IDS);
+
+    const result = await prisma.$queryRawUnsafe(`
+      SELECT COUNT(*) as cnt, COALESCE(SUM(value_usd), 0) as total
+      FROM transactions
+      WHERE wallet_address = ANY($1::text[]) AND is_income = true
+    `, walletAddresses) as Array<{ cnt: bigint; total: number }>;
+
+    console.log(`[Income Detect] Flagged ${result[0].cnt} income transactions ($${Number(result[0].total).toFixed(2)})`);
+  } catch (error) {
+    console.error("[Income Detect] Failed:", error);
   }
 }

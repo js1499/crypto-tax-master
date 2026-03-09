@@ -128,6 +128,7 @@ model Transaction {
   incoming_asset_address String?  @db.VarChar(255)
   cost_basis_usd         Decimal? @db.Decimal(30, 15)
   gain_loss_usd          Decimal? @db.Decimal(30, 15)
+  is_income              Boolean  @default(false)
 
   @@index([wallet_address])
   @@index([tx_timestamp])
