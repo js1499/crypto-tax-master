@@ -936,6 +936,15 @@ function processTransactionsForTax(
         typeCounts[txType] = (typeCounts[txType] || 1) - 1;
         // Fall through — the receive branch below will handle it
       } else if (typeUpper === "TRANSFER_OUT" && !isSelfTransfer) {
+        // Skip unpriced transfers — treating $0 proceeds as a disposal creates
+        // phantom losses AND depletes cost basis lots for subsequent priced swaps.
+        // Better to skip and let the lots be consumed by priced events.
+        if (Math.abs(valueUsd) < 0.01) {
+          if (costBasisResults) {
+            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+          }
+          continue;
+        }
         // External transfer out = disposal, remap to "send" handler
         typeCounts["send"] = (typeCounts["send"] || 0) + 1;
         typeCounts[txType] = (typeCounts[txType] || 1) - 1;
