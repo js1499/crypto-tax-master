@@ -958,6 +958,41 @@ function processTransactionsForTax(
       }
     }
 
+    // If is_income flag is set (from income detection), route to income handler
+    // regardless of raw type. This handles INITIALIZE_ACCOUNT airdrops, etc.
+    if (tx.is_income && getCategory(tx.type || "") !== "income") {
+      if (!costBasisLots[asset]) costBasisLots[asset] = [];
+
+      if (txYear === taxYear && valueUsd > 0) {
+        incomeEventCount++;
+        incomeEvents.push({
+          id: tx.id,
+          date,
+          asset,
+          amount,
+          valueUsd: Math.abs(valueUsd),
+          type: "airdrop",
+          chain: tx.chain || undefined,
+          txHash: tx.tx_hash || undefined,
+        });
+      }
+
+      if (valueUsd > 0) {
+        costBasisLots[asset].push({
+          id: tx.id,
+          date,
+          amount,
+          costBasis: Math.abs(valueUsd),
+          pricePerUnit,
+        });
+      }
+
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: Math.abs(valueUsd), gainLossUsd: null });
+      }
+      continue;
+    }
+
     // Log first few sell transactions for debugging
     if (txType === "sell" && processedCount < 10) {
       debugLog(`[processTransactionsForTax] Processing sell transaction ${tx.id}: type=${tx.type}, asset=${asset} (original: "${tx.asset_symbol}"), valueUsd=${valueUsd}, date=${date.toISOString().split('T')[0]}, year=${txYear}, taxYear=${taxYear}, notes=${tx.notes?.substring(0, 150) || "none"}`);

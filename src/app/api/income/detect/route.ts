@@ -10,6 +10,8 @@ import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 const AIRDROP_PROGRAM_IDS = new Set([
   "meRjbQXFNf5En86FXT2YPz1dQzLj4Yb3xK8u1MVgqpb", // Jupiter Merkle Distributor
   "MERLuDFBMmsHnsBPZw2sDQZHvXFMwp8EdjudcU2HKky",  // Merkle Distributor v2 (common)
+  "61DFfeTKM7trxYcPQCM78bJ794ddZprZpAwAnLiwTpYH", // JUP Jupuary distributor (Dec 2024)
+  "DiS3nNjFVMieMgmiQFm6wgJL7nevk4NrhXKLbtEH1Z2R", // JUP Jupuary distributor (Jan 2025)
 ]);
 
 

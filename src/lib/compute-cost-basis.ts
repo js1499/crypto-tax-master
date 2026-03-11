@@ -94,6 +94,8 @@ export async function recomputeCostBasis(userId: string): Promise<void> {
 const AIRDROP_PROGRAM_IDS = [
   "meRjbQXFNf5En86FXT2YPz1dQzLj4Yb3xK8u1MVgqpb", // Jupiter Merkle Distributor
   "MERLuDFBMmsHnsBPZw2sDQZHvXFMwp8EdjudcU2HKky",  // Merkle Distributor v2
+  "61DFfeTKM7trxYcPQCM78bJ794ddZprZpAwAnLiwTpYH", // JUP Jupuary distributor (Dec 2024)
+  "DiS3nNjFVMieMgmiQFm6wgJL7nevk4NrhXKLbtEH1Z2R", // JUP Jupuary distributor (Jan 2025)
 ];
 
 /**
