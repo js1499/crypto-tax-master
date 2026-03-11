@@ -526,6 +526,17 @@ export async function getSolanaWalletTransactions(
         continue;
       }
 
+      // Fallback: reconstruct swap from transfer arrays when Helius marks
+      // a tx as SWAP but doesn't provide events.swap (common with Pump.fun)
+      if (isSwap && !tx.events?.swap) {
+        const syntheticSwap = reconstructSwapFromTransfers(tx, walletAddress);
+        if (syntheticSwap) {
+          processSwapTransaction(transactions, tx, syntheticSwap, walletAddress, timestamp, feeInSol);
+          continue;
+        }
+        // If reconstruction fails, fall through to transfer processing
+      }
+
       // Determine the stored type for transfer sub-transactions.
       // If Helius gave a specific type (STAKE_TOKEN, NFT_LISTING, etc.),
       // preserve it instead of flattening to TRANSFER_IN/TRANSFER_OUT.
@@ -666,6 +677,87 @@ export async function getSolanaWalletTransactions(
   // Sort by timestamp
   transactions.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
   return { transactions, rawHeliusTransactions };
+}
+
+/**
+ * Reconstruct a HeliusSwapEvent from native/token transfer arrays.
+ * Used when Helius marks a tx as SWAP but doesn't populate events.swap
+ * (common with Pump.fun and other AMMs).
+ *
+ * Returns null if we can't determine both sides of the swap.
+ */
+function reconstructSwapFromTransfers(
+  tx: HeliusEnhancedTransaction,
+  walletAddress: string
+): HeliusSwapEvent | null {
+  // Classify transfers by direction relative to the wallet
+  const outgoingNative = (tx.nativeTransfers || []).filter(
+    (t) => t.fromUserAccount === walletAddress && t.toUserAccount !== walletAddress
+  );
+  const incomingNative = (tx.nativeTransfers || []).filter(
+    (t) => t.toUserAccount === walletAddress && t.fromUserAccount !== walletAddress
+  );
+  const outgoingTokens = (tx.tokenTransfers || []).filter(
+    (t) => t.fromUserAccount === walletAddress && t.toUserAccount !== walletAddress && t.mint !== SOL_MINT
+  );
+  const incomingTokens = (tx.tokenTransfers || []).filter(
+    (t) => t.toUserAccount === walletAddress && t.fromUserAccount !== walletAddress && t.mint !== SOL_MINT
+  );
+
+  const swap: HeliusSwapEvent = {};
+
+  // Determine outgoing side (input)
+  if (outgoingTokens.length > 0) {
+    const tok = outgoingTokens[0];
+    // Estimate decimals from tokenAmount (already decimal-adjusted by Helius)
+    const rawStr = tok.tokenAmount.toString();
+    const decimals = (rawStr.split(".")[1] || "").length;
+    const rawAmount = Math.round(tok.tokenAmount * Math.pow(10, decimals));
+    swap.tokenInputs = [{
+      userAccount: walletAddress,
+      tokenAccount: tok.fromTokenAccount,
+      mint: tok.mint,
+      rawTokenAmount: { tokenAmount: rawAmount.toString(), decimals },
+    }];
+  } else if (outgoingNative.length > 0) {
+    // Sum all outgoing SOL (excluding tiny rent amounts < 0.01 SOL)
+    const significantOut = outgoingNative.filter((t) => t.amount >= 10_000_000); // >= 0.01 SOL
+    if (significantOut.length > 0) {
+      const totalLamports = significantOut.reduce((sum, t) => sum + t.amount, 0);
+      swap.nativeInput = { account: walletAddress, amount: totalLamports.toString() };
+    }
+  }
+
+  // Determine incoming side (output)
+  if (incomingTokens.length > 0) {
+    const tok = incomingTokens[0];
+    const rawStr = tok.tokenAmount.toString();
+    const decimals = (rawStr.split(".")[1] || "").length;
+    const rawAmount = Math.round(tok.tokenAmount * Math.pow(10, decimals));
+    swap.tokenOutputs = [{
+      userAccount: walletAddress,
+      tokenAccount: tok.toTokenAccount,
+      mint: tok.mint,
+      rawTokenAmount: { tokenAmount: rawAmount.toString(), decimals },
+    }];
+  } else if (incomingNative.length > 0) {
+    // Sum all incoming SOL (excluding tiny amounts)
+    const significantIn = incomingNative.filter((t) => t.amount >= 10_000_000);
+    if (significantIn.length > 0) {
+      const totalLamports = significantIn.reduce((sum, t) => sum + t.amount, 0);
+      swap.nativeOutput = { account: walletAddress, amount: totalLamports.toString() };
+    }
+  }
+
+  // Must have at least one input AND one output to be a valid swap
+  const hasInput = swap.nativeInput || (swap.tokenInputs && swap.tokenInputs.length > 0);
+  const hasOutput = swap.nativeOutput || (swap.tokenOutputs && swap.tokenOutputs.length > 0);
+
+  if (!hasInput || !hasOutput) {
+    return null;
+  }
+
+  return swap;
 }
 
 /**
