@@ -129,6 +129,9 @@ model Transaction {
   cost_basis_usd         Decimal? @db.Decimal(30, 15)
   gain_loss_usd          Decimal? @db.Decimal(30, 15)
   is_income              Boolean  @default(false)
+  helius_raw_id          Int?
+
+  heliusRaw              HeliusRawTransaction? @relation(fields: [helius_raw_id], references: [id])
 
   @@index([wallet_address])
   @@index([tx_timestamp])
@@ -159,6 +162,7 @@ model HeliusRawTransaction {
   native_transfers_count Int      @default(0)
   token_transfers_count  Int      @default(0)
   raw_payload            Json
+  transactions           Transaction[]
 
   @@index([wallet_address])
   @@index([synced_at])

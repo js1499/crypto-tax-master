@@ -10,9 +10,13 @@ import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 const AIRDROP_PROGRAM_IDS = new Set([
   "meRjbQXFNf5En86FXT2YPz1dQzLj4Yb3xK8u1MVgqpb", // Jupiter Merkle Distributor
   "MERLuDFBMmsHnsBPZw2sDQZHvXFMwp8EdjudcU2HKky",  // Merkle Distributor v2 (common)
-  // Note: JUP Jupuary distributors (61DFfe..., DiS3nN...) are NOT included here
-  // because their signatures contain multiple token transfers (JUP + USDC + SOL)
-  // and the rule would flag all of them as income. JUP airdrops are flagged manually.
+]);
+
+// JUP Jupuary distributor program IDs — handled separately with asset_symbol = 'JUP'
+// filter because their signatures contain multiple token transfers (JUP + USDC + SOL).
+const JUP_AIRDROP_PROGRAM_IDS = new Set([
+  "61DFfeTKM7trxYcPQCM78bJ794ddZprZpAwAnLiwTpYH", // Jupuary distributor v1
+  "DiS3nNjFVMieMgmiQFm6wgJL7nevk4NrhXKLbtEH1Z2R", // Jupuary distributor v2
 ]);
 
 
@@ -107,6 +111,28 @@ export async function POST(request: NextRequest) {
     const airdropFlagged = typeof airdropResult === 'number' ? airdropResult : 0;
     log(`Rule 3 (Airdrop programs): flagged ${airdropFlagged}`);
     totalFlagged += airdropFlagged;
+
+    // ── Rule 4: JUP Jupuary airdrops (asset-filtered to avoid USDC/SOL false positives) ──
+    const jupProgramIds = Array.from(JUP_AIRDROP_PROGRAM_IDS);
+    const jupAirdropResult = await prisma.$executeRawUnsafe(`
+      UPDATE transactions t SET is_income = true
+      WHERE t.wallet_address = ANY($1::text[])
+        AND t.type IN ('TRANSFER_IN', 'INITIALIZE_ACCOUNT')
+        AND t.asset_symbol = 'JUP'
+        AND t.is_income = false
+        AND EXISTS (
+          SELECT 1 FROM helius_raw_transactions h
+          WHERE h.wallet_address = t.wallet_address
+            AND t.tx_hash LIKE h.signature || '%'
+            AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements(h.raw_payload->'instructions') instr
+              WHERE instr->>'programId' = ANY($2::text[])
+            )
+        )
+    `, walletAddresses, jupProgramIds);
+    const jupAirdropFlagged = typeof jupAirdropResult === 'number' ? jupAirdropResult : 0;
+    log(`Rule 4 (JUP Jupuary airdrops): flagged ${jupAirdropFlagged}`);
+    totalFlagged += jupAirdropFlagged;
 
     // ── Summary ──
     // Get total income value

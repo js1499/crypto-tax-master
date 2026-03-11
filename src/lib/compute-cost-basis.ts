@@ -94,9 +94,13 @@ export async function recomputeCostBasis(userId: string): Promise<void> {
 const AIRDROP_PROGRAM_IDS = [
   "meRjbQXFNf5En86FXT2YPz1dQzLj4Yb3xK8u1MVgqpb", // Jupiter Merkle Distributor
   "MERLuDFBMmsHnsBPZw2sDQZHvXFMwp8EdjudcU2HKky",  // Merkle Distributor v2
-  // Note: JUP Jupuary distributors (61DFfe..., DiS3nN...) are NOT included here
-  // because their signatures contain multiple token transfers (JUP + USDC + SOL)
-  // and the rule would flag all of them as income. JUP airdrops are flagged manually.
+];
+
+// JUP Jupuary distributor program IDs — handled separately with asset_symbol filter
+// because their signatures contain multiple token transfers (JUP + USDC + SOL).
+const JUP_AIRDROP_PROGRAM_IDS = [
+  "61DFfeTKM7trxYcPQCM78bJ794ddZprZpAwAnLiwTpYH", // Jupuary distributor v1
+  "DiS3nNjFVMieMgmiQFm6wgJL7nevk4NrhXKLbtEH1Z2R", // Jupuary distributor v2
 ];
 
 /**
@@ -150,6 +154,25 @@ async function detectIncomeTransactions(walletAddresses: string[]): Promise<void
             )
         )
     `, walletAddresses, AIRDROP_PROGRAM_IDS);
+
+    // Rule 4: JUP Jupuary airdrops — same logic as Rule 3 but restricted to JUP asset
+    // to avoid false-flagging USDC/SOL transfers sharing the same Helius signature.
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions t SET is_income = true
+      WHERE t.wallet_address = ANY($1::text[])
+        AND t.type IN ('TRANSFER_IN', 'INITIALIZE_ACCOUNT')
+        AND t.asset_symbol = 'JUP'
+        AND t.is_income = false
+        AND EXISTS (
+          SELECT 1 FROM helius_raw_transactions h
+          WHERE h.wallet_address = t.wallet_address
+            AND t.tx_hash LIKE h.signature || '%'
+            AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements(h.raw_payload->'instructions') instr
+              WHERE instr->>'programId' = ANY($2::text[])
+            )
+        )
+    `, walletAddresses, JUP_AIRDROP_PROGRAM_IDS);
 
     const result = await prisma.$queryRawUnsafe(`
       SELECT COUNT(*) as cnt, COALESCE(SUM(value_usd), 0) as total

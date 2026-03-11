@@ -936,6 +936,14 @@ function processTransactionsForTax(
         typeCounts[txType] = (typeCounts[txType] || 1) - 1;
         // Fall through — the receive branch below will handle it
       } else if (typeUpper === "TRANSFER_OUT" && !isSelfTransfer) {
+        // Skip DCA vault deposits — the actual disposals are captured as SWAP transactions.
+        // These TRANSFER_OUTs just move tokens into the Jupiter DCA vault, not a sale.
+        if (tx.subtype === "dca_deposit") {
+          if (costBasisResults) {
+            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+          }
+          continue;
+        }
         // Skip unpriced transfers — treating $0 proceeds as a disposal creates
         // phantom losses AND depletes cost basis lots for subsequent priced swaps.
         // Better to skip and let the lots be consumed by priced events.
