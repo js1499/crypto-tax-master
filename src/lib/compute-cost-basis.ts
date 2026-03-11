@@ -99,7 +99,7 @@ const AIRDROP_PROGRAM_IDS = [
 // JUP Jupuary distributor program IDs — handled separately with asset_symbol filter
 // because their signatures contain multiple token transfers (JUP + USDC + SOL).
 const JUP_AIRDROP_PROGRAM_IDS = [
-  "61DFfeTKM7trxYcPQCM78bJ794ddZprZpAwAnLiwTpYH", // Jupuary distributor v1
+  // Note: 61DFfe... was removed — it's used for OTC swaps (JUP↔USDC), not airdrops.
   "DiS3nNjFVMieMgmiQFm6wgJL7nevk4NrhXKLbtEH1Z2R", // Jupuary distributor v2
 ];
 
@@ -139,11 +139,13 @@ async function detectIncomeTransactions(walletAddresses: string[]): Promise<void
     `, walletAddresses);
 
     // Rule 3: Known airdrop program IDs (Jupiter Merkle Distributor, etc.)
+    // Skip $0 value tokens (e.g. mockJUP test tokens from airdrop checkers)
     await prisma.$executeRawUnsafe(`
       UPDATE transactions t SET is_income = true
       WHERE t.wallet_address = ANY($1::text[])
         AND t.type IN ('TRANSFER_IN', 'INITIALIZE_ACCOUNT')
         AND t.is_income = false
+        AND ABS(t.value_usd) > 0.01
         AND EXISTS (
           SELECT 1 FROM helius_raw_transactions h
           WHERE h.wallet_address = t.wallet_address
