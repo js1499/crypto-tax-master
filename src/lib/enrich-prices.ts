@@ -617,14 +617,11 @@ export async function enrichHistoricalPrices(
     }
 
     // Recompute remaining unknown mints after mirroring
-    // Also filter out NFTs (amount=1) and pump.fun tokens (mint ends in "pump")
+    // Filter out NFTs (amount=1) only — pump.fun tokens ARE allowed in Phase 5
+    // because OHLCV resolves by mint address (no impostor risk like symbol lookup)
     const remainingMints = new Map<string, string>();
     let filteredNfts = 0;
-    let filteredPump = 0;
     for (const [mint, symbol] of unknownMints) {
-      // Skip pump.fun tokens — they won't have OHLCV data
-      if (isPumpFun(mint)) { filteredPump++; continue; }
-
       // Check if any unpriced transaction still needs this mint
       // and filter out NFT-like mints (amount = 1, typically non-fungible)
       let stillNeeded = false;
@@ -647,7 +644,6 @@ export async function enrichHistoricalPrices(
     }
     log(`After mirroring: ${remainingMints.size} unknown mints still need OHLCV (was ${unknownMints.size})`);
     if (filteredNfts > 0) log(`  Filtered ${filteredNfts} NFT-like mints (amount=1)`);
-    if (filteredPump > 0) log(`  Filtered ${filteredPump} pump.fun mints`);
 
     // ══════════════════════════════════════════════════════════════════
     // ── PHASE 5: OHLCV fallback for remaining unknown tokens ─────────
