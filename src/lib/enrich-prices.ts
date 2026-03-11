@@ -464,10 +464,11 @@ export async function enrichHistoricalPrices(
     let contractResolved = 0;
     let contractFailed = 0;
 
-    // Filter unknown mints: skip pump.fun tokens and NFTs (amount=1)
+    // Filter unknown mints: skip NFTs (amount=1)
+    // pump.fun tokens ARE included — resolveByContractAddress uses exact mint
+    // address (no impostor risk), and popular pump.fun tokens like FWOG are on CoinGecko
     const contractMints = new Map<string, string>();
     for (const [mint, symbol] of unknownMints) {
-      if (isPumpFun(mint)) continue;
       // Check if any unpriced transaction with this mint has amount != 1 (fungible)
       let isFungible = false;
       for (const tx of transactions) {
