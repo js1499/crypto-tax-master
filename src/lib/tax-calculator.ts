@@ -1764,6 +1764,17 @@ function processTransactionsForTax(
     // C-1/C-2/H-7 fix: Use processDisposal for consistent lot consumption,
     // rounding, holding period splitting, and loss tracking.
     else if (txType === "burn") {
+      // Skip misclassified token burns: if asset_symbol says "SOL" but asset_address
+      // points to a different SPL token mint, this is a spam token burn that was
+      // incorrectly labeled as SOL during sync. Don't consume SOL lots for it.
+      const SOL_NATIVE_MINT = "So11111111111111111111111111111111111111112";
+      if (asset === "SOL" && tx.asset_address && tx.asset_address !== SOL_NATIVE_MINT) {
+        debugLog(`[Tax Calculator] Burn ${tx.id}: Skipping misclassified token burn (asset_address=${tx.asset_address} ≠ SOL)`);
+        if (costBasisResults) {
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        }
+        continue;
+      }
       // Pass valueUsd=0 since burn proceeds are always $0
       const disposal = processDisposal(
         tx, asset, amount, 0, feeUsd, date,
