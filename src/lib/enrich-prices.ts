@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { getCoinGeckoId, getPriceRange, resolveByContractAddress } from "@/lib/coingecko";
-import { batchGetTokenOHLCV, getMinuteOHLCVForDay, findClosestPrice, type OHLCVEntry } from "./onchain-prices";
+import { batchGetTokenOHLCV, getMinuteOHLCVForDay, findClosestPrice, fetchBinanceMinuteKlines, lookupBinanceMinutePrice, type OHLCVEntry } from "./onchain-prices";
 
 const log = (msg: string) => console.log(`[Enrich] ${msg}`);
 const warn = (msg: string) => console.warn(`[Enrich] ${msg}`);
@@ -164,22 +164,37 @@ export async function enrichHistoricalPrices(
     const txById = new Map(transactions.map(tx => [tx.id, tx]));
 
     // ══════════════════════════════════════════════════════════════════
-    // ── PHASE 0: Fetch SOL daily price history (1 API call) ──────────
+    // ── PHASE 0: Fetch SOL price history (minute + daily) ────────────
     // ══════════════════════════════════════════════════════════════════
-    log(`── Phase 0: Fetching SOL daily price history ──`);
-    const solPriceMap = new Map<string, number>();
+    // Primary: 1-minute SOL prices from Binance (free, fast, no API key)
+    // Fallback: daily prices from CoinGecko for dates Binance doesn't cover
+    log(`── Phase 0: Fetching SOL minute prices from Binance + daily from CoinGecko ──`);
 
+    const solMinuteMap = await fetchBinanceMinuteKlines(
+      "SOLUSDT", rangeStart, rangeEnd,
+      (n) => log(`  Binance SOL: ${n.toLocaleString()} minute candles fetched...`),
+    );
+    log(`  SOL minute prices: ${solMinuteMap.size.toLocaleString()} candles loaded from Binance`);
+
+    // Daily fallback from CoinGecko (for lookupSolPrice used by NFT pricing etc.)
+    const solPriceMap = new Map<string, number>();
     const solPrices = await getPriceRange("SOL", rangeStart, rangeEnd);
     if (solPrices && solPrices.length > 0) {
       for (const entry of solPrices) {
         solPriceMap.set(entry.date.split("T")[0], entry.price);
       }
-      log(`  SOL: ${solPriceMap.size} daily prices loaded`);
+      log(`  SOL daily prices: ${solPriceMap.size} days loaded from CoinGecko`);
     } else {
-      warn(`  Failed to fetch SOL prices — on-chain pricing will be limited`);
+      warn(`  Failed to fetch SOL daily prices — using minute data only`);
     }
 
+    // Minute-level SOL lookup: tries Binance 1m first, falls back to CoinGecko daily
     function lookupSolPrice(date: Date): number | null {
+      // Try minute-level first
+      const tsSec = Math.floor(date.getTime() / 1000);
+      const minutePrice = lookupBinanceMinutePrice(solMinuteMap, tsSec);
+      if (minutePrice !== null) return minutePrice;
+      // Fallback to daily
       const dateStr = date.toISOString().split("T")[0];
       const exact = solPriceMap.get(dateStr);
       if (exact !== undefined) return exact;
@@ -267,59 +282,43 @@ export async function enrichHistoricalPrices(
     }
 
     // ══════════════════════════════════════════════════════════════════
-    // ── PHASE 1.5: Upgrade swap pricing to minute-level OHLCV ───────
+    // ── PHASE 1.5: Minute-level pricing for non-SOL swap sides ──────
     // ══════════════════════════════════════════════════════════════════
-    // Phase 1 prices swaps using daily SOL prices. This phase upgrades
-    // to 1-minute candle resolution using CoinGecko Onchain /ohlcv/minute.
-    // Groups transactions by (mint, calendar_day) for efficient batching.
+    // Phase 1 now uses Binance minute-level SOL prices for all SOL-paired
+    // swaps (~95% of swaps). Phase 1.5 handles the remaining ~5% where
+    // neither side is SOL, using CoinGecko Onchain /ohlcv/minute with
+    // concurrent fetching.
     let minutePriced = 0;
 
-    const swapTxsForMinute = transactions.filter(tx => tx.type === "SWAP");
-    log(`── Phase 1.5: Upgrading ${swapTxsForMinute.length} swaps to minute-level pricing ──`);
+    // Find swaps NOT priced by Phase 1 (no Helius raw SOL data)
+    const unpricedSwaps = transactions.filter(tx =>
+      tx.type === "SWAP" && !pricedIds.has(tx.id)
+    );
+    log(`── Phase 1.5: ${unpricedSwaps.length} swaps not priced by Phase 1, fetching minute data ──`);
 
-    if (swapTxsForMinute.length > 0) {
-      // Step 1: Build symbol → mint address resolution map.
-      // SOL has no asset_address stored (it's the native token), and
-      // incoming_asset_address is almost always NULL. Resolve from:
-      //  a) Known hardcoded mints (Wrapped SOL, USDC, USDT)
-      //  b) Other transactions where the same symbol has a known asset_address
-      const KNOWN_MINTS: Record<string, string> = {
-        "SOL": "So11111111111111111111111111111111111111112",
-        "USDC": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-        "USDT": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
-      };
-
+    if (unpricedSwaps.length > 0) {
+      // Build symbol→mint map from transaction data
       const symbolToMint = new Map<string, string>();
-      for (const [sym, mint] of Object.entries(KNOWN_MINTS)) {
-        symbolToMint.set(sym, mint);
-      }
-      // Scan all transactions to build symbol→mint from asset_address
       for (const tx of transactions) {
         if (tx.asset_address && tx.asset_symbol) {
           const sym = tx.asset_symbol.trim().toUpperCase();
-          if (!symbolToMint.has(sym)) {
-            symbolToMint.set(sym, tx.asset_address);
-          }
+          if (!symbolToMint.has(sym)) symbolToMint.set(sym, tx.asset_address);
         }
         if (tx.incoming_asset_address && tx.incoming_asset_symbol) {
           const sym = tx.incoming_asset_symbol.trim().toUpperCase();
-          if (!symbolToMint.has(sym)) {
-            symbolToMint.set(sym, tx.incoming_asset_address);
-          }
+          if (!symbolToMint.has(sym)) symbolToMint.set(sym, tx.incoming_asset_address);
         }
       }
-      log(`  Resolved ${symbolToMint.size} symbol→mint mappings (${Object.keys(KNOWN_MINTS).length} hardcoded + ${symbolToMint.size - Object.keys(KNOWN_MINTS).length} from transaction data)`);
 
-      // Helper to resolve mint address for a swap side
       function resolveMint(address: string | null, symbol: string | null): string | null {
         if (address) return address;
         if (!symbol) return null;
         return symbolToMint.get(symbol.trim().toUpperCase()) || null;
       }
 
-      // Step 2: Collect unique (mint, day) pairs across both sides
+      // Collect unique (mint, day) pairs — only for unpriced swaps
       const mintDayKeys = new Set<string>();
-      for (const tx of swapTxsForMinute) {
+      for (const tx of unpricedSwaps) {
         const dayStr = tx.tx_timestamp.toISOString().split("T")[0];
         const outMint = resolveMint(tx.asset_address, tx.asset_symbol);
         const inMint = resolveMint(tx.incoming_asset_address, tx.incoming_asset_symbol);
@@ -327,38 +326,44 @@ export async function enrichHistoricalPrices(
         if (inMint) mintDayKeys.add(`${inMint}:${dayStr}`);
       }
 
-      log(`  Fetching minute candles for ${mintDayKeys.size} (mint, day) pairs...`);
+      log(`  Fetching minute candles for ${mintDayKeys.size} (mint, day) pairs (concurrent)...`);
 
-      // Step 3: Fetch minute candles for each (mint, day) — ~2 API calls each
+      // Concurrent fetching with concurrency limit
+      const CONCURRENCY = 5;
       const minuteCache = new Map<string, OHLCVEntry[]>();
-      let fetchCount = 0;
+      const keys = Array.from(mintDayKeys);
       let resolvedCount = 0;
-      for (const key of mintDayKeys) {
-        const [mint, dayStr] = [key.substring(0, key.lastIndexOf(":")), key.substring(key.lastIndexOf(":") + 1)];
-        const entries = await getMinuteOHLCVForDay(mint, new Date(dayStr));
-        fetchCount++;
-        if (entries && entries.length > 0) {
-          minuteCache.set(key, entries);
-          resolvedCount++;
+
+      for (let i = 0; i < keys.length; i += CONCURRENCY) {
+        const batch = keys.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map(async (key) => {
+            const [mint, dayStr] = [key.substring(0, key.lastIndexOf(":")), key.substring(key.lastIndexOf(":") + 1)];
+            const entries = await getMinuteOHLCVForDay(mint, new Date(dayStr));
+            return { key, entries };
+          })
+        );
+        for (const result of results) {
+          if (result.status === "fulfilled" && result.value.entries && result.value.entries.length > 0) {
+            minuteCache.set(result.value.key, result.value.entries);
+            resolvedCount++;
+          }
         }
-        if (fetchCount % 100 === 0) {
-          log(`  Phase 1.5 fetch: ${fetchCount}/${mintDayKeys.size} (${resolvedCount} resolved)`);
+        if ((i + CONCURRENCY) % 50 === 0 || i + CONCURRENCY >= keys.length) {
+          log(`  Phase 1.5 fetch: ${Math.min(i + CONCURRENCY, keys.length)}/${keys.length} (${resolvedCount} resolved)`);
         }
       }
-      log(`  Phase 1.5 fetch complete: ${resolvedCount}/${mintDayKeys.size} have minute data`);
 
-      // Step 4: Apply minute prices to each swap transaction
+      // Apply minute prices
       const phase15Rows: BulkRow[] = [];
-      for (const tx of swapTxsForMinute) {
+      for (const tx of unpricedSwaps) {
         const dayStr = tx.tx_timestamp.toISOString().split("T")[0];
         const txTs = Math.floor(tx.tx_timestamp.getTime() / 1000);
-
         let ppu: number | null = null;
         let vusd: number | null = null;
         let iusd: number | null = null;
         let didUpdate = false;
 
-        // Outgoing side — price_per_unit and value_usd
         const outMint = resolveMint(tx.asset_address, tx.asset_symbol);
         if (outMint) {
           const entries = minuteCache.get(`${outMint}:${dayStr}`);
@@ -372,7 +377,6 @@ export async function enrichHistoricalPrices(
           }
         }
 
-        // Incoming side — incoming_value_usd
         const inMint = resolveMint(tx.incoming_asset_address, tx.incoming_asset_symbol);
         if (inMint) {
           const entries = minuteCache.get(`${inMint}:${dayStr}`);
@@ -395,7 +399,7 @@ export async function enrichHistoricalPrices(
         await bulkUpdateTransactions(phase15Rows);
         updated += phase15Rows.length;
       }
-      log(`  Phase 1.5 complete: ${minutePriced}/${swapTxsForMinute.length} swaps upgraded to minute pricing`);
+      log(`  Phase 1.5 complete: ${minutePriced}/${unpricedSwaps.length} non-SOL swaps priced with minute data`);
     }
 
     // ══════════════════════════════════════════════════════════════════

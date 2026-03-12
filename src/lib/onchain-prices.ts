@@ -7,6 +7,107 @@ export interface OHLCVEntry {
   close: number;
 }
 
+/**
+ * Fetch 1-minute klines from Binance for a given symbol over a date range.
+ * Binance API is free, no API key required, and has generous rate limits.
+ * Returns a Map<minuteTimestamp, closePrice> for O(1) lookup.
+ * Each request returns up to 1000 candles (~16.7 hours of 1m data).
+ *
+ * @param symbol - Binance trading pair (e.g., "SOLUSDT")
+ * @param fromDate - Start of range
+ * @param toDate - End of range
+ * @param onProgress - Optional progress callback
+ */
+export async function fetchBinanceMinuteKlines(
+  symbol: string,
+  fromDate: Date,
+  toDate: Date,
+  onProgress?: (fetched: number) => void,
+): Promise<Map<number, number>> {
+  const priceMap = new Map<number, number>();
+  const BINANCE_KLINE_URL = "https://api.binance.com/api/v3/klines";
+  const LIMIT = 1000; // Max candles per request
+  let startTime = fromDate.getTime(); // Binance uses milliseconds
+  const endTime = toDate.getTime();
+  let totalFetched = 0;
+
+  while (startTime < endTime) {
+    try {
+      const response = await axios.get(BINANCE_KLINE_URL, {
+        params: {
+          symbol,
+          interval: "1m",
+          startTime,
+          endTime,
+          limit: LIMIT,
+        },
+        timeout: 15000,
+      });
+
+      const klines: any[][] = response.data;
+      if (!klines || klines.length === 0) break;
+
+      for (const kline of klines) {
+        // Binance kline format: [openTime, open, high, low, close, volume, closeTime, ...]
+        const openTimeSec = Math.floor(kline[0] / 1000); // Convert ms to seconds
+        const closePrice = parseFloat(kline[4]);
+        if (closePrice > 0) {
+          priceMap.set(openTimeSec, closePrice);
+        }
+      }
+
+      totalFetched += klines.length;
+      if (onProgress && totalFetched % 10000 === 0) {
+        onProgress(totalFetched);
+      }
+
+      // Move startTime past the last candle we received
+      const lastOpenTime = klines[klines.length - 1][0];
+      startTime = lastOpenTime + 60000; // +1 minute in ms
+
+      // If we got fewer than LIMIT, we've reached the end
+      if (klines.length < LIMIT) break;
+
+      // Small delay to stay well within rate limits (Binance allows ~1200 req/min)
+      await new Promise(r => setTimeout(r, 50));
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 429) {
+        // Rate limited — back off and retry
+        console.warn(`[Binance] Rate limited, backing off 5s...`);
+        await new Promise(r => setTimeout(r, 5000));
+        continue;
+      }
+      console.warn(
+        `[Binance] Kline fetch failed for ${symbol}:`,
+        axios.isAxiosError(error) ? `${error.response?.status} ${error.message}` : error
+      );
+      break;
+    }
+  }
+
+  return priceMap;
+}
+
+/**
+ * Look up the closest minute price from a Binance kline map.
+ * Rounds the target timestamp down to the nearest minute, then checks ±1 minute.
+ */
+export function lookupBinanceMinutePrice(
+  priceMap: Map<number, number>,
+  targetTimestampSec: number,
+): number | null {
+  // Round down to nearest minute
+  const minuteTs = targetTimestampSec - (targetTimestampSec % 60);
+  const exact = priceMap.get(minuteTs);
+  if (exact !== undefined) return exact;
+  // Try ±1 minute
+  const prev = priceMap.get(minuteTs - 60);
+  if (prev !== undefined) return prev;
+  const next = priceMap.get(minuteTs + 60);
+  if (next !== undefined) return next;
+  return null;
+}
+
 // In-memory cache: mint address → OHLCV entries (or null for 404s)
 const ohlcvCache = new Map<string, OHLCVEntry[] | null>();
 
