@@ -1,7 +1,7 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { getCoinGeckoId, getPriceRange, resolveByContractAddress } from "@/lib/coingecko";
-import { batchGetTokenOHLCV } from "./onchain-prices";
+import { batchGetTokenOHLCV, getMinuteOHLCVForDay, findClosestPrice, type OHLCVEntry } from "./onchain-prices";
 
 const log = (msg: string) => console.log(`[Enrich] ${msg}`);
 const warn = (msg: string) => console.warn(`[Enrich] ${msg}`);
@@ -12,6 +12,7 @@ export interface EnrichResult {
   total: number;
   skipped: number;
   swapPriced: number;
+  minutePriced: number;
   nftPriced: number;
   transferPriced: number;
   feeCorrected: number;
@@ -73,7 +74,7 @@ export async function enrichHistoricalPrices(
   const startTime = Date.now();
   const emptyResult = (): EnrichResult => ({
     status: "success", updated: 0, total: 0, skipped: 0,
-    swapPriced: 0, nftPriced: 0, transferPriced: 0,
+    swapPriced: 0, minutePriced: 0, nftPriced: 0, transferPriced: 0,
     feeCorrected: 0, mirrorPriced: 0,
     contractResolved: 0, contractFailed: 0,
     onchainResolved: 0, onchainFailed: 0,
@@ -263,6 +264,95 @@ export async function enrichHistoricalPrices(
         updated += phase1Rows.length;
       }
       log(`  Phase 1 complete: ${swapPriced}/${swapTxIds.length} swaps priced from on-chain data`);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // ── PHASE 1.5: Upgrade swap pricing to minute-level OHLCV ───────
+    // ══════════════════════════════════════════════════════════════════
+    // Phase 1 prices swaps using daily SOL prices. This phase upgrades
+    // to 1-minute candle resolution using CoinGecko Onchain /ohlcv/minute.
+    // Groups transactions by (mint, calendar_day) for efficient batching.
+    let minutePriced = 0;
+
+    const swapTxsForMinute = transactions.filter(tx => tx.type === "SWAP");
+    log(`── Phase 1.5: Upgrading ${swapTxsForMinute.length} swaps to minute-level pricing ──`);
+
+    if (swapTxsForMinute.length > 0) {
+      // Collect unique (mint, day) pairs across both sides of all swaps
+      const mintDayKeys = new Set<string>();
+      for (const tx of swapTxsForMinute) {
+        const dayStr = tx.tx_timestamp.toISOString().split("T")[0];
+        if (tx.asset_address) mintDayKeys.add(`${tx.asset_address}:${dayStr}`);
+        if (tx.incoming_asset_address) mintDayKeys.add(`${tx.incoming_asset_address}:${dayStr}`);
+      }
+
+      log(`  Fetching minute candles for ${mintDayKeys.size} (mint, day) pairs...`);
+
+      // Fetch minute candles for each (mint, day) — ~2 API calls each
+      const minuteCache = new Map<string, OHLCVEntry[]>();
+      let fetchCount = 0;
+      let resolvedCount = 0;
+      for (const key of mintDayKeys) {
+        const [mint, dayStr] = [key.substring(0, key.lastIndexOf(":")), key.substring(key.lastIndexOf(":") + 1)];
+        const entries = await getMinuteOHLCVForDay(mint, new Date(dayStr));
+        fetchCount++;
+        if (entries && entries.length > 0) {
+          minuteCache.set(key, entries);
+          resolvedCount++;
+        }
+        if (fetchCount % 100 === 0) {
+          log(`  Phase 1.5 fetch: ${fetchCount}/${mintDayKeys.size} (${resolvedCount} resolved)`);
+        }
+      }
+      log(`  Phase 1.5 fetch complete: ${resolvedCount}/${mintDayKeys.size} have minute data`);
+
+      // Apply minute prices to each swap transaction
+      const phase15Rows: BulkRow[] = [];
+      for (const tx of swapTxsForMinute) {
+        const dayStr = tx.tx_timestamp.toISOString().split("T")[0];
+        const txTs = Math.floor(tx.tx_timestamp.getTime() / 1000);
+
+        let ppu: number | null = null;
+        let vusd: number | null = null;
+        let iusd: number | null = null;
+        let didUpdate = false;
+
+        // Outgoing side — price_per_unit and value_usd
+        if (tx.asset_address) {
+          const entries = minuteCache.get(`${tx.asset_address}:${dayStr}`);
+          if (entries) {
+            const price = findClosestPrice(entries, txTs);
+            if (price !== null && price > 0) {
+              ppu = price;
+              vusd = Math.abs(Number(tx.amount_value)) * price;
+              didUpdate = true;
+            }
+          }
+        }
+
+        // Incoming side — incoming_value_usd
+        if (tx.incoming_asset_address) {
+          const entries = minuteCache.get(`${tx.incoming_asset_address}:${dayStr}`);
+          if (entries) {
+            const price = findClosestPrice(entries, txTs);
+            if (price !== null && price > 0 && tx.incoming_amount_value) {
+              iusd = Math.abs(Number(tx.incoming_amount_value)) * price;
+              didUpdate = true;
+            }
+          }
+        }
+
+        if (didUpdate) {
+          phase15Rows.push({ id: tx.id, price_per_unit: ppu, value_usd: vusd, fee_usd: null, incoming_value_usd: iusd });
+          minutePriced++;
+        }
+      }
+
+      if (phase15Rows.length > 0) {
+        await bulkUpdateTransactions(phase15Rows);
+        updated += phase15Rows.length;
+      }
+      log(`  Phase 1.5 complete: ${minutePriced}/${swapTxsForMinute.length} swaps upgraded to minute pricing`);
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -747,6 +837,7 @@ export async function enrichHistoricalPrices(
       total: transactions.length,
       skipped: transactions.length - updated,
       swapPriced,
+      minutePriced,
       nftPriced,
       transferPriced,
       feeCorrected,
@@ -763,7 +854,7 @@ export async function enrichHistoricalPrices(
     return {
       status: "error",
       updated: 0, total: 0, skipped: 0,
-      swapPriced: 0, nftPriced: 0, transferPriced: 0,
+      swapPriced: 0, minutePriced: 0, nftPriced: 0, transferPriced: 0,
       feeCorrected: 0, mirrorPriced: 0,
       contractResolved: 0, contractFailed: 0,
       onchainResolved: 0, onchainFailed: 0,

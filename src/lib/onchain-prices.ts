@@ -2,7 +2,7 @@ import axios from "axios";
 import prisma from "@/lib/prisma";
 import { rateLimit, API_BASE, COINGECKO_API_KEY } from "./coingecko";
 
-interface OHLCVEntry {
+export interface OHLCVEntry {
   timestamp: number;
   close: number;
 }
@@ -118,6 +118,122 @@ export async function getTokenOHLCVByMint(
 
   ohlcvCache.set(mintAddress, allEntries.length > 0 ? allEntries : null);
   return allEntries.length > 0 ? allEntries : null;
+}
+
+// In-memory cache for minute-level OHLCV: "mint:YYYY-MM-DD" → entries
+const minuteOhlcvCache = new Map<string, OHLCVEntry[] | null>();
+
+/**
+ * Fetch minute-level OHLCV candles for a specific calendar day for a given token.
+ * Uses CoinGecko Pro /onchain/ endpoint with /ohlcv/minute timeframe.
+ * Returns sorted (ascending) array of {timestamp, close} entries.
+ * ~1440 minutes per day → needs 2 API calls at limit=1000.
+ * Available on CoinGecko Analyst plan ($129/mo), data from Sep 2021+.
+ */
+export async function getMinuteOHLCVForDay(
+  mintAddress: string,
+  date: Date,
+  maxRetries: number = 3,
+): Promise<OHLCVEntry[] | null> {
+  const dayStr = date.toISOString().split("T")[0];
+  const cacheKey = `${mintAddress}:${dayStr}`;
+
+  if (minuteOhlcvCache.has(cacheKey)) {
+    return minuteOhlcvCache.get(cacheKey) || null;
+  }
+
+  const dayStart = new Date(dayStr + "T00:00:00Z");
+  const dayEnd = new Date(dayStr + "T23:59:59Z");
+  const fromTimestamp = Math.floor(dayStart.getTime() / 1000);
+  let beforeTimestamp = Math.floor(dayEnd.getTime() / 1000) + 61; // +61s to include last minute
+
+  const allEntries: OHLCVEntry[] = [];
+
+  while (true) {
+    let data: any = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        await rateLimit();
+
+        const url = `${API_BASE}/onchain/networks/solana/tokens/${mintAddress}/ohlcv/minute`;
+        const params: any = {
+          limit: 1000,
+          currency: "usd",
+          before_timestamp: beforeTimestamp,
+        };
+        if (COINGECKO_API_KEY) {
+          params.x_cg_pro_api_key = COINGECKO_API_KEY;
+        }
+
+        const response = await axios.get(url, { params, timeout: 15000 });
+        data = response.data;
+        break;
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          minuteOhlcvCache.set(cacheKey, null);
+          return null;
+        }
+        if (axios.isAxiosError(error) && error.response?.status === 429 && attempt < maxRetries) {
+          const backoffMs = Math.min(2000 * Math.pow(2, attempt), 30000);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          continue;
+        }
+        minuteOhlcvCache.set(cacheKey, allEntries.length > 0 ? allEntries : null);
+        return allEntries.length > 0 ? allEntries : null;
+      }
+    }
+
+    if (!data) break;
+
+    const ohlcvList: number[][] = data?.data?.attributes?.ohlcv_list;
+    if (!ohlcvList || ohlcvList.length === 0) break;
+
+    for (const candle of ohlcvList) {
+      const ts = candle[0];
+      const close = candle[4];
+      if (ts >= fromTimestamp) {
+        allEntries.push({ timestamp: ts, close });
+      }
+    }
+
+    const oldestTs = ohlcvList[ohlcvList.length - 1][0];
+    if (oldestTs <= fromTimestamp) break;
+    if (ohlcvList.length < 1000) break;
+    beforeTimestamp = oldestTs;
+  }
+
+  // Sort ascending by timestamp for binary search
+  allEntries.sort((a, b) => a.timestamp - b.timestamp);
+  minuteOhlcvCache.set(cacheKey, allEntries.length > 0 ? allEntries : null);
+  return allEntries.length > 0 ? allEntries : null;
+}
+
+/**
+ * Find the closest price in a sorted array of OHLCV entries for a given timestamp.
+ * Uses binary search. Returns the close price of the nearest candle.
+ */
+export function findClosestPrice(entries: OHLCVEntry[], targetTimestamp: number): number | null {
+  if (!entries || entries.length === 0) return null;
+
+  // Binary search for the insertion point
+  let lo = 0;
+  let hi = entries.length - 1;
+  while (lo < hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (entries[mid].timestamp < targetTimestamp) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+
+  // Compare lo and lo-1 to find the closest
+  if (lo === 0) return entries[0].close;
+  if (lo >= entries.length) return entries[entries.length - 1].close;
+  const diffBefore = Math.abs(targetTimestamp - entries[lo - 1].timestamp);
+  const diffAfter = Math.abs(targetTimestamp - entries[lo].timestamp);
+  return diffBefore <= diffAfter ? entries[lo - 1].close : entries[lo].close;
 }
 
 /**
