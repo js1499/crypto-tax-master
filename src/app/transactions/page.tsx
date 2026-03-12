@@ -1425,7 +1425,42 @@ function TransactionsContent() {
 
         {/* Tax Summary Cards */}
         {stats?.pnl && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-semibold">P&L Summary</h2>
+              <Select
+                value={
+                  dateFrom && dateTo
+                    && dateFrom.getMonth() === 0 && dateFrom.getDate() === 1
+                    && dateTo.getMonth() === 11 && dateTo.getDate() === 31
+                    && dateFrom.getFullYear() === dateTo.getFullYear()
+                    ? dateFrom.getFullYear().toString()
+                    : "all"
+                }
+                onValueChange={(value) => {
+                  if (value === "all") {
+                    setDateFrom(undefined);
+                    setDateTo(undefined);
+                  } else {
+                    const year = parseInt(value);
+                    setDateFrom(new Date(year, 0, 1));
+                    setDateTo(new Date(year, 11, 31));
+                  }
+                  setCurrentPage(1);
+                }}
+              >
+                <SelectTrigger className="w-[130px] h-9">
+                  <SelectValue placeholder="All Years" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Years</SelectItem>
+                  {Array.from({ length: new Date().getFullYear() - 2020 + 1 }, (_, i) => new Date().getFullYear() - i).map(year => (
+                    <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card>
               <CardHeader>
                 <CardTitle className="text-lg font-semibold">Capital Gains Summary</CardTitle>
@@ -1485,6 +1520,7 @@ function TransactionsContent() {
                 </CardContent>
               </Card>
             )}
+          </div>
           </div>
         )}
 
