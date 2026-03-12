@@ -278,17 +278,58 @@ export async function enrichHistoricalPrices(
     log(`── Phase 1.5: Upgrading ${swapTxsForMinute.length} swaps to minute-level pricing ──`);
 
     if (swapTxsForMinute.length > 0) {
-      // Collect unique (mint, day) pairs across both sides of all swaps
+      // Step 1: Build symbol → mint address resolution map.
+      // SOL has no asset_address stored (it's the native token), and
+      // incoming_asset_address is almost always NULL. Resolve from:
+      //  a) Known hardcoded mints (Wrapped SOL, USDC, USDT)
+      //  b) Other transactions where the same symbol has a known asset_address
+      const KNOWN_MINTS: Record<string, string> = {
+        "SOL": "So11111111111111111111111111111111111111112",
+        "USDC": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "USDT": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+      };
+
+      const symbolToMint = new Map<string, string>();
+      for (const [sym, mint] of Object.entries(KNOWN_MINTS)) {
+        symbolToMint.set(sym, mint);
+      }
+      // Scan all transactions to build symbol→mint from asset_address
+      for (const tx of transactions) {
+        if (tx.asset_address && tx.asset_symbol) {
+          const sym = tx.asset_symbol.trim().toUpperCase();
+          if (!symbolToMint.has(sym)) {
+            symbolToMint.set(sym, tx.asset_address);
+          }
+        }
+        if (tx.incoming_asset_address && tx.incoming_asset_symbol) {
+          const sym = tx.incoming_asset_symbol.trim().toUpperCase();
+          if (!symbolToMint.has(sym)) {
+            symbolToMint.set(sym, tx.incoming_asset_address);
+          }
+        }
+      }
+      log(`  Resolved ${symbolToMint.size} symbol→mint mappings (${Object.keys(KNOWN_MINTS).length} hardcoded + ${symbolToMint.size - Object.keys(KNOWN_MINTS).length} from transaction data)`);
+
+      // Helper to resolve mint address for a swap side
+      function resolveMint(address: string | null, symbol: string | null): string | null {
+        if (address) return address;
+        if (!symbol) return null;
+        return symbolToMint.get(symbol.trim().toUpperCase()) || null;
+      }
+
+      // Step 2: Collect unique (mint, day) pairs across both sides
       const mintDayKeys = new Set<string>();
       for (const tx of swapTxsForMinute) {
         const dayStr = tx.tx_timestamp.toISOString().split("T")[0];
-        if (tx.asset_address) mintDayKeys.add(`${tx.asset_address}:${dayStr}`);
-        if (tx.incoming_asset_address) mintDayKeys.add(`${tx.incoming_asset_address}:${dayStr}`);
+        const outMint = resolveMint(tx.asset_address, tx.asset_symbol);
+        const inMint = resolveMint(tx.incoming_asset_address, tx.incoming_asset_symbol);
+        if (outMint) mintDayKeys.add(`${outMint}:${dayStr}`);
+        if (inMint) mintDayKeys.add(`${inMint}:${dayStr}`);
       }
 
       log(`  Fetching minute candles for ${mintDayKeys.size} (mint, day) pairs...`);
 
-      // Fetch minute candles for each (mint, day) — ~2 API calls each
+      // Step 3: Fetch minute candles for each (mint, day) — ~2 API calls each
       const minuteCache = new Map<string, OHLCVEntry[]>();
       let fetchCount = 0;
       let resolvedCount = 0;
@@ -306,7 +347,7 @@ export async function enrichHistoricalPrices(
       }
       log(`  Phase 1.5 fetch complete: ${resolvedCount}/${mintDayKeys.size} have minute data`);
 
-      // Apply minute prices to each swap transaction
+      // Step 4: Apply minute prices to each swap transaction
       const phase15Rows: BulkRow[] = [];
       for (const tx of swapTxsForMinute) {
         const dayStr = tx.tx_timestamp.toISOString().split("T")[0];
@@ -318,8 +359,9 @@ export async function enrichHistoricalPrices(
         let didUpdate = false;
 
         // Outgoing side — price_per_unit and value_usd
-        if (tx.asset_address) {
-          const entries = minuteCache.get(`${tx.asset_address}:${dayStr}`);
+        const outMint = resolveMint(tx.asset_address, tx.asset_symbol);
+        if (outMint) {
+          const entries = minuteCache.get(`${outMint}:${dayStr}`);
           if (entries) {
             const price = findClosestPrice(entries, txTs);
             if (price !== null && price > 0) {
@@ -331,8 +373,9 @@ export async function enrichHistoricalPrices(
         }
 
         // Incoming side — incoming_value_usd
-        if (tx.incoming_asset_address) {
-          const entries = minuteCache.get(`${tx.incoming_asset_address}:${dayStr}`);
+        const inMint = resolveMint(tx.incoming_asset_address, tx.incoming_asset_symbol);
+        if (inMint) {
+          const entries = minuteCache.get(`${inMint}:${dayStr}`);
           if (entries) {
             const price = findClosestPrice(entries, txTs);
             if (price !== null && price > 0 && tx.incoming_amount_value) {
