@@ -30,6 +30,10 @@ import {
   CheckSquare,
   Square,
   Loader2,
+  ArrowUp,
+  ArrowDown,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
@@ -1056,12 +1060,14 @@ function TransactionsContent() {
 
   const getSortIndicator = (column: string) => {
     if (!sortOption.startsWith(column + "-")) return null;
-    return sortOption.endsWith("-asc") ? "\u2191" : "\u2193";
+    return sortOption.endsWith("-asc")
+      ? <ArrowUp className="h-3 w-3 text-primary" />
+      : <ArrowDown className="h-3 w-3 text-primary" />;
   };
 
   return (
     <Layout>
-      <div className="space-y-6">
+      <div className="space-y-6 stagger-section">
         {/* ── Header ── */}
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Transactions</h1>
@@ -1300,24 +1306,29 @@ function TransactionsContent() {
                   <div className="grid grid-cols-3 gap-4">
                     <div>
                       <p className="text-sm text-muted-foreground">Cost Basis</p>
-                      <p className="text-xl font-bold text-muted-foreground">
+                      <p className="text-xl font-bold text-muted-foreground font-mono" style={{ fontVariantNumeric: 'tabular-nums' }}>
                         ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Proceeds</p>
-                      <p className="text-xl font-bold text-muted-foreground">
+                      <p className="text-xl font-bold text-muted-foreground font-mono" style={{ fontVariantNumeric: 'tabular-nums' }}>
                         ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     </div>
                     <div>
-                      <p className="text-sm text-muted-foreground">Net Gain / Loss</p>
+                      <p className="text-sm text-muted-foreground flex items-center gap-1">
+                        {stats.pnl.netGain >= 0
+                          ? <TrendingUp className="h-3.5 w-3.5 text-emerald-500 dark:text-emerald-400" />
+                          : <TrendingDown className="h-3.5 w-3.5 text-rose-500 dark:text-rose-400" />}
+                        Net Gain / Loss
+                      </p>
                       <p className={cn(
-                        "text-xl font-bold",
+                        "text-2xl font-bold font-mono",
                         stats.pnl.netGain >= 0
                           ? "text-emerald-600 dark:text-emerald-400"
                           : "text-rose-600 dark:text-rose-400"
-                      )}>
+                      )} style={{ fontVariantNumeric: 'tabular-nums' }}>
                         {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     </div>
@@ -1334,11 +1345,11 @@ function TransactionsContent() {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-muted-foreground">Income Events</p>
-                        <p className="text-xl font-bold text-muted-foreground">{stats.income.count}</p>
+                        <p className="text-xl font-bold text-muted-foreground font-mono">{stats.income.count}</p>
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">Total Income</p>
-                        <p className="text-xl font-bold text-amber-600 dark:text-amber-400">
+                        <p className="text-xl font-bold text-amber-600 dark:text-amber-400 font-mono" style={{ fontVariantNumeric: 'tabular-nums' }}>
                           ${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </p>
                       </div>
@@ -1648,18 +1659,18 @@ function TransactionsContent() {
                       </TableHead>
                     )}
                     <TableHead className="font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("type")}>
-                      Type {getSortIndicator("type") && <span className="text-primary ml-0.5">{getSortIndicator("type")}</span>}
+                      <span className="inline-flex items-center gap-0.5">Type{getSortIndicator("type")}</span>
                     </TableHead>
                     <TableHead className="font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("asset")}>
-                      Asset(s) {getSortIndicator("asset") && <span className="text-primary ml-0.5">{getSortIndicator("asset")}</span>}
+                      <span className="inline-flex items-center gap-0.5">Asset(s){getSortIndicator("asset")}</span>
                     </TableHead>
                     <TableHead className="font-medium font-mono">Amount</TableHead>
                     <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("value")}>
-                      Value {getSortIndicator("value") && <span className="text-primary ml-0.5">{getSortIndicator("value")}</span>}
+                      <span className="inline-flex items-center gap-0.5 justify-end w-full">Value{getSortIndicator("value")}</span>
                     </TableHead>
                     <TableHead className="text-right font-medium font-mono">Gain/Loss</TableHead>
                     <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("date")}>
-                      Date {getSortIndicator("date") && <span className="text-primary ml-0.5">{getSortIndicator("date")}</span>}
+                      <span className="inline-flex items-center gap-0.5 justify-end w-full">Date{getSortIndicator("date")}</span>
                     </TableHead>
                     {showAdvancedColumns && <TableHead className="text-right font-medium font-mono">Exchange</TableHead>}
                     {showAdvancedColumns && <TableHead className="text-right font-medium font-mono">Identified</TableHead>}
@@ -1944,19 +1955,24 @@ function TransactionsContent() {
                 </TableBody>
               </Table>
               {isLoadingTransactions && (
-                <div className="p-8 text-center">
-                  <div className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-5 w-5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    <p className="text-muted-foreground">Loading transactions...</p>
-                  </div>
+                <div className="p-4 space-y-1">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <div key={i} className="flex items-center gap-6 py-2.5 px-2 animate-pulse" style={{ animationDelay: `${i * 60}ms` }}>
+                      <div className="h-5 w-16 bg-muted rounded-full" />
+                      <div className="h-4 w-20 bg-muted rounded" />
+                      <div className="h-4 w-16 bg-muted rounded" />
+                      <div className="h-4 w-20 bg-muted rounded ml-auto" />
+                      <div className="h-4 w-14 bg-muted rounded" />
+                      <div className="h-4 w-24 bg-muted rounded" />
+                    </div>
+                  ))}
                 </div>
               )}
               {!isLoadingTransactions && transactions.length === 0 && (
-                <div className="p-8 text-center">
-                  <p className="text-muted-foreground">No transactions found</p>
+                <div className="py-16 text-center">
+                  <ArrowRightLeft className="h-10 w-10 text-muted-foreground/25 mx-auto mb-3" />
+                  <p className="text-muted-foreground font-medium">No transactions found</p>
+                  <p className="text-sm text-muted-foreground/60 mt-1">Try adjusting your filters or import some transactions</p>
                 </div>
               )}
             </div>
