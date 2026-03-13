@@ -1066,7 +1066,7 @@ function TransactionsContent() {
               </>
             )}
 
-            <Button variant="outline" onClick={handleExport} disabled={isExporting}>
+            <Button variant="outline" className="rounded-full" onClick={handleExport} disabled={isExporting}>
               {isExporting ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -1075,7 +1075,7 @@ function TransactionsContent() {
               <span>{isExporting ? "Exporting..." : "Export"}</span>
             </Button>
 
-            <Button variant="outline" onClick={handleComputeCostBasis} disabled={isComputingCostBasis}>
+            <Button variant="outline" className="rounded-full" onClick={handleComputeCostBasis} disabled={isComputingCostBasis}>
               {isComputingCostBasis ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -1086,7 +1086,7 @@ function TransactionsContent() {
 
             <Sheet open={isImportOpen} onOpenChange={setIsImportOpen}>
               <SheetTrigger asChild>
-                <Button data-onboarding="import-transactions">
+                <Button data-onboarding="import-transactions" className="rounded-full">
                   <Download className="mr-2 h-4 w-4" />
                   <span>Import</span>
                 </Button>
@@ -1107,7 +1107,7 @@ function TransactionsContent() {
             {/* Add Transaction Dialog */}
             <Dialog open={isAddTransactionOpen} onOpenChange={setIsAddTransactionOpen}>
               <DialogTrigger asChild>
-                <Button>
+                <Button className="rounded-full">
                   <Plus className="mr-2 h-4 w-4" />
                   <span>Add</span>
                 </Button>
@@ -1274,66 +1274,62 @@ function TransactionsContent() {
         {/* ── P&L Summary ── */}
         {stats?.pnl && (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold">P&L Summary</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Hero: Net Gain/Loss */}
+              <Card className={cn(
+                "border-0 text-white overflow-hidden",
+                stats.pnl.netGain >= 0
+                  ? "bg-gradient-to-br from-emerald-500 to-teal-600"
+                  : "bg-gradient-to-br from-rose-500 to-rose-600"
+              )}>
+                <CardContent className="p-6">
+                  <p className="text-sm font-medium text-white/70">Net Gain / Loss</p>
+                  <p className="text-3xl font-bold mt-2 tracking-tight" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-xs text-white/50 mt-1">Capital gains</p>
+                </CardContent>
+              </Card>
+
+              {/* Cost Basis */}
               <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg font-semibold">Capital Gains Summary</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-3 gap-4">
+                <CardContent className="p-6">
+                  <p className="text-sm text-muted-foreground">Cost Basis</p>
+                  <p className="text-2xl font-bold mt-2 tracking-tight" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Proceeds */}
+              <Card>
+                <CardContent className="p-6">
+                  <p className="text-sm text-muted-foreground">Proceeds</p>
+                  <p className="text-2xl font-bold mt-2 tracking-tight" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            {stats.income && stats.income.count > 0 && (
+              <Card>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground">Cost Basis</p>
-                      <p className="text-xl font-bold text-muted-foreground">
-                        ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      <p className="text-sm text-muted-foreground">Ordinary Income</p>
+                      <p className="text-2xl font-bold mt-1 text-amber-600 dark:text-amber-400" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                        ${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                     </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Proceeds</p>
-                      <p className="text-xl font-bold text-muted-foreground">
-                        ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Net Gain / Loss</p>
-                      <p className={cn(
-                        "text-xl font-bold",
-                        stats.pnl.netGain >= 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-rose-600 dark:text-rose-400"
-                      )}>
-                        {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground">{stats.income.count} events</p>
+                      <p className="text-xs text-muted-foreground mt-1">Airdrops, staking, vesting</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
-
-              {stats.income && stats.income.count > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-lg font-semibold">Ordinary Income</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Income Events</p>
-                        <p className="text-xl font-bold text-muted-foreground">{stats.income.count}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Total Income</p>
-                        <p className="text-xl font-bold text-amber-600 dark:text-amber-400">
-                          ${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-3">
-                      Airdrops, staking rewards, and vesting claims taxed as ordinary income at FMV on receipt.
-                    </p>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
+            )}
           </div>
         )}
 

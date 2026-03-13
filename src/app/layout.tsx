@@ -41,7 +41,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         className={cn(
-          "min-h-screen bg-[#0a0c12] font-sans antialiased leading-relaxed",
+          "min-h-screen bg-background font-sans antialiased leading-relaxed",
           outfit.variable,
           azeretMono.variable
         )}
