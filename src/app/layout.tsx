@@ -1,6 +1,6 @@
 import "./globals.css"; // Updated import path for globals.css
 import type { Metadata } from "next";
-import { Outfit, Azeret_Mono } from "next/font/google";
+import { Figtree, Azeret_Mono } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/theme-provider";
 import { NextAuthSessionProvider } from "@/components/providers/session-provider";
@@ -15,9 +15,9 @@ if (typeof window !== "undefined") {
   });
 }
 
-const outfit = Outfit({ 
-  subsets: ["latin"], 
-  variable: "--font-sans" 
+const figtree = Figtree({
+  subsets: ["latin"],
+  variable: "--font-sans"
 });
 
 const azeretMono = Azeret_Mono({ 
@@ -42,7 +42,7 @@ export default function RootLayout({
       <body
         className={cn(
           "min-h-screen bg-[#0a0c12] font-sans antialiased leading-relaxed",
-          outfit.variable,
+          figtree.variable,
           azeretMono.variable
         )}
       >

@@ -1046,6 +1046,19 @@ function TransactionsContent() {
     return amount.toLocaleString(undefined, { maximumFractionDigits: 6 });
   };
 
+  // Column sort handler
+  const handleColumnSort = (column: string) => {
+    const currentDir = sortOption.startsWith(column + "-") ? sortOption.split("-")[1] : null;
+    const newDir = currentDir === "asc" ? "desc" : currentDir === "desc" ? "asc" : "asc";
+    setSortOption(`${column}-${newDir}`);
+    setCurrentPage(1);
+  };
+
+  const getSortIndicator = (column: string) => {
+    if (!sortOption.startsWith(column + "-")) return null;
+    return sortOption.endsWith("-asc") ? "\u2191" : "\u2193";
+  };
+
   return (
     <Layout>
       <div className="space-y-6">
@@ -1248,18 +1261,21 @@ function TransactionsContent() {
         </Dialog>
 
         {/* ── Stats Row ── */}
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1">
-            <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{stats?.valueIdentifiedPercentage ?? 0}% Value</span>
-            <Progress value={stats?.valueIdentifiedPercentage ?? 0} className="h-2 w-16 bg-emerald-100 dark:bg-emerald-900/30" />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-3 border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg px-3 py-1.5">
+            <span className="text-sm font-semibold font-mono text-emerald-700 dark:text-emerald-400">{stats?.valueIdentifiedPercentage ?? 0}%</span>
+            <Progress value={stats?.valueIdentifiedPercentage ?? 0} className="h-3 w-24 bg-emerald-100 dark:bg-emerald-900/30" />
+            <span className="text-xs text-emerald-600/70 dark:text-emerald-400/70">Value</span>
           </div>
-          <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1">
-            <span className="text-sm font-medium text-orange-600 dark:text-orange-400">{stats?.identifiedPercentage ?? 0}% Types</span>
-            <Progress value={stats?.identifiedPercentage ?? 0} className="h-2 w-16 bg-orange-100 dark:bg-orange-900/30" />
+          <div className="flex items-center gap-3 border border-orange-200 dark:border-orange-800/40 bg-orange-50/50 dark:bg-orange-950/20 rounded-lg px-3 py-1.5">
+            <span className="text-sm font-semibold font-mono text-orange-700 dark:text-orange-400">{stats?.identifiedPercentage ?? 0}%</span>
+            <Progress value={stats?.identifiedPercentage ?? 0} className="h-3 w-24 bg-orange-100 dark:bg-orange-900/30" />
+            <span className="text-xs text-orange-600/70 dark:text-orange-400/70">Types</span>
           </div>
-          <span className="text-sm text-muted-foreground">
-            {isLoadingTransactions ? "..." : totalCount} transactions
-          </span>
+          <div className="flex items-center gap-2 border border-border rounded-lg px-3 py-1.5">
+            <span className="text-sm font-semibold font-mono">{isLoadingTransactions ? "..." : totalCount.toLocaleString()}</span>
+            <span className="text-xs text-muted-foreground">txns</span>
+          </div>
           <Button
             variant="ghost"
             size="sm"
@@ -1631,12 +1647,20 @@ function TransactionsContent() {
                         />
                       </TableHead>
                     )}
-                    <TableHead className="font-medium font-mono">Type</TableHead>
-                    <TableHead className="font-medium font-mono">Asset(s)</TableHead>
+                    <TableHead className="font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("type")}>
+                      Type {getSortIndicator("type") && <span className="text-primary ml-0.5">{getSortIndicator("type")}</span>}
+                    </TableHead>
+                    <TableHead className="font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("asset")}>
+                      Asset(s) {getSortIndicator("asset") && <span className="text-primary ml-0.5">{getSortIndicator("asset")}</span>}
+                    </TableHead>
                     <TableHead className="font-medium font-mono">Amount</TableHead>
-                    <TableHead className="text-right font-medium font-mono">Value</TableHead>
+                    <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("value")}>
+                      Value {getSortIndicator("value") && <span className="text-primary ml-0.5">{getSortIndicator("value")}</span>}
+                    </TableHead>
                     <TableHead className="text-right font-medium font-mono">Gain/Loss</TableHead>
-                    <TableHead className="text-right font-medium font-mono">Date</TableHead>
+                    <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("date")}>
+                      Date {getSortIndicator("date") && <span className="text-primary ml-0.5">{getSortIndicator("date")}</span>}
+                    </TableHead>
                     {showAdvancedColumns && <TableHead className="text-right font-medium font-mono">Exchange</TableHead>}
                     {showAdvancedColumns && <TableHead className="text-right font-medium font-mono">Identified</TableHead>}
                   </TableRow>
@@ -1646,7 +1670,7 @@ function TransactionsContent() {
                     <TableRow
                       key={transaction.id}
                       className={cn(
-                        "h-auto cursor-pointer hover:bg-muted/50",
+                        "h-auto cursor-pointer transition-all duration-150 hover:bg-muted/60 hover:shadow-[inset_3px_0_0_hsl(var(--primary))]",
                         selectedTransactionIds.has(transaction.id) && "bg-muted"
                       )}
                       onClick={() => !isBulkMode && handleOpenDetail(transaction)}

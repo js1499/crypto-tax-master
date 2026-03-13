@@ -20,7 +20,7 @@ export default {
       fontFamily: {
         sans: ['var(--font-sans)'],
         mono: ['var(--font-mono)'],
-        outfit: ['var(--font-sans)'],
+        figtree: ['var(--font-sans)'],
         cutive: ['var(--font-mono)'],
         azeret: ['Azeret Mono', 'monospace'],
       },
