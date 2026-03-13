@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { Layout } from "@/components/layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ArrowRightLeft,
   Download,
@@ -14,19 +13,16 @@ import {
   Search,
   ArrowDownRight,
   ArrowUpRight,
-  Upload,
   Plus,
   ArrowUpDown,
   Check,
   AlertCircle,
   EyeOff,
-  Tag,
   Calendar,
   CreditCard,
   Pencil,
   ChevronDown,
   X,
-  FileText,
   Trash2,
   Merge,
   ExternalLink,
@@ -200,11 +196,15 @@ function TransactionsContent() {
   const [duplicates, setDuplicates] = useState<Array<{ ids: number[]; reason: string; similarity: number }>>([]);
   const [isDuplicatesOpen, setIsDuplicatesOpen] = useState(false);
   const [isLoadingDuplicates, setIsLoadingDuplicates] = useState(false);
-  
+
   // Delete all transactions state
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
   const [isDeletingAll, setIsDeletingAll] = useState(false);
-  
+
+  // UI mode state
+  const [showAdvancedColumns, setShowAdvancedColumns] = useState(false);
+  const [showMoreStats, setShowMoreStats] = useState(false);
+
   // Wallet filter state
   const [walletFilter, setWalletFilter] = useState("");
   const [wallets, setWallets] = useState<Array<{ id: string; name: string; address: string; provider: string }>>([]);
@@ -232,7 +232,7 @@ function TransactionsContent() {
   const [isExporting, setIsExporting] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  
+
   // New transaction form state
   const [newTransaction, setNewTransaction] = useState({
     exchange: "",
@@ -302,14 +302,14 @@ function TransactionsContent() {
         const response = await fetch(`/api/transactions?${params.toString()}`);
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          
+
           // Handle authentication errors
           if (response.status === 401) {
             toast.error("Please log in to view transactions");
             router.push("/login");
             return;
           }
-          
+
           throw new Error(errorData.details || errorData.error || "Failed to fetch transactions");
         }
 
@@ -356,7 +356,7 @@ function TransactionsContent() {
           if (data.stats) {
             setStats(data.stats);
           }
-          
+
           // Reset to page 1 if current page is beyond total pages
           // Use a ref to prevent infinite loop
           if (currentPage > data.pagination.totalPages && data.pagination.totalPages > 0 && currentPage !== 1) {
@@ -432,8 +432,8 @@ function TransactionsContent() {
   const currentPageCount = transactions.length;
   // Note: For accurate stats, we'd need a separate API call, but for now use current page data
   const needsIdentificationCount = currentPageCount - identifiedCount;
-  const identificationPercentage = currentPageCount > 0 
-    ? Math.round((identifiedCount / currentPageCount) * 100) 
+  const identificationPercentage = currentPageCount > 0
+    ? Math.round((identifiedCount / currentPageCount) * 100)
     : 0;
 
   // Calculate value identification statistics
@@ -446,6 +446,36 @@ function TransactionsContent() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = Math.min(startIndex + transactions.length, totalCount);
   const currentTransactions = transactions; // Already paginated from server
+
+  // Year selector computed value
+  const yearValue = dateFrom && dateTo
+    && dateFrom.getMonth() === 0 && dateFrom.getDate() === 1
+    && dateTo.getMonth() === 11 && dateTo.getDate() === 31
+    && dateFrom.getFullYear() === dateTo.getFullYear()
+    ? dateFrom.getFullYear().toString()
+    : "all";
+
+  const handleYearChange = (value: string) => {
+    if (value === "all") {
+      setDateFrom(undefined);
+      setDateTo(undefined);
+    } else {
+      const year = parseInt(value);
+      setDateFrom(new Date(year, 0, 1));
+      setDateTo(new Date(year, 11, 31));
+    }
+    setCurrentPage(1);
+  };
+
+  // Active filter count for the Filters button badge
+  const activeFilterCount = [
+    filter !== "all",
+    walletFilter !== "",
+    showOnlyUnlabelled,
+    hideZeroTransactions,
+    hideSpamTransactions,
+    sortOption !== "date-desc",
+  ].filter(Boolean).length;
 
   // Change page handler
   const handlePageChange = (page: number) => {
@@ -479,12 +509,13 @@ function TransactionsContent() {
 
   // Handle import completion
   const handleImportComplete = (data: ImportedData) => {
-    toast.success(`Added ${data.transactions.length} new transactions`);
+    const count = typeof data.transactions === "number" ? data.transactions : data.transactions.length;
+    toast.success(`Added ${count} new transactions`);
     setIsImportOpen(false);
     // Refresh transactions from API
     setCurrentPage(1);
     // The useEffect will automatically refetch
-    
+
     // Complete onboarding step if active
     try {
       const { useOnboarding } = require("@/components/onboarding/onboarding-provider");
@@ -520,13 +551,13 @@ function TransactionsContent() {
       if (data.status === "success") {
         toast.success(`Successfully deleted ${data.deletedCount} transaction${data.deletedCount !== 1 ? "s" : ""}`);
         setIsDeleteAllOpen(false);
-        
+
         // Reset to page 1 and refresh transactions
         setCurrentPage(1);
         setTransactions([]);
         setFilteredTransactions([]);
         setTotalCount(0);
-        
+
         // Trigger a refresh by updating a dependency
         // The useEffect will automatically refetch
       } else {
@@ -630,7 +661,7 @@ function TransactionsContent() {
   const handleStartEditing = (id: number, field: string, currentValue: string) => {
     setEditingTransactionId(id);
     setEditingField(field);
-    
+
     // Format the value appropriately for editing based on field type
     if (field === 'date') {
       // Convert date string to just the date portion for the date input
@@ -661,7 +692,7 @@ function TransactionsContent() {
 
       // Prepare update payload
       let updatePayload: any = {};
-      
+
       if (field === 'type') {
         updatePayload.type = editingValue;
       } else if (field === 'asset') {
@@ -703,17 +734,17 @@ function TransactionsContent() {
       const data = await response.json();
       if (data.status === "success") {
         // Update local state
-        const updatedTransactions = transactions.map(t => 
+        const updatedTransactions = transactions.map(t =>
           t.id === id ? data.transaction : t
         );
         setTransactions(updatedTransactions);
         setFilteredTransactions(updatedTransactions);
-        
+
         setEditingTransactionId(null);
         setEditingField(null);
         setEditingValue("");
         toast.success(`Transaction ${field} updated successfully!`);
-        
+
         // Refresh if detail sheet is open
         if (selectedTransaction?.id === id) {
           setSelectedTransaction(data.transaction);
@@ -731,7 +762,7 @@ function TransactionsContent() {
       if (!tx) return;
 
       let updatePayload: any = {};
-      
+
       if (field === 'type') {
         updatePayload.type = newValue;
         // Adjust value sign if needed based on transaction type
@@ -761,13 +792,13 @@ function TransactionsContent() {
 
       const data = await response.json();
       if (data.status === "success") {
-        const updatedTransactions = transactions.map(t => 
+        const updatedTransactions = transactions.map(t =>
           t.id === id ? data.transaction : t
         );
         setTransactions(updatedTransactions);
         setFilteredTransactions(updatedTransactions);
         toast.success(`Transaction ${field} updated to ${newValue}!`);
-        
+
         if (selectedTransaction?.id === id) {
           setSelectedTransaction(data.transaction);
         }
@@ -803,7 +834,7 @@ function TransactionsContent() {
   // Save notes
   const handleSaveNotes = async () => {
     if (!selectedTransaction) return;
-    
+
     try {
       const response = await fetch(`/api/transactions/${selectedTransaction.id}`, {
         method: "PATCH",
@@ -817,7 +848,7 @@ function TransactionsContent() {
 
       const data = await response.json();
       if (data.status === "success") {
-        const updatedTransactions = transactions.map(t => 
+        const updatedTransactions = transactions.map(t =>
           t.id === selectedTransaction.id ? data.transaction : t
         );
         setTransactions(updatedTransactions);
@@ -848,7 +879,7 @@ function TransactionsContent() {
       toast.success("Transaction deleted successfully!");
       setIsDetailSheetOpen(false);
       setSelectedTransaction(null);
-      
+
       // Refresh transactions
       setCurrentPage(1);
     } catch (error) {
@@ -1008,50 +1039,27 @@ function TransactionsContent() {
     { value: "DeFi Setup", label: "DeFi Setup" },
   ];
 
+  // Helper: format amount for display
+  const formatAmount = (amount: number | null) => {
+    if (amount == null) return null;
+    if (amount < 0.01 && amount > 0) return amount.toExponential(2);
+    return amount.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  };
+
   return (
     <Layout>
-      <div className="space-y-8">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">Transactions</h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant={isBulkMode ? "default" : "outline"}
-              onClick={() => {
-                setIsBulkMode(!isBulkMode);
-                setSelectedTransactionIds(new Set());
-              }}
-            >
-              {isBulkMode ? (
-                <>
-                  <CheckSquare className="mr-2 h-4 w-4" />
-                  <span>Bulk Mode</span>
-                </>
-              ) : (
-                <>
-                  <Square className="mr-2 h-4 w-4" />
-                  <span>Select</span>
-                </>
-              )}
-            </Button>
-
+      <div className="space-y-6">
+        {/* ── Header ── */}
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">Transactions</h1>
+          <div className="flex items-center gap-2">
             {isBulkMode && selectedTransactionIds.size > 0 && (
               <>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleBulkUpdate({ identified: true })}
-                >
+                <Button variant="outline" size="sm" onClick={() => handleBulkUpdate({ identified: true })}>
                   <Check className="mr-2 h-4 w-4" />
                   Mark Identified ({selectedTransactionIds.size})
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleBulkDelete}
-                  className="text-destructive"
-                >
+                <Button variant="outline" size="sm" onClick={handleBulkDelete} className="text-destructive">
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete ({selectedTransactionIds.size})
                 </Button>
@@ -1067,68 +1075,7 @@ function TransactionsContent() {
               <span>{isExporting ? "Exporting..." : "Export"}</span>
             </Button>
 
-            <Dialog open={isDeleteAllOpen} onOpenChange={setIsDeleteAllOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" className="text-destructive hover:text-destructive">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  <span>Delete All</span>
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Delete All Transactions</DialogTitle>
-                  <DialogDescription>
-                    This will permanently delete all transactions associated with your wallets and CSV imports. 
-                    This action cannot be undone.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="py-4">
-                  <p className="text-sm text-muted-foreground">
-                    You are about to delete <strong>{totalCount}</strong> transaction{totalCount !== 1 ? "s" : ""}. 
-                    This includes:
-                  </p>
-                  <ul className="mt-2 ml-4 list-disc text-sm text-muted-foreground space-y-1">
-                    <li>All transactions from connected wallets</li>
-                    <li>All transactions imported via CSV files</li>
-                  </ul>
-                  <p className="mt-4 text-sm font-medium text-destructive">
-                    Are you absolutely sure?
-                  </p>
-                </div>
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsDeleteAllOpen(false)}
-                    disabled={isDeletingAll}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={handleDeleteAll}
-                    disabled={isDeletingAll}
-                  >
-                    {isDeletingAll ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Deleting...
-                      </>
-                    ) : (
-                      <>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Delete All
-                      </>
-                    )}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-
-            <Button
-              variant="outline"
-              onClick={handleComputeCostBasis}
-              disabled={isComputingCostBasis}
-            >
+            <Button variant="outline" onClick={handleComputeCostBasis} disabled={isComputingCostBasis}>
               {isComputingCostBasis ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
@@ -1162,7 +1109,7 @@ function TransactionsContent() {
               <DialogTrigger asChild>
                 <Button>
                   <Plus className="mr-2 h-4 w-4" />
-                  <span>Add Transaction</span>
+                  <span>Add</span>
                 </Button>
               </DialogTrigger>
               <DialogContent className="sm:max-w-[600px]">
@@ -1174,15 +1121,11 @@ function TransactionsContent() {
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="type" className="text-right col-span-1">
-                      Type
-                    </Label>
+                    <Label htmlFor="type" className="text-right col-span-1">Type</Label>
                     <Select
                       name="type"
                       value={newTransaction.type}
-                      onValueChange={(value) => handleFormChange({ 
-                        target: { name: "type", value } 
-                      } as React.ChangeEvent<HTMLSelectElement>)}
+                      onValueChange={(value) => handleFormChange({ target: { name: "type", value } } as React.ChangeEvent<HTMLSelectElement>)}
                     >
                       <SelectTrigger className="col-span-4">
                         <SelectValue placeholder="Select transaction type" />
@@ -1199,830 +1142,726 @@ function TransactionsContent() {
                       </SelectContent>
                     </Select>
                   </div>
-                  
                   <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="exchange" className="text-right col-span-1">
-                      Exchange/Wallet
-                    </Label>
-                    <Input
-                      id="exchange"
-                      name="exchange"
-                      placeholder="Coinbase, Binance, etc."
-                      value={newTransaction.exchange}
-                      onChange={handleFormChange}
-                      className="col-span-4"
-                    />
+                    <Label htmlFor="exchange" className="text-right col-span-1">Exchange/Wallet</Label>
+                    <Input id="exchange" name="exchange" placeholder="Coinbase, Binance, etc." value={newTransaction.exchange} onChange={handleFormChange} className="col-span-4" />
                   </div>
-                  
                   <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="asset" className="text-right col-span-1">
-                      Asset
-                    </Label>
-                    <Input
-                      id="asset"
-                      name="asset"
-                      placeholder="BTC, ETH, etc."
-                      value={newTransaction.asset}
-                      onChange={handleFormChange}
-                      className="col-span-4"
-                    />
+                    <Label htmlFor="asset" className="text-right col-span-1">Asset</Label>
+                    <Input id="asset" name="asset" placeholder="BTC, ETH, etc." value={newTransaction.asset} onChange={handleFormChange} className="col-span-4" />
                   </div>
-                  
                   <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="amount" className="text-right col-span-1">
-                      Amount
-                    </Label>
-                    <Input
-                      id="amount"
-                      name="amount"
-                      placeholder="1.5"
-                      type="number"
-                      step="0.000001"
-                      value={newTransaction.amount}
-                      onChange={handleFormChange}
-                      className="col-span-4"
-                    />
+                    <Label htmlFor="amount" className="text-right col-span-1">Amount</Label>
+                    <Input id="amount" name="amount" placeholder="1.5" type="number" step="0.000001" value={newTransaction.amount} onChange={handleFormChange} className="col-span-4" />
                   </div>
-                  
                   <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="price" className="text-right col-span-1">
-                      Price
-                    </Label>
+                    <Label htmlFor="price" className="text-right col-span-1">Price</Label>
                     <div className="relative col-span-4">
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                         <span className="text-gray-500">$</span>
                       </div>
-                      <Input
-                        id="price"
-                        name="price"
-                        placeholder="30000.00"
-                        type="number"
-                        step="0.01"
-                        value={newTransaction.price}
-                        onChange={handleFormChange}
-                        className="pl-8"
-                      />
+                      <Input id="price" name="price" placeholder="30000.00" type="number" step="0.01" value={newTransaction.price} onChange={handleFormChange} className="pl-8" />
                     </div>
                   </div>
-                  
                   <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="date" className="text-right col-span-1">
-                      Date & Time
-                    </Label>
+                    <Label htmlFor="date" className="text-right col-span-1">Date & Time</Label>
                     <div className="col-span-4 flex gap-2">
                       <div className="relative flex-1">
                         <CalendarComponent className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          id="date"
-                          name="date"
-                          type="date"
-                          value={newTransaction.date}
-                          onChange={handleFormChange}
-                          className="pl-8"
-                        />
+                        <Input id="date" name="date" type="date" value={newTransaction.date} onChange={handleFormChange} className="pl-8" />
                       </div>
-                      <Input
-                        id="time"
-                        name="time"
-                        type="time"
-                        value={newTransaction.time}
-                        onChange={handleFormChange}
-                        className="w-32"
-                      />
+                      <Input id="time" name="time" type="time" value={newTransaction.time} onChange={handleFormChange} className="w-32" />
                     </div>
                   </div>
-                  
                   <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="value" className="text-right col-span-1">
-                      Value
-                    </Label>
+                    <Label htmlFor="value" className="text-right col-span-1">Value</Label>
                     <div className="relative col-span-4">
                       <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                         <span className="text-gray-500">$</span>
                       </div>
-                      <Input
-                        id="value"
-                        name="value"
-                        placeholder="1500.00"
-                        type="number"
-                        step="0.01"
-                        value={newTransaction.value}
-                        onChange={handleFormChange}
-                        className="pl-8"
-                      />
+                      <Input id="value" name="value" placeholder="1500.00" type="number" step="0.01" value={newTransaction.value} onChange={handleFormChange} className="pl-8" />
                     </div>
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setIsAddTransactionOpen(false)}>
-                    Cancel
-                  </Button>
-                  <Button type="button" onClick={handleAddTransaction}>
-                    Add Transaction
-                  </Button>
+                  <Button type="button" variant="outline" onClick={() => setIsAddTransactionOpen(false)}>Cancel</Button>
+                  <Button type="button" onClick={handleAddTransaction}>Add Transaction</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+
+            {/* Overflow menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => { setIsBulkMode(!isBulkMode); setSelectedTransactionIds(new Set()); }}>
+                  {isBulkMode ? <CheckSquare className="mr-2 h-4 w-4" /> : <Square className="mr-2 h-4 w-4" />}
+                  {isBulkMode ? "Exit Bulk Mode" : "Bulk Select"}
+                </DropdownMenuItem>
+                <DropdownMenuItem className="text-destructive" onClick={() => setIsDeleteAllOpen(true)}>
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Delete All
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
-        {/* Transaction Identification Indicators */}
-        <div className="flex flex-col gap-2 sm:flex-row items-start sm:items-center">
+        {/* Delete All Dialog */}
+        <Dialog open={isDeleteAllOpen} onOpenChange={setIsDeleteAllOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete All Transactions</DialogTitle>
+              <DialogDescription>
+                This will permanently delete all transactions associated with your wallets and CSV imports.
+                This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <p className="text-sm text-muted-foreground">
+                You are about to delete <strong>{totalCount}</strong> transaction{totalCount !== 1 ? "s" : ""}.
+                This includes:
+              </p>
+              <ul className="mt-2 ml-4 list-disc text-sm text-muted-foreground space-y-1">
+                <li>All transactions from connected wallets</li>
+                <li>All transactions imported via CSV files</li>
+              </ul>
+              <p className="mt-4 text-sm font-medium text-destructive">
+                Are you absolutely sure?
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDeleteAllOpen(false)} disabled={isDeletingAll}>Cancel</Button>
+              <Button variant="destructive" onClick={handleDeleteAll} disabled={isDeletingAll}>
+                {isDeletingAll ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Deleting...</>
+                ) : (
+                  <><Trash2 className="mr-2 h-4 w-4" />Delete All</>
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Stats Row ── */}
+        <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1">
-            <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{stats?.valueIdentifiedPercentage ?? 0}% Value Identified</span>
+            <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">{stats?.valueIdentifiedPercentage ?? 0}% Value</span>
             <Progress value={stats?.valueIdentifiedPercentage ?? 0} className="h-2 w-16 bg-emerald-100 dark:bg-emerald-900/30" />
-            <Check className="h-4 w-4 text-emerald-500" />
           </div>
           <div className="flex items-center gap-2 bg-muted rounded-full px-3 py-1">
-            <span className="text-sm font-medium text-orange-600 dark:text-orange-400">{stats?.identifiedPercentage ?? 0}% Transaction Types Identified</span>
+            <span className="text-sm font-medium text-orange-600 dark:text-orange-400">{stats?.identifiedPercentage ?? 0}% Types</span>
             <Progress value={stats?.identifiedPercentage ?? 0} className="h-2 w-16 bg-orange-100 dark:bg-orange-900/30" />
-            <AlertCircle className="h-4 w-4 text-orange-500" />
           </div>
+          <span className="text-sm text-muted-foreground">
+            {isLoadingTransactions ? "..." : totalCount} transactions
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowMoreStats(!showMoreStats)}
+            className="ml-auto"
+          >
+            {showMoreStats ? "Less" : "More Stats"}
+            <ChevronDown className={cn("ml-1 h-4 w-4 transition-transform", showMoreStats && "rotate-180")} />
+          </Button>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-5">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Total Transactions
-              </CardTitle>
-              <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {isLoadingTransactions ? "..." : totalCount}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Across all pages
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Buy Transactions
-              </CardTitle>
-              <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {isLoadingTransactions ? "..." : (stats?.buyCount ?? 0)}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Across all pages
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Sell Transactions
-              </CardTitle>
-              <ArrowDownRight className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {isLoadingTransactions ? "..." : (stats?.sellCount ?? 0)}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Across all pages
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Other
-              </CardTitle>
-              <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {isLoadingTransactions ? "..." : (stats?.otherCount ?? 0)}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Across all pages
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Unlabelled
-              </CardTitle>
-              <AlertCircle className="h-4 w-4 text-amber-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {isLoadingTransactions ? "..." : (stats?.unlabelledCount ?? 0)}
-              </div>
-              <div className="text-xs text-muted-foreground">
-                Across all pages
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Tax Summary Cards */}
+        {/* ── P&L Summary ── */}
         {stats?.pnl && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <h2 className="text-lg font-semibold">P&L Summary</h2>
-              <Select
-                value={
-                  dateFrom && dateTo
-                    && dateFrom.getMonth() === 0 && dateFrom.getDate() === 1
-                    && dateTo.getMonth() === 11 && dateTo.getDate() === 31
-                    && dateFrom.getFullYear() === dateTo.getFullYear()
-                    ? dateFrom.getFullYear().toString()
-                    : "all"
-                }
-                onValueChange={(value) => {
-                  if (value === "all") {
-                    setDateFrom(undefined);
-                    setDateTo(undefined);
-                  } else {
-                    const year = parseInt(value);
-                    setDateFrom(new Date(year, 0, 1));
-                    setDateTo(new Date(year, 11, 31));
-                  }
-                  setCurrentPage(1);
-                }}
-              >
-                <SelectTrigger className="w-[130px] h-9">
-                  <SelectValue placeholder="All Years" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Years</SelectItem>
-                  {Array.from({ length: new Date().getFullYear() - 2020 + 1 }, (_, i) => new Date().getFullYear() - i).map(year => (
-                    <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <h2 className="text-lg font-semibold">P&L Summary</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg font-semibold">Capital Gains Summary</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-sm text-muted-foreground">Cost Basis</p>
+                      <p className="text-xl font-bold text-muted-foreground">
+                        ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Proceeds</p>
+                      <p className="text-xl font-bold text-muted-foreground">
+                        ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Net Gain / Loss</p>
+                      <p className={cn(
+                        "text-xl font-bold",
+                        stats.pnl.netGain >= 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-rose-600 dark:text-rose-400"
+                      )}>
+                        {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {stats.income && stats.income.count > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg font-semibold">Ordinary Income</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Income Events</p>
+                        <p className="text-xl font-bold text-muted-foreground">{stats.income.count}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Total Income</p>
+                        <p className="text-xl font-bold text-amber-600 dark:text-amber-400">
+                          ${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-3">
+                      Airdrops, staking rewards, and vesting claims taxed as ordinary income at FMV on receipt.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── More Stats (collapsible) ── */}
+        {showMoreStats && (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Buy</CardTitle>
+                  <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{isLoadingTransactions ? "..." : (stats?.buyCount ?? 0)}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Sell</CardTitle>
+                  <ArrowDownRight className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{isLoadingTransactions ? "..." : (stats?.sellCount ?? 0)}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Other</CardTitle>
+                  <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{isLoadingTransactions ? "..." : (stats?.otherCount ?? 0)}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Unlabelled</CardTitle>
+                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{isLoadingTransactions ? "..." : (stats?.unlabelledCount ?? 0)}</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Transaction Labeling */}
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg font-semibold">Capital Gains Summary</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Cost Basis</p>
-                    <p className="text-xl font-bold text-muted-foreground">
-                      ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
+              <CardContent className="pt-6">
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h3 className="text-lg font-semibold">Transaction Labeling</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {isLoadingTransactions
+                          ? "Loading..."
+                          : `${identifiedCount} of ${currentPageCount} transactions labeled (page ${currentPage} of ${totalPages})`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg font-bold">{identificationPercentage}%</span>
+                      {identificationPercentage === 100 ? (
+                        <Check className="h-5 w-5 text-emerald-500" />
+                      ) : (
+                        <AlertCircle className="h-5 w-5 text-amber-500" />
+                      )}
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Proceeds</p>
-                    <p className="text-xl font-bold text-muted-foreground">
-                      ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Net Gain / Loss</p>
-                    <p className={cn(
-                      "text-xl font-bold",
-                      stats.pnl.netGain >= 0
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-rose-600 dark:text-rose-400"
-                    )}>
-                      {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
+                  <Progress value={identificationPercentage} className="h-2 w-full" />
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-1">
+                      <span className="inline-flex h-3 w-3 rounded-full bg-emerald-500"></span>
+                      <span>Labeled: {identifiedCount}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="inline-flex h-3 w-3 rounded-full bg-amber-500"></span>
+                      <span>Need Labeling: {needsIdentificationCount}</span>
+                    </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
-
-            {stats.income && stats.income.count > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-lg font-semibold">Ordinary Income</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Income Events</p>
-                      <p className="text-xl font-bold text-muted-foreground">
-                        {stats.income.count}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Total Income</p>
-                      <p className="text-xl font-bold text-amber-600 dark:text-amber-400">
-                        ${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-3">
-                    Airdrops, staking rewards, and vesting claims taxed as ordinary income at FMV on receipt.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
-          </div>
+          </>
         )}
 
-        {/* Add Transaction Identification Card */}
-        <Card>
-          <CardContent className="pt-6">
-            {/* Transaction identification section only */}
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="text-lg font-semibold">Transaction Labeling</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {isLoadingTransactions 
-                      ? "Loading..." 
-                      : `${identifiedCount} of ${currentPageCount} transactions labeled (page ${currentPage} of ${totalPages})`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold">{identificationPercentage}%</span>
-                  {identificationPercentage === 100 ? (
-                    <Check className="h-5 w-5 text-emerald-500" />
-                  ) : (
-                    <AlertCircle className="h-5 w-5 text-amber-500" />
-                  )}
-                </div>
-              </div>
-              <Progress value={identificationPercentage} className="h-2 w-full" />
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-1">
-                  <span className="inline-flex h-3 w-3 rounded-full bg-emerald-500"></span>
-                  <span>Labeled: {identifiedCount}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="inline-flex h-3 w-3 rounded-full bg-amber-500"></span>
-                  <span>Need Labeling: {needsIdentificationCount}</span>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <div className="space-y-4">
-          {/* Search, filters, and sorting section */}
-          <div className="flex flex-col gap-4">
-            {/* Search bar */}
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search transactions..."
-                className="pl-8"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-            
-            {/* Filters and sorting controls */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Filter buttons */}
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant={showOnlyUnlabelled ? "default" : "outline"}
-                  size="sm"
-                  onClick={toggleUnlabelledFilter}
-                  className={cn(
-                    "h-9 transition-colors",
-                    showOnlyUnlabelled && "bg-primary text-primary-foreground hover:bg-primary/90"
-                  )}
-                >
-                  <Tag className="mr-2 h-4 w-4" />
-                  {showOnlyUnlabelled ? "Show All" : "Only Unlabelled"}
-                </Button>
-                
-                <Button
-                  variant={hideZeroTransactions ? "default" : "outline"}
-                  size="sm"
-                  onClick={toggleHideZeroTransactions}
-                  className={cn(
-                    "h-9 transition-colors",
-                    hideZeroTransactions && "bg-orange-500 text-white hover:bg-orange-600"
-                  )}
-                >
-                  <EyeOff className="mr-2 h-4 w-4" />
-                  {hideZeroTransactions ? "Show Zero Tx" : "Hide Zero Tx"}
-                </Button>
-                
-                <Button
-                  variant={hideSpamTransactions ? "default" : "outline"}
-                  size="sm"
-                  onClick={toggleHideSpamTransactions}
-                  className={cn(
-                    "h-9 transition-colors",
-                    hideSpamTransactions && "bg-amber-500 text-white hover:bg-amber-600"
-                  )}
-                >
-                  <EyeOff className="mr-2 h-4 w-4" />
-                  {hideSpamTransactions ? "Show Spam Tx" : "Hide Spam Tx"}
-                </Button>
-
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={cn(
-                        "h-9 transition-colors",
-                        dateFrom && "bg-blue-500 text-white hover:bg-blue-600"
-                      )}
-                    >
-                      <Calendar className="mr-2 h-4 w-4" />
-                      {dateFrom ? format(dateFrom, "MMM d, yyyy") : "From"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      mode="single"
-                      selected={dateFrom}
-                      onSelect={(date) => {
-                        setDateFrom(date);
-                        setCurrentPage(1);
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className={cn(
-                        "h-9 transition-colors",
-                        dateTo && "bg-blue-500 text-white hover:bg-blue-600"
-                      )}
-                    >
-                      <Calendar className="mr-2 h-4 w-4" />
-                      {dateTo ? format(dateTo, "MMM d, yyyy") : "To"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <CalendarComponent
-                      mode="single"
-                      selected={dateTo}
-                      onSelect={(date) => {
-                        setDateTo(date);
-                        setCurrentPage(1);
-                      }}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
-
-                {(dateFrom || dateTo) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-9 px-2"
-                    onClick={() => {
-                      setDateFrom(undefined);
-                      setDateTo(undefined);
-                      setCurrentPage(1);
-                    }}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
-
-                {wallets.length > 0 && (
-                  <Select value={walletFilter} onValueChange={(value) => {
-                    setWalletFilter(value === "all" ? "" : value);
-                    setCurrentPage(1);
-                  }}>
-                    <SelectTrigger className="h-9 w-[200px]">
-                      <SelectValue placeholder="All Wallets" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Wallets</SelectItem>
-                      {wallets.map((w) => (
-                        <SelectItem key={w.id} value={w.address}>
-                          {w.name} ({w.address.slice(0, 6)}...{w.address.slice(-4)})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-              
-              {/* Sorting dropdown */}
-              <div className="w-full">
-                <Select value={sortOption} onValueChange={setSortOption}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Sort by">
-                      <div className="flex items-center">
-                        <ArrowUpDown className="mr-2 h-3.5 w-3.5" />
-                        <span>
-                          {sortOption === "date-desc"
-                            ? "Newest First"
-                            : sortOption === "date-asc"
-                            ? "Oldest First"
-                            : sortOption === "value-desc"
-                            ? "Highest Value"
-                            : sortOption === "value-asc"
-                            ? "Lowest Value"
-                            : sortOption === "asset-asc"
-                            ? "Asset A-Z"
-                            : sortOption === "asset-desc"
-                            ? "Asset Z-A"
-                            : sortOption === "type-asc"
-                            ? "Type A-Z"
-                            : "Type Z-A"}
-                        </span>
-                      </div>
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="date-desc">Newest First</SelectItem>
-                    <SelectItem value="date-asc">Oldest First</SelectItem>
-                    <SelectItem value="value-desc">Highest Value</SelectItem>
-                    <SelectItem value="value-asc">Lowest Value</SelectItem>
-                    <SelectItem value="asset-asc">Asset A-Z</SelectItem>
-                    <SelectItem value="asset-desc">Asset Z-A</SelectItem>
-                    <SelectItem value="type-asc">Type A-Z</SelectItem>
-                    <SelectItem value="type-desc">Type Z-A</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            
-            {/* Transaction type tabs in a dedicated line with equal width */}
-            <div className="w-full">
-              <Tabs defaultValue="all" className="w-full" onValueChange={setFilter} value={filter}>
-                <TabsList className="w-full flex justify-between">
-                  <TabsTrigger value="all" className="flex-1">All</TabsTrigger>
-                  <TabsTrigger value="buy" className="flex-1">Buy</TabsTrigger>
-                  <TabsTrigger value="sell" className="flex-1">Sell</TabsTrigger>
-                  <TabsTrigger value="transfer" className="flex-1">Transfers</TabsTrigger>
-                  <TabsTrigger value="swap" className="flex-1">Swaps</TabsTrigger>
-                  <TabsTrigger value="stake" className="flex-1">Staking</TabsTrigger>
-                  <TabsTrigger value="defi" className="flex-1">DeFi</TabsTrigger>
-                  <TabsTrigger value="nft" className="flex-1">NFT</TabsTrigger>
-                  <TabsTrigger value="income" className="flex-1">Income</TabsTrigger>
-                  <TabsTrigger value="other" className="flex-1">Other</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
-
-            {/* Pagination and items per page controls */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pt-2">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="itemsPerPage" className="whitespace-nowrap text-xs">Items per page:</Label>
-                <Select value={itemsPerPage.toString()} onValueChange={(value) => {
-                  setItemsPerPage(parseInt(value));
-                  setCurrentPage(1);
-                }}>
-                  <SelectTrigger className="h-8 w-[90px]">
-                    <SelectValue placeholder="10" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
-                    <SelectItem value="250">250</SelectItem>
-                    <SelectItem value="500">500</SelectItem>
-                  </SelectContent>
-                </Select>
-                <span className="text-xs text-muted-foreground">
-                  {isLoadingTransactions 
-                    ? "Loading..." 
-                    : `Showing ${startIndex + 1}-${endIndex} of ${totalCount}`}
-                </span>
-              </div>
-            </div>
+        {/* ── Filters Row: Search + Year + Filters Popover ── */}
+        <div className="flex items-center gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search transactions..."
+              className="pl-8"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
 
-          <Card>
-            <CardContent className="p-0" data-onboarding="review-transactions">
-              <div className="overflow-x-auto">
-                <Table className="transaction-table font-mono">
-                  <TableHeader>
-                    <TableRow className="h-auto">
-                      {isBulkMode && (
-                        <TableHead className="w-12">
-                          <Checkbox
-                            checked={selectedTransactionIds.size === transactions.length && transactions.length > 0}
-                            onCheckedChange={handleBulkSelectAll}
-                          />
-                        </TableHead>
+          <Select value={yearValue} onValueChange={handleYearChange}>
+            <SelectTrigger className="w-[130px] h-9">
+              <SelectValue placeholder="All Years" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Years</SelectItem>
+              {Array.from({ length: new Date().getFullYear() - 2020 + 1 }, (_, i) => new Date().getFullYear() - i).map(year => (
+                <SelectItem key={year} value={year.toString()}>{year}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn("h-9", activeFilterCount > 0 && "bg-primary text-primary-foreground hover:bg-primary/90")}
+              >
+                <Filter className="mr-2 h-4 w-4" />
+                Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80" align="end">
+              <div className="space-y-4">
+                {/* Type filter */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Transaction Type</Label>
+                  <Select value={filter} onValueChange={(value) => { setFilter(value); setCurrentPage(1); }}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue placeholder="All Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Types</SelectItem>
+                      <SelectItem value="buy">Buy</SelectItem>
+                      <SelectItem value="sell">Sell</SelectItem>
+                      <SelectItem value="transfer">Transfers</SelectItem>
+                      <SelectItem value="swap">Swaps</SelectItem>
+                      <SelectItem value="stake">Staking</SelectItem>
+                      <SelectItem value="defi">DeFi</SelectItem>
+                      <SelectItem value="nft">NFT</SelectItem>
+                      <SelectItem value="income">Income</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Wallet filter */}
+                {wallets.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Wallet</Label>
+                    <Select value={walletFilter || "all"} onValueChange={(value) => { setWalletFilter(value === "all" ? "" : value); setCurrentPage(1); }}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="All Wallets" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Wallets</SelectItem>
+                        {wallets.map((w) => (
+                          <SelectItem key={w.id} value={w.address}>
+                            {w.name} ({w.address.slice(0, 6)}...{w.address.slice(-4)})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Toggle filters */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Only Unlabelled</Label>
+                    <Checkbox checked={showOnlyUnlabelled} onCheckedChange={() => toggleUnlabelledFilter()} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Hide $0 Transactions</Label>
+                    <Checkbox checked={hideZeroTransactions} onCheckedChange={() => toggleHideZeroTransactions()} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Hide Spam</Label>
+                    <Checkbox checked={hideSpamTransactions} onCheckedChange={() => toggleHideSpamTransactions()} />
+                  </div>
+                </div>
+
+                {/* Sort */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Sort By</Label>
+                  <Select value={sortOption} onValueChange={setSortOption}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="date-desc">Newest First</SelectItem>
+                      <SelectItem value="date-asc">Oldest First</SelectItem>
+                      <SelectItem value="value-desc">Highest Value</SelectItem>
+                      <SelectItem value="value-asc">Lowest Value</SelectItem>
+                      <SelectItem value="asset-asc">Asset A-Z</SelectItem>
+                      <SelectItem value="asset-desc">Asset Z-A</SelectItem>
+                      <SelectItem value="type-asc">Type A-Z</SelectItem>
+                      <SelectItem value="type-desc">Type Z-A</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Date range */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Date Range</Label>
+                  <div className="flex items-center gap-2">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className={cn("h-9 flex-1 justify-start text-left font-normal", dateFrom && "text-foreground")}>
+                          <Calendar className="mr-2 h-4 w-4" />
+                          {dateFrom ? format(dateFrom, "MMM d, yyyy") : "From"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarComponent
+                          mode="single"
+                          selected={dateFrom}
+                          onSelect={(date) => { setDateFrom(date); setCurrentPage(1); }}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button variant="outline" size="sm" className={cn("h-9 flex-1 justify-start text-left font-normal", dateTo && "text-foreground")}>
+                          <Calendar className="mr-2 h-4 w-4" />
+                          {dateTo ? format(dateTo, "MMM d, yyyy") : "To"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <CalendarComponent
+                          mode="single"
+                          selected={dateTo}
+                          onSelect={(date) => { setDateTo(date); setCurrentPage(1); }}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    {(dateFrom || dateTo) && (
+                      <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => { setDateFrom(undefined); setDateTo(undefined); setCurrentPage(1); }}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Items per page */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Items Per Page</Label>
+                  <Select value={itemsPerPage.toString()} onValueChange={(value) => { setItemsPerPage(parseInt(value)); setCurrentPage(1); }}>
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                      <SelectItem value="250">250</SelectItem>
+                      <SelectItem value="500">500</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+
+        {/* ── Table Controls ── */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button
+              variant={showAdvancedColumns ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setShowAdvancedColumns(!showAdvancedColumns)}
+            >
+              {showAdvancedColumns ? "Simple View" : "Advanced"}
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {isLoadingTransactions
+                ? "Loading..."
+                : `Showing ${totalCount > 0 ? startIndex + 1 : 0}-${endIndex} of ${totalCount}`}
+            </span>
+          </div>
+        </div>
+
+        {/* ── Transaction Table ── */}
+        <Card>
+          <CardContent className="p-0" data-onboarding="review-transactions">
+            <div className="overflow-x-auto">
+              <Table className="transaction-table font-mono">
+                <TableHeader>
+                  <TableRow className="h-auto">
+                    {showAdvancedColumns && isBulkMode && (
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={selectedTransactionIds.size === transactions.length && transactions.length > 0}
+                          onCheckedChange={handleBulkSelectAll}
+                        />
+                      </TableHead>
+                    )}
+                    <TableHead className="font-medium font-mono">Type</TableHead>
+                    <TableHead className="font-medium font-mono">Asset(s)</TableHead>
+                    <TableHead className="font-medium font-mono">Amount</TableHead>
+                    <TableHead className="text-right font-medium font-mono">Value</TableHead>
+                    <TableHead className="text-right font-medium font-mono">Gain/Loss</TableHead>
+                    <TableHead className="text-right font-medium font-mono">Date</TableHead>
+                    {showAdvancedColumns && <TableHead className="text-right font-medium font-mono">Exchange</TableHead>}
+                    {showAdvancedColumns && <TableHead className="text-right font-medium font-mono">Identified</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {currentTransactions.map((transaction) => (
+                    <TableRow
+                      key={transaction.id}
+                      className={cn(
+                        "h-auto cursor-pointer hover:bg-muted/50",
+                        selectedTransactionIds.has(transaction.id) && "bg-muted"
                       )}
-                      <TableHead className="font-medium font-mono">Type</TableHead>
-                      <TableHead className="font-medium font-mono">Sent</TableHead>
-                      <TableHead className="font-medium font-mono">Received</TableHead>
-                      <TableHead className="text-right font-medium font-mono">Value</TableHead>
-                      <TableHead className="text-right font-medium font-mono">Exchange</TableHead>
-                      <TableHead className="text-right font-medium font-mono">Date</TableHead>
-                      <TableHead className="text-right font-medium font-mono">Identified</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {currentTransactions.map((transaction) => (
-                      <TableRow 
-                        key={transaction.id} 
-                        className={cn(
-                          "h-auto cursor-pointer hover:bg-muted/50",
-                          selectedTransactionIds.has(transaction.id) && "bg-muted"
-                        )}
-                        onClick={() => !isBulkMode && handleOpenDetail(transaction)}
-                      >
-                        {isBulkMode && (
-                          <TableCell className="w-12">
-                            <Checkbox
-                              checked={selectedTransactionIds.has(transaction.id)}
-                              onCheckedChange={(checked) => 
-                                handleBulkSelect(transaction.id, checked as boolean)
-                              }
-                              onClick={(e) => e.stopPropagation()}
-                            />
-                          </TableCell>
-                        )}
-                        <TableCell className="font-mono">
-                          {editingTransactionId === transaction.id && editingField === 'type' ? (
-                            <div className="flex items-center space-x-2">
-                              <Select
-                                value={editingValue}
-                                onValueChange={(value) => setEditingValue(value)}
-                              >
-                                <SelectTrigger className="h-8 w-full">
-                                  <SelectValue placeholder="Select type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {transactionTypes.map((type) => (
-                                    <SelectItem key={type.value} value={type.value}>
-                                      {type.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <Button 
-                                onClick={() => handleSaveEdit(transaction.id, 'type')} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <Check className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                onClick={handleCancelEditing} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <div 
-                              className="relative group"
-                              onMouseEnter={() => handleMouseEnter('type')}
-                              onMouseLeave={() => handleMouseLeave('type')}
-                            >
-                          <span
-                                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${getCategoryBadgeColor(transaction.type)}`}
+                      onClick={() => !isBulkMode && handleOpenDetail(transaction)}
+                    >
+                      {/* Checkbox (advanced + bulk) */}
+                      {showAdvancedColumns && isBulkMode && (
+                        <TableCell className="w-12">
+                          <Checkbox
+                            checked={selectedTransactionIds.has(transaction.id)}
+                            onCheckedChange={(checked) => handleBulkSelect(transaction.id, checked as boolean)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </TableCell>
+                      )}
+
+                      {/* Type */}
+                      <TableCell className="font-mono">
+                        {editingTransactionId === transaction.id && editingField === 'type' ? (
+                          <div className="flex items-center space-x-2">
+                            <Select value={editingValue} onValueChange={(value) => setEditingValue(value)}>
+                              <SelectTrigger className="h-8 w-full">
+                                <SelectValue placeholder="Select type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {transactionTypes.map((type) => (
+                                  <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Button onClick={() => handleSaveEdit(transaction.id, 'type')} variant="outline" size="sm" className="h-8 px-2">
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button onClick={handleCancelEditing} variant="outline" size="sm" className="h-8 px-2">
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div
+                            className="relative group"
+                            onMouseEnter={() => handleMouseEnter('type')}
+                            onMouseLeave={() => handleMouseLeave('type')}
                           >
-                            {formatTypeForDisplay(transaction.type)}
-                          </span>
-                              
-                              {editableFields.type && (
-                                <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                        <ChevronDown className="h-3 w-3" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent side="right" align="start">
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Buy')}>Buy</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Sell')}>Sell</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Receive')}>Receive</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Send')}>Send</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Swap')}>Swap</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Stake')}>Stake</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Bridge')}>Bridge</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'DCA')}>DCA</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'NFT Purchase')}>NFT Purchase</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Transfer')}>Transfer</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Add Liquidity')}>Add Liquidity</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Zero Transaction')}>Zero Transaction</DropdownMenuItem>
-                                      <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Spam')}>Spam</DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </TableCell>
-                        
-                        {/* Sent (Out) Column */}
-                        <TableCell className="font-mono text-xs">
-                          {transaction.outAsset ? (
-                            <div className="flex flex-col">
-                              <span className="font-medium text-rose-600 dark:text-rose-400">{transaction.outAsset}</span>
-                              <span className="text-muted-foreground">
-                                {transaction.outAmount != null && (
-                                  transaction.outAmount < 0.01 && transaction.outAmount > 0
-                                    ? transaction.outAmount.toExponential(2)
-                                    : transaction.outAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })
-                                )}
-                              </span>
-                              {transaction.outPricePerUnit != null && transaction.outPricePerUnit > 0 && (
-                                <span className="text-muted-foreground text-[10px]">
-                                  @ ${transaction.outPricePerUnit < 0.01
-                                    ? transaction.outPricePerUnit.toFixed(6)
-                                    : transaction.outPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-
-                        {/* Received (In) Column */}
-                        <TableCell className="font-mono text-xs">
-                          {transaction.inAsset ? (
-                            <div className="flex flex-col">
-                              <span className="font-medium text-emerald-600 dark:text-emerald-400">{transaction.inAsset}</span>
-                              <span className="text-muted-foreground">
-                                {transaction.inAmount != null && (
-                                  transaction.inAmount < 0.01 && transaction.inAmount > 0
-                                    ? transaction.inAmount.toExponential(2)
-                                    : transaction.inAmount.toLocaleString(undefined, { maximumFractionDigits: 6 })
-                                )}
-                              </span>
-                              {transaction.inPricePerUnit != null && transaction.inPricePerUnit > 0 && (
-                                <span className="text-muted-foreground text-[10px]">
-                                  @ ${transaction.inPricePerUnit < 0.01
-                                    ? transaction.inPricePerUnit.toFixed(6)
-                                    : transaction.inPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-
-                        {/* Value Column */}
-                        <TableCell className="text-right font-mono">
-                          <div className="flex flex-col items-end">
-                            <span className={cn(
-                              "crypto-amount",
-                              transaction.valueUsd >= 0
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-rose-600 dark:text-rose-400"
-                            )}>
-                              {transaction.valueUsd >= 0 ? "+" : "-"}${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${getCategoryBadgeColor(transaction.type)}`}>
+                              {formatTypeForDisplay(transaction.type)}
                             </span>
-                            {transaction.costBasisComputed && transaction.costBasisUsd !== null && transaction.costBasisUsd > 0 && (
-                              <span className="text-muted-foreground text-[10px]">
-                                basis: ${transaction.costBasisUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                              </span>
+                            {editableFields.type && (
+                              <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                                      <ChevronDown className="h-3 w-3" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent side="right" align="start">
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Buy')}>Buy</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Sell')}>Sell</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Receive')}>Receive</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Send')}>Send</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Swap')}>Swap</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Stake')}>Stake</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Bridge')}>Bridge</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'DCA')}>DCA</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'NFT Purchase')}>NFT Purchase</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Transfer')}>Transfer</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Add Liquidity')}>Add Liquidity</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Zero Transaction')}>Zero Transaction</DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Spam')}>Spam</DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
                             )}
                           </div>
-                        </TableCell>
-                        
+                        )}
+                      </TableCell>
+
+                      {/* Asset(s) - combined */}
+                      <TableCell className="font-mono text-xs">
+                        {transaction.outAsset && transaction.inAsset ? (
+                          <span>
+                            <span className="text-rose-600 dark:text-rose-400">{transaction.outAsset}</span>
+                            <span className="text-muted-foreground mx-1">{"\u2192"}</span>
+                            <span className="text-emerald-600 dark:text-emerald-400">{transaction.inAsset}</span>
+                          </span>
+                        ) : transaction.outAsset ? (
+                          <span className="text-rose-600 dark:text-rose-400">{transaction.outAsset}</span>
+                        ) : transaction.inAsset ? (
+                          <span className="text-emerald-600 dark:text-emerald-400">{transaction.inAsset}</span>
+                        ) : (
+                          <span className="text-muted-foreground">{"\u2014"}</span>
+                        )}
+                      </TableCell>
+
+                      {/* Amount - combined */}
+                      <TableCell className="font-mono text-xs">
+                        {transaction.outAmount != null && transaction.inAmount != null ? (
+                          <span>
+                            <span className="text-muted-foreground">{formatAmount(transaction.outAmount)}</span>
+                            <span className="text-muted-foreground mx-1">{"\u2192"}</span>
+                            <span className="text-muted-foreground">{formatAmount(transaction.inAmount)}</span>
+                          </span>
+                        ) : transaction.outAmount != null ? (
+                          <span className="text-muted-foreground">{formatAmount(transaction.outAmount)}</span>
+                        ) : transaction.inAmount != null ? (
+                          <span className="text-muted-foreground">{formatAmount(transaction.inAmount)}</span>
+                        ) : (
+                          <span className="text-muted-foreground">{"\u2014"}</span>
+                        )}
+                      </TableCell>
+
+                      {/* Value */}
+                      <TableCell className="text-right font-mono">
+                        <span className={cn(
+                          "crypto-amount",
+                          transaction.valueUsd >= 0
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-rose-600 dark:text-rose-400"
+                        )}>
+                          {transaction.valueUsd >= 0 ? "+" : "-"}${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </TableCell>
+
+                      {/* Gain/Loss */}
+                      <TableCell className="text-right font-mono">
+                        {transaction.gainLossUsd != null ? (
+                          <span className={cn(
+                            "text-xs",
+                            transaction.gainLossUsd >= 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-rose-600 dark:text-rose-400"
+                          )}>
+                            {transaction.gainLossUsd >= 0 ? "+" : "-"}${Math.abs(transaction.gainLossUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">{"\u2014"}</span>
+                        )}
+                      </TableCell>
+
+                      {/* Date */}
+                      <TableCell className="text-right font-mono text-xs">
+                        {editingTransactionId === transaction.id && editingField === 'date' ? (
+                          <div className="flex items-center justify-end space-x-2">
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" className="h-8 pl-3 text-left font-normal w-full text-xs">
+                                  <CalendarIcon className="mr-2 h-4 w-4" />
+                                  {editingValue ? format(new Date(editingValue), "MM/dd/yyyy") : "Select date"}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0" align="start">
+                                <CalendarComponent
+                                  mode="single"
+                                  selected={editingValue ? new Date(editingValue) : undefined}
+                                  onSelect={(date: Date | undefined) => date && setEditingValue(format(date, 'yyyy-MM-dd'))}
+                                  initialFocus
+                                />
+                              </PopoverContent>
+                            </Popover>
+                            <Button onClick={() => handleSaveEdit(transaction.id, 'date')} variant="outline" size="sm" className="h-8 px-2">
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button onClick={handleCancelEditing} variant="outline" size="sm" className="h-8 px-2">
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div
+                            className="relative group"
+                            onMouseEnter={() => handleMouseEnter('date')}
+                            onMouseLeave={() => handleMouseLeave('date')}
+                          >
+                            <div className="flex justify-end text-xs">
+                              {format(new Date(transaction.date), "MM/dd/yyyy")}
+                            </div>
+                            {editableFields.date && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="absolute left-0 top-0 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={() => handleStartEditing(transaction.id, 'date', transaction.date)}
+                              >
+                                <CalendarIcon className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </TableCell>
+
+                      {/* Exchange (advanced) */}
+                      {showAdvancedColumns && (
                         <TableCell className="text-right font-mono text-xs">
                           {editingTransactionId === transaction.id && editingField === 'exchange' ? (
                             <div className="flex items-center justify-end space-x-2">
-                              <Input 
-                                value={editingValue} 
+                              <Input
+                                value={editingValue}
                                 onChange={(e) => setEditingValue(e.target.value)}
                                 className="h-8 w-full text-xs"
                               />
-                              <Button 
-                                onClick={() => handleSaveEdit(transaction.id, 'exchange')} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
+                              <Button onClick={() => handleSaveEdit(transaction.id, 'exchange')} variant="outline" size="sm" className="h-8 px-2">
                                 <Check className="h-4 w-4" />
                               </Button>
-                              <Button 
-                                onClick={handleCancelEditing} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
+                              <Button onClick={handleCancelEditing} variant="outline" size="sm" className="h-8 px-2">
                                 <X className="h-4 w-4" />
                               </Button>
                             </div>
                           ) : (
-                            <div 
+                            <div
                               className="relative group"
                               onMouseEnter={() => handleMouseEnter('exchange')}
                               onMouseLeave={() => handleMouseLeave('exchange')}
                             >
-                              <div className="flex justify-end text-xs">
-                                {transaction.exchange}
-                              </div>
+                              <div className="flex justify-end text-xs">{transaction.exchange}</div>
                               {editableFields.exchange && (
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
                                   className="absolute left-0 top-0 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                                   onClick={() => handleStartEditing(transaction.id, 'exchange', transaction.exchange)}
                                 >
@@ -2032,82 +1871,26 @@ function TransactionsContent() {
                             </div>
                           )}
                         </TableCell>
-                        
-                        <TableCell className="text-right font-mono text-xs">
-                          {editingTransactionId === transaction.id && editingField === 'date' ? (
-                            <div className="flex items-center justify-end space-x-2">
-                              <Popover>
-                                <PopoverTrigger asChild>
-                                  <Button variant="outline" className="h-8 pl-3 text-left font-normal w-full text-xs">
-                                    <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {editingValue ? format(new Date(editingValue), "MM/dd/yyyy") : "Select date"}
-                                  </Button>
-                                </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start">
-                                  <CalendarComponent
-                                    mode="single"
-                                    selected={editingValue ? new Date(editingValue) : undefined}
-                                    onSelect={(date: Date | undefined) => date && setEditingValue(format(date, 'yyyy-MM-dd'))}
-                                    initialFocus
-                                  />
-                                </PopoverContent>
-                              </Popover>
-                              <Button 
-                                onClick={() => handleSaveEdit(transaction.id, 'date')} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <Check className="h-4 w-4" />
-                              </Button>
-                              <Button 
-                                onClick={handleCancelEditing} 
-                                variant="outline" 
-                                size="sm"
-                                className="h-8 px-2"
-                              >
-                                <X className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          ) : (
-                            <div 
-                              className="relative group"
-                              onMouseEnter={() => handleMouseEnter('date')}
-                              onMouseLeave={() => handleMouseLeave('date')}
-                            >
-                              <div className="flex justify-end text-xs">
-                                {format(new Date(transaction.date), "MM/dd/yyyy")}
-                              </div>
-                              {editableFields.date && (
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  className="absolute left-0 top-0 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => handleStartEditing(transaction.id, 'date', transaction.date)}
-                                >
-                                  <CalendarIcon className="h-3 w-3" />
-                                </Button>
-                              )}
-                            </div>
-                          )}
-                        </TableCell>
-                        
+                      )}
+
+                      {/* Identified (advanced) */}
+                      {showAdvancedColumns && (
                         <TableCell className="text-right font-mono">
                           <div className="relative group flex justify-end"
                             onMouseEnter={() => handleMouseEnter('identified')}
                             onMouseLeave={() => handleMouseLeave('identified')}
                           >
-                          {transaction.identified ? (
+                            {transaction.identified ? (
                               <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
                                 <Check className="mr-0.5 h-2.5 w-2.5" />
-                              Identified
-                            </span>
-                          ) : (
+                                Identified
+                              </span>
+                            ) : (
                               <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
                                 <AlertCircle className="mr-0.5 h-2.5 w-2.5" />
                                 Needs ID
-                            </span>
-                          )}
+                              </span>
+                            )}
                             {editableFields.identified && (
                               <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <DropdownMenu>
@@ -2131,126 +1914,119 @@ function TransactionsContent() {
                             )}
                           </div>
                         </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                {isLoadingTransactions && (
-                  <div className="p-8 text-center">
-                    <div className="flex items-center justify-center gap-2">
-                      <svg className="animate-spin h-5 w-5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      <p className="text-muted-foreground">Loading transactions...</p>
-                    </div>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {isLoadingTransactions && (
+                <div className="p-8 text-center">
+                  <div className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin h-5 w-5 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <p className="text-muted-foreground">Loading transactions...</p>
                   </div>
-                )}
-                {!isLoadingTransactions && transactions.length === 0 && (
-                  <div className="p-8 text-center">
-                    <p className="text-muted-foreground">No transactions found</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Pagination control at the bottom */}
-              {!isLoadingTransactions && transactions.length > 0 && (
-                <div className="flex items-center justify-center py-4">
-                  <Pagination>
-                    <PaginationContent>
-                      <PaginationItem>
-                        <PaginationPrevious 
-                          onClick={() => currentPage > 1 && handlePageChange(currentPage - 1)}
-                          className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                        />
-                      </PaginationItem>
-
-                      {/* Generate page numbers */}
-                      {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
-                        // For pagination with ellipsis
-                        let pageNumber: number;
-                        
-                        if (totalPages <= 7) {
-                          // Less than 7 pages, show all
-                          pageNumber = i + 1;
-                        } else if (currentPage <= 3) {
-                          // Near the start
-                          if (i < 5) {
-                            pageNumber = i + 1;
-                          } else if (i === 5) {
-                            return (
-                              <PaginationItem key="ellipsis-end">
-                                <PaginationEllipsis />
-                              </PaginationItem>
-                            );
-                          } else {
-                            pageNumber = totalPages;
-                          }
-                        } else if (currentPage >= totalPages - 2) {
-                          // Near the end
-                          if (i === 0) {
-                            pageNumber = 1;
-                          } else if (i === 1) {
-                            return (
-                              <PaginationItem key="ellipsis-start">
-                                <PaginationEllipsis />
-                              </PaginationItem>
-                            );
-                          } else {
-                            pageNumber = totalPages - (6 - i);
-                          }
-                        } else {
-                          // In the middle
-                          if (i === 0) {
-                            pageNumber = 1;
-                          } else if (i === 1) {
-                            return (
-                              <PaginationItem key="ellipsis-start">
-                                <PaginationEllipsis />
-                              </PaginationItem>
-                            );
-                          } else if (i === 5) {
-                            return (
-                              <PaginationItem key="ellipsis-end">
-                                <PaginationEllipsis />
-                              </PaginationItem>
-                            );
-                          } else if (i === 6) {
-                            pageNumber = totalPages;
-                          } else {
-                            pageNumber = currentPage + (i - 3);
-                          }
-                        }
-
-                        // Return page number link
-                        if (typeof pageNumber === 'number') {
-                          return (
-                            <PaginationItem key={pageNumber}>
-                              <PaginationLink
-                                onClick={() => handlePageChange(pageNumber)}
-                                isActive={currentPage === pageNumber}
-                              >
-                                {pageNumber}
-                              </PaginationLink>
-                            </PaginationItem>
-                          );
-                        }
-                        return null;
-                      })}
-
-                      <PaginationItem>
-                        <PaginationNext 
-                          onClick={() => currentPage < totalPages && handlePageChange(currentPage + 1)}
-                          className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
-                        />
-                      </PaginationItem>
-                    </PaginationContent>
-                  </Pagination>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </div>
+              {!isLoadingTransactions && transactions.length === 0 && (
+                <div className="p-8 text-center">
+                  <p className="text-muted-foreground">No transactions found</p>
+                </div>
+              )}
+            </div>
+
+            {/* Pagination */}
+            {!isLoadingTransactions && transactions.length > 0 && (
+              <div className="flex items-center justify-center py-4">
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        onClick={() => currentPage > 1 && handlePageChange(currentPage - 1)}
+                        className={currentPage === 1 ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+
+                    {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
+                      let pageNumber: number;
+
+                      if (totalPages <= 7) {
+                        pageNumber = i + 1;
+                      } else if (currentPage <= 3) {
+                        if (i < 5) {
+                          pageNumber = i + 1;
+                        } else if (i === 5) {
+                          return (
+                            <PaginationItem key="ellipsis-end">
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          );
+                        } else {
+                          pageNumber = totalPages;
+                        }
+                      } else if (currentPage >= totalPages - 2) {
+                        if (i === 0) {
+                          pageNumber = 1;
+                        } else if (i === 1) {
+                          return (
+                            <PaginationItem key="ellipsis-start">
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          );
+                        } else {
+                          pageNumber = totalPages - (6 - i);
+                        }
+                      } else {
+                        if (i === 0) {
+                          pageNumber = 1;
+                        } else if (i === 1) {
+                          return (
+                            <PaginationItem key="ellipsis-start">
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          );
+                        } else if (i === 5) {
+                          return (
+                            <PaginationItem key="ellipsis-end">
+                              <PaginationEllipsis />
+                            </PaginationItem>
+                          );
+                        } else if (i === 6) {
+                          pageNumber = totalPages;
+                        } else {
+                          pageNumber = currentPage + (i - 3);
+                        }
+                      }
+
+                      if (typeof pageNumber === 'number') {
+                        return (
+                          <PaginationItem key={pageNumber}>
+                            <PaginationLink
+                              onClick={() => handlePageChange(pageNumber)}
+                              isActive={currentPage === pageNumber}
+                            >
+                              {pageNumber}
+                            </PaginationLink>
+                          </PaginationItem>
+                        );
+                      }
+                      return null;
+                    })}
+
+                    <PaginationItem>
+                      <PaginationNext
+                        onClick={() => currentPage < totalPages && handlePageChange(currentPage + 1)}
+                        className={currentPage === totalPages ? "pointer-events-none opacity-50" : "cursor-pointer"}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Transaction Detail Sheet */}
         <Sheet open={isDetailSheetOpen} onOpenChange={setIsDetailSheetOpen}>
