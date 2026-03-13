@@ -76,17 +76,17 @@ export function Sidebar() {
   return (
     <div
       className={cn(
-        "flex min-h-screen flex-col border-r border-[#252d3d] bg-[#1B2130] pb-12 transition-all duration-200",
+        "flex min-h-screen flex-col border-r border-[#2a2a2a] bg-[#171717] pb-12 transition-all duration-200",
         collapsed ? "w-20" : "w-64"
       )}
     >
-      <div className="flex h-14 items-center border-b border-[#252d3d] px-4 justify-between">
+      <div className="flex h-14 items-center border-b border-[#2a2a2a] px-4 justify-between">
         {!collapsed && (
           <button
             onClick={() => handleNavigation("/")}
             className="flex items-center font-semibold text-xl pl-3"
           >
-            <span className="text-[#10B981]">Crypto</span>
+            <span className="text-[#F59E0B]">Crypto</span>
             <span className="text-white ml-1">Tax</span>
           </button>
         )}
@@ -94,7 +94,7 @@ export function Sidebar() {
           <div className="flex-1 flex justify-center">
             <button
               onClick={toggleSidebar}
-              className="rounded-full p-1 text-[#8B95A5] hover:text-white hover:bg-white/5"
+              className="rounded-full p-1 text-[#9CA3AF] hover:text-white hover:bg-white/5"
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -104,7 +104,7 @@ export function Sidebar() {
         {!collapsed && (
           <button
             onClick={toggleSidebar}
-            className="rounded-full p-1 text-[#8B95A5] hover:text-white hover:bg-white/5"
+            className="rounded-full p-1 text-[#9CA3AF] hover:text-white hover:bg-white/5"
           >
             <ChevronLeft className="h-5 w-5" />
           </button>
@@ -124,7 +124,7 @@ export function Sidebar() {
                   collapsed ? "justify-center px-2" : "px-3",
                   isActive
                     ? `${item.activeClasses} font-semibold`
-                    : "text-[#8B95A5] hover:text-white hover:bg-white/5"
+                    : "text-[#9CA3AF] hover:text-white hover:bg-white/5"
                 )}
                 title={collapsed ? item.title : undefined}
                 onClick={() => handleNavigation(item.href)}
@@ -145,16 +145,16 @@ export function Sidebar() {
         {!collapsed ? (
           <div className="flex flex-col gap-2 rounded-xl bg-white/5 p-4">
             <div className="text-sm font-medium text-white">Upgrade to Pro</div>
-            <div className="text-xs text-[#8B95A5]">
+            <div className="text-xs text-[#9CA3AF]">
               Get advanced features and tax reports for multiple years.
             </div>
-            <button className="mt-2 rounded-full bg-[#10B981] hover:bg-[#059669] px-3 py-1.5 text-xs font-medium text-white transition-colors">
+            <button className="mt-2 rounded-full bg-[#3B82F6] hover:bg-[#2563EB] px-3 py-1.5 text-xs font-medium text-white transition-colors">
               Upgrade now
             </button>
           </div>
         ) : (
           <div className="flex flex-col gap-2 rounded-xl bg-white/5 p-3 items-center">
-            <button className="rounded-full bg-[#10B981] hover:bg-[#059669] px-2 py-1 text-xs font-medium text-white transition-colors">
+            <button className="rounded-full bg-[#3B82F6] hover:bg-[#2563EB] px-2 py-1 text-xs font-medium text-white transition-colors">
               Pro
             </button>
           </div>

@@ -1275,19 +1275,17 @@ function TransactionsContent() {
         {stats?.pnl && (
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Hero: Net Gain/Loss */}
-              <Card className={cn(
-                "border-0 text-white overflow-hidden",
-                stats.pnl.netGain >= 0
-                  ? "bg-gradient-to-br from-emerald-500 to-teal-600"
-                  : "bg-gradient-to-br from-rose-500 to-rose-600"
-              )}>
+              {/* Hero: Net Gain/Loss — sunset gradient insight card */}
+              <Card
+                className="border-0 text-white overflow-hidden"
+                style={{ background: 'linear-gradient(135deg, #F9C5A0, #E8A0C0, #9B8EC4, #6B9FD4)' }}
+              >
                 <CardContent className="p-6">
-                  <p className="text-sm font-medium text-white/70">Net Gain / Loss</p>
+                  <p className="text-sm font-medium text-white/80">Net Gain / Loss</p>
                   <p className="text-3xl font-bold mt-2 tracking-tight" style={{ fontVariantNumeric: 'tabular-nums' }}>
                     {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
-                  <p className="text-xs text-white/50 mt-1">Capital gains</p>
+                  <p className="text-xs text-white/60 mt-1">Capital gains</p>
                 </CardContent>
               </Card>
 
