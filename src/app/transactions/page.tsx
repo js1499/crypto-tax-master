@@ -1270,12 +1270,12 @@ function TransactionsContent() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-3 border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg px-3 py-1.5">
             <span className="text-sm font-semibold font-mono text-emerald-700 dark:text-emerald-400">{stats?.valueIdentifiedPercentage ?? 0}%</span>
-            <Progress value={stats?.valueIdentifiedPercentage ?? 0} className="h-3 w-24 bg-emerald-100 dark:bg-emerald-900/30" />
+            <Progress value={stats?.valueIdentifiedPercentage ?? 0} className="h-3 w-24 bg-emerald-100 dark:bg-emerald-900/30" indicatorClassName="bg-emerald-600 dark:bg-emerald-400" />
             <span className="text-xs text-emerald-600/70 dark:text-emerald-400/70">Value</span>
           </div>
           <div className="flex items-center gap-3 border border-orange-200 dark:border-orange-800/40 bg-orange-50/50 dark:bg-orange-950/20 rounded-lg px-3 py-1.5">
             <span className="text-sm font-semibold font-mono text-orange-700 dark:text-orange-400">{stats?.identifiedPercentage ?? 0}%</span>
-            <Progress value={stats?.identifiedPercentage ?? 0} className="h-3 w-24 bg-orange-100 dark:bg-orange-900/30" />
+            <Progress value={stats?.identifiedPercentage ?? 0} className="h-3 w-24 bg-orange-100 dark:bg-orange-900/30" indicatorClassName="bg-orange-600 dark:bg-orange-400" />
             <span className="text-xs text-orange-600/70 dark:text-orange-400/70">Types</span>
           </div>
           <div className="flex items-center gap-2 border border-border rounded-lg px-3 py-1.5">
@@ -1296,9 +1296,9 @@ function TransactionsContent() {
         {/* ── P&L Summary ── */}
         {stats?.pnl && (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold">P&L Summary</h2>
+            <h2 className="text-lg font-semibold border-l-4 border-primary pl-3">P&L Summary</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card>
+              <Card className="transition-shadow duration-200 hover:shadow-md">
                 <CardHeader>
                   <CardTitle className="text-lg font-semibold">Capital Gains Summary</CardTitle>
                 </CardHeader>
@@ -1337,7 +1337,7 @@ function TransactionsContent() {
               </Card>
 
               {stats.income && stats.income.count > 0 && (
-                <Card>
+                <Card className="transition-shadow duration-200 hover:shadow-md">
                   <CardHeader>
                     <CardTitle className="text-lg font-semibold">Ordinary Income</CardTitle>
                   </CardHeader>
@@ -1354,7 +1354,7 @@ function TransactionsContent() {
                         </p>
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground mt-3">
+                    <p className="text-xs text-muted-foreground/60 mt-3 pt-3 border-t border-border/50 italic">
                       Airdrops, staking rewards, and vesting claims taxed as ordinary income at FMV on receipt.
                     </p>
                   </CardContent>
@@ -1368,46 +1368,46 @@ function TransactionsContent() {
         {showMoreStats && (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Card>
+              <Card className="border-l-4 border-l-emerald-500 bg-gradient-to-r from-emerald-50/40 to-transparent dark:from-emerald-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Buy</CardTitle>
-                  <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Buy</CardTitle>
+                  <ArrowUpRight className="h-4 w-4 text-emerald-500" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{isLoadingTransactions ? "..." : (stats?.buyCount ?? 0)}</div>
+                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.buyCount ?? 0)}</div>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="border-l-4 border-l-rose-500 bg-gradient-to-r from-rose-50/40 to-transparent dark:from-rose-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Sell</CardTitle>
-                  <ArrowDownRight className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium text-rose-700 dark:text-rose-400">Sell</CardTitle>
+                  <ArrowDownRight className="h-4 w-4 text-rose-500" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{isLoadingTransactions ? "..." : (stats?.sellCount ?? 0)}</div>
+                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.sellCount ?? 0)}</div>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/40 to-transparent dark:from-blue-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Other</CardTitle>
-                  <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle className="text-sm font-medium text-blue-700 dark:text-blue-400">Other</CardTitle>
+                  <ArrowRightLeft className="h-4 w-4 text-blue-500" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{isLoadingTransactions ? "..." : (stats?.otherCount ?? 0)}</div>
+                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.otherCount ?? 0)}</div>
                 </CardContent>
               </Card>
-              <Card>
+              <Card className="border-l-4 border-l-amber-500 bg-gradient-to-r from-amber-50/40 to-transparent dark:from-amber-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Unlabelled</CardTitle>
+                  <CardTitle className="text-sm font-medium text-amber-700 dark:text-amber-400">Unlabelled</CardTitle>
                   <AlertCircle className="h-4 w-4 text-amber-500" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{isLoadingTransactions ? "..." : (stats?.unlabelledCount ?? 0)}</div>
+                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.unlabelledCount ?? 0)}</div>
                 </CardContent>
               </Card>
             </div>
 
             {/* Transaction Labeling */}
-            <Card>
+            <Card className="border-l-4 border-l-emerald-500">
               <CardContent className="pt-6">
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1416,11 +1416,11 @@ function TransactionsContent() {
                       <p className="text-sm text-muted-foreground">
                         {isLoadingTransactions
                           ? "Loading..."
-                          : `${identifiedCount} of ${currentPageCount} transactions labeled (page ${currentPage} of ${totalPages})`}
+                          : <><span className="font-mono font-medium text-foreground/70">{identifiedCount}</span> of <span className="font-mono font-medium text-foreground/70">{currentPageCount}</span> labeled (page {currentPage} of {totalPages})</>}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-lg font-bold">{identificationPercentage}%</span>
+                      <span className="text-lg font-bold font-mono">{identificationPercentage}%</span>
                       {identificationPercentage === 100 ? (
                         <Check className="h-5 w-5 text-emerald-500" />
                       ) : (
@@ -1428,15 +1428,15 @@ function TransactionsContent() {
                       )}
                     </div>
                   </div>
-                  <Progress value={identificationPercentage} className="h-2 w-full" />
+                  <Progress value={identificationPercentage} className="h-3 w-full" indicatorClassName="bg-emerald-500" />
                   <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       <span className="inline-flex h-3 w-3 rounded-full bg-emerald-500"></span>
-                      <span>Labeled: {identifiedCount}</span>
+                      <span>Labeled: <span className="font-mono font-medium">{identifiedCount}</span></span>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       <span className="inline-flex h-3 w-3 rounded-full bg-amber-500"></span>
-                      <span>Need Labeling: {needsIdentificationCount}</span>
+                      <span>Need Labeling: <span className="font-mono font-medium">{needsIdentificationCount}</span></span>
                     </div>
                   </div>
                 </div>
@@ -1452,7 +1452,7 @@ function TransactionsContent() {
             <Input
               type="search"
               placeholder="Search transactions..."
-              className="pl-8"
+              className="pl-8 transition-shadow duration-200 focus:shadow-[0_0_0_3px_hsl(var(--primary)/0.1)]"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
@@ -1638,7 +1638,7 @@ function TransactionsContent() {
             <span className="text-xs text-muted-foreground">
               {isLoadingTransactions
                 ? "Loading..."
-                : `Showing ${totalCount > 0 ? startIndex + 1 : 0}-${endIndex} of ${totalCount}`}
+                : <>Showing <span className="font-mono font-medium text-foreground/70">{totalCount > 0 ? startIndex + 1 : 0}{"\u2013"}{endIndex}</span> of <span className="font-mono font-medium text-foreground/70">{totalCount.toLocaleString()}</span></>}
             </span>
           </div>
         </div>
