@@ -143,13 +143,31 @@
   }
 }
 
-/* Transactions table styles */
-.transaction-table td, 
+/* Transactions table styles — density modes */
+.transaction-table.density-condensed td,
+.transaction-table.density-condensed th {
+  font-size: 0.71875rem !important; /* ~11.5px */
+  padding-top: 0.15rem !important;
+  padding-bottom: 0.15rem !important;
+  line-height: 1.2 !important;
+}
+
+.transaction-table.density-regular td,
+.transaction-table.density-regular th,
+.transaction-table td,
 .transaction-table th {
-  font-size: 0.78125rem !important; /* ~12.5px - smaller than 13px but larger than 12px */
+  font-size: 0.78125rem !important; /* ~12.5px */
   padding-top: 0.425rem !important;
   padding-bottom: 0.425rem !important;
   line-height: 1.25 !important;
+}
+
+.transaction-table.density-spacious td,
+.transaction-table.density-spacious th {
+  font-size: 0.84375rem !important; /* ~13.5px */
+  padding-top: 0.75rem !important;
+  padding-bottom: 0.75rem !important;
+  line-height: 1.4 !important;
 }
 
 /* Slightly larger and bold for specific columns */

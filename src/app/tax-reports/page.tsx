@@ -573,8 +573,12 @@ export default function TaxReportsPage() {
   const safeCalculate = (value: number, total: number) =>
     total === 0 ? 0 : (value / total) * 100;
 
-  // Calculate estimated tax liability (simplified - would need tax brackets)
-  const estimatedTaxLiability = parseCurrency(displayData.totalTaxableGain) * 0.2; // Rough 20% estimate
+  // Calculate estimated tax liability using proper ST/LT rates
+  // ST gains taxed as ordinary income (using ~24% as mid-bracket estimate)
+  // LT gains taxed at preferential rates (using 15% as most common bracket)
+  const netST = Math.max(0, parseCurrency(displayData.netShortTermGain));
+  const netLT = Math.max(0, parseCurrency(displayData.netLongTermGain));
+  const estimatedTaxLiability = netST * 0.24 + netLT * 0.15;
 
   return (
     <Layout>
@@ -773,7 +777,7 @@ export default function TaxReportsPage() {
               <p className="text-xs text-muted-foreground">
                 {isLoading
                   ? "Loading..."
-                  : "Estimated (20% rate)"}
+                  : "Estimated (ST 24% / LT 15%)"}
               </p>
             </CardContent>
           </Card>

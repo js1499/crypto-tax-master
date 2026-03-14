@@ -170,7 +170,7 @@ function processDisposal(
   const isCSVImport = tx.source_type === "csv_import";
   const netProceeds = isCSVImport
     ? grossProceeds
-    : Math.max(0, grossProceeds - feeUsd);
+    : grossProceeds - feeUsd;
 
   const sellAmount = amount;
   let remainingToSell = sellAmount;
@@ -1281,14 +1281,13 @@ function processTransactionsForTax(
     // lot but does NOT generate an income event (it could be a transfer from
     // another wallet, an exchange withdrawal, etc.).
     else if (
-      txType === "stake" ||
+      txType === "staking reward" ||
       txType === "staking" ||
       txType === "reward" ||
       txType === "airdrop" ||
       txType === "mining" ||
       txType === "yield" ||
       txType === "interest" ||
-      txType === "mint" ||
       txType === "claim_rewards" ||
       txType === "harvest" ||
       txType === "payout" ||
@@ -1297,7 +1296,7 @@ function processTransactionsForTax(
     ) {
       // Determine income type per IRS guidance
       let incomeType: IncomeEvent["type"] = "other";
-      if (txType === "stake" || txType === "staking") {
+      if (txType === "staking reward" || txType === "staking") {
         incomeType = "staking";
       } else if (txType === "reward") {
         incomeType = "reward";
@@ -1420,49 +1419,50 @@ function processTransactionsForTax(
           costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
         }
       } else {
-        // Non-self send: consume lots (gift or transfer out)
-        const sendAmount = amount;
-        let remainingToSend = sendAmount;
-        let consumedCostBasis = 0;
-        const consumedLots: Array<{ date: Date; amount: number; costBasis: number }> = [];
+        // Non-self send: taxable disposal (spending crypto = taxable event per IRS)
+        // Skip unpriced sends ($0 value) to avoid phantom gains/losses
+        if (valueUsd === 0) {
+          debugLog(`[Tax Calculator] Send ${tx.id}: Skipping unpriced send of ${amount} ${asset} ($0 value).`);
+          if (costBasisResults) {
+            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+          }
+        } else {
+          // Use processDisposal for proper lot consumption, holding period, and lot splitting
+          const feeUsd = tx.fee_usd ? Math.abs(Number(tx.fee_usd)) : 0;
+          const disposal = processDisposal(
+            tx, asset, amount, Math.abs(valueUsd), feeUsd, date,
+            costBasisLots, method, processedCount, taxableEventCount
+          );
 
-        const selectedLots = selectLots(
-          costBasisLots[asset],
-          sendAmount,
-          method
-        );
+          // C-1 fix: Store consumed cost basis so receives can carry it forward if needed
+          const transferKey = tx.tx_hash || tx.counterparty_address;
+          if (transferKey) {
+            pendingTransferBasis.set(`${transferKey}:${asset}`, {
+              costBasis: disposal.totalCostBasis,
+              lots: disposal.lotDisposals.map(l => ({ date: l.lotDate, amount: l.amount, costBasis: l.costBasis })),
+            });
+          }
 
-        for (const lot of selectedLots) {
-          if (remainingToSend <= 0) break;
-          const amountFromLot = Math.min(remainingToSend, lot.amount);
-          const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
-          const costBasisFromLot = costBasisPerUnit * amountFromLot;
-          consumedCostBasis += costBasisFromLot;
-          consumedLots.push({ date: lot.date, amount: amountFromLot, costBasis: costBasisFromLot });
-          lot.amount -= amountFromLot;
-          lot.costBasis -= costBasisFromLot;
-          remainingToSend -= amountFromLot;
-        }
+          // Stablecoin override: force break-even (no capital gains on stablecoins)
+          const finalCostBasis = STABLECOINS.has(asset) ? disposal.netProceeds : disposal.totalCostBasis;
+          const finalGainLoss = disposal.netProceeds - finalCostBasis;
 
-        costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
+          if (costBasisResults) {
+            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: finalCostBasis, gainLossUsd: finalGainLoss });
+          }
 
-        // C-1 fix: Store consumed cost basis so receives can carry it forward if needed
-        const transferKey = tx.tx_hash || tx.counterparty_address;
-        if (transferKey) {
-          pendingTransferBasis.set(`${transferKey}:${asset}`, {
-            costBasis: consumedCostBasis,
-            lots: consumedLots,
-          });
-        }
-
-        // External send = disposal. Record cost basis and gain/loss.
-        // Proceeds = value_usd (FMV at time of send), gain = proceeds - cost basis
-        const proceeds = Math.abs(valueUsd);
-        // Stablecoin override: force break-even (no capital gains on stablecoins)
-        const sendCostBasis = STABLECOINS.has(asset) ? proceeds : consumedCostBasis;
-        const gainLoss = proceeds - sendCostBasis;
-        if (costBasisResults) {
-          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: sendCostBasis, gainLossUsd: gainLoss });
+          // Create taxable events for this disposal (sends = taxable per IRS)
+          if (txYear === taxYear) {
+            const events = createDisposalTaxEvents(tx, asset, amount, {
+              ...disposal,
+              totalCostBasis: finalCostBasis,
+              gainLoss: finalGainLoss,
+            }, date);
+            for (const event of events) {
+              taxableEventCount++;
+              taxableEvents.push(event);
+            }
+          }
         }
       }
     }
@@ -1614,7 +1614,7 @@ function processTransactionsForTax(
         date,
         amount,
         costBasis: totalCostBasis,
-        pricePerUnit,
+        pricePerUnit: amount > 0 ? totalCostBasis / amount : 0,
         fees: feeUsd,
         washSaleAdjustment: washSaleAdjustment > 0 ? washSaleAdjustment : undefined,
       });
@@ -1887,6 +1887,15 @@ function processTransactionsForTax(
       // Cost basis = FMV at receipt (becomes basis for future capital gains)
       if (costBasisResults) {
         costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: rewardValue, gainLossUsd: null });
+      }
+    }
+    // Catch-all: log unhandled transaction types
+    else {
+      if (processedCount < 50) {
+        console.warn(`[Tax Calculator] Unhandled transaction type: "${tx.type}" (id=${tx.id}, asset=${asset}, value=$${valueUsd.toFixed(2)}). No tax treatment applied.`);
+      }
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
       }
     }
   }

@@ -149,6 +149,20 @@ export async function GET(request: NextRequest) {
 }
 
 /**
+ * Escape a CSV field: wrap in quotes if it contains commas, quotes, or newlines
+ */
+function csvEscape(value: string): string {
+  if (value.includes(",") || value.includes('"') || value.includes("\n")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function csvRow(fields: string[]): string {
+  return fields.map(csvEscape).join(",");
+}
+
+/**
  * Generate Capital Gains CSV
  */
 function generateCapitalGainsCSV(report: TaxReport): string {
@@ -176,7 +190,7 @@ function generateCapitalGainsCSV(report: TaxReport): string {
     event.txHash || "",
   ]);
 
-  return [headers, ...rows].map((row) => row.join(",")).join("\n");
+  return [headers, ...rows].map(csvRow).join("\n");
 }
 
 /**
@@ -290,7 +304,7 @@ function generateIncomeReportCSV(report: TaxReport): string {
     event.txHash || "",
   ]);
 
-  return [headers, ...rows].map((row) => row.join(",")).join("\n");
+  return [headers, ...rows].map(csvRow).join("\n");
 }
 
 /**
@@ -341,5 +355,5 @@ function generateCapitalGainsByAssetCSV(report: TaxReport): string {
       asset.transactionCount.toString(),
     ]);
 
-  return [headers, ...rows].map((row) => row.join(",")).join("\n");
+  return [headers, ...rows].map(csvRow).join("\n");
 }

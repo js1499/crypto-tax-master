@@ -208,6 +208,7 @@ function TransactionsContent() {
   // UI mode state
   const [showAdvancedColumns, setShowAdvancedColumns] = useState(false);
   const [showMoreStats, setShowMoreStats] = useState(false);
+  const [tableDensity, setTableDensity] = useState<"condensed" | "regular" | "spacious">("regular");
 
   // Wallet filter state
   const [walletFilter, setWalletFilter] = useState("");
@@ -1050,6 +1051,44 @@ function TransactionsContent() {
     return amount.toLocaleString(undefined, { maximumFractionDigits: 6 });
   };
 
+  // Source/exchange icon helper
+  const getSourceIcon = (exchange: string) => {
+    const src = (exchange || "").toLowerCase();
+    if (src.includes("solana") || src.includes("sol")) return "SOL";
+    if (src.includes("ethereum") || src.includes("eth")) return "ETH";
+    if (src.includes("bitcoin") || src.includes("btc")) return "BTC";
+    if (src.includes("coinbase")) return "CB";
+    if (src.includes("binance")) return "BN";
+    if (src.includes("phantom")) return "PH";
+    if (src.includes("jupiter") || src.includes("jup")) return "JUP";
+    if (src.includes("raydium")) return "RAY";
+    if (src.includes("orca")) return "ORC";
+    if (src.includes("csv")) return "CSV";
+    if (src.includes("helius")) return "HEL";
+    return null;
+  };
+
+  const sourceIconColors: Record<string, string> = {
+    SOL: "bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white",
+    ETH: "bg-gradient-to-br from-blue-500 to-indigo-600 text-white",
+    BTC: "bg-gradient-to-br from-orange-400 to-amber-500 text-white",
+    CB: "bg-gradient-to-br from-blue-500 to-blue-600 text-white",
+    BN: "bg-gradient-to-br from-yellow-400 to-amber-500 text-black",
+    PH: "bg-gradient-to-br from-purple-400 to-purple-600 text-white",
+    JUP: "bg-gradient-to-br from-emerald-400 to-teal-500 text-white",
+    RAY: "bg-gradient-to-br from-cyan-400 to-blue-500 text-white",
+    ORC: "bg-gradient-to-br from-gray-700 to-gray-900 text-white",
+    CSV: "bg-gradient-to-br from-slate-400 to-slate-500 text-white",
+    HEL: "bg-gradient-to-br from-orange-500 to-red-500 text-white",
+  };
+
+  // Table density classes
+  const densityClasses = {
+    condensed: "py-[0.2rem] text-[0.72rem]",
+    regular: "py-[0.425rem]",
+    spacious: "py-3",
+  };
+
   // Column sort handler
   const handleColumnSort = (column: string) => {
     const currentDir = sortOption.startsWith(column + "-") ? sortOption.split("-")[1] : null;
@@ -1641,13 +1680,29 @@ function TransactionsContent() {
                 : <>Showing <span className="font-mono font-medium text-foreground/70">{totalCount > 0 ? startIndex + 1 : 0}{"\u2013"}{endIndex}</span> of <span className="font-mono font-medium text-foreground/70">{totalCount.toLocaleString()}</span></>}
             </span>
           </div>
+          <div className="flex items-center border rounded-lg overflow-hidden">
+            {(["condensed", "regular", "spacious"] as const).map((d) => (
+              <button
+                key={d}
+                onClick={() => setTableDensity(d)}
+                className={cn(
+                  "px-2.5 py-1 text-xs font-medium transition-colors capitalize",
+                  tableDensity === d
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                )}
+              >
+                {d === "condensed" ? "S" : d === "regular" ? "M" : "L"}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* ── Transaction Table ── */}
         <Card>
           <CardContent className="p-0" data-onboarding="review-transactions">
             <div className="overflow-x-auto">
-              <Table className="transaction-table font-mono">
+              <Table className={cn("transaction-table font-mono", `density-${tableDensity}`)}>
                 <TableHeader>
                   <TableRow className="h-auto">
                     {showAdvancedColumns && isBulkMode && (
@@ -1794,12 +1849,15 @@ function TransactionsContent() {
                       {/* Value */}
                       <TableCell className="text-right font-mono">
                         <span className={cn(
-                          "crypto-amount",
+                          "crypto-amount inline-flex items-center gap-1 justify-end",
                           transaction.valueUsd >= 0
                             ? "text-emerald-600 dark:text-emerald-400"
                             : "text-rose-600 dark:text-rose-400"
                         )}>
-                          {transaction.valueUsd >= 0 ? "+" : "-"}${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          {transaction.valueUsd >= 0
+                            ? <span className="text-[0.55rem] leading-none">{"\u25B2"}</span>
+                            : <span className="text-[0.55rem] leading-none">{"\u25BC"}</span>}
+                          ${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </span>
                       </TableCell>
 
@@ -1892,7 +1950,17 @@ function TransactionsContent() {
                               onMouseEnter={() => handleMouseEnter('exchange')}
                               onMouseLeave={() => handleMouseLeave('exchange')}
                             >
-                              <div className="flex justify-end text-xs">{transaction.exchange}</div>
+                              <div className="flex items-center justify-end gap-1.5 text-xs">
+                                {(() => {
+                                  const icon = getSourceIcon(transaction.exchange);
+                                  return icon ? (
+                                    <span className={cn("inline-flex items-center justify-center h-4 w-6 rounded text-[0.5rem] font-bold leading-none shrink-0", sourceIconColors[icon] || "bg-muted text-muted-foreground")}>
+                                      {icon}
+                                    </span>
+                                  ) : null;
+                                })()}
+                                <span className="truncate max-w-[80px]">{transaction.exchange}</span>
+                              </div>
                               {editableFields.exchange && (
                                 <Button
                                   variant="ghost"
