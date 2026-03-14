@@ -1055,9 +1055,9 @@ function TransactionsContent() {
   // Sources with logo files in /public/logos/ get <img> badges
   // Others fall back to gradient text badges
   const sourceLogoFiles: Record<string, string> = {
-    SOL: "/logos/SOL.svg",
-    ETH: "/logos/ETH.svg",
-    BTC: "/logos/BTC.svg",
+    SOL: "/logos/SOL.png",
+    ETH: "/logos/ETH.png",
+    BTC: "/logos/BTC.png",
   };
 
   const getSourceIcon = (exchange: string): { key: string; hasLogo: boolean } | null => {
