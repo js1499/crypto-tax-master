@@ -1826,10 +1826,7 @@ function TransactionsContent() {
                                 {formatTypeForDisplay(transaction.type)}
                               </span>
                               {transaction.identified ? (
-                                <span className="inline-flex items-center gap-px rounded-full bg-emerald-500 text-white text-[7px] leading-none px-1 py-[1px] font-semibold tracking-wide uppercase">
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" className="h-[7px] w-[7px]"><polyline points="20 6 9 17 4 12" /></svg>
-                                  ID
-                                </span>
+                                <span className="text-[0.65rem] leading-none text-emerald-600 dark:text-emerald-400 pl-0.5">Identified</span>
                               ) : (
                                 <span className="text-[0.65rem] leading-none text-rose-500 dark:text-rose-400 pl-0.5">Unidentified</span>
                               )}
