@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     const dbUser = await prisma.user.findUnique({
       where: { id: user.id },
-      select: { costBasisMethod: true },
+      select: { costBasisMethod: true, timezone: true },
     });
 
     if (!dbUser) {
@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       status: "success",
       costBasisMethod: dbUser.costBasisMethod,
+      timezone: dbUser.timezone,
     });
   } catch (error) {
     console.error("[Settings API] GET error:", error);
@@ -75,24 +76,50 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { costBasisMethod } = body;
+    const { costBasisMethod, timezone } = body;
 
-    if (!costBasisMethod || !VALID_METHODS.includes(costBasisMethod)) {
+    const updateData: Record<string, string> = {};
+
+    if (costBasisMethod) {
+      if (!VALID_METHODS.includes(costBasisMethod)) {
+        return NextResponse.json(
+          { error: "Invalid costBasisMethod. Must be FIFO, LIFO, or HIFO." },
+          { status: 400 }
+        );
+      }
+      updateData.costBasisMethod = costBasisMethod;
+    }
+
+    if (timezone) {
+      // Validate timezone string
+      try {
+        Intl.DateTimeFormat(undefined, { timeZone: timezone });
+        updateData.timezone = timezone;
+      } catch {
+        return NextResponse.json(
+          { error: "Invalid timezone. Use IANA format (e.g., America/New_York)." },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (Object.keys(updateData).length === 0) {
       return NextResponse.json(
-        { error: "Invalid costBasisMethod. Must be FIFO, LIFO, or HIFO." },
+        { error: "No valid fields to update." },
         { status: 400 }
       );
     }
 
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
-      data: { costBasisMethod },
-      select: { costBasisMethod: true },
+      data: updateData,
+      select: { costBasisMethod: true, timezone: true },
     });
 
     return NextResponse.json({
       status: "success",
       costBasisMethod: updatedUser.costBasisMethod,
+      timezone: updatedUser.timezone,
     });
   } catch (error) {
     console.error("[Settings API] PUT error:", error);

@@ -120,6 +120,24 @@ interface BuyTransaction {
 }
 
 /**
+ * Get the tax year for a given date in the user's timezone.
+ * Without timezone conversion, a transaction at 11pm ET on Dec 31 would
+ * be Jan 1 UTC and attributed to the wrong year.
+ */
+function getTaxYear(date: Date, timezone: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      year: "numeric",
+    }).formatToParts(date);
+    const yearPart = parts.find(p => p.type === "year");
+    return yearPart ? parseInt(yearPart.value) : date.getFullYear();
+  } catch {
+    return date.getFullYear(); // Fallback to UTC if invalid timezone
+  }
+}
+
+/**
  * Determine if holding period is long-term using date-based calculation
  * IRS Rule: Long-term if held MORE than one year from acquisition date
  * This is date-based, not day-count based (e.g., Jan 1, 2024 to Jan 1, 2025 = exactly 1 year = short-term)
@@ -282,11 +300,14 @@ function processDisposal(
     }
 
     // Stablecoin override: force gain/loss to $0.
-    // Stablecoins are pegged to $1 — disposals don't produce capital gains.
-    // Without this, lot depletion from protocol deposits (games, DeFi)
-    // causes phantom gains, and mispriced value_usd causes phantom losses.
+    // Stablecoins: suppress negligible gains/losses (< $0.02/unit) from
+    // rounding and lot depletion. Real gains/losses from de-peg events or
+    // buying below $1 are preserved.
     if (STABLECOINS.has(asset)) {
-      totalCostBasis = netProceeds; // break-even: cost basis = proceeds
+      const gainPerUnit = sellAmount > 0 ? Math.abs(netProceeds - totalCostBasis) / sellAmount : 0;
+      if (gainPerUnit < 0.02) {
+        totalCostBasis = netProceeds; // negligible: force break-even
+      }
     }
 
     gainLoss = Math.round((netProceeds - totalCostBasis) * 100) / 100;
@@ -398,7 +419,8 @@ export async function calculateTaxReport(
   year: number,
   method: "FIFO" | "LIFO" | "HIFO" = "FIFO",
   userId?: string, // Optional user ID to include CSV-imported transactions
-  filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household" = "single"
+  filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household" = "single",
+  timezone: string = "America/New_York"
 ): Promise<TaxReport> {
   const startDate = new Date(`${year}-01-01T00:00:00Z`);
   const endDate = new Date(`${year}-12-31T23:59:59Z`);
@@ -599,7 +621,9 @@ export async function calculateTaxReport(
     allTransactions,
     year,
     method,
-    walletAddresses
+    walletAddresses,
+    undefined, // costBasisResults
+    timezone
   );
 
   const combinedTaxableEvents = unifiedReport.taxableEvents;
@@ -837,7 +861,8 @@ function processTransactionsForTax(
   taxYear: number,
   method: "FIFO" | "LIFO" | "HIFO",
   walletAddresses: string[] = [], // For detecting self-transfers
-  costBasisResults?: Map<number, TransactionCostBasisResult> // Per-transaction cost basis collector
+  costBasisResults?: Map<number, TransactionCostBasisResult>, // Per-transaction cost basis collector
+  timezone: string = "America/New_York" // User's timezone for year boundary determination
 ): {
   taxableEvents: TaxableEvent[];
   incomeEvents: IncomeEvent[];
@@ -901,7 +926,7 @@ function processTransactionsForTax(
       ? Number(tx.price_per_unit)
       : amount > 0 ? valueUsd / amount : 0;
     const date = tx.tx_timestamp;
-    const txYear = date.getFullYear();
+    const txYear = getTaxYear(date, timezone);
 
     // Track transaction types
     const txType = (tx.type || "").toLowerCase();
@@ -1443,8 +1468,9 @@ function processTransactionsForTax(
             });
           }
 
-          // Stablecoin override: force break-even (no capital gains on stablecoins)
-          const finalCostBasis = STABLECOINS.has(asset) ? disposal.netProceeds : disposal.totalCostBasis;
+          // Stablecoin: suppress negligible gains/losses (< $0.02/unit)
+          const stablecoinGainPerUnit = amount > 0 ? Math.abs(disposal.netProceeds - disposal.totalCostBasis) / amount : 0;
+          const finalCostBasis = (STABLECOINS.has(asset) && stablecoinGainPerUnit < 0.02) ? disposal.netProceeds : disposal.totalCostBasis;
           const finalGainLoss = disposal.netProceeds - finalCostBasis;
 
           if (costBasisResults) {

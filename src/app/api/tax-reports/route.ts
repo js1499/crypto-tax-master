@@ -76,6 +76,7 @@ export async function GET(request: NextRequest) {
     const filingStatus = (searchParams.get("filingStatus") || "single") as "single" | "married_joint" | "married_separate" | "head_of_household";
     
     const costBasisMethod = (userWithWallets.costBasisMethod || "FIFO") as "FIFO" | "LIFO" | "HIFO";
+    const userTimezone = userWithWallets.timezone || "America/New_York";
 
     const report = await calculateTaxReport(
       prisma,
@@ -83,7 +84,8 @@ export async function GET(request: NextRequest) {
       year,
       costBasisMethod,
       user.id, // Pass user ID to filter CSV imports by user
-      filingStatus
+      filingStatus,
+      userTimezone
     );
 
     console.log(`[Tax Reports API] Tax report calculated:`);

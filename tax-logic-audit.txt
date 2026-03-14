@@ -1,0 +1,529 @@
+CRYPTO TAX SOFTWARE — TAX LOGIC DOCUMENTATION
+===============================================
+Updated: March 2026
+Scope: How every component of US crypto tax law is codified in this system.
+
+Files:
+  - src/lib/tax-calculator.ts — Core tax engine (~2300 lines)
+  - src/lib/compute-cost-basis.ts — Cost basis recompute orchestrator
+  - src/lib/transaction-categorizer.ts — Type classification (353 mappings)
+  - src/lib/form8949-pdf.ts — Form 8949 PDF generation
+  - src/app/api/tax-reports/route.ts — Tax report API
+  - src/app/api/tax-reports/export/route.ts — CSV export (with proper escaping)
+  - src/app/api/tax-reports/form8949/route.ts — Form 8949 download API
+  - src/app/tax-reports/page.tsx — Tax reports UI
+
+
+========================================================================
+1. TRANSACTION CLASSIFICATION
+========================================================================
+
+Every transaction flows through a two-step classification:
+
+Step 1: CATEGORY_MAP (transaction-categorizer.ts)
+  353 raw type strings → 9 categories:
+  buy, sell, transfer, swap, staking, defi, nft, income, other
+
+  Sources covered: Helius (SCREAMING_SNAKE), Moralis (lowercase),
+  Coinbase, Kraken, KuCoin, Gemini, Binance, CSV parsers, and
+  legacy app types (Title Case).
+
+Step 2: Tax engine handler routing (tax-calculator.ts)
+  The main processing loop uses the lowercase txType and category
+  to route each transaction to the appropriate handler:
+
+  Buy handlers:
+    - isTaxableBuy() → regular buy (cost basis lot created)
+    - "margin buy" → same as buy with wash sale check
+    - "dca" → same as buy
+
+  Sell handlers:
+    - isTaxableSell() → regular sell (taxable disposal)
+    - "margin sell" → same as sell
+    - "liquidation" → forced sell (taxable disposal)
+
+  Swap handler:
+    - getCategory() === "swap" → two-sided trade
+    - "nft_purchase" / "nft_sale" → routed to swap handler
+
+  Transfer handlers:
+    - "send" / "transfer_out" → self-transfer detection, then:
+      * Self-transfer: cost basis preserved (non-taxable)
+      * External send: taxable disposal via processDisposal()
+    - "receive" / "transfer_in" → cost basis lot at FMV (no income)
+
+  Income handler:
+    - "staking reward", "staking", "reward", "airdrop", "mining",
+      "yield", "interest", "claim_rewards", "harvest", "payout",
+      "fund_reward", or getCategory() === "income"
+    - Also: is_income DB flag override
+
+  DeFi handlers:
+    - "unstake" → non-taxable (basis preserved)
+    - "bridge" → non-taxable if same token, swap if different
+    - "add liquidity" → cost basis lot for LP token
+    - "remove liquidity" → taxable disposal of LP token
+    - "wrap" / "unwrap" → non-taxable (basis transferred)
+    - "burn" → disposal at $0 proceeds (capital loss)
+    - "borrow" / "repay" → non-taxable
+    - "deposit" / "withdraw" → non-taxable
+    - "yield farming" / "farm reward" → income
+
+  Neutral types (no-op):
+    - "self", "approve", "nft activity", "defi setup",
+      "zero transaction", "spam"
+
+  Catch-all:
+    - Any unrecognized type logs a warning with transaction details
+      and records null cost basis/gain-loss.
+
+
+========================================================================
+2. COST BASIS METHODS
+========================================================================
+
+Three methods supported (stored per-user in DB, default FIFO):
+
+FIFO (First In, First Out):
+  Lots sorted by date ascending. Oldest lots consumed first.
+  This is the IRS default method.
+
+LIFO (Last In, First Out):
+  Lots sorted by date descending. Newest lots consumed first.
+  Can defer gains on appreciating assets.
+
+HIFO (Highest In, First Out):
+  Lots sorted by pricePerUnit descending. Most expensive lots
+  consumed first. Minimizes taxable gains.
+
+Implementation: selectLots() in tax-calculator.ts sorts a copy
+of the lot array by the selected method, then iterates to consume
+the required amount. Original lot objects are mutated (amount and
+costBasis decremented proportionally). Empty lots are filtered out
+after consumption.
+
+Lot structure:
+  {
+    id: number,          // Transaction ID that created this lot
+    date: Date,          // Acquisition date
+    amount: number,      // Remaining quantity
+    costBasis: number,   // Remaining cost basis in USD
+    pricePerUnit: number, // Cost per unit (includes fees + wash sale adjustments)
+    fees?: number,       // Original fee amount
+    washSaleAdjustment?: number  // Disallowed loss added to basis
+  }
+
+
+========================================================================
+3. SHORT-TERM vs LONG-TERM HOLDING PERIOD
+========================================================================
+
+IRS Rule: Assets held MORE than one year qualify for long-term
+capital gains rates. Assets held one year or less are short-term.
+
+Implementation: isLongTerm(dateAcquired, dateSold)
+  - Computes 1-year anniversary of acquisition date
+  - Returns true if dateSold > anniversary (strict greater-than)
+  - This correctly implements "more than one year"
+
+When a single disposal consumes multiple lots with mixed holding
+periods, createDisposalTaxEvents() splits the disposal into
+separate short-term and long-term TaxableEvent entries:
+  - Groups lotDisposals by isLongTerm()
+  - Distributes proceeds proportionally by amount
+  - Each group becomes its own Form 8949 entry
+
+
+========================================================================
+4. DISPOSAL PROCESSING
+========================================================================
+
+All taxable disposals (sells, swaps, sends, burns, LP removals,
+margin sells, liquidations) flow through processDisposal():
+
+1. Gross proceeds = |valueUsd|
+2. Net proceeds = grossProceeds - feeUsd
+   (CSV imports skip fee subtraction since value_usd is already net)
+   (No floor — fees exceeding proceeds produce negative net proceeds)
+3. Select lots via selectLots() using the user's cost basis method
+4. Consume lots proportionally, tracking:
+   - totalCostBasis (sum of consumed lot cost bases)
+   - earliestLotDate (for holding period determination)
+   - lotDisposals[] (per-lot breakdown for ST/LT splitting)
+5. gainLoss = netProceeds - totalCostBasis
+6. Track as loss sale if gainLoss < 0 (for wash sale detection)
+7. Return DisposalResult with all computed values
+
+Fee treatment:
+  - Buys: fees ADDED to cost basis (correct per IRS)
+  - Sells/disposals: fees SUBTRACTED from proceeds (correct per IRS)
+  - Swaps: fees on disposal side only (no double-counting)
+
+
+========================================================================
+5. SWAP / TRADE TAXATION
+========================================================================
+
+IRS Rule: Post-2017 Tax Cuts and Jobs Act, crypto-to-crypto swaps
+are taxable events. No like-kind exchange (Section 1031) treatment.
+
+Implementation:
+1. Parse swap data from DB fields:
+   - Primary asset (asset_symbol, amount_value, value_usd)
+   - Incoming asset (incoming_asset_symbol, incoming_amount_value,
+     incoming_value_usd)
+2. Fallback: parse from notes field via regex patterns:
+   "1.5 ETH -> 3000 USDC", "Swapped X for Y", "ETH/USDC"
+3. Outgoing asset: processDisposal() → taxable event
+4. Incoming asset: new cost basis lot at FMV
+5. If outgoing side is unpriced ($0), use incoming value as proceeds
+6. NFT purchases/sales routed through same swap handler
+
+
+========================================================================
+6. TRANSFER HANDLING
+========================================================================
+
+Self-transfer detection:
+  - Notes contain "self transfer" or "internal transfer"
+  - Counterparty address matches user's wallet addresses
+  - Counterparty address is a known staking contract
+
+Self-transfers:
+  - SEND side: lots preserved in place (non-taxable)
+  - RECEIVE side: no-op (cost basis already exists)
+
+External sends (payments, gifts):
+  - Treated as taxable disposals via processDisposal()
+  - Creates Form 8949 entries with proper ST/LT classification
+  - Cost basis data stored in pendingTransferBasis for potential
+    receive-side matching
+  - Unpriced sends ($0 value) are skipped to avoid phantom gains
+
+External receives:
+  - Cost basis lot created at FMV
+  - NO income event generated (could be transfer from self,
+    gift, exchange withdrawal, etc.)
+  - pendingTransferBasis checked for matching send-side basis
+
+
+========================================================================
+7. INCOME RECOGNITION
+========================================================================
+
+IRS Rule: Crypto received as income (staking rewards, airdrops,
+mining rewards, etc.) is taxable as ordinary income at FMV on
+the date of receipt. (Rev. Rul. 2019-24)
+
+Income types recognized:
+  - staking reward, staking → classified as "staking" income
+  - reward → classified as "reward" income
+  - airdrop → classified as "airdrop" income
+  - mining, mining reward → classified as "mining" income
+  - yield, interest, claim_rewards, harvest, payout, fund_reward
+  - yield farming, farm reward
+  - Any type where getCategory() returns "income"
+  - Transactions with is_income DB flag = true
+
+NOT classified as income:
+  - Staking deposits (locking tokens) — only rewards
+  - Plain "receive" transactions — could be transfers
+  - Token mints — could be paid purchases
+
+Income processing:
+1. Record IncomeEvent with date, asset, amount, valueUsd, type
+2. Create cost basis lot at FMV (becomes basis for future sales)
+3. Only counted if valueUsd > 0 and within the tax year
+
+Automated income detection (compute-cost-basis.ts):
+  - CLAIM_REWARDS transaction type
+  - Streamflow vesting claims (via Helius raw data)
+  - Jupiter Merkle Distributor program IDs
+  - JUP-specific Jupuary airdrop programs
+  - $0.01 threshold filters spam airdrops
+
+
+========================================================================
+8. WASH SALE RULES
+========================================================================
+
+IRS Rule (Publication 550): If you sell a security at a loss and
+buy a substantially identical security within 30 days before or
+after the sale, the loss is disallowed. The disallowed loss is
+added to the cost basis of the replacement shares.
+
+Implementation (two-pass approach):
+
+Pass 1 — checkWashSale() (during processing):
+  Called when a buy/acquisition occurs. Checks if any prior loss
+  sale exists within 30 days. If so, adjusts the buy's cost basis
+  upward by the proportional disallowed loss amount.
+
+Pass 2 — markWashSales() (after all processing):
+  Iterates through all loss sales. For each, checks if a buy
+  occurred within 30 days before the sale (which wouldn't have
+  been caught by Pass 1 since the buy was processed first).
+
+Proportional disallowance:
+  If you sell 100 units at a loss and only repurchase 60 within
+  the window, only 60% of the loss is disallowed.
+
+Remaining quantity tracking:
+  Each buy's remaining quantity is decremented to prevent the same
+  buy from being used as replacement shares for multiple loss sales
+  beyond its actual quantity.
+
+Form 8949 treatment:
+  - Wash sale events marked with code "W" in adjustment column
+  - Loss set to $0 for tax deduction purposes
+  - Disallowed amount recorded in washSaleAdjustment field
+
+What is NOT covered:
+  - "Substantially identical" = same asset symbol only (not WETH/ETH)
+  - Cross-account wash sales (only checks imported transactions)
+  - Swap incoming assets ARE tracked as buys for wash sale detection
+
+
+========================================================================
+9. CAPITAL LOSS DEDUCTION LIMIT
+========================================================================
+
+IRS Rule (IRC Section 1211): Net capital losses are deductible up
+to $3,000/year ($1,500 for married filing separately). Excess
+losses carry forward to future years indefinitely.
+
+Implementation:
+1. Net short-term and long-term gains/losses independently
+   (matches Schedule D Part I and Part II)
+2. netShortTermGain = shortTermGains - shortTermLosses
+3. netLongTermGain = longTermGains - longTermLosses
+4. totalNetLoss = max(0, -(netST + netLT))
+5. deductibleLosses = min(totalNetLoss, $3,000 or $1,500)
+6. lossCarryover = totalNetLoss - deductibleLosses
+
+Filing status affects the deduction limit:
+  - Single / Married Filing Jointly / Head of Household: $3,000
+  - Married Filing Separately: $1,500
+
+Known limitation:
+  Loss carryover is calculated but NOT persisted or applied to
+  future tax years. Each year's calculation is independent.
+
+
+========================================================================
+10. STABLECOIN HANDLING
+========================================================================
+
+Recognized stablecoins:
+  USDC, USDT, PYUSD, DAI, BUSD, TUSD, USDP, FRAX, USD1
+
+Treatment: When a stablecoin is disposed, the system checks if the
+gain/loss per unit is less than $0.02. If so, cost basis is forced
+to equal proceeds ($0 gain/loss). If the per-unit gain/loss is
+$0.02 or more (indicating a real price event like a de-peg, or
+buying below $1), the actual gain/loss is preserved.
+
+Threshold: $0.02 per unit. This suppresses rounding noise and
+lot-depletion artifacts while preserving real taxable events from:
+  - De-pegging (e.g., USDC at $0.87 in March 2023)
+  - Buying stablecoins below $1 and selling at $1
+  - DeFi yield paid in stablecoins where basis differs from proceeds
+
+Rationale: Stablecoins are pegged to $1. Without this threshold,
+protocol deposits and DeFi interactions would generate thousands of
+micro-gains/losses (fractions of a cent) that add noise to reports.
+
+
+========================================================================
+11. DeFi SPECIFIC HANDLING
+========================================================================
+
+Staking:
+  - Staking deposits: non-taxable (locking tokens you already own)
+  - Unstaking: non-taxable (unlocking your tokens, basis preserved)
+  - Staking rewards: income at FMV, creates cost basis lot
+
+Liquidity Providing:
+  - Add liquidity: cost basis lot created for LP token at total
+    value of assets provided
+  - Remove liquidity: taxable disposal of LP token via
+    processDisposal(). Implicitly captures impermanent loss.
+
+Wrap/Unwrap (e.g., ETH↔WETH):
+  - Non-taxable event
+  - Cost basis lots moved from outgoing to incoming asset symbol
+  - Lot dates preserved (holding period unaffected)
+
+Bridges:
+  - Same-token bridge: non-taxable (cost basis preserved)
+  - Different-token bridge: treated as swap (taxable)
+
+Burns:
+  - Treated as disposal at $0 proceeds
+  - Full cost basis becomes a capital loss
+  - Spam token burns are detected and skipped
+
+Borrow/Repay:
+  - Non-taxable (borrowing is not a disposition)
+  - Limitation: borrowed assets not tracked separately from owned
+
+Deposit/Withdraw:
+  - Non-taxable (moving assets to/from protocols)
+
+Yield Farming:
+  - Farming rewards treated as income at FMV
+  - Creates cost basis lot for future disposal
+
+
+========================================================================
+12. NFT HANDLING
+========================================================================
+
+NFT Purchases:
+  - Routed through swap handler (SOL/ETH → NFT)
+  - Outgoing crypto: taxable disposal
+  - NFT: new cost basis lot at FMV
+
+NFT Sales:
+  - Routed through swap handler (NFT → SOL/ETH)
+  - NFT: taxable disposal
+  - Incoming crypto: new cost basis lot at FMV
+
+NFT Mints:
+  - NOT classified as income (removed from income handler)
+  - Falls through to catch-all (logged as unhandled)
+  - Future improvement: detect paid vs free mints
+
+NFT Marketplace Actions:
+  - Listing, bidding, cancel listing, etc. → neutral (no tax impact)
+
+NFT Burns:
+  - Disposal at $0 proceeds (capital loss)
+
+
+========================================================================
+13. FORM 8949 GENERATION
+========================================================================
+
+The system generates Form 8949 data for all taxable events:
+
+Per-event fields:
+  - Description: "{amount} {asset} ({chain}) - {txHash}"
+  - Date Acquired: lot acquisition date
+  - Date Sold: disposal date
+  - Proceeds: net proceeds after fees
+  - Cost Basis: total cost basis consumed
+  - Adjustment Code: "W" for wash sales, blank otherwise
+  - Gain/Loss: proceeds - cost basis (+ wash sale adjustment)
+
+PDF generation (form8949-pdf.ts):
+  - Part I: Short-term capital gains/losses
+  - Part II: Long-term capital gains/losses
+  - Pagination with subtotals on overflow pages
+  - Summary totals per section
+  - Optional taxpayer name and SSN
+
+CSV exports (tax-reports/export/route.ts):
+  - Capital gains CSV (all taxable events)
+  - Income report CSV (all income events)
+  - Capital gains by asset CSV (aggregated per asset)
+  - Transaction history CSV (all transactions for the year)
+  - All CSVs use proper field escaping (commas, quotes, newlines)
+
+
+========================================================================
+14. ESTIMATED TAX LIABILITY
+========================================================================
+
+The tax reports page shows an estimated tax liability using
+differentiated rates for short-term and long-term gains:
+
+  Short-term gains: taxed at 24% (mid-bracket ordinary income rate)
+  Long-term gains: taxed at 15% (most common preferential rate)
+
+  estimatedTaxLiability = (netST * 0.24) + (netLT * 0.15)
+
+This is an approximation. Actual rates depend on the taxpayer's
+total income, filing status, and other factors:
+  - Short-term: 10%, 12%, 22%, 24%, 32%, 35%, or 37%
+  - Long-term: 0%, 15%, or 20%
+  - High earners may owe 3.8% NIIT (not included)
+
+
+========================================================================
+15. TAX YEAR HANDLING
+========================================================================
+
+All processing uses a tax year parameter:
+  - Lot consumption happens for ALL years (chronological processing)
+  - Taxable events are only RECORDED for the selected tax year
+  - This ensures lots from prior years are properly consumed before
+    calculating gains for the target year
+
+Year boundaries: Determined using the user's configured timezone
+(stored in User.timezone, default "America/New_York").
+
+Implementation: getTaxYear(date, timezone) uses Intl.DateTimeFormat
+to extract the year in the user's local timezone. This ensures a
+transaction at 11pm ET on Dec 31 is correctly attributed to that
+year, not Jan 1 UTC of the next year.
+
+The timezone setting is configurable via:
+  - GET /api/settings → returns current timezone
+  - PUT /api/settings { timezone: "America/Los_Angeles" }
+  - Validated against IANA timezone database
+
+
+========================================================================
+16. USER-REPORTABLE EVENTS
+========================================================================
+
+The following events require user classification and cannot be
+automatically determined by the system:
+
+  - Lost/stolen crypto: User must mark transactions. Treated as
+    $0-proceeds disposal (basis written off as capital loss).
+    Post-TCJA, casualty/theft losses for personal property are
+    only deductible for federally declared disasters.
+
+  - Charitable donations: User must mark donations. Donating
+    appreciated crypto to a 501(c)(3) is NOT a taxable disposal
+    and allows FMV deduction on Schedule A.
+
+  - Gift vs payment classification: External sends default to
+    taxable disposals. Users must reclassify gifts (non-taxable
+    to sender under annual exclusion).
+
+  - Gift receipt basis: Received gifts create FMV basis by default.
+    Users should enter the donor's carryover basis when known.
+
+
+========================================================================
+17. REMAINING KNOWN LIMITATIONS
+========================================================================
+
+1. Loss carryover: Calculated but not persisted across tax years.
+   Needs DB field + cross-year application logic.
+
+2. Specific Identification: Not supported. Only automatic methods
+   (FIFO/LIFO/HIFO). Many competing products offer this.
+
+3. Schedule D: Listed in UI as "coming soon" but not implemented.
+
+4. Schedule 1: Listed in UI as "coming soon" but not implemented.
+
+5. Form 8949 boxes: Missing Box A/B/C checkboxes (most crypto
+   would be Box C — not reported on 1099-B).
+
+6. Lot audit trail: Individual lots are not persisted to DB. Lot
+   history can only be reconstructed by reprocessing all transactions.
+
+7. Floating-point arithmetic: Cost basis uses JS number (IEEE 754
+   double), not exact decimal. Final rounding to cents applied.
+
+8. NIIT (3.8% Net Investment Income Tax): Not included in estimated
+   tax liability. Requires MAGI which is outside system scope.
+
+9. Section 475 mark-to-market: Not supported. Professional traders
+   who have elected trader status have fundamentally different tax
+   treatment (all gains/losses ordinary, no $3K cap).
