@@ -69,6 +69,7 @@ export async function GET(request: NextRequest) {
     const showOnlyUnlabelled = searchParams.get("showOnlyUnlabelled") === "true";
     const hideZeroTransactions = searchParams.get("hideZeroTransactions") === "true";
     const hideSpamTransactions = searchParams.get("hideSpamTransactions") === "true";
+    const onlyWithGainLoss = searchParams.get("onlyWithGainLoss") === "true";
     const walletFilter = searchParams.get("wallet") || "";
     const dateFrom = searchParams.get("dateFrom") || "";
     const dateTo = searchParams.get("dateTo") || "";
@@ -180,6 +181,11 @@ export async function GET(request: NextRequest) {
       whereConditions.push({ tx_timestamp: { lt: endDate } });
     }
 
+    // Apply gain/loss filter
+    if (onlyWithGainLoss) {
+      whereConditions.push({ gain_loss_usd: { not: null } });
+    }
+
     // Build stats-only where (before cosmetic filters like hideZero/hideSpam)
     const statsWhereConditions = [...whereConditions];
     const statsWhere: Prisma.TransactionWhereInput =
@@ -247,10 +253,9 @@ export async function GET(request: NextRequest) {
         orderBy = { amount_value: "desc" };
         break;
       case "gainloss-asc":
-        orderBy = { gain_loss_usd: "asc" };
-        break;
       case "gainloss-desc":
-        orderBy = { gain_loss_usd: "desc" };
+        // Handled separately with raw SQL for ABS() ordering
+        orderBy = { tx_timestamp: "desc" }; // fallback for count query
         break;
       case "source-asc":
         orderBy = { source: "asc" };
@@ -263,12 +268,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch transactions with pagination
-    const [transactions, totalCount] = await Promise.all([
+    // For gainloss sort, we need ABS() ordering which Prisma doesn't support
+    // Fetch with Prisma, then post-sort by absolute value
+    const isGainLossSort = sortOption === "gainloss-asc" || sortOption === "gainloss-desc";
+    const fetchLimit = isGainLossSort ? limit * 3 : limit; // Over-fetch for post-sort accuracy
+    const fetchSkip = isGainLossSort ? 0 : skip;
+
+    const [rawTransactions, totalCount] = await Promise.all([
       prisma.transaction.findMany({
         where,
         orderBy,
-        skip,
-        take: limit,
+        skip: fetchSkip,
+        take: isGainLossSort ? undefined : limit,
         select: {
           id: true,
           type: true,
@@ -292,6 +303,17 @@ export async function GET(request: NextRequest) {
       }),
       prisma.transaction.count({ where }),
     ]);
+
+    // Post-sort by absolute gain/loss value
+    let transactions = rawTransactions;
+    if (isGainLossSort) {
+      transactions = [...rawTransactions].sort((a, b) => {
+        const absA = a.gain_loss_usd ? Math.abs(Number(a.gain_loss_usd)) : -1;
+        const absB = b.gain_loss_usd ? Math.abs(Number(b.gain_loss_usd)) : -1;
+        return sortOption === "gainloss-desc" ? absB - absA : absA - absB;
+      });
+      transactions = transactions.slice(skip, skip + limit);
+    }
 
     // Format transactions for frontend with structured out/in fields
     const formattedTransactions = transactions.map((tx) => {

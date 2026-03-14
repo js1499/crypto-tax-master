@@ -167,6 +167,7 @@ function TransactionsContent() {
   const [showOnlyUnlabelled, setShowOnlyUnlabelled] = useState(false);
   const [hideZeroTransactions, setHideZeroTransactions] = useState(false);
   const [hideSpamTransactions, setHideSpamTransactions] = useState(false);
+  const [onlyWithGainLoss, setOnlyWithGainLoss] = useState(false);
   const [isAddTransactionOpen, setIsAddTransactionOpen] = useState(false);
   const [isComputingCostBasis, setIsComputingCostBasis] = useState(false);
 
@@ -299,6 +300,7 @@ function TransactionsContent() {
           ...(showOnlyUnlabelled && { showOnlyUnlabelled: "true" }),
           ...(hideZeroTransactions && { hideZeroTransactions: "true" }),
           ...(hideSpamTransactions && { hideSpamTransactions: "true" }),
+          ...(onlyWithGainLoss && { onlyWithGainLoss: "true" }),
           ...(walletFilter && { wallet: walletFilter }),
           ...(dateFrom && { dateFrom: format(dateFrom, "yyyy-MM-dd") }),
           ...(dateTo && { dateTo: format(dateTo, "yyyy-MM-dd") }),
@@ -395,6 +397,7 @@ function TransactionsContent() {
     showOnlyUnlabelled,
     hideZeroTransactions,
     hideSpamTransactions,
+    onlyWithGainLoss,
     walletFilter,
     dateFrom,
     dateTo,
@@ -479,6 +482,7 @@ function TransactionsContent() {
     showOnlyUnlabelled,
     hideZeroTransactions,
     hideSpamTransactions,
+    onlyWithGainLoss,
     sortOption !== "date-desc",
   ].filter(Boolean).length;
 
@@ -587,6 +591,7 @@ function TransactionsContent() {
         ...(showOnlyUnlabelled && { showOnlyUnlabelled: "true" }),
         ...(hideZeroTransactions && { hideZeroTransactions: "true" }),
         ...(hideSpamTransactions && { hideSpamTransactions: "true" }),
+        ...(onlyWithGainLoss && { onlyWithGainLoss: "true" }),
         ...(walletFilter && { wallet: walletFilter }),
         ...(dateFrom && { dateFrom: format(dateFrom, "yyyy-MM-dd") }),
         ...(dateTo && { dateTo: format(dateTo, "yyyy-MM-dd") }),
@@ -1595,6 +1600,10 @@ function TransactionsContent() {
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-medium">Hide Spam</Label>
                     <Checkbox checked={hideSpamTransactions} onCheckedChange={() => toggleHideSpamTransactions()} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Only with Gain/Loss</Label>
+                    <Checkbox checked={onlyWithGainLoss} onCheckedChange={() => { setOnlyWithGainLoss(!onlyWithGainLoss); setCurrentPage(1); }} />
                   </div>
                 </div>
 
