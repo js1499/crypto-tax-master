@@ -1748,12 +1748,20 @@ function TransactionsContent() {
                     <TableHead className="font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("asset")}>
                       <span className="inline-flex items-center gap-0.5">Asset(s){getSortIndicator("asset")}</span>
                     </TableHead>
-                    <TableHead className="font-medium font-mono">Amount</TableHead>
-                    <TableHead className="text-right font-medium font-mono">Gain/Loss</TableHead>
+                    <TableHead className="font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("amount")}>
+                      <span className="inline-flex items-center gap-0.5">Amount{getSortIndicator("amount")}</span>
+                    </TableHead>
+                    <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("gainloss")}>
+                      <span className="inline-flex items-center gap-0.5 justify-end w-full">Gain/Loss{getSortIndicator("gainloss")}</span>
+                    </TableHead>
                     <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("date")}>
                       <span className="inline-flex items-center gap-0.5 justify-end w-full">Date{getSortIndicator("date")}</span>
                     </TableHead>
-                    {showAdvancedColumns && <TableHead className="text-right font-medium font-mono">Source</TableHead>}
+                    {showAdvancedColumns && (
+                      <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("source")}>
+                        <span className="inline-flex items-center gap-0.5 justify-end w-full">Source{getSortIndicator("source")}</span>
+                      </TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1845,7 +1853,7 @@ function TransactionsContent() {
                       </TableCell>
 
                       {/* Asset(s) - combined */}
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="font-mono">
                         {transaction.outAsset && transaction.inAsset ? (
                           <span>
                             <span className="text-rose-600 dark:text-rose-400">{transaction.outAsset}</span>
@@ -1862,7 +1870,7 @@ function TransactionsContent() {
                       </TableCell>
 
                       {/* Amount - combined */}
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="font-mono">
                         {transaction.outAmount != null && transaction.inAmount != null ? (
                           <span>
                             <span className="text-muted-foreground">{formatAmount(transaction.outAmount)}</span>
@@ -1882,7 +1890,7 @@ function TransactionsContent() {
                       <TableCell className="text-right font-mono">
                         {transaction.gainLossUsd != null ? (
                           <span className={cn(
-                            "text-xs inline-flex items-center gap-1 justify-end",
+                            "inline-flex items-center gap-1 justify-end",
                             transaction.gainLossUsd >= 0
                               ? "text-emerald-600 dark:text-emerald-400"
                               : "text-rose-600 dark:text-rose-400"
@@ -1893,12 +1901,12 @@ function TransactionsContent() {
                             ${Math.abs(transaction.gainLossUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground text-xs">{"\u2014"}</span>
+                          <span className="text-muted-foreground">{"\u2014"}</span>
                         )}
                       </TableCell>
 
                       {/* Date */}
-                      <TableCell className="text-right font-mono text-xs">
+                      <TableCell className="text-right font-mono">
                         {editingTransactionId === transaction.id && editingField === 'date' ? (
                           <div className="flex items-center justify-end space-x-2">
                             <Popover>
@@ -1930,7 +1938,7 @@ function TransactionsContent() {
                             onMouseEnter={() => handleMouseEnter('date')}
                             onMouseLeave={() => handleMouseLeave('date')}
                           >
-                            <div className="flex flex-col items-end text-xs">
+                            <div className="flex flex-col items-end">
                               <span>{format(new Date(transaction.date), "h:mm a")}</span>
                               <span className="text-muted-foreground">{format(new Date(transaction.date), "MM/dd/yyyy")}</span>
                             </div>
@@ -1950,7 +1958,7 @@ function TransactionsContent() {
 
                       {/* Exchange (advanced) */}
                       {showAdvancedColumns && (
-                        <TableCell className="text-right font-mono text-xs">
+                        <TableCell className="text-right font-mono">
                           {editingTransactionId === transaction.id && editingField === 'exchange' ? (
                             <div className="flex items-center justify-end space-x-2">
                               <Input
@@ -1980,12 +1988,12 @@ function TransactionsContent() {
                                       <img
                                         src={sourceLogoFiles[source.key]}
                                         alt={source.key}
-                                        className="h-4 w-4 rounded-full shrink-0"
+                                        className="h-5 w-5 rounded-full shrink-0"
                                       />
                                     );
                                   }
                                   return (
-                                    <span className={cn("inline-flex items-center justify-center h-4 w-6 rounded text-[0.5rem] font-bold leading-none shrink-0", sourceIconColors[source.key] || "bg-muted text-muted-foreground")}>
+                                    <span className={cn("inline-flex items-center justify-center h-5 w-7 rounded text-[0.55rem] font-bold leading-none shrink-0", sourceIconColors[source.key] || "bg-muted text-muted-foreground")}>
                                       {source.key}
                                     </span>
                                   );

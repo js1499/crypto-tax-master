@@ -240,6 +240,24 @@ export async function GET(request: NextRequest) {
       case "type-desc":
         orderBy = { type: "desc" };
         break;
+      case "amount-asc":
+        orderBy = { amount_value: "asc" };
+        break;
+      case "amount-desc":
+        orderBy = { amount_value: "desc" };
+        break;
+      case "gainloss-asc":
+        orderBy = { gain_loss_usd: "asc" };
+        break;
+      case "gainloss-desc":
+        orderBy = { gain_loss_usd: "desc" };
+        break;
+      case "source-asc":
+        orderBy = { source: "asc" };
+        break;
+      case "source-desc":
+        orderBy = { source: "desc" };
+        break;
       default:
         orderBy = { tx_timestamp: "desc" };
     }
