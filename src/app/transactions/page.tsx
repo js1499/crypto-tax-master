@@ -1054,6 +1054,19 @@ function TransactionsContent() {
   // Source/exchange icon helper
   // Sources with logo files in /public/logos/ get <img> badges
   // Others fall back to gradient text badges
+  // Shorten source display names
+  const shortenSource = (source: string): string => {
+    const map: Record<string, string> = {
+      "Solana Wallet": "Solana",
+      "Ethereum Wallet": "Ethereum",
+      "Bitcoin Wallet": "Bitcoin",
+      "Coinbase Exchange": "Coinbase",
+      "Binance Exchange": "Binance",
+      "CSV Import": "CSV",
+    };
+    return map[source] || source.replace(/ Wallet$/i, "").replace(/ Exchange$/i, "");
+  };
+
   const sourceLogoFiles: Record<string, string> = {
     SOL: "/logos/SOL.png",
     ETH: "/logos/ETH.png",
@@ -1740,7 +1753,7 @@ function TransactionsContent() {
                     <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("date")}>
                       <span className="inline-flex items-center gap-0.5 justify-end w-full">Date{getSortIndicator("date")}</span>
                     </TableHead>
-                    {showAdvancedColumns && <TableHead className="text-right font-medium font-mono min-w-[160px]">Exchange</TableHead>}
+                    {showAdvancedColumns && <TableHead className="text-right font-medium font-mono">Source</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1977,7 +1990,7 @@ function TransactionsContent() {
                                     </span>
                                   );
                                 })()}
-                                <span className="truncate max-w-[140px]">{transaction.exchange}</span>
+                                <span className="truncate max-w-[100px]">{shortenSource(transaction.exchange)}</span>
                               </div>
                               {editableFields.exchange && (
                                 <Button
