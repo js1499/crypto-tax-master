@@ -223,6 +223,9 @@ function TransactionsContent() {
   const [stats, setStats] = useState<{
     buyCount: number;
     sellCount: number;
+    transferInCount: number;
+    transferOutCount: number;
+    swapCount: number;
     otherCount: number;
     unlabelledCount: number;
     identifiedPercentage: number;
@@ -1430,44 +1433,44 @@ function TransactionsContent() {
         {showMoreStats && (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Card className="border-l-4 border-l-emerald-500 bg-gradient-to-r from-emerald-50/40 to-transparent dark:from-emerald-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-emerald-700 dark:text-emerald-400">Buy</CardTitle>
-                  <ArrowUpRight className="h-4 w-4 text-emerald-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.buyCount ?? 0)}</div>
-                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.buyCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
-                </CardContent>
-              </Card>
-              <Card className="border-l-4 border-l-rose-500 bg-gradient-to-r from-rose-50/40 to-transparent dark:from-rose-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-rose-700 dark:text-rose-400">Sell</CardTitle>
-                  <ArrowDownRight className="h-4 w-4 text-rose-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.sellCount ?? 0)}</div>
-                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.sellCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
-                </CardContent>
-              </Card>
               <Card className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/40 to-transparent dark:from-blue-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-blue-700 dark:text-blue-400">Other</CardTitle>
-                  <ArrowRightLeft className="h-4 w-4 text-blue-500" />
+                  <CardTitle className="text-sm font-medium text-blue-700 dark:text-blue-400">Transfer In</CardTitle>
+                  <ArrowDownRight className="h-4 w-4 text-blue-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.transferInCount ?? 0)}</div>
+                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.transferInCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
+                </CardContent>
+              </Card>
+              <Card className="border-l-4 border-l-indigo-500 bg-gradient-to-r from-indigo-50/40 to-transparent dark:from-indigo-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-indigo-700 dark:text-indigo-400">Transfer Out</CardTitle>
+                  <ArrowUpRight className="h-4 w-4 text-indigo-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.transferOutCount ?? 0)}</div>
+                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.transferOutCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
+                </CardContent>
+              </Card>
+              <Card className="border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-50/40 to-transparent dark:from-purple-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-purple-700 dark:text-purple-400">Swap</CardTitle>
+                  <ArrowRightLeft className="h-4 w-4 text-purple-500" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.swapCount ?? 0)}</div>
+                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.swapCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
+                </CardContent>
+              </Card>
+              <Card className="border-l-4 border-l-slate-500 bg-gradient-to-r from-slate-50/40 to-transparent dark:from-slate-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium text-slate-700 dark:text-slate-400">Other</CardTitle>
+                  <AlertCircle className="h-4 w-4 text-slate-500" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.otherCount ?? 0)}</div>
                   {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.otherCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
-                </CardContent>
-              </Card>
-              <Card className="border-l-4 border-l-amber-500 bg-gradient-to-r from-amber-50/40 to-transparent dark:from-amber-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-amber-700 dark:text-amber-400">Unlabelled</CardTitle>
-                  <AlertCircle className="h-4 w-4 text-amber-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.unlabelledCount ?? 0)}</div>
-                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.unlabelledCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
                 </CardContent>
               </Card>
             </div>

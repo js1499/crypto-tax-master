@@ -434,9 +434,12 @@ export async function GET(request: NextRequest) {
       ...getTypesForCategory("nft"), ...getTypesForCategory("income"),
     ];
     // Stats use statsWhere (includes search/filter/wallet/date but excludes cosmetic hideZero/hideSpam)
-    const [buyCount, sellCount, identifiedTypeCount, valueIdentifiedCount, disposalAgg, incomeAgg] = await Promise.all([
+    const [buyCount, sellCount, transferInCount, transferOutCount, swapCount, identifiedTypeCount, valueIdentifiedCount, disposalAgg, incomeAgg] = await Promise.all([
       prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("buy"), ...getTypesForCategory("nft").filter(t => t === "NFT_PURCHASE" || t === "NFT Purchase" || t === "nft purchase")] } } }),
       prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("sell"), ...getTypesForCategory("nft").filter(t => t === "NFT_SALE" || t === "NFT Sale" || t === "nft sale")] } } }),
+      prisma.transaction.count({ where: { ...statsWhere, type: { in: getTypesForCategory("transfer").filter(t => t.toLowerCase().includes("in") || t === "Receive" || t === "receive") } } }),
+      prisma.transaction.count({ where: { ...statsWhere, type: { in: getTypesForCategory("transfer").filter(t => t.toLowerCase().includes("out") || t === "Send" || t === "send") } } }),
+      prisma.transaction.count({ where: { ...statsWhere, type: { in: getTypesForCategory("swap") } } }),
       prisma.transaction.count({ where: { ...statsWhere, type: { in: allKnownTypes } } }),
       prisma.transaction.count({ where: { ...statsWhere, NOT: { value_usd: 0 } } }),
       // Cost basis stats: aggregate disposal transactions (where gain_loss_usd has been computed)
@@ -445,7 +448,7 @@ export async function GET(request: NextRequest) {
       prisma.transaction.aggregate({ where: { ...statsWhere, is_income: true }, _count: true, _sum: { value_usd: true } }),
     ]);
 
-    const otherCount = totalCount - buyCount - sellCount;
+    const otherCount = totalCount - buyCount - sellCount - transferInCount - transferOutCount - swapCount;
     const unlabelledCount = totalCount - identifiedTypeCount;
     const identifiedPercentage = totalCount > 0 ? Math.round((identifiedTypeCount / totalCount) * 100) : 0;
     const valueIdentifiedPercentage = totalCount > 0 ? Math.round((valueIdentifiedCount / totalCount) * 100) : 100;
@@ -473,6 +476,9 @@ export async function GET(request: NextRequest) {
       stats: {
         buyCount,
         sellCount,
+        transferInCount,
+        transferOutCount,
+        swapCount,
         otherCount,
         unlabelledCount,
         identifiedPercentage,
