@@ -1052,26 +1052,31 @@ function TransactionsContent() {
   };
 
   // Source/exchange icon helper
-  const getSourceIcon = (exchange: string) => {
+  // Sources with logo files in /public/logos/ get <img> badges
+  // Others fall back to gradient text badges
+  const sourceLogoFiles: Record<string, string> = {
+    SOL: "/logos/SOL.svg",
+    ETH: "/logos/ETH.svg",
+    BTC: "/logos/BTC.svg",
+  };
+
+  const getSourceIcon = (exchange: string): { key: string; hasLogo: boolean } | null => {
     const src = (exchange || "").toLowerCase();
-    if (src.includes("solana") || src.includes("sol")) return "SOL";
-    if (src.includes("ethereum") || src.includes("eth")) return "ETH";
-    if (src.includes("bitcoin") || src.includes("btc")) return "BTC";
-    if (src.includes("coinbase")) return "CB";
-    if (src.includes("binance")) return "BN";
-    if (src.includes("phantom")) return "PH";
-    if (src.includes("jupiter") || src.includes("jup")) return "JUP";
-    if (src.includes("raydium")) return "RAY";
-    if (src.includes("orca")) return "ORC";
-    if (src.includes("csv")) return "CSV";
-    if (src.includes("helius")) return "HEL";
+    if (src.includes("solana") || src.includes("sol")) return { key: "SOL", hasLogo: true };
+    if (src.includes("ethereum") || src.includes("eth")) return { key: "ETH", hasLogo: true };
+    if (src.includes("bitcoin") || src.includes("btc")) return { key: "BTC", hasLogo: true };
+    if (src.includes("coinbase")) return { key: "CB", hasLogo: false };
+    if (src.includes("binance")) return { key: "BN", hasLogo: false };
+    if (src.includes("phantom")) return { key: "PH", hasLogo: false };
+    if (src.includes("jupiter") || src.includes("jup")) return { key: "JUP", hasLogo: false };
+    if (src.includes("raydium")) return { key: "RAY", hasLogo: false };
+    if (src.includes("orca")) return { key: "ORC", hasLogo: false };
+    if (src.includes("csv")) return { key: "CSV", hasLogo: false };
+    if (src.includes("helius")) return { key: "HEL", hasLogo: false };
     return null;
   };
 
   const sourceIconColors: Record<string, string> = {
-    SOL: "bg-gradient-to-br from-purple-500 to-fuchsia-500 text-white",
-    ETH: "bg-gradient-to-br from-blue-500 to-indigo-600 text-white",
-    BTC: "bg-gradient-to-br from-orange-400 to-amber-500 text-white",
     CB: "bg-gradient-to-br from-blue-500 to-blue-600 text-white",
     BN: "bg-gradient-to-br from-yellow-400 to-amber-500 text-black",
     PH: "bg-gradient-to-br from-purple-400 to-purple-600 text-white",
@@ -1937,12 +1942,22 @@ function TransactionsContent() {
                             >
                               <div className="flex items-center justify-end gap-1.5 text-xs">
                                 {(() => {
-                                  const icon = getSourceIcon(transaction.exchange);
-                                  return icon ? (
-                                    <span className={cn("inline-flex items-center justify-center h-4 w-6 rounded text-[0.5rem] font-bold leading-none shrink-0", sourceIconColors[icon] || "bg-muted text-muted-foreground")}>
-                                      {icon}
+                                  const source = getSourceIcon(transaction.exchange);
+                                  if (!source) return null;
+                                  if (source.hasLogo && sourceLogoFiles[source.key]) {
+                                    return (
+                                      <img
+                                        src={sourceLogoFiles[source.key]}
+                                        alt={source.key}
+                                        className="h-4 w-4 rounded-full shrink-0"
+                                      />
+                                    );
+                                  }
+                                  return (
+                                    <span className={cn("inline-flex items-center justify-center h-4 w-6 rounded text-[0.5rem] font-bold leading-none shrink-0", sourceIconColors[source.key] || "bg-muted text-muted-foreground")}>
+                                      {source.key}
                                     </span>
-                                  ) : null;
+                                  );
                                 })()}
                                 <span className="truncate max-w-[80px]">{transaction.exchange}</span>
                               </div>
