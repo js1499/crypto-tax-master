@@ -1740,7 +1740,7 @@ function TransactionsContent() {
                     <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("date")}>
                       <span className="inline-flex items-center gap-0.5 justify-end w-full">Date{getSortIndicator("date")}</span>
                     </TableHead>
-                    {showAdvancedColumns && <TableHead className="text-right font-medium font-mono">Exchange</TableHead>}
+                    {showAdvancedColumns && <TableHead className="text-right font-medium font-mono min-w-[160px]">Exchange</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1791,14 +1791,14 @@ function TransactionsContent() {
                             onMouseEnter={() => handleMouseEnter('type')}
                             onMouseLeave={() => handleMouseLeave('type')}
                           >
-                            <div className="flex flex-col gap-0.5">
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap w-fit ${getCategoryBadgeColor(transaction.type)}`}>
+                            <div className="flex flex-col gap-1 items-start">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${getCategoryBadgeColor(transaction.type)}`}>
                                 {formatTypeForDisplay(transaction.type)}
                               </span>
                               {transaction.identified ? (
-                                <span className="text-[0.65rem] leading-tight text-emerald-600 dark:text-emerald-400">Identified</span>
+                                <span className="text-[0.65rem] leading-none text-emerald-600 dark:text-emerald-400 pl-0.5">Identified</span>
                               ) : (
-                                <span className="text-[0.65rem] leading-tight text-rose-500 dark:text-rose-400">Unidentified</span>
+                                <span className="text-[0.65rem] leading-none text-rose-500 dark:text-rose-400 pl-0.5">Unidentified</span>
                               )}
                             </div>
                             {editableFields.type && (
@@ -1977,7 +1977,7 @@ function TransactionsContent() {
                                     </span>
                                   );
                                 })()}
-                                <span className="truncate max-w-[80px]">{transaction.exchange}</span>
+                                <span className="truncate max-w-[140px]">{transaction.exchange}</span>
                               </div>
                               {editableFields.exchange && (
                                 <Button
