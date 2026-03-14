@@ -1670,21 +1670,25 @@ function TransactionsContent() {
         </div>
 
         {/* ── Table Controls ── */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Button
-              variant={showAdvancedColumns ? "default" : "ghost"}
-              size="sm"
-              onClick={() => setShowAdvancedColumns(!showAdvancedColumns)}
-            >
-              {showAdvancedColumns ? "Simple View" : "Advanced"}
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              {isLoadingTransactions
-                ? "Loading..."
-                : <>Showing <span className="font-mono font-medium text-foreground/70">{totalCount > 0 ? startIndex + 1 : 0}{"\u2013"}{endIndex}</span> of <span className="font-mono font-medium text-foreground/70">{totalCount.toLocaleString()}</span></>}
-            </span>
-          </div>
+        <div className="flex items-center gap-4">
+          {/* Advanced toggle */}
+          <button
+            onClick={() => setShowAdvancedColumns(!showAdvancedColumns)}
+            className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <span>Advanced</span>
+            <div className={cn(
+              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
+              showAdvancedColumns ? "bg-primary" : "bg-muted"
+            )}>
+              <span className={cn(
+                "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition-transform duration-200",
+                showAdvancedColumns ? "translate-x-4" : "translate-x-0"
+              )} />
+            </div>
+          </button>
+
+          {/* Density S/M/L */}
           <div className="flex items-center border rounded-lg overflow-hidden">
             {(["condensed", "regular", "spacious"] as const).map((d) => (
               <button
@@ -1701,6 +1705,13 @@ function TransactionsContent() {
               </button>
             ))}
           </div>
+
+          {/* Showing count */}
+          <span className="text-xs text-muted-foreground ml-auto">
+            {isLoadingTransactions
+              ? "Loading..."
+              : <>Showing <span className="font-mono font-medium text-foreground/70">{totalCount > 0 ? startIndex + 1 : 0}{"\u2013"}{endIndex}</span> of <span className="font-mono font-medium text-foreground/70">{totalCount.toLocaleString()}</span></>}
+          </span>
         </div>
 
         {/* ── Transaction Table ── */}
