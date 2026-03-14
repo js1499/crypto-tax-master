@@ -1826,7 +1826,10 @@ function TransactionsContent() {
                                 {formatTypeForDisplay(transaction.type)}
                               </span>
                               {transaction.identified ? (
-                                <span className="text-[0.65rem] leading-none text-emerald-600 dark:text-emerald-400 pl-0.5">Identified</span>
+                                <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500 text-white text-[0.6rem] leading-none px-1.5 py-0.5 font-medium">
+                                  <Check className="h-2.5 w-2.5" />
+                                  Identified
+                                </span>
                               ) : (
                                 <span className="text-[0.65rem] leading-none text-rose-500 dark:text-rose-400 pl-0.5">Unidentified</span>
                               )}
