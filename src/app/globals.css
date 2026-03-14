@@ -147,8 +147,8 @@
 .transaction-table.density-condensed td,
 .transaction-table.density-condensed th {
   font-size: 0.71875rem !important; /* ~11.5px */
-  padding-top: 0.15rem !important;
-  padding-bottom: 0.15rem !important;
+  padding-top: 0.3rem !important;
+  padding-bottom: 0.3rem !important;
   line-height: 1.2 !important;
 }
 
@@ -157,16 +157,16 @@
 .transaction-table td,
 .transaction-table th {
   font-size: 0.78125rem !important; /* ~12.5px */
-  padding-top: 0.425rem !important;
-  padding-bottom: 0.425rem !important;
-  line-height: 1.25 !important;
+  padding-top: 0.5rem !important;
+  padding-bottom: 0.5rem !important;
+  line-height: 1.3 !important;
 }
 
 .transaction-table.density-spacious td,
 .transaction-table.density-spacious th {
   font-size: 0.84375rem !important; /* ~13.5px */
-  padding-top: 0.75rem !important;
-  padding-bottom: 0.75rem !important;
+  padding-top: 0.85rem !important;
+  padding-bottom: 0.85rem !important;
   line-height: 1.4 !important;
 }
 

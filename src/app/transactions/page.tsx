@@ -1730,7 +1730,6 @@ function TransactionsContent() {
                       <span className="inline-flex items-center gap-0.5 justify-end w-full">Date{getSortIndicator("date")}</span>
                     </TableHead>
                     {showAdvancedColumns && <TableHead className="text-right font-medium font-mono">Exchange</TableHead>}
-                    {showAdvancedColumns && <TableHead className="text-right font-medium font-mono">Identified</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1781,9 +1780,16 @@ function TransactionsContent() {
                             onMouseEnter={() => handleMouseEnter('type')}
                             onMouseLeave={() => handleMouseLeave('type')}
                           >
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${getCategoryBadgeColor(transaction.type)}`}>
-                              {formatTypeForDisplay(transaction.type)}
-                            </span>
+                            <div className="flex flex-col gap-0.5">
+                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap w-fit ${getCategoryBadgeColor(transaction.type)}`}>
+                                {formatTypeForDisplay(transaction.type)}
+                              </span>
+                              {transaction.identified ? (
+                                <span className="text-[0.65rem] leading-tight text-emerald-600 dark:text-emerald-400">Identified</span>
+                              ) : (
+                                <span className="text-[0.65rem] leading-tight text-rose-500 dark:text-rose-400">Unidentified</span>
+                              )}
+                            </div>
                             {editableFields.type && (
                               <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <DropdownMenu>
@@ -1900,8 +1906,9 @@ function TransactionsContent() {
                             onMouseEnter={() => handleMouseEnter('date')}
                             onMouseLeave={() => handleMouseLeave('date')}
                           >
-                            <div className="flex justify-end text-xs">
-                              {format(new Date(transaction.date), "MM/dd/yyyy")}
+                            <div className="flex flex-col items-end text-xs">
+                              <span>{format(new Date(transaction.date), "h:mm a")}</span>
+                              <span className="text-muted-foreground">{format(new Date(transaction.date), "MM/dd/yyyy")}</span>
                             </div>
                             {editableFields.date && (
                               <Button
@@ -1976,48 +1983,6 @@ function TransactionsContent() {
                         </TableCell>
                       )}
 
-                      {/* Identified (advanced) */}
-                      {showAdvancedColumns && (
-                        <TableCell className="text-right font-mono">
-                          <div className="relative group flex justify-end"
-                            onMouseEnter={() => handleMouseEnter('identified')}
-                            onMouseLeave={() => handleMouseLeave('identified')}
-                          >
-                            {transaction.identified ? (
-                              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400">
-                                <Check className="mr-0.5 h-2.5 w-2.5" />
-                                Identified
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
-                                <AlertCircle className="mr-0.5 h-2.5 w-2.5" />
-                                Needs ID
-                              </span>
-                            )}
-                            {editableFields.identified && (
-                              <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                      <ChevronDown className="h-3 w-3" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent side="right" align="end">
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'identified', 'Identified')}>
-                                      <Check className="mr-2 h-4 w-4 text-emerald-500" />
-                                      Identified
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'identified', 'Needs Review')}>
-                                      <AlertCircle className="mr-2 h-4 w-4 text-amber-500" />
-                                      Needs Review
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
-                      )}
                     </TableRow>
                   ))}
                 </TableBody>
