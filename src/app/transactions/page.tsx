@@ -1386,7 +1386,7 @@ function TransactionsContent() {
                         Net Gain / Loss
                       </p>
                       <p className={cn(
-                        "text-2xl font-bold font-mono",
+                        "text-3xl font-bold font-mono tracking-tight",
                         stats.pnl.netGain >= 0
                           ? "text-emerald-600 dark:text-emerald-400"
                           : "text-rose-600 dark:text-rose-400"
@@ -1437,6 +1437,7 @@ function TransactionsContent() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.buyCount ?? 0)}</div>
+                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.buyCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
                 </CardContent>
               </Card>
               <Card className="border-l-4 border-l-rose-500 bg-gradient-to-r from-rose-50/40 to-transparent dark:from-rose-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
@@ -1446,6 +1447,7 @@ function TransactionsContent() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.sellCount ?? 0)}</div>
+                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.sellCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
                 </CardContent>
               </Card>
               <Card className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/40 to-transparent dark:from-blue-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
@@ -1455,6 +1457,7 @@ function TransactionsContent() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.otherCount ?? 0)}</div>
+                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.otherCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
                 </CardContent>
               </Card>
               <Card className="border-l-4 border-l-amber-500 bg-gradient-to-r from-amber-50/40 to-transparent dark:from-amber-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
@@ -1464,6 +1467,7 @@ function TransactionsContent() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.unlabelledCount ?? 0)}</div>
+                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.unlabelledCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
                 </CardContent>
               </Card>
             </div>
@@ -1755,10 +1759,7 @@ function TransactionsContent() {
                       <span className="inline-flex items-center gap-0.5">Type{getSortIndicator("type")}</span>
                     </TableHead>
                     <TableHead className="font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("asset")}>
-                      <span className="inline-flex items-center gap-0.5">Asset(s){getSortIndicator("asset")}</span>
-                    </TableHead>
-                    <TableHead className="font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("amount")}>
-                      <span className="inline-flex items-center gap-0.5">Amount{getSortIndicator("amount")}</span>
+                      <span className="inline-flex items-center gap-0.5">Asset / Amount{getSortIndicator("asset")}</span>
                     </TableHead>
                     <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("gainloss")}>
                       <span className="inline-flex items-center gap-0.5 justify-end w-full">Gain/Loss{getSortIndicator("gainloss")}</span>
@@ -1779,7 +1780,8 @@ function TransactionsContent() {
                       key={transaction.id}
                       className={cn(
                         "h-auto cursor-pointer transition-all duration-150 hover:bg-muted/60 hover:shadow-[inset_3px_0_0_hsl(var(--primary))]",
-                        selectedTransactionIds.has(transaction.id) && "bg-muted"
+                        selectedTransactionIds.has(transaction.id) && "bg-muted",
+                        !selectedTransactionIds.has(transaction.id) && "even:bg-muted/20"
                       )}
                       onClick={() => !isBulkMode && handleOpenDetail(transaction)}
                     >
@@ -1861,42 +1863,33 @@ function TransactionsContent() {
                         )}
                       </TableCell>
 
-                      {/* Asset(s) - combined */}
+                      {/* Asset / Amount - merged */}
                       <TableCell className="font-mono">
                         {transaction.outAsset && transaction.inAsset ? (
-                          <span>
-                            <span className="text-rose-600 dark:text-rose-400">{transaction.outAsset}</span>
-                            <span className="text-muted-foreground mx-1">{"\u2192"}</span>
-                            <span className="text-emerald-600 dark:text-emerald-400">{transaction.inAsset}</span>
-                          </span>
+                          <div className="flex flex-col gap-0.5">
+                            <span>
+                              <span className="text-rose-600 dark:text-rose-400">{formatAmount(transaction.outAmount)} {transaction.outAsset}</span>
+                            </span>
+                            <span>
+                              <span className="text-muted-foreground mr-1">{"\u2192"}</span>
+                              <span className="text-emerald-600 dark:text-emerald-400">{formatAmount(transaction.inAmount)} {transaction.inAsset}</span>
+                            </span>
+                          </div>
                         ) : transaction.outAsset ? (
-                          <span className="text-rose-600 dark:text-rose-400">{transaction.outAsset}</span>
+                          <span className="text-rose-600 dark:text-rose-400">{formatAmount(transaction.outAmount)} {transaction.outAsset}</span>
                         ) : transaction.inAsset ? (
-                          <span className="text-emerald-600 dark:text-emerald-400">{transaction.inAsset}</span>
-                        ) : (
-                          <span className="text-muted-foreground">{"\u2014"}</span>
-                        )}
-                      </TableCell>
-
-                      {/* Amount - combined */}
-                      <TableCell className="font-mono">
-                        {transaction.outAmount != null && transaction.inAmount != null ? (
-                          <span>
-                            <span className="text-muted-foreground">{formatAmount(transaction.outAmount)}</span>
-                            <span className="text-muted-foreground mx-1">{"\u2192"}</span>
-                            <span className="text-muted-foreground">{formatAmount(transaction.inAmount)}</span>
-                          </span>
-                        ) : transaction.outAmount != null ? (
-                          <span className="text-muted-foreground">{formatAmount(transaction.outAmount)}</span>
-                        ) : transaction.inAmount != null ? (
-                          <span className="text-muted-foreground">{formatAmount(transaction.inAmount)}</span>
+                          <span className="text-emerald-600 dark:text-emerald-400">{formatAmount(transaction.inAmount)} {transaction.inAsset}</span>
                         ) : (
                           <span className="text-muted-foreground">{"\u2014"}</span>
                         )}
                       </TableCell>
 
                       {/* Gain/Loss */}
-                      <TableCell className="text-right font-mono">
+                      <TableCell className={cn(
+                        "text-right font-mono",
+                        transaction.gainLossUsd != null && transaction.gainLossUsd >= 0 && "bg-emerald-50/40 dark:bg-emerald-950/15",
+                        transaction.gainLossUsd != null && transaction.gainLossUsd < 0 && "bg-rose-50/40 dark:bg-rose-950/15"
+                      )}>
                         {transaction.gainLossUsd != null ? (
                           <span className={cn(
                             "inline-flex items-center gap-1 justify-end",
@@ -2053,7 +2046,10 @@ function TransactionsContent() {
 
             {/* Pagination */}
             {!isLoadingTransactions && transactions.length > 0 && (
-              <div className="flex items-center justify-center py-4">
+              <div className="flex items-center justify-between px-4 py-3 border-t">
+                <span className="text-xs text-muted-foreground">
+                  Page <span className="font-mono font-medium text-foreground/70">{currentPage}</span> of <span className="font-mono font-medium text-foreground/70">{totalPages}</span>
+                </span>
                 <Pagination>
                   <PaginationContent>
                     <PaginationItem>
