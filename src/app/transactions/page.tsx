@@ -1720,9 +1720,6 @@ function TransactionsContent() {
                       <span className="inline-flex items-center gap-0.5">Asset(s){getSortIndicator("asset")}</span>
                     </TableHead>
                     <TableHead className="font-medium font-mono">Amount</TableHead>
-                    <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("value")}>
-                      <span className="inline-flex items-center gap-0.5 justify-end w-full">Value{getSortIndicator("value")}</span>
-                    </TableHead>
                     <TableHead className="text-right font-medium font-mono">Gain/Loss</TableHead>
                     <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("date")}>
                       <span className="inline-flex items-center gap-0.5 justify-end w-full">Date{getSortIndicator("date")}</span>
@@ -1846,31 +1843,19 @@ function TransactionsContent() {
                         )}
                       </TableCell>
 
-                      {/* Value */}
-                      <TableCell className="text-right font-mono">
-                        <span className={cn(
-                          "crypto-amount inline-flex items-center gap-1 justify-end",
-                          transaction.valueUsd >= 0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-rose-600 dark:text-rose-400"
-                        )}>
-                          {transaction.valueUsd >= 0
-                            ? <span className="text-[0.55rem] leading-none">{"\u25B2"}</span>
-                            : <span className="text-[0.55rem] leading-none">{"\u25BC"}</span>}
-                          ${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </span>
-                      </TableCell>
-
                       {/* Gain/Loss */}
                       <TableCell className="text-right font-mono">
                         {transaction.gainLossUsd != null ? (
                           <span className={cn(
-                            "text-xs",
+                            "text-xs inline-flex items-center gap-1 justify-end",
                             transaction.gainLossUsd >= 0
                               ? "text-emerald-600 dark:text-emerald-400"
                               : "text-rose-600 dark:text-rose-400"
                           )}>
-                            {transaction.gainLossUsd >= 0 ? "+" : "-"}${Math.abs(transaction.gainLossUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {transaction.gainLossUsd >= 0
+                              ? <span className="text-[0.55rem] leading-none">{"\u25B2"}</span>
+                              : <span className="text-[0.55rem] leading-none">{"\u25BC"}</span>}
+                            ${Math.abs(transaction.gainLossUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         ) : (
                           <span className="text-muted-foreground text-xs">{"\u2014"}</span>
@@ -2142,16 +2127,53 @@ function TransactionsContent() {
             {selectedTransaction && (
               <>
                 <SheetHeader>
-                  <SheetTitle>Transaction Details</SheetTitle>
+                  <div className="flex items-center gap-3">
+                    <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeColor(selectedTransaction.type)}`}>
+                      {formatTypeForDisplay(selectedTransaction.type)}
+                    </span>
+                    <SheetTitle className="text-lg">Transaction Details</SheetTitle>
+                  </div>
                   <SheetDescription>
-                    Review and edit transaction information
+                    {format(new Date(selectedTransaction.date), "MMM d, yyyy 'at' h:mm a")} · {selectedTransaction.exchange}
                   </SheetDescription>
                 </SheetHeader>
 
                 <div className="mt-6 space-y-6">
+                  {/* Cost Basis / Gain-Loss Summary */}
+                  {selectedTransaction.costBasisComputed && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {selectedTransaction.costBasisUsd != null && (
+                        <div className="rounded-lg border bg-muted/30 p-3">
+                          <p className="text-xs text-muted-foreground">Cost Basis</p>
+                          <p className="text-lg font-bold font-mono" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                            ${Math.abs(selectedTransaction.costBasisUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      )}
+                      {selectedTransaction.gainLossUsd != null && (
+                        <div className={cn(
+                          "rounded-lg border p-3",
+                          selectedTransaction.gainLossUsd >= 0
+                            ? "border-emerald-200 bg-emerald-50/30 dark:border-emerald-800/40 dark:bg-emerald-950/20"
+                            : "border-rose-200 bg-rose-50/30 dark:border-rose-800/40 dark:bg-rose-950/20"
+                        )}>
+                          <p className="text-xs text-muted-foreground">Gain / Loss</p>
+                          <p className={cn(
+                            "text-lg font-bold font-mono",
+                            selectedTransaction.gainLossUsd >= 0
+                              ? "text-emerald-600 dark:text-emerald-400"
+                              : "text-rose-600 dark:text-rose-400"
+                          )} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {selectedTransaction.gainLossUsd >= 0 ? "+" : "-"}${Math.abs(selectedTransaction.gainLossUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Transaction Type */}
                   <div className="space-y-2">
-                    <Label>Transaction Type</Label>
+                    <Label className="text-xs text-muted-foreground">Type</Label>
                     <Select
                       value={selectedTransaction.type}
                       onValueChange={(value) => handleChangeDropdownValue(selectedTransaction.id, 'type', value)}
@@ -2172,9 +2194,10 @@ function TransactionsContent() {
                   {/* Basic Info Grid */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Asset</Label>
+                      <Label className="text-xs text-muted-foreground">Asset</Label>
                       <Input
                         value={selectedTransaction.asset}
+                        className="font-mono"
                         onChange={(e) => {
                           const updated = { ...selectedTransaction, asset: e.target.value };
                           setSelectedTransaction(updated);
@@ -2187,7 +2210,7 @@ function TransactionsContent() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Status</Label>
+                      <Label className="text-xs text-muted-foreground">Status</Label>
                       <Select
                         value={selectedTransaction.status}
                         onValueChange={(value) => handleChangeDropdownValue(selectedTransaction.id, 'status', value)}
@@ -2203,9 +2226,10 @@ function TransactionsContent() {
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Amount</Label>
+                      <Label className="text-xs text-muted-foreground">Amount</Label>
                       <Input
                         value={selectedTransaction.amount.split(' ')[0]}
+                        className="font-mono"
                         onChange={(e) => {
                           const assetSymbol = selectedTransaction.amount.split(' ')[1] || selectedTransaction.asset;
                           const updated = { ...selectedTransaction, amount: `${e.target.value} ${assetSymbol}` };
@@ -2221,26 +2245,7 @@ function TransactionsContent() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Value (USD)</Label>
-                      <Input
-                        value={selectedTransaction.value.replace(/[$,]/g, '')}
-                        onChange={(e) => {
-                          const numValue = parseFloat(e.target.value);
-                          const isNegative = selectedTransaction.value.startsWith('-');
-                          const updated = { ...selectedTransaction, value: `${isNegative ? '-' : ''}$${numValue.toFixed(2)}` };
-                          setSelectedTransaction(updated);
-                        }}
-                        onBlur={() => {
-                          const numValue = parseFloat(selectedTransaction.value.replace(/[-$,]/g, ''));
-                          if (!isNaN(numValue)) {
-                            setEditingValue(numValue.toString());
-                            handleSaveEdit(selectedTransaction.id, 'value');
-                          }
-                        }}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Exchange/Source</Label>
+                      <Label className="text-xs text-muted-foreground">Exchange / Source</Label>
                       <Input
                         value={selectedTransaction.exchange}
                         onChange={(e) => {
@@ -2254,10 +2259,11 @@ function TransactionsContent() {
                         }}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Date</Label>
+                    <div className="space-y-2 col-span-2">
+                      <Label className="text-xs text-muted-foreground">Date & Time</Label>
                       <Input
                         type="datetime-local"
+                        className="font-mono"
                         value={format(new Date(selectedTransaction.date), "yyyy-MM-dd'T'HH:mm")}
                         onChange={(e) => {
                           const newDate = new Date(e.target.value);
@@ -2271,7 +2277,7 @@ function TransactionsContent() {
                   {/* Notes Section */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <Label>Notes</Label>
+                      <Label className="text-xs text-muted-foreground">Notes</Label>
                       {!editingNotes && (
                         <Button
                           variant="ghost"
@@ -2308,30 +2314,31 @@ function TransactionsContent() {
                         </div>
                       </div>
                     ) : (
-                      <div className="p-3 rounded-md bg-muted min-h-[80px]">
+                      <div className="p-3 rounded-lg bg-muted/30 border min-h-[60px]">
                         {selectedTransaction.notes ? (
                           <p className="text-sm whitespace-pre-wrap">{selectedTransaction.notes}</p>
                         ) : (
-                          <p className="text-sm text-muted-foreground">No notes added</p>
+                          <p className="text-sm text-muted-foreground/50 italic">No notes</p>
                         )}
                       </div>
                     )}
                   </div>
 
-                  {/* Additional Info */}
+                  {/* Transaction Hash */}
                   {selectedTransaction.txHash && (
                     <div className="space-y-2">
-                      <Label>Transaction Hash</Label>
+                      <Label className="text-xs text-muted-foreground">Transaction Hash</Label>
                       <div className="flex items-center gap-2">
                         <Input
                           value={selectedTransaction.txHash}
                           readOnly
-                          className="font-mono text-xs"
+                          className="font-mono text-xs bg-muted/30"
                         />
                         {selectedTransaction.chain && (
                           <Button
                             variant="outline"
                             size="sm"
+                            className="shrink-0"
                             onClick={() => {
                               const explorerUrl = selectedTransaction.chain === 'ethereum'
                                 ? `https://etherscan.io/tx/${selectedTransaction.txHash}`
@@ -2352,13 +2359,15 @@ function TransactionsContent() {
                   <div className="flex gap-2 pt-4 border-t">
                     <Button
                       variant="destructive"
+                      size="sm"
                       onClick={() => handleDeleteTransaction(selectedTransaction.id)}
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
-                      Delete Transaction
+                      Delete
                     </Button>
                     <Button
                       variant="outline"
+                      size="sm"
                       onClick={() => {
                         handleChangeDropdownValue(selectedTransaction.id, 'identified', selectedTransaction.identified ? 'Needs Review' : 'Identified');
                       }}
@@ -2366,12 +2375,12 @@ function TransactionsContent() {
                       {selectedTransaction.identified ? (
                         <>
                           <AlertCircle className="mr-2 h-4 w-4" />
-                          Mark as Unidentified
+                          Mark Unidentified
                         </>
                       ) : (
                         <>
                           <Check className="mr-2 h-4 w-4" />
-                          Mark as Identified
+                          Mark Identified
                         </>
                       )}
                     </Button>

@@ -31,16 +31,42 @@ import { Bell, Key, Lock, Save, Shield, User } from "lucide-react";
 export default function SettingsPage() {
   const [mounted, setMounted] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [timezone, setTimezone] = useState("America/New_York");
+  const [costBasisMethod, setCostBasisMethod] = useState("FIFO");
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+    // Load settings from API
+    fetch("/api/settings")
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === "success") {
+          if (data.timezone) setTimezone(data.timezone);
+          if (data.costBasisMethod) setCostBasisMethod(data.costBasisMethod);
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  const handleSave = () => {
-    setSaveSuccess(true);
-    setTimeout(() => {
-      setSaveSuccess(false);
-    }, 3000);
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ timezone, costBasisMethod }),
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      }
+    } catch {
+      // Silently fail
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (!mounted) {
@@ -139,7 +165,8 @@ export default function SettingsPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="timezone">Timezone</Label>
-                    <Select defaultValue="America/New_York">
+                    <p className="text-xs text-muted-foreground">Used for tax year boundary determination</p>
+                    <Select value={timezone} onValueChange={setTimezone}>
                       <SelectTrigger id="timezone">
                         <SelectValue placeholder="Select timezone" />
                       </SelectTrigger>
@@ -148,9 +175,13 @@ export default function SettingsPage() {
                         <SelectItem value="America/Chicago">Central Time (US & Canada)</SelectItem>
                         <SelectItem value="America/Denver">Mountain Time (US & Canada)</SelectItem>
                         <SelectItem value="America/Los_Angeles">Pacific Time (US & Canada)</SelectItem>
+                        <SelectItem value="America/Anchorage">Alaska</SelectItem>
+                        <SelectItem value="Pacific/Honolulu">Hawaii</SelectItem>
                         <SelectItem value="Europe/London">London</SelectItem>
-                        <SelectItem value="Europe/Paris">Paris</SelectItem>
+                        <SelectItem value="Europe/Paris">Paris / Berlin</SelectItem>
                         <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
+                        <SelectItem value="Asia/Singapore">Singapore</SelectItem>
+                        <SelectItem value="Australia/Sydney">Sydney</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -218,16 +249,15 @@ export default function SettingsPage() {
                   <h3 className="text-lg font-medium">Tax Calculation</h3>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="calculation-method">Default Calculation Method</Label>
-                      <Select defaultValue="fifo">
+                      <Label htmlFor="calculation-method">Cost Basis Method</Label>
+                      <Select value={costBasisMethod} onValueChange={setCostBasisMethod}>
                         <SelectTrigger id="calculation-method">
                           <SelectValue placeholder="Select method" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="fifo">FIFO (First In, First Out)</SelectItem>
-                          <SelectItem value="lifo">LIFO (Last In, First Out)</SelectItem>
-                          <SelectItem value="hifo">HIFO (Highest In, First Out)</SelectItem>
-                          <SelectItem value="acb">ACB (Adjusted Cost Base)</SelectItem>
+                          <SelectItem value="FIFO">FIFO (First In, First Out)</SelectItem>
+                          <SelectItem value="LIFO">LIFO (Last In, First Out)</SelectItem>
+                          <SelectItem value="HIFO">HIFO (Highest In, First Out)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
