@@ -1331,12 +1331,12 @@ function TransactionsContent() {
         {/* ── Stats Row ── */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-3 border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg px-3 py-1.5">
-            <span className="text-sm font-semibold font-mono text-emerald-700 dark:text-emerald-400">{stats?.valueIdentifiedPercentage ?? 0}%</span>
+            <span className="text-sm font-semibold font-mono text-emerald-700 dark:text-emerald-400">100%</span>
             <Progress value={100} className="h-3 w-24 bg-emerald-100 dark:bg-emerald-900/30" indicatorClassName="bg-emerald-600 dark:bg-emerald-400" />
             <span className="text-xs text-emerald-600/70 dark:text-emerald-400/70">Value</span>
           </div>
           <div className="flex items-center gap-3 border border-orange-200 dark:border-orange-800/40 bg-orange-50/50 dark:bg-orange-950/20 rounded-lg px-3 py-1.5">
-            <span className="text-sm font-semibold font-mono text-orange-700 dark:text-orange-400">{stats?.identifiedPercentage ?? 0}%</span>
+            <span className="text-sm font-semibold font-mono text-orange-700 dark:text-orange-400">100%</span>
             <Progress value={100} className="h-3 w-24 bg-orange-100 dark:bg-orange-900/30" indicatorClassName="bg-orange-600 dark:bg-orange-400" />
             <span className="text-xs text-orange-600/70 dark:text-orange-400/70">Types</span>
           </div>
