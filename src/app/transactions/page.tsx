@@ -1723,8 +1723,8 @@ function TransactionsContent() {
         <div data-onboarding="review-transactions" className="border border-[#E5E5E0] dark:border-[#333333] rounded-lg overflow-hidden">
           <div className="overflow-auto max-h-[calc(100vh-280px)]">
             <Table className={cn("transaction-table", `density-${tableDensity}`)}>
-              <TableHeader>
-                <TableRow className="border-b border-[#E5E5E0] dark:border-[#333333] bg-[#FAFAF8] dark:bg-[#161616] sticky top-0 z-10">
+              <TableHeader className="sticky top-0 z-10 bg-[#FAFAF8] dark:bg-[#161616]">
+                <TableRow className="border-b border-[#E5E5E0] dark:border-[#333333]">
                   <TableHead className="w-11 border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                     <Checkbox
                       checked={selectedTransactionIds.size === transactions.length && transactions.length > 0}

@@ -146,6 +146,15 @@
   background-color: #2A2A2A;
 }
 
+/* Sticky header — ensure th cells have opaque background */
+.transaction-table thead th {
+  background-color: #FAFAF8;
+}
+
+.dark .transaction-table thead th {
+  background-color: #161616;
+}
+
 /* Horizon sortable column header hover */
 .transaction-table th[class*="cursor-pointer"]:hover {
   background-color: #F9F9F6;
