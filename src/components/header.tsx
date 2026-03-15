@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Bell, HelpCircle, LogOut, Settings, User } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { toast } from "sonner";
 
 export function Header() {
@@ -50,7 +51,9 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-[#F0F0EB] dark:border-[#2A2A2A] bg-white dark:bg-[#1A1A1A] px-8">
-      <div className="text-lg font-semibold">Dashboard</div>
+      <div className="flex items-center gap-2">
+        <SidebarTrigger className="-ml-2" />
+      </div>
       <div className="flex items-center gap-4">
         <ThemeToggle />
         {!isLoading && (
