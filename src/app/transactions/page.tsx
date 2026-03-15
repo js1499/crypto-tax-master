@@ -207,7 +207,7 @@ function TransactionsContent() {
   const [isDeletingAll, setIsDeletingAll] = useState(false);
 
   // UI mode state
-  const [showAdvancedColumns, setShowAdvancedColumns] = useState(false);
+  const [showAdvancedColumns, setShowAdvancedColumns] = useState(true);
   const [showMoreStats, setShowMoreStats] = useState(false);
   const [tableDensity, setTableDensity] = useState<"condensed" | "regular" | "spacious">("regular");
 
@@ -1504,21 +1504,28 @@ function TransactionsContent() {
           </>
         )}
 
-        {/* ── Filters Row: Search + Year + Filters Popover ── */}
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search transactions..."
-              className="pl-8 transition-shadow duration-200 focus:shadow-[0_0_0_3px_hsl(var(--primary)/0.1)]"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
+        {/* ── Filter Bar (Horizon style) ── */}
+        <div className="flex items-center gap-2">
+          <Select value={filter === "all" ? "all" : filter} onValueChange={(value) => { setFilter(value); setCurrentPage(1); }}>
+            <SelectTrigger className="w-[160px] h-9 text-sm font-medium">
+              <SelectValue placeholder="All Transactions" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Transactions</SelectItem>
+              <SelectItem value="buy">Buy</SelectItem>
+              <SelectItem value="sell">Sell</SelectItem>
+              <SelectItem value="transfer">Transfers</SelectItem>
+              <SelectItem value="swap">Swaps</SelectItem>
+              <SelectItem value="stake">Staking</SelectItem>
+              <SelectItem value="defi">DeFi</SelectItem>
+              <SelectItem value="nft">NFT</SelectItem>
+              <SelectItem value="income">Income</SelectItem>
+              <SelectItem value="other">Other</SelectItem>
+            </SelectContent>
+          </Select>
 
           <Select value={yearValue} onValueChange={handleYearChange}>
-            <SelectTrigger className="w-[130px] h-9">
+            <SelectTrigger className="w-[120px] h-9 text-sm">
               <SelectValue placeholder="All Years" />
             </SelectTrigger>
             <SelectContent>
@@ -1529,41 +1536,23 @@ function TransactionsContent() {
             </SelectContent>
           </Select>
 
+          <Button variant="outline" size="sm" className="h-9 text-sm font-medium gap-1.5">
+            <ArrowUpDown className="h-4 w-4 text-[#6B7280]" />
+            Sorting
+          </Button>
+
           <Popover>
             <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className={cn("h-9", activeFilterCount > 0 && "bg-primary text-primary-foreground hover:bg-primary/90")}
-              >
-                <Filter className="mr-2 h-4 w-4" />
-                Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+              <Button variant="outline" size="sm" className="h-9 text-sm font-medium gap-1.5">
+                <Filter className="h-4 w-4 text-[#6B7280]" />
+                Filters
+                {activeFilterCount > 0 && (
+                  <span className="ml-1 inline-flex items-center justify-center h-[18px] min-w-[18px] rounded-full bg-primary text-white text-[11px] font-medium px-1">{activeFilterCount}</span>
+                )}
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-80" align="end">
-              <div className="space-y-4">
-                {/* Type filter */}
-                <div className="space-y-2">
-                  <Label className="text-xs font-medium">Transaction Type</Label>
-                  <Select value={filter} onValueChange={(value) => { setFilter(value); setCurrentPage(1); }}>
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="All Types" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="buy">Buy</SelectItem>
-                      <SelectItem value="sell">Sell</SelectItem>
-                      <SelectItem value="transfer">Transfers</SelectItem>
-                      <SelectItem value="swap">Swaps</SelectItem>
-                      <SelectItem value="stake">Staking</SelectItem>
-                      <SelectItem value="defi">DeFi</SelectItem>
-                      <SelectItem value="nft">NFT</SelectItem>
-                      <SelectItem value="income">Income</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
+            <PopoverContent className="w-[360px]" align="end">
+              <div className="space-y-3">
                 {/* Wallet filter */}
                 {wallets.length > 0 && (
                   <div className="space-y-2">
@@ -1686,87 +1675,61 @@ function TransactionsContent() {
               </div>
             </PopoverContent>
           </Popover>
+
+          {/* Search icon button */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="icon" className="h-9 w-9">
+                <Search className="h-4 w-4 text-[#6B7280]" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[280px] p-2" align="end">
+              <Input
+                type="search"
+                placeholder="Search transactions..."
+                className="h-9"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                autoFocus
+              />
+            </PopoverContent>
+          </Popover>
         </div>
 
-        {/* ── Table Controls ── */}
-        <div className="flex items-center gap-4">
-          {/* Advanced toggle */}
-          <button
-            onClick={() => setShowAdvancedColumns(!showAdvancedColumns)}
-            className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <span>Advanced</span>
-            <div className={cn(
-              "relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200",
-              showAdvancedColumns ? "bg-primary" : "bg-muted"
-            )}>
-              <span className={cn(
-                "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-sm ring-0 transition-transform duration-200",
-                showAdvancedColumns ? "translate-x-4" : "translate-x-0"
-              )} />
-            </div>
-          </button>
-
-          {/* Density S/M/L */}
-          <div className="flex items-center border rounded-lg overflow-hidden">
-            {(["condensed", "regular", "spacious"] as const).map((d) => (
-              <button
-                key={d}
-                onClick={() => setTableDensity(d)}
-                className={cn(
-                  "px-2.5 py-1 text-xs font-medium transition-colors capitalize",
-                  tableDensity === d
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                )}
-              >
-                {d === "condensed" ? "S" : d === "regular" ? "M" : "L"}
-              </button>
-            ))}
-          </div>
-
-          {/* Showing count */}
-          <span className="text-xs text-muted-foreground ml-auto">
-            {isLoadingTransactions
-              ? "Loading..."
-              : <>Showing <span className="font-mono font-medium text-foreground/70">{totalCount > 0 ? startIndex + 1 : 0}{"\u2013"}{endIndex}</span> of <span className="font-mono font-medium text-foreground/70">{totalCount.toLocaleString()}</span></>}
-          </span>
-        </div>
-
-        {/* ── Transaction Table ── */}
-        <Card>
-          <CardContent className="p-0" data-onboarding="review-transactions">
-            <div className="overflow-x-auto">
-              <Table className={cn("transaction-table", `density-${tableDensity}`)}>
-                <TableHeader>
-                  <TableRow className="h-auto">
-                    {showAdvancedColumns && isBulkMode && (
-                      <TableHead className="w-12">
-                        <Checkbox
-                          checked={selectedTransactionIds.size === transactions.length && transactions.length > 0}
-                          onCheckedChange={handleBulkSelectAll}
-                        />
-                      </TableHead>
-                    )}
-                    <TableHead className="text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("type")}>
-                      <span className="inline-flex items-center gap-0.5">Type{getSortIndicator("type")}</span>
+        {/* ── Transaction Table (no card wrapper — Horizon spec) ── */}
+        <div data-onboarding="review-transactions">
+          <div className="overflow-x-auto">
+            <Table className={cn("transaction-table", `density-${tableDensity}`)}>
+              <TableHeader>
+                <TableRow className="border-b border-[#E5E5E0] dark:border-[#333333]">
+                  {isBulkMode && (
+                    <TableHead className="w-11">
+                      <Checkbox
+                        checked={selectedTransactionIds.size === transactions.length && transactions.length > 0}
+                        onCheckedChange={handleBulkSelectAll}
+                      />
                     </TableHead>
-                    <TableHead className="text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("asset")}>
-                      <span className="inline-flex items-center gap-0.5">Asset / Amount{getSortIndicator("asset")}</span>
-                    </TableHead>
-                    <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("gainloss")}>
-                      <span className="inline-flex items-center gap-0.5 justify-end w-full">Gain/Loss{getSortIndicator("gainloss")}</span>
-                    </TableHead>
-                    <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("date")}>
-                      <span className="inline-flex items-center gap-0.5 justify-end w-full">Date{getSortIndicator("date")}</span>
-                    </TableHead>
-                    {showAdvancedColumns && (
-                      <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("source")}>
-                        <span className="inline-flex items-center gap-0.5 justify-end w-full">Source{getSortIndicator("source")}</span>
-                      </TableHead>
-                    )}
-                  </TableRow>
-                </TableHeader>
+                  )}
+                  <TableHead className="text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("type")}>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="inline-block h-4 w-4 rounded-full bg-primary" />
+                      <span style={{ fontVariantNumeric: 'tabular-nums' }}>{isLoadingTransactions ? "..." : totalCount.toLocaleString()}</span> Transactions{getSortIndicator("type")}
+                    </span>
+                  </TableHead>
+                  <TableHead className="text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("asset")}>
+                    <span className="inline-flex items-center gap-0.5">Asset / Amount{getSortIndicator("asset")}</span>
+                  </TableHead>
+                  <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("gainloss")}>
+                    <span className="inline-flex items-center gap-0.5 justify-end w-full">Gain/Loss{getSortIndicator("gainloss")}</span>
+                  </TableHead>
+                  <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("date")}>
+                    <span className="inline-flex items-center gap-0.5 justify-end w-full">Date{getSortIndicator("date")}</span>
+                  </TableHead>
+                  <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("source")}>
+                    <span className="inline-flex items-center gap-0.5 justify-end w-full">Source{getSortIndicator("source")}</span>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
                 <TableBody>
                   {currentTransactions.map((transaction) => (
                     <TableRow
@@ -1778,7 +1741,7 @@ function TransactionsContent() {
                       onClick={() => !isBulkMode && handleOpenDetail(transaction)}
                     >
                       {/* Checkbox (advanced + bulk) */}
-                      {showAdvancedColumns && isBulkMode && (
+                      {isBulkMode && (
                         <TableCell className="w-12">
                           <Checkbox
                             checked={selectedTransactionIds.has(transaction.id)}
@@ -1944,9 +1907,8 @@ function TransactionsContent() {
                         )}
                       </TableCell>
 
-                      {/* Exchange (advanced) */}
-                      {showAdvancedColumns && (
-                        <TableCell className="text-right">
+                      {/* Source */}
+                      <TableCell className="text-right">
                           {editingTransactionId === transaction.id && editingField === 'exchange' ? (
                             <div className="flex items-center justify-end space-x-2">
                               <Input
@@ -2001,7 +1963,6 @@ function TransactionsContent() {
                             </div>
                           )}
                         </TableCell>
-                      )}
 
                     </TableRow>
                   ))}
@@ -2120,8 +2081,7 @@ function TransactionsContent() {
                 </Pagination>
               </div>
             )}
-          </CardContent>
-        </Card>
+        </div>
 
         {/* Transaction Detail Sheet */}
         <Sheet open={isDetailSheetOpen} onOpenChange={setIsDetailSheetOpen}>
