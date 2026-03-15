@@ -516,22 +516,52 @@ export function formatTypeForDisplay(rawType: string): string {
  */
 export function getCategoryBadgeColor(rawType: string): string {
   const cat = getCategory(rawType);
+  const lower = rawType.toLowerCase();
+
+  // Sub-type differentiation within categories
+  if (cat === "transfer") {
+    // Transfer In (receive) = teal, Transfer Out (send) = indigo
+    if (lower.includes("in") || lower === "receive" || lower === "token receive" || lower === "nft receive" || lower === "deposit") {
+      return "bg-pill-teal-bg text-pill-teal-text dark:bg-[rgba(13,148,136,0.12)] dark:text-[#14B8A6]";
+    }
+    if (lower.includes("out") || lower === "send" || lower === "token send" || lower === "nft send" || lower === "withdraw") {
+      return "bg-pill-indigo-bg text-pill-indigo-text dark:bg-[rgba(79,70,229,0.12)] dark:text-[#818CF8]";
+    }
+    return "bg-pill-blue-bg text-pill-blue-text dark:bg-[rgba(37,99,235,0.12)] dark:text-[#3B82F6]";
+  }
+
+  if (cat === "staking") {
+    // Stake = teal, Unstake = orange
+    if (lower.includes("unstake")) {
+      return "bg-pill-orange-bg text-pill-orange-text dark:bg-[rgba(234,88,12,0.12)] dark:text-[#F97316]";
+    }
+    return "bg-pill-teal-bg text-pill-teal-text dark:bg-[rgba(13,148,136,0.12)] dark:text-[#14B8A6]";
+  }
+
+  if (cat === "nft") {
+    // NFT Purchase = pink, NFT Sale = red, NFT Mint = purple, other NFT = pink
+    if (lower.includes("sale")) return "bg-pill-red-bg text-pill-red-text dark:bg-[rgba(220,38,38,0.12)] dark:text-[#EF4444]";
+    if (lower.includes("purchase")) return "bg-pill-pink-bg text-pill-pink-text dark:bg-[rgba(219,39,119,0.12)] dark:text-[#F472B6]";
+    if (lower.includes("mint")) return "bg-pill-purple-bg text-pill-purple-text dark:bg-[rgba(147,51,234,0.12)] dark:text-[#A855F7]";
+    return "bg-pill-pink-bg text-pill-pink-text dark:bg-[rgba(219,39,119,0.12)] dark:text-[#F472B6]";
+  }
+
+  if (cat === "defi") {
+    // Liquidity = indigo, Lending = blue, Positions = purple, other = indigo
+    if (lower.includes("liquidity")) return "bg-pill-indigo-bg text-pill-indigo-text dark:bg-[rgba(79,70,229,0.12)] dark:text-[#818CF8]";
+    if (lower.includes("loan") || lower.includes("borrow") || lower.includes("lend")) return "bg-pill-blue-bg text-pill-blue-text dark:bg-[rgba(37,99,235,0.12)] dark:text-[#3B82F6]";
+    if (lower.includes("position")) return "bg-pill-purple-bg text-pill-purple-text dark:bg-[rgba(147,51,234,0.12)] dark:text-[#A855F7]";
+    return "bg-pill-indigo-bg text-pill-indigo-text dark:bg-[rgba(79,70,229,0.12)] dark:text-[#818CF8]";
+  }
+
   // Horizon pill colors: tinted background + saturated text, no borders
   switch (cat) {
     case "buy":
       return "bg-pill-green-bg text-pill-green-text dark:bg-[rgba(22,163,74,0.12)] dark:text-[#22C55E]";
     case "sell":
       return "bg-pill-red-bg text-pill-red-text dark:bg-[rgba(220,38,38,0.12)] dark:text-[#EF4444]";
-    case "transfer":
-      return "bg-pill-blue-bg text-pill-blue-text dark:bg-[rgba(37,99,235,0.12)] dark:text-[#3B82F6]";
     case "swap":
       return "bg-pill-purple-bg text-pill-purple-text dark:bg-[rgba(147,51,234,0.12)] dark:text-[#A855F7]";
-    case "staking":
-      return "bg-pill-teal-bg text-pill-teal-text dark:bg-[rgba(13,148,136,0.12)] dark:text-[#14B8A6]";
-    case "defi":
-      return "bg-pill-indigo-bg text-pill-indigo-text dark:bg-[rgba(79,70,229,0.12)] dark:text-[#818CF8]";
-    case "nft":
-      return "bg-pill-pink-bg text-pill-pink-text dark:bg-[rgba(219,39,119,0.12)] dark:text-[#F472B6]";
     case "income":
       return "bg-pill-yellow-bg text-pill-yellow-text dark:bg-[rgba(202,138,4,0.12)] dark:text-[#EAB308]";
     case "other":

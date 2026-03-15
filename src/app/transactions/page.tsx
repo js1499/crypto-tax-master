@@ -1720,11 +1720,11 @@ function TransactionsContent() {
         </div>
 
         {/* ── Transaction Table (no card wrapper — Horizon spec) ── */}
-        <div data-onboarding="review-transactions">
+        <div data-onboarding="review-transactions" className="border border-[#E5E5E0] dark:border-[#333333] rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <Table className={cn("transaction-table", `density-${tableDensity}`)}>
               <TableHeader>
-                <TableRow className="border-b border-[#E5E5E0] dark:border-[#333333]">
+                <TableRow className="border-b border-[#E5E5E0] dark:border-[#333333] bg-[#FAFAF8] dark:bg-[#161616]">
                   <TableHead className="w-11 border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                     <Checkbox
                       checked={selectedTransactionIds.size === transactions.length && transactions.length > 0}
@@ -1875,7 +1875,7 @@ function TransactionsContent() {
                             ${Math.abs(transaction.gainLossUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground">{"\u2014"}</span>
+                          <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs bg-pill-gray-bg text-pill-gray-text dark:bg-[rgba(75,85,99,0.12)] dark:text-[#9CA3AF]">N/A</span>
                         )}
                       </TableCell>
 
@@ -2003,9 +2003,9 @@ function TransactionsContent() {
 
             {/* Pagination */}
             {!isLoadingTransactions && transactions.length > 0 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t">
-                <span className="text-xs text-muted-foreground">
-                  Page <span className="font-mono font-medium text-foreground/70">{currentPage}</span> of <span className="font-mono font-medium text-foreground/70">{totalPages}</span>
+              <div className="flex items-center justify-between px-4 h-12 border-t border-[#E5E5E0] dark:border-[#333333]">
+                <span className="text-xs text-[#6B7280]">
+                  Showing <span style={{ fontVariantNumeric: 'tabular-nums' }}>{totalCount > 0 ? startIndex + 1 : 0}–{endIndex}</span> of {totalCount.toLocaleString()}
                 </span>
                 <Pagination>
                   <PaginationContent>
