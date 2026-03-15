@@ -1724,7 +1724,7 @@ function TransactionsContent() {
           <div className="overflow-x-auto">
             <Table className={cn("transaction-table", `density-${tableDensity}`)}>
               <TableHeader>
-                <TableRow className="border-b border-[#E5E5E0] dark:border-[#333333] bg-[#FAFAF8] dark:bg-[#161616]">
+                <TableRow className="border-b border-[#E5E5E0] dark:border-[#333333] bg-[#FAFAF8] dark:bg-[#161616] sticky top-0 z-10">
                   <TableHead className="w-11 border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                     <Checkbox
                       checked={selectedTransactionIds.size === transactions.length && transactions.length > 0}
