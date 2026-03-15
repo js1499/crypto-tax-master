@@ -14,7 +14,7 @@ export function Layout({ children }: LayoutProps) {
       <AppSidebar />
       <SidebarInset>
         <Header />
-        <main className="flex-1 overflow-y-auto px-8 py-7">{children}</main>
+        <main className="flex-1 overflow-y-auto px-8 py-7 bg-white dark:bg-[#1A1A1A]">{children}</main>
       </SidebarInset>
     </SidebarProvider>
   );

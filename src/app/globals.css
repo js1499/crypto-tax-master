@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    --background: 40 10% 96%;
+    --background: 0 0% 100%;
     --foreground: 0 0% 10%;
     --card: 0 0% 100%;
     --card-foreground: 0 0% 10%;
@@ -29,7 +29,7 @@
     --chart-3: 38 92% 50%;
     --chart-4: 0 72% 51%;
     --chart-5: 262 52% 47%;
-    --sidebar-background: 40 5% 97%;
+    --sidebar-background: 245 10% 97%;
     --sidebar-foreground: 0 0% 10%;
     --sidebar-primary: 0 0% 10%;
     --sidebar-primary-foreground: 0 0% 98%;
