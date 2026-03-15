@@ -1,6 +1,6 @@
 import "./globals.css"; // Updated import path for globals.css
 import type { Metadata } from "next";
-import { Figtree, Azeret_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/theme-provider";
 import { NextAuthSessionProvider } from "@/components/providers/session-provider";
@@ -15,16 +15,10 @@ if (typeof window !== "undefined") {
   });
 }
 
-const figtree = Figtree({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-sans"
-});
-
-const azeretMono = Azeret_Mono({ 
-  subsets: ["latin"], 
-  variable: "--font-mono",
-  // Include multiple weights for better display
-  weight: ["400", "500", "600", "700"]
+  variable: "--font-sans",
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -41,9 +35,8 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body
         className={cn(
-          "min-h-screen bg-[#0a0c12] font-sans antialiased leading-relaxed",
-          figtree.variable,
-          azeretMono.variable
+          "min-h-screen bg-[#F5F5F0] dark:bg-[#111111] font-sans antialiased",
+          inter.variable
         )}
       >
         <ErrorBoundary>

@@ -1132,10 +1132,10 @@ function TransactionsContent() {
 
   return (
     <Layout>
-      <div className="space-y-6 stagger-section">
+      <div className="space-y-5">
         {/* ── Header ── */}
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Transactions</h1>
+          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-[#1A1A1A] dark:text-[#F5F5F5]">Transactions</h1>
           <div className="flex items-center gap-2">
             {isBulkMode && selectedTransactionIds.size > 0 && (
               <>
@@ -1332,94 +1332,84 @@ function TransactionsContent() {
         </Dialog>
 
         {/* ── Stats Row ── */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-3 border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg px-3 py-1.5">
-            <span className="text-sm font-semibold font-mono text-emerald-700 dark:text-emerald-400">100%</span>
-            <Progress value={100} className="h-3 w-24 bg-emerald-100 dark:bg-emerald-900/30" indicatorClassName="bg-emerald-600 dark:bg-emerald-400" />
-            <span className="text-xs text-emerald-600/70 dark:text-emerald-400/70">Value</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center gap-1.5 bg-pill-green-bg dark:bg-[rgba(22,163,74,0.12)] text-pill-green-text dark:text-[#22C55E] rounded-md px-2.5 py-1">
+            <span className="text-xs font-medium">100%</span>
+            <Progress value={100} className="h-1 w-[60px]" indicatorClassName="bg-status-positive" />
+            <span className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">Value</span>
           </div>
-          <div className="flex items-center gap-3 border border-orange-200 dark:border-orange-800/40 bg-orange-50/50 dark:bg-orange-950/20 rounded-lg px-3 py-1.5">
-            <span className="text-sm font-semibold font-mono text-orange-700 dark:text-orange-400">100%</span>
-            <Progress value={100} className="h-3 w-24 bg-orange-100 dark:bg-orange-900/30" indicatorClassName="bg-orange-600 dark:bg-orange-400" />
-            <span className="text-xs text-orange-600/70 dark:text-orange-400/70">Types</span>
+          <div className="inline-flex items-center gap-1.5 bg-pill-orange-bg dark:bg-[rgba(234,88,12,0.12)] text-pill-orange-text dark:text-[#F97316] rounded-md px-2.5 py-1">
+            <span className="text-xs font-medium">100%</span>
+            <Progress value={100} className="h-1 w-[60px]" indicatorClassName="bg-status-warning" />
+            <span className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">Types</span>
           </div>
-          <div className="flex items-center gap-2 border border-border rounded-lg px-3 py-1.5">
-            <span className="text-sm font-semibold font-mono">{isLoadingTransactions ? "..." : totalCount.toLocaleString()}</span>
-            <span className="text-xs text-muted-foreground">txns</span>
+          <div className="inline-flex items-center gap-1.5 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2.5 py-1">
+            <span className="text-xs font-medium" style={{ fontVariantNumeric: 'tabular-nums' }}>{isLoadingTransactions ? "..." : totalCount.toLocaleString()}</span>
+            <span className="text-xs text-[#6B7280] dark:text-[#9CA3AF]">txns</span>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
+          <button
             onClick={() => setShowMoreStats(!showMoreStats)}
-            className="ml-auto"
+            className="ml-auto inline-flex items-center text-xs text-primary hover:text-primary/80 transition-colors"
           >
             {showMoreStats ? "Less" : "More Stats"}
-            <ChevronDown className={cn("ml-1 h-4 w-4 transition-transform", showMoreStats && "rotate-180")} />
-          </Button>
+            <ChevronDown className={cn("ml-1 h-3.5 w-3.5 transition-transform duration-200", showMoreStats && "rotate-180")} />
+          </button>
         </div>
 
         {/* ── P&L Summary ── */}
         {stats?.pnl && (
           <div className="space-y-4">
-            <h2 className="text-lg font-semibold border-l-4 border-primary pl-3">P&L Summary</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card className="transition-shadow duration-200 hover:shadow-md">
-                <CardHeader>
-                  <CardTitle className="text-lg font-semibold">Capital Gains Summary</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Cost Basis</p>
-                      <p className="text-xl font-bold text-muted-foreground font-mono" style={{ fontVariantNumeric: 'tabular-nums' }}>
+            <h2 className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] border-l-4 border-primary pl-3">Capital Gains Summary</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Card className="transition-shadow duration-200 hover:shadow-xs">
+                <CardContent className="p-5">
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-[#6B7280]">Cost Basis</span>
+                      <span className="text-sm text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                         ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
+                      </span>
                     </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">Proceeds</p>
-                      <p className="text-xl font-bold text-muted-foreground font-mono" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-[#6B7280]">Proceeds</span>
+                      <span className="text-sm text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                         ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
+                      </span>
                     </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground flex items-center gap-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-[#6B7280] flex items-center gap-1">
                         {stats.pnl.netGain >= 0
-                          ? <TrendingUp className="h-3.5 w-3.5 text-emerald-500 dark:text-emerald-400" />
-                          : <TrendingDown className="h-3.5 w-3.5 text-rose-500 dark:text-rose-400" />}
+                          ? <TrendingUp className="h-3.5 w-3.5 text-status-positive" />
+                          : <TrendingDown className="h-3.5 w-3.5 text-status-negative" />}
                         Net Gain / Loss
-                      </p>
-                      <p className={cn(
-                        "text-2xl font-bold font-mono tracking-tight truncate",
-                        stats.pnl.netGain >= 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-rose-600 dark:text-rose-400"
+                      </span>
+                      <span className={cn(
+                        "text-sm font-semibold truncate",
+                        stats.pnl.netGain >= 0 ? "text-status-positive" : "text-status-negative"
                       )} style={{ fontVariantNumeric: 'tabular-nums' }} title={`${stats.pnl.netGain >= 0 ? "+" : "-"}$${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}>
                         {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
+                      </span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
               {stats.income && stats.income.count > 0 && (
-                <Card className="transition-shadow duration-200 hover:shadow-md">
-                  <CardHeader>
-                    <CardTitle className="text-lg font-semibold">Ordinary Income</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Income Events</p>
-                        <p className="text-xl font-bold text-muted-foreground font-mono">{stats.income.count}</p>
+                <Card className="transition-shadow duration-200 hover:shadow-xs">
+                  <CardContent className="p-5">
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-[#6B7280]">Income Events</span>
+                        <span className="text-sm text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.income.count}</span>
                       </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Total Income</p>
-                        <p className="text-xl font-bold text-amber-600 dark:text-amber-400 font-mono" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-[#6B7280]">Total Income</span>
+                        <span className="text-sm font-semibold text-status-warning" style={{ fontVariantNumeric: 'tabular-nums' }}>
                           ${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        </p>
+                        </span>
                       </div>
                     </div>
-                    <p className="text-xs text-muted-foreground/60 mt-3 pt-3 border-t border-border/50 italic">
+                    <p className="text-xs text-[#9CA3AF] mt-3 pt-3 border-t border-[#F0F0EB] dark:border-[#2A2A2A] italic">
                       Airdrops, staking rewards, and vesting claims taxed as ordinary income at FMV on receipt.
                     </p>
                   </CardContent>
@@ -1432,51 +1422,51 @@ function TransactionsContent() {
         {/* ── More Stats (collapsible) ── */}
         {showMoreStats && (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <Card className="border-l-4 border-l-blue-500 bg-gradient-to-r from-blue-50/40 to-transparent dark:from-blue-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-blue-700 dark:text-blue-400">Transfer In</CardTitle>
-                  <ArrowDownRight className="h-4 w-4 text-blue-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.transferInCount ?? 0)}</div>
-                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.transferInCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <Card className="border-l-[3px] border-l-pill-blue-text">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">Transfer In</span>
+                    <ArrowDownRight className="h-5 w-5 text-pill-blue-text" />
+                  </div>
+                  <div className="text-2xl font-semibold" style={{ fontVariantNumeric: 'tabular-nums' }}>{isLoadingTransactions ? "..." : (stats?.transferInCount ?? 0)}</div>
+                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-[#6B7280] mt-1">{((stats?.transferInCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
                 </CardContent>
               </Card>
-              <Card className="border-l-4 border-l-indigo-500 bg-gradient-to-r from-indigo-50/40 to-transparent dark:from-indigo-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-indigo-700 dark:text-indigo-400">Transfer Out</CardTitle>
-                  <ArrowUpRight className="h-4 w-4 text-indigo-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.transferOutCount ?? 0)}</div>
-                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.transferOutCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
+              <Card className="border-l-[3px] border-l-pill-indigo-text">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">Transfer Out</span>
+                    <ArrowUpRight className="h-5 w-5 text-pill-indigo-text" />
+                  </div>
+                  <div className="text-2xl font-semibold" style={{ fontVariantNumeric: 'tabular-nums' }}>{isLoadingTransactions ? "..." : (stats?.transferOutCount ?? 0)}</div>
+                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-[#6B7280] mt-1">{((stats?.transferOutCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
                 </CardContent>
               </Card>
-              <Card className="border-l-4 border-l-purple-500 bg-gradient-to-r from-purple-50/40 to-transparent dark:from-purple-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-purple-700 dark:text-purple-400">Swap</CardTitle>
-                  <ArrowRightLeft className="h-4 w-4 text-purple-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.swapCount ?? 0)}</div>
-                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.swapCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
+              <Card className="border-l-[3px] border-l-pill-purple-text">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">Swap</span>
+                    <ArrowRightLeft className="h-5 w-5 text-pill-purple-text" />
+                  </div>
+                  <div className="text-2xl font-semibold" style={{ fontVariantNumeric: 'tabular-nums' }}>{isLoadingTransactions ? "..." : (stats?.swapCount ?? 0)}</div>
+                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-[#6B7280] mt-1">{((stats?.swapCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
                 </CardContent>
               </Card>
-              <Card className="border-l-4 border-l-slate-500 bg-gradient-to-r from-slate-50/40 to-transparent dark:from-slate-950/15 dark:to-transparent transition-shadow duration-200 hover:shadow-md">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium text-slate-700 dark:text-slate-400">Other</CardTitle>
-                  <AlertCircle className="h-4 w-4 text-slate-500" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold font-mono">{isLoadingTransactions ? "..." : (stats?.otherCount ?? 0)}</div>
-                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-muted-foreground mt-1">{((stats?.otherCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
+              <Card className="border-l-[3px] border-l-[#6B7280]">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">Other</span>
+                    <AlertCircle className="h-5 w-5 text-[#6B7280]" />
+                  </div>
+                  <div className="text-2xl font-semibold" style={{ fontVariantNumeric: 'tabular-nums' }}>{isLoadingTransactions ? "..." : (stats?.otherCount ?? 0)}</div>
+                  {!isLoadingTransactions && totalCount > 0 && <p className="text-xs text-[#6B7280] mt-1">{((stats?.otherCount ?? 0) / totalCount * 100).toFixed(1)}% of total</p>}
                 </CardContent>
               </Card>
             </div>
 
             {/* Transaction Labeling */}
-            <Card className="border-l-4 border-l-emerald-500">
+            <Card className="border-l-[3px] border-l-status-positive sm:col-span-2">
               <CardContent className="pt-6">
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1747,7 +1737,7 @@ function TransactionsContent() {
         <Card>
           <CardContent className="p-0" data-onboarding="review-transactions">
             <div className="overflow-x-auto">
-              <Table className={cn("transaction-table font-mono", `density-${tableDensity}`)}>
+              <Table className={cn("transaction-table", `density-${tableDensity}`)}>
                 <TableHeader>
                   <TableRow className="h-auto">
                     {showAdvancedColumns && isBulkMode && (
@@ -1758,20 +1748,20 @@ function TransactionsContent() {
                         />
                       </TableHead>
                     )}
-                    <TableHead className="font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("type")}>
+                    <TableHead className="text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("type")}>
                       <span className="inline-flex items-center gap-0.5">Type{getSortIndicator("type")}</span>
                     </TableHead>
-                    <TableHead className="font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("asset")}>
+                    <TableHead className="text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("asset")}>
                       <span className="inline-flex items-center gap-0.5">Asset / Amount{getSortIndicator("asset")}</span>
                     </TableHead>
-                    <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("gainloss")}>
+                    <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("gainloss")}>
                       <span className="inline-flex items-center gap-0.5 justify-end w-full">Gain/Loss{getSortIndicator("gainloss")}</span>
                     </TableHead>
-                    <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("date")}>
+                    <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("date")}>
                       <span className="inline-flex items-center gap-0.5 justify-end w-full">Date{getSortIndicator("date")}</span>
                     </TableHead>
                     {showAdvancedColumns && (
-                      <TableHead className="text-right font-medium font-mono cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("source")}>
+                      <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => handleColumnSort("source")}>
                         <span className="inline-flex items-center gap-0.5 justify-end w-full">Source{getSortIndicator("source")}</span>
                       </TableHead>
                     )}
@@ -1782,9 +1772,8 @@ function TransactionsContent() {
                     <TableRow
                       key={transaction.id}
                       className={cn(
-                        "h-auto cursor-pointer transition-all duration-150 hover:bg-muted/60 hover:shadow-[inset_3px_0_0_hsl(var(--primary))]",
-                        selectedTransactionIds.has(transaction.id) && "bg-muted",
-                        !selectedTransactionIds.has(transaction.id) && "even:bg-muted/20"
+                        "cursor-pointer border-b border-[#F0F0EB] dark:border-[#2A2A2A]",
+                        selectedTransactionIds.has(transaction.id) && "bg-[#EFF6FF] dark:bg-[rgba(59,130,246,0.1)]"
                       )}
                       onClick={() => !isBulkMode && handleOpenDetail(transaction)}
                     >
@@ -1800,7 +1789,7 @@ function TransactionsContent() {
                       )}
 
                       {/* Type */}
-                      <TableCell className="font-mono">
+                      <TableCell>
                         {editingTransactionId === transaction.id && editingField === 'type' ? (
                           <div className="flex items-center space-x-2">
                             <Select value={editingValue} onValueChange={(value) => setEditingValue(value)}>
@@ -1827,7 +1816,7 @@ function TransactionsContent() {
                             onMouseLeave={() => handleMouseLeave('type')}
                           >
                             <div className="flex flex-col gap-1 items-start">
-                              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${getCategoryBadgeColor(transaction.type)}`}>
+                              <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap ${getCategoryBadgeColor(transaction.type)}`}>
                                 {formatTypeForDisplay(transaction.type)}
                               </span>
                               {transaction.identified ? (
@@ -1867,7 +1856,7 @@ function TransactionsContent() {
                       </TableCell>
 
                       {/* Asset / Amount - merged */}
-                      <TableCell className="font-mono">
+                      <TableCell>
                         {transaction.outAsset && transaction.inAsset ? (
                           <div className="flex flex-col gap-0.5">
                             <span>
@@ -1888,17 +1877,11 @@ function TransactionsContent() {
                       </TableCell>
 
                       {/* Gain/Loss */}
-                      <TableCell className={cn(
-                        "text-right font-mono",
-                        transaction.gainLossUsd != null && transaction.gainLossUsd >= 0 && "bg-emerald-50/40 dark:bg-emerald-950/15",
-                        transaction.gainLossUsd != null && transaction.gainLossUsd < 0 && "bg-rose-50/40 dark:bg-rose-950/15"
-                      )}>
+                      <TableCell className="text-right">
                         {transaction.gainLossUsd != null ? (
                           <span className={cn(
-                            "inline-flex items-center gap-1 justify-end",
-                            transaction.gainLossUsd >= 0
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-rose-600 dark:text-rose-400"
+                            "inline-flex items-center gap-1 justify-end text-sm",
+                            transaction.gainLossUsd >= 0 ? "text-status-positive" : "text-status-negative"
                           )}>
                             {transaction.gainLossUsd >= 0
                               ? <span className="text-[0.55rem] leading-none">{"\u25B2"}</span>
@@ -1911,7 +1894,7 @@ function TransactionsContent() {
                       </TableCell>
 
                       {/* Date */}
-                      <TableCell className="text-right font-mono">
+                      <TableCell className="text-right">
                         {editingTransactionId === transaction.id && editingField === 'date' ? (
                           <div className="flex items-center justify-end space-x-2">
                             <Popover>
@@ -1944,8 +1927,8 @@ function TransactionsContent() {
                             onMouseLeave={() => handleMouseLeave('date')}
                           >
                             <div className="flex flex-col items-end">
-                              <span>{format(new Date(transaction.date), "h:mm a")}</span>
-                              <span className="text-muted-foreground">{format(new Date(transaction.date), "MM/dd/yyyy")}</span>
+                              <span className="text-sm text-[#1A1A1A] dark:text-[#F5F5F5]">{format(new Date(transaction.date), "h:mm a")}</span>
+                              <span className="text-xs text-[#6B7280]">{format(new Date(transaction.date), "MMM d, yyyy")}</span>
                             </div>
                             {editableFields.date && (
                               <Button
@@ -1963,7 +1946,7 @@ function TransactionsContent() {
 
                       {/* Exchange (advanced) */}
                       {showAdvancedColumns && (
-                        <TableCell className="text-right font-mono">
+                        <TableCell className="text-right">
                           {editingTransactionId === transaction.id && editingField === 'exchange' ? (
                             <div className="flex items-center justify-end space-x-2">
                               <Input
@@ -2025,24 +2008,23 @@ function TransactionsContent() {
                 </TableBody>
               </Table>
               {isLoadingTransactions && (
-                <div className="p-4 space-y-1">
+                <div className="px-4">
                   {Array.from({ length: 10 }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-6 py-2.5 px-2 animate-pulse" style={{ animationDelay: `${i * 60}ms` }}>
-                      <div className="h-5 w-16 bg-muted rounded-full" />
-                      <div className="h-4 w-20 bg-muted rounded" />
-                      <div className="h-4 w-16 bg-muted rounded" />
-                      <div className="h-4 w-20 bg-muted rounded ml-auto" />
-                      <div className="h-4 w-14 bg-muted rounded" />
-                      <div className="h-4 w-24 bg-muted rounded" />
+                    <div key={i} className="flex items-center gap-4 h-12 border-b border-[#F0F0EB] dark:border-[#2A2A2A]">
+                      <div className="h-6 w-20 skeleton-pulse rounded-md" />
+                      <div className="h-4 w-28 skeleton-pulse rounded" />
+                      <div className="h-4 w-16 skeleton-pulse rounded ml-auto" />
+                      <div className="h-3 w-12 skeleton-pulse rounded" />
+                      <div className="h-3 w-14 skeleton-pulse rounded" />
                     </div>
                   ))}
                 </div>
               )}
               {!isLoadingTransactions && transactions.length === 0 && (
-                <div className="py-16 text-center">
-                  <ArrowRightLeft className="h-10 w-10 text-muted-foreground/25 mx-auto mb-3" />
-                  <p className="text-muted-foreground font-medium">No transactions found</p>
-                  <p className="text-sm text-muted-foreground/60 mt-1">Try adjusting your filters or import some transactions</p>
+                <div className="py-20 text-center">
+                  <ArrowRightLeft className="h-12 w-12 text-[#9CA3AF] mx-auto mb-4" />
+                  <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">No transactions found</p>
+                  <p className="text-sm text-[#6B7280] mt-2">Try adjusting your filters or import your first transactions.</p>
                 </div>
               )}
             </div>

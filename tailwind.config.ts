@@ -10,22 +10,11 @@ export default {
   ],
   theme: {
     extend: {
-      fontSize: {
-        'base': '1.0625rem', // 17px
-        'lg': '1.125rem',    // 18px
-        'xl': '1.3125rem',   // 21px
-        '2xl': '1.5rem',     // 24px
-        '3xl': '1.875rem',   // 30px
-        '4xl': '2.25rem',    // 36px
-      },
       fontFamily: {
-        sans: ['var(--font-sans)'],
-        mono: ['var(--font-mono)'],
-        figtree: ['var(--font-sans)'],
-        cutive: ['var(--font-mono)'],
-        azeret: ['Azeret Mono', 'monospace'],
+        sans: ['var(--font-sans)', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
       },
       colors: {
+        // Horizon foundation
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
@@ -65,29 +54,40 @@ export default {
           '3': 'hsl(var(--chart-3))',
           '4': 'hsl(var(--chart-4))',
           '5': 'hsl(var(--chart-5))'
-        }
+        },
+        // Horizon semantic status
+        status: {
+          positive: '#22C55E',
+          warning: '#F97316',
+          negative: '#EF4444',
+          info: '#06B6D4',
+          neutral: '#6B7280',
+        },
+        // Horizon pill palette
+        pill: {
+          'red-bg': '#FEF2F2',       'red-text': '#DC2626',
+          'orange-bg': '#FFF7ED',     'orange-text': '#EA580C',
+          'yellow-bg': '#FEFCE8',     'yellow-text': '#CA8A04',
+          'green-bg': '#F0FDF4',      'green-text': '#16A34A',
+          'teal-bg': '#F0FDFA',       'teal-text': '#0D9488',
+          'blue-bg': '#EFF6FF',       'blue-text': '#2563EB',
+          'indigo-bg': '#EEF2FF',     'indigo-text': '#4F46E5',
+          'purple-bg': '#FAF5FF',     'purple-text': '#9333EA',
+          'pink-bg': '#FDF2F8',       'pink-text': '#DB2777',
+          'gray-bg': '#F9FAFB',       'gray-text': '#4B5563',
+        },
       },
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 2px)',
-        sm: 'calc(var(--radius) - 4px)'
+        lg: '8px',
+        md: '6px',
+        sm: '4px',
+        xl: '12px',
       },
-      container: {
-      center: true,
-      padding: {
-        DEFAULT: '1rem',
-        sm: '2rem',
-        lg: '4rem',
-        xl: '5rem',
-        '2xl': '6rem',
-      },
-      screens: {
-        sm: '640px',
-        md: '768px',
-        lg: '1024px',
-        xl: '1280px',
-        '2xl': '1536px',
-      },
+      boxShadow: {
+        xs: '0 1px 2px rgba(0, 0, 0, 0.04)',
+        sm: '0 1px 3px rgba(0, 0, 0, 0.06)',
+        md: '0 4px 12px rgba(0, 0, 0, 0.08)',
+        lg: '0 8px 24px rgba(0, 0, 0, 0.12)',
       },
     }
   },

@@ -4,246 +4,137 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 40 10% 96%;
+    --foreground: 0 0% 10%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 0 0% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 6% 95%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 40 6% 94%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 40 6% 94%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 6% 90%;
+    --input: 40 6% 90%;
+    --ring: 221 83% 53%;
     --radius: 0.5rem;
-    --chart-1: 12 76% 61%;
-    --chart-2: 173 58% 39%;
-    --chart-3: 197 37% 24%;
-    --chart-4: 43 74% 66%;
-    --chart-5: 27 87% 67%;
+    --chart-1: 221 83% 53%;
+    --chart-2: 160 84% 39%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 0 72% 51%;
+    --chart-5: 262 52% 47%;
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
-    --chart-1: 220 70% 50%;
+    --background: 0 0% 7%;
+    --foreground: 0 0% 96%;
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 96%;
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 14%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 220 9% 64%;
+    --accent: 0 0% 14%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 96%;
+    --border: 0 0% 17%;
+    --input: 0 0% 17%;
+    --ring: 217 91% 60%;
+    --chart-1: 217 91% 60%;
     --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    --chart-3: 38 92% 50%;
+    --chart-4: 0 72% 51%;
+    --chart-5: 262 52% 47%;
   }
 }
 
 @layer base {
-  html {
-    font-size: 17px; /* Increase base font size from default 16px */
-  }
-  
   * {
     @apply border-border;
   }
-  
+
   body {
     @apply bg-background text-foreground;
-  }
-
-  /* Crypto-specific typography enhancements */
-  h1 {
-    @apply font-figtree font-medium tracking-tight text-3xl md:text-4xl;
-  }
-
-  h2 {
-    @apply font-figtree font-medium tracking-tight text-2xl md:text-3xl;
-  }
-
-  h3 {
-    @apply font-figtree font-medium tracking-tight text-xl md:text-2xl;
-  }
-
-  h4, h5, h6 {
-    @apply font-figtree font-medium tracking-tight text-lg;
-  }
-
-  /* Paragraph and other text elements */
-  p, span, div, li {
-    @apply text-base leading-relaxed;
-  }
-
-  /* Make small text more readable */
-  .text-xs {
-    font-size: 0.8rem !important;
-  }
-
-  .text-sm {
-    font-size: 0.9rem !important;
-  }
-
-  /* Apply Azeret Mono to crypto-related data */
-  .crypto-address, .crypto-hash, .crypto-amount, .wallet-id {
-    @apply font-azeret tracking-tight;
-  }
-
-  /* Enhance readability of hash displays and addresses */
-  .crypto-hash, .crypto-address, .wallet-id {
-    letter-spacing: 0.02em;
-    font-size: 1.05rem;
-  }
-
-  /* Make financial figures stand out - keeping the enhanced styling */
-  .crypto-amount {
-    @apply font-azeret font-semibold;
-    font-size: 1.1rem;
-  }
-
-  /* Card titles and content */
-  .card-title {
-    @apply text-xl font-medium;
-  }
-
-  /* Buttons and interactive elements */
-  button, .btn, a {
-    @apply text-base;
-  }
-
-  /* Table content */
-  td, th {
-    @apply text-base;
+    font-feature-settings: 'cv01' 1, 'cv02' 1, 'tnum' 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 }
 
-/* Additional utility classes */
 @layer utilities {
   .text-balance {
     text-wrap: balance;
   }
 }
 
-/* Transactions table — unified density modes */
-/* All text (headers, cells, amounts, badges) uses ONE font size per density */
-.transaction-table td,
-.transaction-table th,
-.transaction-table .crypto-amount,
-.transaction-table td .inline-flex {
-  font-size: 0.8125rem !important; /* 13px — default */
-  line-height: 1.3 !important;
+/* Horizon table density modes */
+.transaction-table.density-condensed td,
+.transaction-table.density-condensed th {
+  height: 40px;
+  font-size: 13px;
+  padding: 0 16px;
 }
 
 .transaction-table td,
 .transaction-table th {
-  padding-top: 0.5rem !important;
-  padding-bottom: 0.5rem !important;
-}
-
-.transaction-table.density-condensed td,
-.transaction-table.density-condensed th,
-.transaction-table.density-condensed .crypto-amount,
-.transaction-table.density-condensed td .inline-flex {
-  font-size: 0.75rem !important; /* 12px */
-  line-height: 1.2 !important;
-}
-
-.transaction-table.density-condensed td,
-.transaction-table.density-condensed th {
-  padding-top: 0.3rem !important;
-  padding-bottom: 0.3rem !important;
-}
-
-.transaction-table.density-spacious td,
-.transaction-table.density-spacious th,
-.transaction-table.density-spacious .crypto-amount,
-.transaction-table.density-spacious td .inline-flex {
-  font-size: 0.875rem !important; /* 14px */
-  line-height: 1.4 !important;
+  height: 48px;
+  font-size: 14px;
+  padding: 0 16px;
+  vertical-align: middle;
 }
 
 .transaction-table.density-spacious td,
 .transaction-table.density-spacious th {
-  padding-top: 0.85rem !important;
-  padding-bottom: 0.85rem !important;
+  height: 56px;
+  font-size: 14px;
+  padding: 0 16px;
 }
 
-/* Rows */
-.transaction-table tr {
-  height: auto !important;
-}
-
-/* Transaction table specific font styling - enhanced for Azeret Mono */
-.transaction-table .font-mono {
-  font-family: 'Azeret Mono', monospace !important;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-  font-feature-settings: "tnum" 1;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.005em; /* Slight positive tracking for mono numerals */
-}
-
-/* Sortable column headers */
-.transaction-table th[class*="cursor-pointer"]:hover {
-  background: hsl(var(--muted) / 0.5);
-}
-
-/* Section entrance stagger */
-@keyframes sectionSlideUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.stagger-section > * {
-  animation: sectionSlideUp 0.4s ease-out both;
-}
-
-.stagger-section > *:nth-child(1) { animation-delay: 0ms; }
-.stagger-section > *:nth-child(2) { animation-delay: 60ms; }
-.stagger-section > *:nth-child(3) { animation-delay: 120ms; }
-.stagger-section > *:nth-child(4) { animation-delay: 180ms; }
-.stagger-section > *:nth-child(5) { animation-delay: 240ms; }
-.stagger-section > *:nth-child(6) { animation-delay: 300ms; }
-.stagger-section > *:nth-child(7) { animation-delay: 360ms; }
-.stagger-section > *:nth-child(n+8) { animation-delay: 400ms; }
-
-/* Staggered row entrance animation */
-@keyframes rowFadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
+/* Horizon row hover */
 .transaction-table tbody tr {
-  animation: rowFadeIn 0.25s ease-out both;
+  transition: background-color 120ms ease;
 }
 
-.transaction-table tbody tr:nth-child(1) { animation-delay: 0ms; }
-.transaction-table tbody tr:nth-child(2) { animation-delay: 15ms; }
-.transaction-table tbody tr:nth-child(3) { animation-delay: 30ms; }
-.transaction-table tbody tr:nth-child(4) { animation-delay: 45ms; }
-.transaction-table tbody tr:nth-child(5) { animation-delay: 60ms; }
-.transaction-table tbody tr:nth-child(6) { animation-delay: 75ms; }
-.transaction-table tbody tr:nth-child(7) { animation-delay: 90ms; }
-.transaction-table tbody tr:nth-child(8) { animation-delay: 105ms; }
-.transaction-table tbody tr:nth-child(9) { animation-delay: 120ms; }
-.transaction-table tbody tr:nth-child(10) { animation-delay: 135ms; }
-.transaction-table tbody tr:nth-child(n+11) { animation-delay: 150ms; }
+.transaction-table tbody tr:hover {
+  background-color: #FAFAF7;
+}
+
+.dark .transaction-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+/* Horizon skeleton loading pulse */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.skeleton-pulse {
+  animation: skeletonPulse 1.5s ease infinite;
+  background-color: #EBEBEB;
+}
+
+.dark .skeleton-pulse {
+  background-color: #2A2A2A;
+}
+
+/* Horizon sortable column header hover */
+.transaction-table th[class*="cursor-pointer"]:hover {
+  background-color: #F9F9F6;
+}
+
+.dark .transaction-table th[class*="cursor-pointer"]:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}

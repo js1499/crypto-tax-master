@@ -49,7 +49,7 @@ export function Header() {
   const user = session?.user;
 
   return (
-    <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b bg-white dark:bg-gray-950 px-6">
+    <header className="sticky top-0 z-10 flex h-14 items-center justify-between border-b border-[#F0F0EB] dark:border-[#2A2A2A] bg-white dark:bg-[#1A1A1A] px-8">
       <div className="text-lg font-semibold">Dashboard</div>
       <div className="flex items-center gap-4">
         <ThemeToggle />
