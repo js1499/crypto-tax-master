@@ -105,10 +105,15 @@
 
 .transaction-table td,
 .transaction-table th {
-  height: 48px;
+  height: 44px;
   font-size: 14px;
   padding: 0 16px;
   vertical-align: middle;
+}
+
+/* 2px accent line above header */
+.transaction-table thead {
+  border-top: 2px solid hsl(var(--primary));
 }
 
 .transaction-table.density-spacious td,
