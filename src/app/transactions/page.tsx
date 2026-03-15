@@ -1721,7 +1721,7 @@ function TransactionsContent() {
 
         {/* ── Transaction Table (no card wrapper — Horizon spec) ── */}
         <div data-onboarding="review-transactions" className="border border-[#E5E5E0] dark:border-[#333333] rounded-lg overflow-hidden">
-          <div className="overflow-x-auto">
+          <div className="overflow-auto max-h-[calc(100vh-280px)]">
             <Table className={cn("transaction-table", `density-${tableDensity}`)}>
               <TableHeader>
                 <TableRow className="border-b border-[#E5E5E0] dark:border-[#333333] bg-[#FAFAF8] dark:bg-[#161616] sticky top-0 z-10">
