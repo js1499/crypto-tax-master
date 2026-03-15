@@ -1098,14 +1098,27 @@ function TransactionsContent() {
   };
 
   const sourceIconColors: Record<string, string> = {
-    CB: "bg-gradient-to-br from-blue-500 to-blue-600 text-white",
-    BN: "bg-gradient-to-br from-yellow-400 to-amber-500 text-black",
-    PH: "bg-gradient-to-br from-purple-400 to-purple-600 text-white",
-    JUP: "bg-gradient-to-br from-emerald-400 to-teal-500 text-white",
-    RAY: "bg-gradient-to-br from-cyan-400 to-blue-500 text-white",
-    ORC: "bg-gradient-to-br from-gray-700 to-gray-900 text-white",
-    CSV: "bg-gradient-to-br from-slate-400 to-slate-500 text-white",
-    HEL: "bg-gradient-to-br from-orange-500 to-red-500 text-white",
+    CB: "bg-pill-blue-bg text-pill-blue-text",
+    BN: "bg-pill-yellow-bg text-pill-yellow-text",
+    PH: "bg-pill-purple-bg text-pill-purple-text",
+    JUP: "bg-pill-teal-bg text-pill-teal-text",
+    RAY: "bg-pill-blue-bg text-pill-blue-text",
+    ORC: "bg-pill-gray-bg text-pill-gray-text",
+    CSV: "bg-pill-gray-bg text-pill-gray-text",
+    HEL: "bg-pill-orange-bg text-pill-orange-text",
+  };
+
+  // Source pill color mapping (Horizon pill style)
+  const getSourcePillColor = (exchange: string): string => {
+    const src = (exchange || "").toLowerCase();
+    if (src.includes("solana") || src.includes("sol")) return "bg-pill-purple-bg text-pill-purple-text dark:bg-[rgba(147,51,234,0.12)] dark:text-[#A855F7]";
+    if (src.includes("ethereum") || src.includes("eth")) return "bg-pill-blue-bg text-pill-blue-text dark:bg-[rgba(37,99,235,0.12)] dark:text-[#3B82F6]";
+    if (src.includes("bitcoin") || src.includes("btc")) return "bg-pill-orange-bg text-pill-orange-text dark:bg-[rgba(234,88,12,0.12)] dark:text-[#F97316]";
+    if (src.includes("coinbase")) return "bg-pill-blue-bg text-pill-blue-text dark:bg-[rgba(37,99,235,0.12)] dark:text-[#3B82F6]";
+    if (src.includes("binance")) return "bg-pill-yellow-bg text-pill-yellow-text dark:bg-[rgba(202,138,4,0.12)] dark:text-[#EAB308]";
+    if (src.includes("helius")) return "bg-pill-orange-bg text-pill-orange-text dark:bg-[rgba(234,88,12,0.12)] dark:text-[#F97316]";
+    if (src.includes("csv")) return "bg-pill-gray-bg text-pill-gray-text dark:bg-[rgba(75,85,99,0.12)] dark:text-[#9CA3AF]";
+    return "bg-pill-gray-bg text-pill-gray-text dark:bg-[rgba(75,85,99,0.12)] dark:text-[#9CA3AF]";
   };
 
   // Table density classes
@@ -1718,8 +1731,11 @@ function TransactionsContent() {
                   <TableHead className="text-[13px] font-medium text-[#6B7280] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("date")}>
                     <span className="inline-flex items-center gap-0.5">Date{getSortIndicator("date")}</span>
                   </TableHead>
-                  <TableHead className="text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("source")}>
+                  <TableHead className="text-[13px] font-medium text-[#6B7280] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("source")}>
                     <span className="inline-flex items-center gap-0.5">Source{getSortIndicator("source")}</span>
+                  </TableHead>
+                  <TableHead className="text-[13px] font-medium text-[#6B7280]">
+                    Status
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -1769,16 +1785,9 @@ function TransactionsContent() {
                             onMouseEnter={() => handleMouseEnter('type')}
                             onMouseLeave={() => handleMouseLeave('type')}
                           >
-                            <div className="flex flex-col gap-1 items-start">
-                              <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap ${getCategoryBadgeColor(transaction.type)}`}>
-                                {formatTypeForDisplay(transaction.type)}
-                              </span>
-                              {transaction.identified ? (
-                                <span className="text-[0.65rem] leading-none text-emerald-600 dark:text-emerald-400 pl-0.5">Identified</span>
-                              ) : (
-                                <span className="text-[0.65rem] leading-none text-rose-500 dark:text-rose-400 pl-0.5">Unidentified</span>
-                              )}
-                            </div>
+                            <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap ${getCategoryBadgeColor(transaction.type)}`}>
+                              {formatTypeForDisplay(transaction.type)}
+                            </span>
                             {editableFields.type && (
                               <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <DropdownMenu>
@@ -1915,45 +1924,26 @@ function TransactionsContent() {
                               </Button>
                             </div>
                           ) : (
-                            <div
-                              className="relative group"
-                              onMouseEnter={() => handleMouseEnter('exchange')}
-                              onMouseLeave={() => handleMouseLeave('exchange')}
-                            >
-                              <div className="flex items-center gap-1.5 text-sm">
-                                {(() => {
-                                  const source = getSourceIcon(transaction.exchange);
-                                  if (!source) return null;
-                                  if (source.hasLogo && sourceLogoFiles[source.key]) {
-                                    return (
-                                      <img
-                                        src={sourceLogoFiles[source.key]}
-                                        alt={source.key}
-                                        className="h-5 w-5 rounded-full shrink-0"
-                                      />
-                                    );
-                                  }
-                                  return (
-                                    <span className={cn("inline-flex items-center justify-center h-5 w-7 rounded text-[0.55rem] font-bold leading-none shrink-0", sourceIconColors[source.key] || "bg-muted text-muted-foreground")}>
-                                      {source.key}
-                                    </span>
-                                  );
-                                })()}
-                                <span className="truncate max-w-[100px]">{shortenSource(transaction.exchange)}</span>
-                              </div>
-                              {editableFields.exchange && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="absolute left-0 top-0 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                                  onClick={() => handleStartEditing(transaction.id, 'exchange', transaction.exchange)}
-                                >
-                                  <Pencil className="h-3 w-3" />
-                                </Button>
-                              )}
-                            </div>
+                            <span className={cn("inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap", getSourcePillColor(transaction.exchange))}>
+                              {shortenSource(transaction.exchange)}
+                            </span>
                           )}
                         </TableCell>
+
+                      {/* Status */}
+                      <TableCell>
+                        {transaction.identified ? (
+                          <span className="inline-flex items-center gap-1.5 text-sm text-status-positive">
+                            <span className="h-2 w-2 rounded-full bg-status-positive shrink-0" />
+                            Identified
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 text-sm text-status-negative">
+                            <span className="h-2 w-2 rounded-full bg-status-negative shrink-0" />
+                            Unidentified
+                          </span>
+                        )}
+                      </TableCell>
 
                     </TableRow>
                   ))}
