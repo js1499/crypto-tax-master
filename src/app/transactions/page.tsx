@@ -1536,11 +1536,6 @@ function TransactionsContent() {
             </SelectContent>
           </Select>
 
-          <Button variant="outline" size="sm" className="h-9 text-sm font-medium gap-1.5">
-            <ArrowUpDown className="h-4 w-4 text-[#6B7280]" />
-            Sorting
-          </Button>
-
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm" className="h-9 text-sm font-medium gap-1.5">
@@ -1702,31 +1697,29 @@ function TransactionsContent() {
             <Table className={cn("transaction-table", `density-${tableDensity}`)}>
               <TableHeader>
                 <TableRow className="border-b border-[#E5E5E0] dark:border-[#333333]">
-                  {isBulkMode && (
-                    <TableHead className="w-11">
-                      <Checkbox
-                        checked={selectedTransactionIds.size === transactions.length && transactions.length > 0}
-                        onCheckedChange={handleBulkSelectAll}
-                      />
-                    </TableHead>
-                  )}
-                  <TableHead className="text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("type")}>
-                    <span className="inline-flex items-center gap-1">
-                      <span className="inline-block h-4 w-4 rounded-full bg-primary" />
+                  <TableHead className="w-11 border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                    <Checkbox
+                      checked={selectedTransactionIds.size === transactions.length && transactions.length > 0}
+                      onCheckedChange={handleBulkSelectAll}
+                    />
+                  </TableHead>
+                  <TableHead className="text-[13px] font-medium text-[#6B7280] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("type")}>
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-block h-4 w-4 rounded-full bg-primary shrink-0" />
                       <span style={{ fontVariantNumeric: 'tabular-nums' }}>{isLoadingTransactions ? "..." : totalCount.toLocaleString()}</span> Transactions{getSortIndicator("type")}
                     </span>
                   </TableHead>
-                  <TableHead className="text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("asset")}>
+                  <TableHead className="text-[13px] font-medium text-[#6B7280] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("asset")}>
                     <span className="inline-flex items-center gap-0.5">Asset / Amount{getSortIndicator("asset")}</span>
                   </TableHead>
-                  <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("gainloss")}>
-                    <span className="inline-flex items-center gap-0.5 justify-end w-full">Gain/Loss{getSortIndicator("gainloss")}</span>
+                  <TableHead className="text-[13px] font-medium text-[#6B7280] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("gainloss")}>
+                    <span className="inline-flex items-center gap-0.5">Gain/Loss{getSortIndicator("gainloss")}</span>
                   </TableHead>
-                  <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("date")}>
-                    <span className="inline-flex items-center gap-0.5 justify-end w-full">Date{getSortIndicator("date")}</span>
+                  <TableHead className="text-[13px] font-medium text-[#6B7280] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("date")}>
+                    <span className="inline-flex items-center gap-0.5">Date{getSortIndicator("date")}</span>
                   </TableHead>
-                  <TableHead className="text-right text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("source")}>
-                    <span className="inline-flex items-center gap-0.5 justify-end w-full">Source{getSortIndicator("source")}</span>
+                  <TableHead className="text-[13px] font-medium text-[#6B7280] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("source")}>
+                    <span className="inline-flex items-center gap-0.5">Source{getSortIndicator("source")}</span>
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -1740,19 +1733,17 @@ function TransactionsContent() {
                       )}
                       onClick={() => !isBulkMode && handleOpenDetail(transaction)}
                     >
-                      {/* Checkbox (advanced + bulk) */}
-                      {isBulkMode && (
-                        <TableCell className="w-12">
-                          <Checkbox
-                            checked={selectedTransactionIds.has(transaction.id)}
-                            onCheckedChange={(checked) => handleBulkSelect(transaction.id, checked as boolean)}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </TableCell>
-                      )}
+                      {/* Checkbox — always visible */}
+                      <TableCell className="w-11 border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                        <Checkbox
+                          checked={selectedTransactionIds.has(transaction.id)}
+                          onCheckedChange={(checked) => handleBulkSelect(transaction.id, checked as boolean)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </TableCell>
 
                       {/* Type */}
-                      <TableCell>
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                         {editingTransactionId === transaction.id && editingField === 'type' ? (
                           <div className="flex items-center space-x-2">
                             <Select value={editingValue} onValueChange={(value) => setEditingValue(value)}>
@@ -1819,7 +1810,7 @@ function TransactionsContent() {
                       </TableCell>
 
                       {/* Asset / Amount - merged */}
-                      <TableCell>
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                         {transaction.outAsset && transaction.inAsset ? (
                           <div className="flex flex-col gap-0.5">
                             <span>
@@ -1840,10 +1831,10 @@ function TransactionsContent() {
                       </TableCell>
 
                       {/* Gain/Loss */}
-                      <TableCell className="text-right">
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                         {transaction.gainLossUsd != null ? (
                           <span className={cn(
-                            "inline-flex items-center gap-1 justify-end text-sm",
+                            "inline-flex items-center gap-1 text-sm",
                             transaction.gainLossUsd >= 0 ? "text-status-positive" : "text-status-negative"
                           )}>
                             {transaction.gainLossUsd >= 0
@@ -1857,9 +1848,9 @@ function TransactionsContent() {
                       </TableCell>
 
                       {/* Date */}
-                      <TableCell className="text-right">
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                         {editingTransactionId === transaction.id && editingField === 'date' ? (
-                          <div className="flex items-center justify-end space-x-2">
+                          <div className="flex items-center space-x-2">
                             <Popover>
                               <PopoverTrigger asChild>
                                 <Button variant="outline" className="h-8 pl-3 text-left font-normal w-full text-xs">
@@ -1889,7 +1880,7 @@ function TransactionsContent() {
                             onMouseEnter={() => handleMouseEnter('date')}
                             onMouseLeave={() => handleMouseLeave('date')}
                           >
-                            <div className="flex flex-col items-end">
+                            <div className="flex flex-col">
                               <span className="text-sm text-[#1A1A1A] dark:text-[#F5F5F5]">{format(new Date(transaction.date), "h:mm a")}</span>
                               <span className="text-xs text-[#6B7280]">{format(new Date(transaction.date), "MMM d, yyyy")}</span>
                             </div>
@@ -1908,7 +1899,7 @@ function TransactionsContent() {
                       </TableCell>
 
                       {/* Source */}
-                      <TableCell className="text-right">
+                      <TableCell>
                           {editingTransactionId === transaction.id && editingField === 'exchange' ? (
                             <div className="flex items-center justify-end space-x-2">
                               <Input
@@ -1929,7 +1920,7 @@ function TransactionsContent() {
                               onMouseEnter={() => handleMouseEnter('exchange')}
                               onMouseLeave={() => handleMouseLeave('exchange')}
                             >
-                              <div className="flex items-center justify-end gap-1.5 text-xs">
+                              <div className="flex items-center gap-1.5 text-sm">
                                 {(() => {
                                   const source = getSourceIcon(transaction.exchange);
                                   if (!source) return null;

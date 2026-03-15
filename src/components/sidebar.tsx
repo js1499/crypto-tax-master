@@ -50,7 +50,7 @@ export function Sidebar() {
   return (
     <div
       className={cn(
-        "flex min-h-screen flex-col border-r border-[#F0F0EB] dark:border-[#2A2A2A] bg-white dark:bg-[#1A1A1A] pb-12 transition-all duration-200",
+        "flex min-h-screen flex-col border-r border-[#E5E5E0] dark:border-[#2A2A2A] bg-[#F8F8F6] dark:bg-[#161616] pb-12 transition-all duration-200",
         collapsed ? "w-20" : "w-[260px]"
       )}
     >
