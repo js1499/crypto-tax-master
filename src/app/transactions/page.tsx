@@ -1055,8 +1055,23 @@ function TransactionsContent() {
   // Helper: format amount for display
   const formatAmount = (amount: number | null) => {
     if (amount == null) return null;
-    if (amount < 0.01 && amount > 0) return amount.toExponential(2);
+    if (amount === 0) return "0";
+    if (amount < 0.000001 && amount > 0) return "<0.000001";
+    if (amount < 1) return amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 });
+    if (amount >= 1000000) return amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
     return amount.toLocaleString(undefined, { maximumFractionDigits: 6 });
+  };
+
+  // Asset symbol color helper
+  const getAssetColor = (symbol: string): string => {
+    const s = (symbol || "").toUpperCase();
+    if (s === "SOL" || s === "WSOL") return "text-pill-purple-text dark:text-[#A855F7]";
+    if (s === "ETH" || s === "WETH") return "text-pill-blue-text dark:text-[#3B82F6]";
+    if (s === "BTC" || s === "WBTC") return "text-pill-orange-text dark:text-[#F97316]";
+    if (s === "USDC" || s === "USDT" || s === "PYUSD" || s === "DAI") return "text-pill-teal-text dark:text-[#14B8A6]";
+    if (s === "JUP") return "text-pill-green-text dark:text-[#22C55E]";
+    if (s === "BONK" || s === "WIF" || s === "FWOG") return "text-pill-pink-text dark:text-[#F472B6]";
+    return "text-[#1A1A1A] dark:text-[#F5F5F5]";
   };
 
   // Source/exchange icon helper
@@ -1734,7 +1749,7 @@ function TransactionsContent() {
                   <TableHead className="text-[13px] font-medium text-[#6B7280] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("source")}>
                     <span className="inline-flex items-center gap-0.5">Source{getSortIndicator("source")}</span>
                   </TableHead>
-                  <TableHead className="text-[13px] font-medium text-[#6B7280]">
+                  <TableHead className="text-[13px] font-medium text-[#6B7280] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                     Status
                   </TableHead>
                 </TableRow>
@@ -1822,20 +1837,28 @@ function TransactionsContent() {
                       <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                         {transaction.outAsset && transaction.inAsset ? (
                           <div className="flex flex-col gap-0.5">
-                            <span>
-                              <span className="text-rose-600 dark:text-rose-400">{formatAmount(transaction.outAmount)} {transaction.outAsset}</span>
+                            <span className="text-sm">
+                              <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.outAmount)}</span>
+                              {" "}<span className={cn("font-medium", getAssetColor(transaction.outAsset))}>{transaction.outAsset}</span>
                             </span>
-                            <span>
-                              <span className="text-muted-foreground mr-1">{"\u2192"}</span>
-                              <span className="text-emerald-600 dark:text-emerald-400">{formatAmount(transaction.inAmount)} {transaction.inAsset}</span>
+                            <span className="text-sm">
+                              <span className="text-[#9CA3AF] mr-1">{"\u2192"}</span>
+                              <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.inAmount)}</span>
+                              {" "}<span className={cn("font-medium", getAssetColor(transaction.inAsset))}>{transaction.inAsset}</span>
                             </span>
                           </div>
                         ) : transaction.outAsset ? (
-                          <span className="text-rose-600 dark:text-rose-400">{formatAmount(transaction.outAmount)} {transaction.outAsset}</span>
+                          <span className="text-sm">
+                            <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.outAmount)}</span>
+                            {" "}<span className={cn("font-medium", getAssetColor(transaction.outAsset))}>{transaction.outAsset}</span>
+                          </span>
                         ) : transaction.inAsset ? (
-                          <span className="text-emerald-600 dark:text-emerald-400">{formatAmount(transaction.inAmount)} {transaction.inAsset}</span>
+                          <span className="text-sm">
+                            <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.inAmount)}</span>
+                            {" "}<span className={cn("font-medium", getAssetColor(transaction.inAsset))}>{transaction.inAsset}</span>
+                          </span>
                         ) : (
-                          <span className="text-muted-foreground">{"\u2014"}</span>
+                          <span className="text-[#9CA3AF]">{"\u2014"}</span>
                         )}
                       </TableCell>
 
@@ -1908,7 +1931,7 @@ function TransactionsContent() {
                       </TableCell>
 
                       {/* Source */}
-                      <TableCell>
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                           {editingTransactionId === transaction.id && editingField === 'exchange' ? (
                             <div className="flex items-center justify-end space-x-2">
                               <Input
@@ -1924,7 +1947,14 @@ function TransactionsContent() {
                               </Button>
                             </div>
                           ) : (
-                            <span className={cn("inline-flex items-center rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap", getSourcePillColor(transaction.exchange))}>
+                            <span className={cn("inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium whitespace-nowrap", getSourcePillColor(transaction.exchange))}>
+                              {(() => {
+                                const source = getSourceIcon(transaction.exchange);
+                                if (source?.hasLogo && sourceLogoFiles[source.key]) {
+                                  return <img src={sourceLogoFiles[source.key]} alt={source.key} className="h-4 w-4 rounded-full shrink-0" />;
+                                }
+                                return null;
+                              })()}
                               {shortenSource(transaction.exchange)}
                             </span>
                           )}
