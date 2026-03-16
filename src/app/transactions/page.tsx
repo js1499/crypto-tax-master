@@ -76,6 +76,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { PnLBreakdownChart } from "@/components/pnl-breakdown-chart";
+import { YearHeatmap } from "@/components/year-heatmap";
 import { getCategoryBadgeColor, formatTypeForDisplay, isOutflow, getCategory } from "@/lib/transaction-categorizer";
 import {
   Pagination,
@@ -233,6 +234,7 @@ function TransactionsContent() {
     valueIdentifiedPercentage: number;
     pnl: { totalCostBasis: number; totalProceeds: number; netGain: number; gainsByAsset: Array<{ asset: string; amount: number }>; lossesByAsset: Array<{ asset: string; amount: number }> };
     income: { count: number; totalValueUsd: number };
+    weeklyActivity: Array<{ weekStart: string; count: number; netGainLoss: number }>;
   } | null>(null);
 
   // Pagination state
@@ -1446,6 +1448,14 @@ function TransactionsContent() {
               netGain={stats.pnl.netGain}
             />
           </div>
+        )}
+
+        {/* ── Year Heatmap ── */}
+        {stats?.weeklyActivity && stats.weeklyActivity.length > 0 && (
+          <YearHeatmap
+            weeklyActivity={stats.weeklyActivity}
+            year={yearValue !== "all" ? parseInt(yearValue) : undefined}
+          />
         )}
 
         {/* ── Filter Bar ── */}

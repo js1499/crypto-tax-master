@@ -467,6 +467,24 @@ export async function GET(request: NextRequest) {
     gainsByAsset.sort((a, b) => b.amount - a.amount);
     lossesByAsset.sort((a, b) => b.amount - a.amount);
 
+    // Weekly activity heatmap data
+    const weeklyRaw = await prisma.$queryRawUnsafe<Array<{ week_start: Date; txn_count: bigint; net_gl: number | null }>>(`
+      SELECT
+        date_trunc('week', tx_timestamp) as week_start,
+        COUNT(*)::bigint as txn_count,
+        SUM(CASE WHEN gain_loss_usd IS NOT NULL THEN gain_loss_usd ELSE 0 END)::float as net_gl
+      FROM transactions t
+      WHERE ${walletAddresses.length > 0 ? `(t.wallet_address = ANY($1) OR (t.source_type = 'csv_import' AND t.wallet_address IS NULL))` : `(t.source_type = 'csv_import' AND t.wallet_address IS NULL)`}
+      GROUP BY date_trunc('week', tx_timestamp)
+      ORDER BY week_start
+    `, ...(walletAddresses.length > 0 ? [walletAddresses] : []));
+
+    const weeklyActivity = weeklyRaw.map(w => ({
+      weekStart: new Date(w.week_start).toISOString(),
+      count: Number(w.txn_count),
+      netGainLoss: Number(w.net_gl || 0),
+    }));
+
     const otherCount = totalCount - buyCount - sellCount - transferInCount - transferOutCount - swapCount;
     const unlabelledCount = totalCount - identifiedTypeCount;
     const identifiedPercentage = totalCount > 0 ? Math.round((identifiedTypeCount / totalCount) * 100) : 0;
@@ -513,6 +531,7 @@ export async function GET(request: NextRequest) {
           count: incomeAgg._count,
           totalValueUsd: Number(incomeAgg._sum.value_usd || 0),
         },
+        weeklyActivity,
       },
     });
   } catch (error) {
