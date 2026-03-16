@@ -212,6 +212,7 @@ function TransactionsContent() {
   const [showAdvancedColumns, setShowAdvancedColumns] = useState(true);
   const [showMoreStats, setShowMoreStats] = useState(false);
   const [groupBy, setGroupBy] = useState<"none" | "month" | "asset" | "type" | "source">("none");
+  const [pnlView, setPnlView] = useState<"summary" | "detailed">("summary");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [tableDensity, setTableDensity] = useState<"condensed" | "regular" | "spacious">("regular");
 
@@ -1553,14 +1554,62 @@ function TransactionsContent() {
         {/* ── P&L Breakdown by Asset ── */}
         {stats?.pnl && (stats.pnl.gainsByAsset.length > 0 || stats.pnl.lossesByAsset.length > 0) && (
           <div className="space-y-2">
-            <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">P&L + Income by Asset</h2>
-            <PnLBreakdownChart
-              gainsByAsset={stats.pnl.gainsByAsset}
-              lossesByAsset={stats.pnl.lossesByAsset}
-              netGain={stats.pnl.netGain}
-              incomeByAsset={stats.income?.byAsset || []}
-              totalIncome={stats.income?.totalValueUsd || 0}
-            />
+            <div className="flex items-center gap-3">
+              <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">P&L + Income by Asset</h2>
+              <div className="flex items-center gap-1 bg-[#F5F5F0] dark:bg-[#222] rounded-md p-0.5">
+                <button
+                  onClick={() => setPnlView("summary")}
+                  className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors ${pnlView === "summary" ? "bg-white dark:bg-[#333] text-[#1A1A1A] dark:text-[#F5F5F5] shadow-xs" : "text-[#6B7280]"}`}
+                >
+                  Summary
+                </button>
+                <button
+                  onClick={() => setPnlView("detailed")}
+                  className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors ${pnlView === "detailed" ? "bg-white dark:bg-[#333] text-[#1A1A1A] dark:text-[#F5F5F5] shadow-xs" : "text-[#6B7280]"}`}
+                >
+                  Detailed
+                </button>
+              </div>
+            </div>
+            {pnlView === "detailed" ? (
+              <PnLBreakdownChart
+                gainsByAsset={stats.pnl.gainsByAsset}
+                lossesByAsset={stats.pnl.lossesByAsset}
+                netGain={stats.pnl.netGain}
+                incomeByAsset={stats.income?.byAsset || []}
+                totalIncome={stats.income?.totalValueUsd || 0}
+              />
+            ) : (
+              <div className="flex items-center gap-4 max-w-[33%]">
+                {(() => {
+                  const totalGains = stats.pnl.gainsByAsset.reduce((s, a) => s + a.amount, 0);
+                  const totalLosses = stats.pnl.lossesByAsset.reduce((s, a) => s + a.amount, 0);
+                  const maxVal = Math.max(totalGains, totalLosses, 1);
+                  return (
+                    <>
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-semibold text-[#6B7280]">GAINS</span>
+                          <span className="text-[12px] font-semibold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums' }}>+${totalGains.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                        </div>
+                        <div className="h-5 w-full rounded-md bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                          <div className="h-full rounded-md bg-[#16A34A] opacity-90" style={{ width: `${(totalGains / maxVal) * 100}%` }} />
+                        </div>
+                      </div>
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-semibold text-[#6B7280]">LOSSES</span>
+                          <span className="text-[12px] font-semibold text-[#DC2626]" style={{ fontVariantNumeric: 'tabular-nums' }}>-${totalLosses.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
+                        </div>
+                        <div className="h-5 w-full rounded-md bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                          <div className="h-full rounded-md bg-[#DC2626] opacity-90" style={{ width: `${(totalLosses / maxVal) * 100}%` }} />
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         )}
 
