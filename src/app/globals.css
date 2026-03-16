@@ -182,6 +182,41 @@
   background-attachment: local, local, scroll, scroll;
 }
 
+/* Animated glowing border box */
+@keyframes borderRotate {
+  0% { --border-angle: 0deg; }
+  100% { --border-angle: 360deg; }
+}
+
+@property --border-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.glow-border {
+  position: relative;
+  border-radius: 12px;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--border-angle),
+    transparent 40%,
+    rgba(22, 163, 74, 0.5) 50%,
+    rgba(37, 99, 235, 0.4) 55%,
+    transparent 65%
+  );
+  animation: borderRotate 4s linear infinite;
+}
+
+.glow-border > * {
+  border-radius: 11px;
+  background: white;
+}
+
+.dark .glow-border > * {
+  background: #1A1A1A;
+}
+
 /* Badge shine sweep animation */
 @keyframes badgeShine {
   0% { background-position: 250% center; }

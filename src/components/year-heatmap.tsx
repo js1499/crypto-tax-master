@@ -182,7 +182,16 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
 
   return (
     <div ref={containerRef} className="relative w-full">
-      <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase mb-2">Activity</h2>
+      <div className="flex items-baseline gap-2 mb-2">
+        <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">Activity</h2>
+        {weeklyActivity.length > 0 && (() => {
+          const dates = weeklyActivity.map(w => new Date(w.weekStart)).sort((a, b) => a.getTime() - b.getTime());
+          const start = dates[0];
+          const end = dates[dates.length - 1];
+          const fmt = (d: Date) => d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+          return <span className="text-[11px] text-[#9CA3AF]">{fmt(start)} – {fmt(end)}</span>;
+        })()}
+      </div>
       <svg ref={svgRef} width={width} height={svgHeight} className="overflow-visible" />
       {tooltip && (
         <div

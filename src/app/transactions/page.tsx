@@ -1481,8 +1481,9 @@ function TransactionsContent() {
         {stats?.pnl && (
           <div className="flex items-center justify-between">
 
-            {/* Left group */}
-            <div className="flex items-center">
+            {/* Left group — glowing border */}
+            <div className="glow-border">
+            <div className="flex items-center px-5 py-4">
             <div className="pr-7">
               <p className={cn(
                 "text-[36px] font-bold tracking-tight",
@@ -1524,6 +1525,7 @@ function TransactionsContent() {
                   ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
+            </div>
             </div>
             </div>
 
@@ -1585,6 +1587,15 @@ function TransactionsContent() {
             </div>
 
           </div>
+        )}
+
+        {/* Total gain summary */}
+        {stats?.pnl && stats.income && stats.income.count > 0 && (
+          <p className="text-[14px] text-[#6B7280]">
+            Total tax impact: <span className={cn("font-semibold", (stats.pnl.netGain + stats.income.totalValueUsd) >= 0 ? "text-[#16A34A]" : "text-[#DC2626]")} style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {(stats.pnl.netGain + stats.income.totalValueUsd) >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain + stats.income.totalValueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span> <span className="text-[12px] text-[#9CA3AF]">(capital gains + income)</span>
+          </p>
         )}
 
         {/* ── P&L Breakdown by Asset ── */}
@@ -1873,14 +1884,17 @@ function TransactionsContent() {
                       onCheckedChange={handleBulkSelectAll}
                     />
                   </TableHead>
-                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("type")}>
+                  <TableHead className="w-[140px] text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("type")}>
                     <span className="inline-flex items-center gap-1.5">
                       <span className="inline-block h-4 w-4 rounded-full bg-primary shrink-0" />
                       <span style={{ fontVariantNumeric: 'tabular-nums' }}>{isLoadingTransactions ? "..." : totalCount.toLocaleString()}</span> Transactions{getSortIndicator("type")}
                     </span>
                   </TableHead>
                   <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("asset")}>
-                    <span className="inline-flex items-center gap-0.5">Asset / Amount{getSortIndicator("asset")}</span>
+                    <span className="inline-flex items-center gap-0.5">Asset{getSortIndicator("asset")}</span>
+                  </TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("amount")}>
+                    <span className="inline-flex items-center gap-0.5">Amount{getSortIndicator("amount")}</span>
                   </TableHead>
                   <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("gainloss")}>
                     <span className="inline-flex items-center gap-0.5">Gain/Loss{getSortIndicator("gainloss")}</span>
@@ -1906,7 +1920,7 @@ function TransactionsContent() {
                           className="cursor-pointer bg-[#FAFAF8] dark:bg-[#161616] hover:bg-[#F5F5F0] dark:hover:bg-[#1A1A1A] border-b border-[#E5E5E0] dark:border-[#333333]"
                           onClick={() => toggleGroup(group.key)}
                         >
-                          <TableCell colSpan={7} className="py-2.5">
+                          <TableCell colSpan={8} className="py-2.5">
                             <div className="flex items-center gap-3">
                               <ChevronDown className={cn("h-4 w-4 text-[#6B7280] transition-transform duration-200", collapsedGroups.has(group.key) && "-rotate-90")} />
                               <span className="text-[14px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">{group.label}</span>
@@ -2005,33 +2019,43 @@ function TransactionsContent() {
                         )}
                       </TableCell>
 
-                      {/* Asset / Amount - merged */}
+                      {/* Asset */}
                       <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                         {transaction.outAsset && transaction.inAsset ? (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-sm inline-flex items-center gap-1.5">
-                              <AssetIcon symbol={transaction.outAsset} />
-                              <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.outAmount)}</span>
-                              {" "}<span className={cn("font-semibold", getAssetColor(transaction.outAsset))}>{transaction.outAsset}</span>
-                            </span>
-                            <span className="text-sm inline-flex items-center gap-1.5">
-                              <span className="text-[#9CA3AF] w-[18px] text-center shrink-0">{"\u2192"}</span>
-                              <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.inAmount)}</span>
-                              {" "}<span className={cn("font-semibold", getAssetColor(transaction.inAsset))}>{transaction.inAsset}</span>
-                            </span>
-                          </div>
+                          <span className="text-sm inline-flex items-center gap-1.5">
+                            <AssetIcon symbol={transaction.outAsset} />
+                            <span className={cn("font-semibold", getAssetColor(transaction.outAsset))}>{transaction.outAsset}</span>
+                            <span className="text-[#9CA3AF]">{"\u2192"}</span>
+                            <AssetIcon symbol={transaction.inAsset} />
+                            <span className={cn("font-semibold", getAssetColor(transaction.inAsset))}>{transaction.inAsset}</span>
+                          </span>
                         ) : transaction.outAsset ? (
                           <span className="text-sm inline-flex items-center gap-1.5">
                             <AssetIcon symbol={transaction.outAsset} />
-                            <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.outAmount)}</span>
-                            {" "}<span className={cn("font-semibold", getAssetColor(transaction.outAsset))}>{transaction.outAsset}</span>
+                            <span className={cn("font-semibold", getAssetColor(transaction.outAsset))}>{transaction.outAsset}</span>
                           </span>
                         ) : transaction.inAsset ? (
                           <span className="text-sm inline-flex items-center gap-1.5">
                             <AssetIcon symbol={transaction.inAsset} />
-                            <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.inAmount)}</span>
-                            {" "}<span className={cn("font-semibold", getAssetColor(transaction.inAsset))}>{transaction.inAsset}</span>
+                            <span className={cn("font-semibold", getAssetColor(transaction.inAsset))}>{transaction.inAsset}</span>
                           </span>
+                        ) : (
+                          <span className="text-[#9CA3AF]">{"\u2014"}</span>
+                        )}
+                      </TableCell>
+
+                      {/* Amount */}
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                        {transaction.outAmount != null && transaction.inAmount != null ? (
+                          <span className="text-sm" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                            <span className="text-[#1A1A1A] dark:text-[#F5F5F5]">{formatAmount(transaction.outAmount)}</span>
+                            <span className="text-[#9CA3AF] mx-1">{"\u2192"}</span>
+                            <span className="text-[#1A1A1A] dark:text-[#F5F5F5]">{formatAmount(transaction.inAmount)}</span>
+                          </span>
+                        ) : transaction.outAmount != null ? (
+                          <span className="text-sm text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.outAmount)}</span>
+                        ) : transaction.inAmount != null ? (
+                          <span className="text-sm text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.inAmount)}</span>
                         ) : (
                           <span className="text-[#9CA3AF]">{"\u2014"}</span>
                         )}
