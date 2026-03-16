@@ -1532,7 +1532,7 @@ function TransactionsContent() {
               <div className="flex items-center gap-3">
                 <div className="relative group">
                   <div className="badge-shine rounded-xl">
-                    <img src="/badges/values-identified.png" alt="Values" className="h-14 w-14 object-contain drop-shadow-sm" />
+                    <img src="/badges/values-identified.png" alt="Values" className="h-20 w-20 object-contain drop-shadow-sm" />
                   </div>
                   <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
                     <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">🎉 All transaction values identified!</div>
@@ -1541,10 +1541,10 @@ function TransactionsContent() {
                 <div className="relative group">
                   {stats.identifiedPercentage === 100 ? (
                     <div className="badge-shine rounded-xl">
-                      <img src="/badges/types-identified.png" alt="Types" className="h-14 w-14 object-contain drop-shadow-sm" />
+                      <img src="/badges/types-identified.png" alt="Types" className="h-20 w-20 object-contain drop-shadow-sm" />
                     </div>
                   ) : (
-                    <div className="h-14 w-14 rounded-xl bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
+                    <div className="h-20 w-20 rounded-xl bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
                       <span className="text-[12px] font-bold text-[#9CA3AF]">{stats.identifiedPercentage}%</span>
                     </div>
                   )}
