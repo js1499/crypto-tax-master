@@ -299,9 +299,11 @@ function TransactionsContent() {
     const fetchTransactions = async () => {
       setIsLoadingTransactions(true);
       try {
+        // When grouping, fetch more rows so collapsing groups still shows data
+        const fetchLimit = groupBy !== "none" ? Math.max(itemsPerPage, 250) : itemsPerPage;
         const params = new URLSearchParams({
           page: currentPage.toString(),
-          limit: itemsPerPage.toString(),
+          limit: fetchLimit.toString(),
           ...(searchTerm && { search: searchTerm }),
           ...(filter !== "all" && { filter }),
           ...(sortOption && { sort: sortOption }),
@@ -406,6 +408,7 @@ function TransactionsContent() {
     hideZeroTransactions,
     hideSpamTransactions,
     onlyWithGainLoss,
+    groupBy,
     walletFilter,
     dateFrom,
     dateTo,

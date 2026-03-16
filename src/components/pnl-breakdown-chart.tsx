@@ -42,6 +42,17 @@ function getColor(asset: string, index: number): string {
   return PALETTE[index % PALETTE.length];
 }
 
+// Single-hue palettes for gains (blue shades) and losses (red shades)
+const GAIN_SHADES = ["#1D4ED8", "#2563EB", "#3B82F6", "#60A5FA", "#93C5FD", "#BFDBFE", "#1E40AF", "#3B82F6", "#60A5FA"];
+const LOSS_SHADES = ["#B91C1C", "#DC2626", "#EF4444", "#F87171", "#FCA5A5", "#FECACA", "#991B1B", "#EF4444", "#F87171"];
+
+function getBarSegmentColor(rowLabel: string, index: number, isOther: boolean): string {
+  if (isOther) return rowLabel === "GAINS" ? "#BFDBFE" : "#FECACA";
+  if (rowLabel === "GAINS") return GAIN_SHADES[index % GAIN_SHADES.length];
+  if (rowLabel === "LOSSES") return LOSS_SHADES[index % LOSS_SHADES.length];
+  return PALETTE[index % PALETTE.length];
+}
+
 export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLBreakdownChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -76,7 +87,7 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
     const sc = d3.scaleLinear().domain([0, mx]).range([0, cw]);
 
     const rows = [
-      { label: "GAINS", items: cg, total: tg, color: "#16A34A", sign: "+" },
+      { label: "GAINS", items: cg, total: tg, color: "#2563EB", sign: "+" },
       { label: "LOSSES", items: cl, total: tl, color: "#DC2626", sign: "-" },
       { label: "NET", items: [] as AssetAmount[], total: Math.abs(netGain), color: netGain >= 0 ? "#16A34A" : "#DC2626", sign: netGain >= 0 ? "+" : "-" },
     ];
@@ -123,7 +134,7 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
         row.items.forEach((item, i) => {
           const sw = row.total > 0 ? (item.amount / row.total) * bw : 0;
           if (sw < 2) return;
-          segments.push({ x: xAcc, w: sw, color: getColor(item.asset, i), asset: item.asset, amount: item.amount, idx: i });
+          segments.push({ x: xAcc, w: sw, color: getBarSegmentColor(row.label, i, item.asset === "Other"), asset: item.asset, amount: item.amount, idx: i });
           xAcc += sw;
         });
 
