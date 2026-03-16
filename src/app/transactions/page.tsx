@@ -1768,24 +1768,24 @@ function TransactionsContent() {
           {stats && (
             <>
               <div className="ml-auto" />
-              <span className="text-[10px] font-semibold text-[#9CA3AF] tracking-wide uppercase shrink-0">Transaction Identification</span>
+              <span className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase shrink-0">Transaction Identification</span>
               <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[10px] text-[#9CA3AF] shrink-0">Transaction Values</span>
+                <span className="text-[11px] text-[#6B7280] shrink-0">Transaction Values</span>
                 <div className="w-[80px]">
                   <div className="h-1.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
                     <div className="h-full rounded-full bg-[#16A34A]" style={{ width: '100%' }} />
                   </div>
                 </div>
-                <span className="text-[10px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
+                <span className="text-[11px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
               </div>
               <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-[10px] text-[#9CA3AF] shrink-0">Transaction Types</span>
+                <span className="text-[11px] text-[#6B7280] shrink-0">Transaction Types</span>
                 <div className="w-[80px]">
                   <div className="h-1.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
                     <div className="h-full rounded-full bg-[#2563EB]" style={{ width: `${stats.identifiedPercentage}%` }} />
                   </div>
                 </div>
-                <span className={cn("text-[10px] font-bold", stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
+                <span className={cn("text-[11px] font-bold", stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
               </div>
             </>
           )}
