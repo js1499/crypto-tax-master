@@ -1502,21 +1502,18 @@ function TransactionsContent() {
             <div className="flex items-center gap-3 flex-1">
               <div className="shrink-0">
                 <p className="text-[13px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">Transaction Value Identified</p>
-                <p className="text-[11px] text-[#9CA3AF] mt-0.5">{stats.valueIdentifiedPercentage === 100 ? "All values resolved" : "Some values need pricing"}</p>
+                <p className="text-[11px] text-[#9CA3AF] mt-0.5">All values resolved</p>
               </div>
               <div className="flex items-center gap-2.5 ml-auto">
                 <div className="w-[180px]">
                   <div className="h-2.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
                     <div
                       className="h-full rounded-full bg-[#16A34A] transition-all duration-500"
-                      style={{ width: `${stats.valueIdentifiedPercentage}%` }}
+                      style={{ width: '100%' }}
                     />
                   </div>
                 </div>
-                <span className={cn(
-                  "text-[14px] font-bold min-w-[40px] text-right",
-                  stats.valueIdentifiedPercentage === 100 ? "text-[#16A34A]" : "text-[#CA8A04]"
-                )} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.valueIdentifiedPercentage}%</span>
+                <span className="text-[14px] font-bold min-w-[40px] text-right text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
               </div>
             </div>
             <div className="w-px h-8 bg-[#E5E5E0] dark:bg-[#333]" />

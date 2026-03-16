@@ -73,9 +73,11 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
     }
 
     // Two rows: top = volume, bottom = P&L
+    const ml = 52;       // left margin for row labels
     const cellGap = 3;
-    const rowGap = 6;
-    const cellW = (width - (numBuckets - 1) * cellGap) / numBuckets;
+    const rowGap = 14;
+    const chartW = width - ml;
+    const cellW = (chartW - (numBuckets - 1) * cellGap) / numBuckets;
     const cellH = cellW; // square
     const r = Math.min(4, cellW / 3);
 
@@ -85,7 +87,7 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
     const g = svg.append("g");
 
     buckets.forEach((bucket, i) => {
-      const x = i * (cellW + cellGap);
+      const x = ml + i * (cellW + cellGap);
 
       // Volume row (top)
       const volY = 0;
@@ -140,7 +142,7 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
       const y = bucket.startDate.getFullYear();
       if (m !== lastMonth) {
         lastMonth = m;
-        const x = i * (cellW + cellGap) + cellW / 2;
+        const x = ml + i * (cellW + cellGap) + cellW / 2;
         const label = totalDays > 400 ? `${MONTHS[m]} '${String(y).slice(2)}` : MONTHS[m];
         g.append("text")
           .attr("x", x).attr("y", labelY)
@@ -150,25 +152,27 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
       }
     });
 
-    // Row labels on the right
-    const labelX = width + 6;
+    // Row labels on the left
     g.append("text")
-      .attr("x", labelX).attr("y", cellH / 2)
+      .attr("x", 0).attr("y", cellH / 2)
       .attr("text-anchor", "start").attr("dominant-baseline", "central")
-      .attr("font-size", "9px").attr("font-weight", "600").attr("fill", "#9CA3AF")
-      .text("VOL");
+      .attr("font-size", "11px").attr("font-weight", "600").attr("fill", "#6B7280")
+      .attr("letter-spacing", "0.02em")
+      .text("Volume");
     g.append("text")
-      .attr("x", labelX).attr("y", cellH + rowGap + cellH / 2)
+      .attr("x", 0).attr("y", cellH + rowGap + cellH / 2)
       .attr("text-anchor", "start").attr("dominant-baseline", "central")
-      .attr("font-size", "9px").attr("font-weight", "600").attr("fill", "#9CA3AF")
+      .attr("font-size", "11px").attr("font-weight", "600").attr("fill", "#6B7280")
+      .attr("letter-spacing", "0.02em")
       .text("P&L");
 
   }, [weeklyActivity, width, year]);
 
   const numBuckets = 52;
   const cellGap = 3;
-  const cellW = (width - (numBuckets - 1) * cellGap) / numBuckets;
-  const rowGap = 6;
+  const mlOuter = 52;
+  const cellW = (width - mlOuter - (numBuckets - 1) * cellGap) / numBuckets;
+  const rowGap = 14;
   const svgHeight = cellW * 2 + rowGap + 20;
 
   return (
