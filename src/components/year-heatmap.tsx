@@ -20,7 +20,6 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(800);
-  const [mode, setMode] = useState<"volume" | "pnl">("volume");
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
 
   useEffect(() => {
@@ -36,14 +35,11 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
 
-    // Determine the time range from the data itself
     const dates = weeklyActivity.map(w => new Date(w.weekStart)).sort((a, b) => a.getTime() - b.getTime());
     const dataStart = dates[0];
     const dataEnd = dates[dates.length - 1];
 
-    // If a specific year is selected, scope to that year
-    let rangeStart: Date;
-    let rangeEnd: Date;
+    let rangeStart: Date, rangeEnd: Date;
     if (year) {
       rangeStart = new Date(year, 0, 1);
       rangeEnd = new Date(year, 11, 31);
@@ -52,160 +48,132 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
       rangeEnd = new Date(dataEnd);
     }
 
-    // Total duration in ms
     const totalMs = rangeEnd.getTime() - rangeStart.getTime();
     const totalDays = Math.max(1, Math.ceil(totalMs / (1000 * 60 * 60 * 24)));
-
-    // Fixed number of buckets (52), each covering an equal portion of the range
     const numBuckets = 52;
     const bucketMs = totalMs / numBuckets;
 
-    // Build a map from week data
     const dataMap = new Map<number, { count: number; netGL: number }>();
     weeklyActivity.forEach(w => {
       const t = new Date(w.weekStart).getTime();
       const existing = dataMap.get(t);
-      if (existing) {
-        existing.count += w.count;
-        existing.netGL += w.netGainLoss;
-      } else {
-        dataMap.set(t, { count: w.count, netGL: w.netGainLoss });
-      }
+      if (existing) { existing.count += w.count; existing.netGL += w.netGainLoss; }
+      else dataMap.set(t, { count: w.count, netGL: w.netGainLoss });
     });
 
-    // Aggregate data into buckets
-    const buckets: Array<{ startDate: Date; endDate: Date; count: number; netGL: number }> = [];
+    const buckets: Array<{ startDate: Date; count: number; netGL: number }> = [];
     for (let i = 0; i < numBuckets; i++) {
       const bStart = new Date(rangeStart.getTime() + i * bucketMs);
       const bEnd = new Date(rangeStart.getTime() + (i + 1) * bucketMs);
-      let count = 0;
-      let netGL = 0;
-
-      // Sum all data points that fall within this bucket
-      dataMap.forEach((val, timestamp) => {
-        if (timestamp >= bStart.getTime() && timestamp < bEnd.getTime()) {
-          count += val.count;
-          netGL += val.netGL;
-        }
+      let count = 0, netGL = 0;
+      dataMap.forEach((val, ts) => {
+        if (ts >= bStart.getTime() && ts < bEnd.getTime()) { count += val.count; netGL += val.netGL; }
       });
-
-      buckets.push({ startDate: bStart, endDate: bEnd, count, netGL });
+      buckets.push({ startDate: bStart, count, netGL });
     }
 
-    // Layout — full width, no left margin
+    // Two rows: top = volume, bottom = P&L
     const cellGap = 3;
-    const cellSize = (width - (numBuckets - 1) * cellGap) / numBuckets;
-    const r = Math.min(4, cellSize / 3);
+    const rowGap = 6;
+    const cellW = (width - (numBuckets - 1) * cellGap) / numBuckets;
+    const cellH = cellW; // square
+    const r = Math.min(4, cellW / 3);
 
-    // Color scales
     const maxCount = Math.max(...buckets.map(b => b.count), 1);
     const maxAbsGL = Math.max(...buckets.map(b => Math.abs(b.netGL)), 1);
 
     const g = svg.append("g");
 
-    // Draw cells
     buckets.forEach((bucket, i) => {
-      const x = i * (cellSize + cellGap);
-      let fill: string;
-      let fillOpacity: number;
+      const x = i * (cellW + cellGap);
 
-      if (mode === "volume") {
-        if (bucket.count === 0) {
-          fill = "#E5E5E0";
-          fillOpacity = 1;
-        } else {
-          fill = "#2563EB";
-          fillOpacity = 0.15 + (bucket.count / maxCount) * 0.85;
-        }
+      // Volume row (top)
+      const volY = 0;
+      let volFill: string, volOp: number;
+      if (bucket.count === 0) { volFill = "#E5E5E0"; volOp = 1; }
+      else { volFill = "#2563EB"; volOp = 0.15 + (bucket.count / maxCount) * 0.85; }
+
+      g.append("rect")
+        .attr("x", x).attr("y", volY)
+        .attr("width", cellW).attr("height", cellH)
+        .attr("rx", r).attr("fill", volFill).attr("opacity", volOp)
+        .attr("cursor", "pointer")
+        .on("mouseenter", (event: MouseEvent) => {
+          const dateStr = bucket.startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(totalDays > 400 ? { year: "numeric" } : {}) });
+          setTooltip({ x: event.clientX, y: event.clientY, text: `${dateStr}: ${bucket.count} transactions` });
+        })
+        .on("mousemove", (event: MouseEvent) => setTooltip(prev => prev ? { ...prev, x: event.clientX, y: event.clientY } : null))
+        .on("mouseleave", () => setTooltip(null));
+
+      // P&L row (bottom)
+      const pnlY = cellH + rowGap;
+      let pnlFill: string, pnlOp: number;
+      if (bucket.netGL === 0 && bucket.count === 0) { pnlFill = "#E5E5E0"; pnlOp = 1; }
+      else if (bucket.netGL >= 0) {
+        pnlFill = "#16A34A";
+        pnlOp = bucket.netGL === 0 ? (bucket.count > 0 ? 0.1 : 1) : 0.2 + (Math.abs(bucket.netGL) / maxAbsGL) * 0.8;
+        if (bucket.netGL === 0 && bucket.count === 0) { pnlFill = "#E5E5E0"; pnlOp = 1; }
       } else {
-        if (bucket.netGL === 0 && bucket.count === 0) {
-          fill = "#E5E5E0";
-          fillOpacity = 1;
-        } else if (bucket.netGL >= 0) {
-          fill = "#16A34A";
-          fillOpacity = bucket.count === 0 ? 1 : 0.2 + (Math.abs(bucket.netGL) / maxAbsGL) * 0.8;
-          if (bucket.netGL === 0 && bucket.count > 0) { fill = "#E5E5E0"; fillOpacity = 1; }
-        } else {
-          fill = "#DC2626";
-          fillOpacity = 0.2 + (Math.abs(bucket.netGL) / maxAbsGL) * 0.8;
-        }
+        pnlFill = "#DC2626";
+        pnlOp = 0.2 + (Math.abs(bucket.netGL) / maxAbsGL) * 0.8;
       }
 
       g.append("rect")
-        .attr("x", x)
-        .attr("y", 0)
-        .attr("width", cellSize)
-        .attr("height", cellSize)
-        .attr("rx", r)
-        .attr("fill", fill)
-        .attr("opacity", fillOpacity)
+        .attr("x", x).attr("y", pnlY)
+        .attr("width", cellW).attr("height", cellH)
+        .attr("rx", r).attr("fill", pnlFill).attr("opacity", pnlOp)
         .attr("cursor", "pointer")
         .on("mouseenter", (event: MouseEvent) => {
-          const startStr = bucket.startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: totalDays > 400 ? "numeric" : undefined });
-          const glText = bucket.netGL !== 0 ? ` · ${bucket.netGL >= 0 ? "+" : "-"}$${Math.abs(bucket.netGL).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "";
-          setTooltip({
-            x: event.clientX,
-            y: event.clientY,
-            text: `${startStr}: ${bucket.count} txns${glText}`,
-          });
+          const dateStr = bucket.startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(totalDays > 400 ? { year: "numeric" } : {}) });
+          const glText = bucket.netGL !== 0 ? `${bucket.netGL >= 0 ? "+" : "-"}$${Math.abs(bucket.netGL).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "$0";
+          setTooltip({ x: event.clientX, y: event.clientY, text: `${dateStr}: ${glText}` });
         })
-        .on("mousemove", (event: MouseEvent) => {
-          setTooltip(prev => prev ? { ...prev, x: event.clientX, y: event.clientY } : null);
-        })
+        .on("mousemove", (event: MouseEvent) => setTooltip(prev => prev ? { ...prev, x: event.clientX, y: event.clientY } : null))
         .on("mouseleave", () => setTooltip(null));
     });
 
-    // Month labels — show when a new month starts
+    // Month labels below both rows
+    const labelY = cellH * 2 + rowGap + 14;
     let lastMonth = -1;
-    let lastYear = -1;
     buckets.forEach((bucket, i) => {
       const m = bucket.startDate.getMonth();
       const y = bucket.startDate.getFullYear();
       if (m !== lastMonth) {
         lastMonth = m;
-        const x = i * (cellSize + cellGap) + cellSize / 2;
-        // Show year on first label if multi-year, or on Jan
-        const showYear = (totalDays > 400 && y !== lastYear) || m === 0;
-        lastYear = y;
-        const label = showYear && totalDays > 400 ? `${MONTHS[m]} '${String(y).slice(2)}` : MONTHS[m];
+        const x = i * (cellW + cellGap) + cellW / 2;
+        const label = totalDays > 400 ? `${MONTHS[m]} '${String(y).slice(2)}` : MONTHS[m];
         g.append("text")
-          .attr("x", x)
-          .attr("y", cellSize + 14)
+          .attr("x", x).attr("y", labelY)
           .attr("text-anchor", "middle")
-          .attr("font-size", "9px")
-          .attr("font-weight", "500")
-          .attr("fill", "#9CA3AF")
+          .attr("font-size", "9px").attr("font-weight", "500").attr("fill", "#9CA3AF")
           .text(label);
       }
     });
 
-  }, [weeklyActivity, width, mode, year]);
+    // Row labels on the right
+    const labelX = width + 6;
+    g.append("text")
+      .attr("x", labelX).attr("y", cellH / 2)
+      .attr("text-anchor", "start").attr("dominant-baseline", "central")
+      .attr("font-size", "9px").attr("font-weight", "600").attr("fill", "#9CA3AF")
+      .text("VOL");
+    g.append("text")
+      .attr("x", labelX).attr("y", cellH + rowGap + cellH / 2)
+      .attr("text-anchor", "start").attr("dominant-baseline", "central")
+      .attr("font-size", "9px").attr("font-weight", "600").attr("fill", "#9CA3AF")
+      .text("P&L");
 
-  // Compute cell size for SVG height
+  }, [weeklyActivity, width, year]);
+
   const numBuckets = 52;
   const cellGap = 3;
-  const cellSize = (width - (numBuckets - 1) * cellGap) / numBuckets;
-  const svgHeight = cellSize + 20;
+  const cellW = (width - (numBuckets - 1) * cellGap) / numBuckets;
+  const rowGap = 6;
+  const svgHeight = cellW * 2 + rowGap + 20;
 
   return (
     <div ref={containerRef} className="relative w-full">
-      <div className="flex items-center gap-3 mb-2">
-        <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">Activity</h2>
-        <div className="flex items-center gap-1 bg-[#F5F5F0] dark:bg-[#222222] rounded-md p-0.5">
-          <button
-            onClick={() => setMode("volume")}
-            className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors ${mode === "volume" ? "bg-white dark:bg-[#333] text-[#1A1A1A] dark:text-[#F5F5F5] shadow-xs" : "text-[#6B7280]"}`}
-          >
-            Volume
-          </button>
-          <button
-            onClick={() => setMode("pnl")}
-            className={`px-2 py-0.5 text-[11px] font-medium rounded transition-colors ${mode === "pnl" ? "bg-white dark:bg-[#333] text-[#1A1A1A] dark:text-[#F5F5F5] shadow-xs" : "text-[#6B7280]"}`}
-          >
-            P&L
-          </button>
-        </div>
-      </div>
+      <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase mb-2">Activity</h2>
       <svg ref={svgRef} width={width} height={svgHeight} className="overflow-visible" />
       {tooltip && (
         <div
