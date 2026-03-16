@@ -19,7 +19,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const [width, setWidth] = useState(700);
+  const [width, setWidth] = useState(800);
   const [mode, setMode] = useState<"volume" | "pnl">("volume");
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
 
@@ -32,111 +32,121 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
   }, []);
 
   useEffect(() => {
-    if (!svgRef.current) return;
+    if (!svgRef.current || weeklyActivity.length === 0) return;
     const svg = d3.select(svgRef.current);
     svg.selectAll("*").remove();
 
-    // Build 52 weeks for the year
-    const targetYear = year || new Date().getFullYear();
-    const weeks: Array<{ date: Date; count: number; netGL: number }> = [];
+    // Determine the time range from the data itself
+    const dates = weeklyActivity.map(w => new Date(w.weekStart)).sort((a, b) => a.getTime() - b.getTime());
+    const dataStart = dates[0];
+    const dataEnd = dates[dates.length - 1];
 
-    // Create a map from week start date to data
-    const dataMap = new Map<string, WeekData>();
-    weeklyActivity.forEach(w => {
-      const d = new Date(w.weekStart);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      dataMap.set(key, w);
-    });
-
-    // Generate all 52 weeks of the year
-    const yearStart = new Date(targetYear, 0, 1);
-    // Find the Monday of the first week
-    const firstMonday = new Date(yearStart);
-    firstMonday.setDate(firstMonday.getDate() - ((firstMonday.getDay() + 6) % 7));
-
-    for (let i = 0; i < 53; i++) {
-      const weekDate = new Date(firstMonday);
-      weekDate.setDate(weekDate.getDate() + i * 7);
-      if (weekDate.getFullYear() > targetYear && i > 0) break;
-
-      // Find matching data (check within 3 days to handle timezone differences)
-      let matched: WeekData | undefined;
-      for (let offset = -3; offset <= 3; offset++) {
-        const checkDate = new Date(weekDate);
-        checkDate.setDate(checkDate.getDate() + offset);
-        const key = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, '0')}-${String(checkDate.getDate()).padStart(2, '0')}`;
-        if (dataMap.has(key)) {
-          matched = dataMap.get(key);
-          break;
-        }
-      }
-
-      weeks.push({
-        date: weekDate,
-        count: matched?.count || 0,
-        netGL: matched?.netGainLoss || 0,
-      });
+    // If a specific year is selected, scope to that year
+    let rangeStart: Date;
+    let rangeEnd: Date;
+    if (year) {
+      rangeStart = new Date(year, 0, 1);
+      rangeEnd = new Date(year, 11, 31);
+    } else {
+      rangeStart = new Date(dataStart);
+      rangeEnd = new Date(dataEnd);
     }
 
-    const ml = 0;
-    const cellSize = Math.min(14, (width - ml) / 53 - 1);
-    const cellGap = 2;
-    const cellTotal = cellSize + cellGap;
+    // Total duration in ms
+    const totalMs = rangeEnd.getTime() - rangeStart.getTime();
+    const totalDays = Math.max(1, Math.ceil(totalMs / (1000 * 60 * 60 * 24)));
+
+    // Fixed number of buckets (52), each covering an equal portion of the range
+    const numBuckets = 52;
+    const bucketMs = totalMs / numBuckets;
+
+    // Build a map from week data
+    const dataMap = new Map<number, { count: number; netGL: number }>();
+    weeklyActivity.forEach(w => {
+      const t = new Date(w.weekStart).getTime();
+      const existing = dataMap.get(t);
+      if (existing) {
+        existing.count += w.count;
+        existing.netGL += w.netGainLoss;
+      } else {
+        dataMap.set(t, { count: w.count, netGL: w.netGainLoss });
+      }
+    });
+
+    // Aggregate data into buckets
+    const buckets: Array<{ startDate: Date; endDate: Date; count: number; netGL: number }> = [];
+    for (let i = 0; i < numBuckets; i++) {
+      const bStart = new Date(rangeStart.getTime() + i * bucketMs);
+      const bEnd = new Date(rangeStart.getTime() + (i + 1) * bucketMs);
+      let count = 0;
+      let netGL = 0;
+
+      // Sum all data points that fall within this bucket
+      dataMap.forEach((val, timestamp) => {
+        if (timestamp >= bStart.getTime() && timestamp < bEnd.getTime()) {
+          count += val.count;
+          netGL += val.netGL;
+        }
+      });
+
+      buckets.push({ startDate: bStart, endDate: bEnd, count, netGL });
+    }
+
+    // Layout — full width, no left margin
+    const cellGap = 3;
+    const cellSize = (width - (numBuckets - 1) * cellGap) / numBuckets;
+    const r = Math.min(4, cellSize / 3);
 
     // Color scales
-    const maxCount = Math.max(...weeks.map(w => w.count), 1);
-    const maxAbsGL = Math.max(...weeks.map(w => Math.abs(w.netGL)), 1);
+    const maxCount = Math.max(...buckets.map(b => b.count), 1);
+    const maxAbsGL = Math.max(...buckets.map(b => Math.abs(b.netGL)), 1);
 
-    const volumeScale = d3.scaleLinear()
-      .domain([0, maxCount])
-      .range([0, 1]);
-
-    const g = svg.append("g").attr("transform", `translate(${ml}, 0)`);
+    const g = svg.append("g");
 
     // Draw cells
-    weeks.forEach((week, i) => {
+    buckets.forEach((bucket, i) => {
+      const x = i * (cellSize + cellGap);
       let fill: string;
-      let opacity: number;
+      let fillOpacity: number;
 
       if (mode === "volume") {
-        const intensity = volumeScale(week.count);
-        if (week.count === 0) {
+        if (bucket.count === 0) {
           fill = "#E5E5E0";
-          opacity = 1;
+          fillOpacity = 1;
         } else {
           fill = "#2563EB";
-          opacity = 0.15 + intensity * 0.85;
+          fillOpacity = 0.15 + (bucket.count / maxCount) * 0.85;
         }
       } else {
-        // P&L mode
-        if (week.netGL === 0 && week.count === 0) {
+        if (bucket.netGL === 0 && bucket.count === 0) {
           fill = "#E5E5E0";
-          opacity = 1;
-        } else if (week.netGL >= 0) {
+          fillOpacity = 1;
+        } else if (bucket.netGL >= 0) {
           fill = "#16A34A";
-          opacity = 0.2 + (Math.abs(week.netGL) / maxAbsGL) * 0.8;
+          fillOpacity = bucket.count === 0 ? 1 : 0.2 + (Math.abs(bucket.netGL) / maxAbsGL) * 0.8;
+          if (bucket.netGL === 0 && bucket.count > 0) { fill = "#E5E5E0"; fillOpacity = 1; }
         } else {
           fill = "#DC2626";
-          opacity = 0.2 + (Math.abs(week.netGL) / maxAbsGL) * 0.8;
+          fillOpacity = 0.2 + (Math.abs(bucket.netGL) / maxAbsGL) * 0.8;
         }
       }
 
       g.append("rect")
-        .attr("x", i * cellTotal)
+        .attr("x", x)
         .attr("y", 0)
         .attr("width", cellSize)
         .attr("height", cellSize)
-        .attr("rx", 3)
+        .attr("rx", r)
         .attr("fill", fill)
-        .attr("opacity", opacity)
+        .attr("opacity", fillOpacity)
         .attr("cursor", "pointer")
         .on("mouseenter", (event: MouseEvent) => {
-          const weekOf = week.date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-          const glText = week.netGL !== 0 ? ` · ${week.netGL >= 0 ? "+" : "-"}$${Math.abs(week.netGL).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "";
+          const startStr = bucket.startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: totalDays > 400 ? "numeric" : undefined });
+          const glText = bucket.netGL !== 0 ? ` · ${bucket.netGL >= 0 ? "+" : "-"}$${Math.abs(bucket.netGL).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "";
           setTooltip({
             x: event.clientX,
             y: event.clientY,
-            text: `Week of ${weekOf}: ${week.count} txns${glText}`,
+            text: `${startStr}: ${bucket.count} txns${glText}`,
           });
         })
         .on("mousemove", (event: MouseEvent) => {
@@ -145,31 +155,41 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
         .on("mouseleave", () => setTooltip(null));
     });
 
-    // Month labels
+    // Month labels — show when a new month starts
     let lastMonth = -1;
-    weeks.forEach((week, i) => {
-      const month = week.date.getMonth();
-      if (month !== lastMonth) {
-        lastMonth = month;
+    let lastYear = -1;
+    buckets.forEach((bucket, i) => {
+      const m = bucket.startDate.getMonth();
+      const y = bucket.startDate.getFullYear();
+      if (m !== lastMonth) {
+        lastMonth = m;
+        const x = i * (cellSize + cellGap) + cellSize / 2;
+        // Show year on first label if multi-year, or on Jan
+        const showYear = (totalDays > 400 && y !== lastYear) || m === 0;
+        lastYear = y;
+        const label = showYear && totalDays > 400 ? `${MONTHS[m]} '${String(y).slice(2)}` : MONTHS[m];
         g.append("text")
-          .attr("x", i * cellTotal + cellSize / 2)
+          .attr("x", x)
           .attr("y", cellSize + 14)
           .attr("text-anchor", "middle")
           .attr("font-size", "9px")
           .attr("font-weight", "500")
           .attr("fill", "#9CA3AF")
-          .text(MONTHS[month]);
+          .text(label);
       }
     });
 
   }, [weeklyActivity, width, mode, year]);
 
-  const cellSize = Math.min(14, (width) / 53 - 1);
-  const svgHeight = cellSize + 20; // cells + month labels
+  // Compute cell size for SVG height
+  const numBuckets = 52;
+  const cellGap = 3;
+  const cellSize = (width - (numBuckets - 1) * cellGap) / numBuckets;
+  const svgHeight = cellSize + 20;
 
   return (
     <div ref={containerRef} className="relative w-full">
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center gap-3 mb-2">
         <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">Activity</h2>
         <div className="flex items-center gap-1 bg-[#F5F5F0] dark:bg-[#222222] rounded-md p-0.5">
           <button
