@@ -16,15 +16,15 @@ interface PnLBreakdownChartProps {
 
 // Horizon pill text colors, arranged chromatically (warm → cool → warm)
 const PALETTE = [
-  "#DC2626", // red
-  "#DB2777", // pink
-  "#EA580C", // orange
-  "#CA8A04", // yellow
-  "#16A34A", // green
-  "#0D9488", // teal
-  "#2563EB", // blue
-  "#4F46E5", // indigo
   "#9333EA", // purple
+  "#4F46E5", // indigo
+  "#2563EB", // blue
+  "#0D9488", // teal
+  "#16A34A", // green
+  "#CA8A04", // yellow
+  "#EA580C", // orange
+  "#DB2777", // pink
+  "#DC2626", // red
 ];
 const OTHER_COLOR = "#4B5563"; // gray
 
