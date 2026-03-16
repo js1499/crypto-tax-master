@@ -1572,9 +1572,9 @@ function TransactionsContent() {
 
             {/* Progress bars */}
             <div className="space-y-2 pl-7 min-w-[220px]">
-              <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">Identification</p>
+              <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">Transaction Identification</p>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-[#6B7280] w-[44px] shrink-0">Values</span>
+                <span className="text-[11px] text-[#6B7280] shrink-0">Transaction Values</span>
                 <div className="flex-1">
                   <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
                     <div className="h-full rounded-full bg-[#16A34A] shadow-[0_0_6px_rgba(22,163,74,0.35)]" style={{ width: '100%' }} />
@@ -1583,7 +1583,7 @@ function TransactionsContent() {
                 <span className="text-[12px] font-bold text-[#16A34A] w-[36px] text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-[#6B7280] w-[44px] shrink-0">Types</span>
+                <span className="text-[11px] text-[#6B7280] shrink-0">Transaction Types</span>
                 <div className="flex-1">
                   <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
                     <div className="h-full rounded-full bg-[#2563EB] shadow-[0_0_6px_rgba(37,99,235,0.35)]" style={{ width: `${stats.identifiedPercentage}%` }} />
