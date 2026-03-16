@@ -1482,7 +1482,7 @@ function TransactionsContent() {
           <div className="flex items-start gap-8">
 
             {/* Left: P&L numbers */}
-            <div className="flex items-start gap-0 flex-1">
+            <div className="flex items-start flex-1">
               {/* Capital Gains */}
               <div className="pr-8">
                 <p className={cn(
@@ -1494,28 +1494,13 @@ function TransactionsContent() {
                 <p className="text-[13px] text-[#6B7280] mt-1">
                   Net Capital {stats.pnl.netGain >= 0 ? "Gain" : "Loss"} · {yearValue !== "all" ? yearValue : "All Time"}
                 </p>
-                <div className="flex items-center gap-5 mt-2">
-                  <div>
-                    <p className="text-[11px] text-[#9CA3AF]">Cost Basis</p>
-                    <p className="text-[14px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                      ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-[11px] text-[#9CA3AF]">Proceeds</p>
-                    <p className="text-[14px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                      ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </p>
-                  </div>
-                </div>
               </div>
 
-              {/* Divider */}
-              <div className="w-px self-stretch bg-[#E5E5E0] dark:bg-[#333] mx-2" />
+              <div className="w-px self-stretch bg-[#E5E5E0] dark:bg-[#333]" />
 
               {/* Income */}
               {stats.income && stats.income.count > 0 && (
-                <div className="pl-8">
+                <div className="px-8">
                   <p className="text-[28px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
                     +${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
@@ -1524,6 +1509,24 @@ function TransactionsContent() {
                   </p>
                 </div>
               )}
+
+              <div className="w-px self-stretch bg-[#E5E5E0] dark:bg-[#333]" />
+
+              {/* Cost Basis + Proceeds */}
+              <div className="flex items-start gap-6 pl-8">
+                <div>
+                  <p className="text-[12px] text-[#9CA3AF]">Cost Basis</p>
+                  <p className="text-[18px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[12px] text-[#9CA3AF]">Proceeds</p>
+                  <p className="text-[18px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Right: Badges + Progress bars side by side */}
