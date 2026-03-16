@@ -1475,116 +1475,104 @@ function TransactionsContent() {
           </DialogContent>
         </Dialog>
 
-        {/* ── Stats Zone: structured into clear sections ── */}
+        {/* ── Stats Zone: all left-aligned, stacked vertically ── */}
         {stats?.pnl && (
-          <div className="grid grid-cols-[1fr_auto] gap-x-10 gap-y-6">
+          <div className="space-y-4">
 
-            {/* LEFT: P&L + Income */}
-            <div className="space-y-4">
-              {/* Capital Gains */}
-              <div>
-                <p className={cn(
-                  "text-[36px] font-bold tracking-tight",
-                  stats.pnl.netGain >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"
-                )} style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-                  {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {/* Capital Gains */}
+            <div>
+              <p className={cn(
+                "text-[36px] font-bold tracking-tight",
+                stats.pnl.netGain >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"
+              )} style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+              <p className="text-[13px] text-[#6B7280] mt-1">
+                Net Capital {stats.pnl.netGain >= 0 ? "Gain" : "Loss"} · {yearValue !== "all" ? yearValue : "All Time"}
+              </p>
+            </div>
+
+            {/* Income */}
+            {stats.income && stats.income.count > 0 && (
+              <div className="border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-3">
+                <p className="text-[28px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                  +${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
                 <p className="text-[13px] text-[#6B7280] mt-1">
-                  Net Capital {stats.pnl.netGain >= 0 ? "Gain" : "Loss"} · {yearValue !== "all" ? yearValue : "All Time"}
+                  Ordinary Income · {stats.income.count} events
                 </p>
               </div>
+            )}
 
-              {/* Income */}
-              {stats.income && stats.income.count > 0 && (
-                <div className="border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-3">
-                  <p className="text-[28px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-                    +${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                  <p className="text-[13px] text-[#6B7280] mt-1">
-                    Ordinary Income · {stats.income.count} events
-                  </p>
-                </div>
-              )}
-
-              {/* Supporting metrics */}
-              <div className="flex items-center gap-6 border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-3">
-                <div>
-                  <p className="text-[12px] text-[#9CA3AF]">Cost Basis</p>
-                  <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[12px] text-[#9CA3AF]">Proceeds</p>
-                  <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                </div>
+            {/* Supporting metrics */}
+            <div className="flex items-center gap-6 border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-3">
+              <div>
+                <p className="text-[12px] text-[#9CA3AF]">Cost Basis</p>
+                <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div>
+                <p className="text-[12px] text-[#9CA3AF]">Proceeds</p>
+                <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
               </div>
             </div>
 
-            {/* RIGHT: Badges + Progress */}
-            <div className="space-y-5 min-w-[280px]">
-              {/* Badges */}
-              <div>
-                <p className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase mb-3">Badges</p>
-                <div className="flex items-start gap-5">
-                  <div className="relative group flex flex-col items-center">
-                    <div className="relative badge-shine">
-                      <img src="/badges/values-identified.png" alt="Values Identified" className="h-24 w-24 object-contain drop-shadow-md" />
-                      <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#16A34A] flex items-center justify-center shadow-sm">
-                        <Check className="h-3 w-3 text-white" />
-                      </div>
-                    </div>
-                    <span className="text-[11px] font-medium text-[#6B7280] mt-1.5">Values</span>
-                    <div className="absolute -top-12 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                      <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
-                        🎉 All transaction values identified!
-                      </div>
-                    </div>
-                  </div>
-                  <div className="relative group flex flex-col items-center">
-                    {stats.identifiedPercentage === 100 ? (
-                      <div className="relative badge-shine">
-                        <img src="/badges/types-identified.png" alt="Types Identified" className="h-24 w-24 object-contain drop-shadow-md" />
-                        <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#2563EB] flex items-center justify-center shadow-sm">
-                          <Check className="h-3 w-3 text-white" />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="h-24 w-24 rounded-2xl bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
-                        <span className="text-[14px] font-bold text-[#9CA3AF]">{stats.identifiedPercentage}%</span>
-                      </div>
-                    )}
-                    <span className="text-[11px] font-medium text-[#6B7280] mt-1.5">Types</span>
-                    <div className="absolute -top-12 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                      <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
-                        {stats.identifiedPercentage === 100 ? "🎉 All transaction types categorized!" : `${stats.identifiedPercentage}% of types identified`}
-                      </div>
-                    </div>
+            {/* Progress bars */}
+            <div className="flex items-center gap-8 border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-3">
+              <div className="flex items-center gap-2.5 flex-1 max-w-[300px]">
+                <span className="text-[12px] text-[#6B7280] shrink-0">Values</span>
+                <div className="flex-1">
+                  <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                    <div className="h-full rounded-full bg-[#16A34A]" style={{ width: '100%' }} />
                   </div>
                 </div>
+                <span className="text-[13px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
               </div>
-
-              {/* Progress bars */}
-              <div className="space-y-3 border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-4">
-                <div className="flex items-center gap-2.5">
-                  <span className="text-[12px] text-[#6B7280] w-[60px] shrink-0">Values</span>
-                  <div className="flex-1">
-                    <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
-                      <div className="h-full rounded-full bg-[#16A34A] transition-all duration-500" style={{ width: '100%' }} />
-                    </div>
+              <div className="flex items-center gap-2.5 flex-1 max-w-[300px]">
+                <span className="text-[12px] text-[#6B7280] shrink-0">Types</span>
+                <div className="flex-1">
+                  <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                    <div className="h-full rounded-full bg-[#2563EB]" style={{ width: `${stats.identifiedPercentage}%` }} />
                   </div>
-                  <span className="text-[13px] font-bold text-[#16A34A] w-[40px] text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
                 </div>
-                <div className="flex items-center gap-2.5">
-                  <span className="text-[12px] text-[#6B7280] w-[60px] shrink-0">Types</span>
-                  <div className="flex-1">
-                    <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
-                      <div className="h-full rounded-full bg-[#2563EB] transition-all duration-500" style={{ width: `${stats.identifiedPercentage}%` }} />
+                <span className={cn("text-[13px] font-bold", stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
+              </div>
+            </div>
+
+            {/* Badges */}
+            <div className="border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-3">
+              <p className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase mb-3">Badges</p>
+              <div className="flex items-start gap-6">
+                <div className="relative group flex flex-col items-center">
+                  <div className="badge-shine rounded-2xl">
+                    <img src="/badges/values-identified.png" alt="Values Identified" className="h-28 w-28 object-contain drop-shadow-md" />
+                  </div>
+                  <span className="text-[11px] font-medium text-[#6B7280] mt-2">Values</span>
+                  <div className="absolute -top-12 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                    <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
+                      🎉 All transaction values identified!
                     </div>
                   </div>
-                  <span className={cn("text-[13px] font-bold w-[40px] text-right", stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
+                </div>
+                <div className="relative group flex flex-col items-center">
+                  {stats.identifiedPercentage === 100 ? (
+                    <div className="badge-shine rounded-2xl">
+                      <img src="/badges/types-identified.png" alt="Types Identified" className="h-28 w-28 object-contain drop-shadow-md" />
+                    </div>
+                  ) : (
+                    <div className="h-28 w-28 rounded-2xl bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
+                      <span className="text-[16px] font-bold text-[#9CA3AF]">{stats.identifiedPercentage}%</span>
+                    </div>
+                  )}
+                  <span className="text-[11px] font-medium text-[#6B7280] mt-2">Types</span>
+                  <div className="absolute -top-12 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                    <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
+                      {stats.identifiedPercentage === 100 ? "🎉 All transaction types categorized!" : `${stats.identifiedPercentage}% of types identified`}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
