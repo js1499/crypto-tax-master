@@ -14,19 +14,19 @@ interface PnLBreakdownChartProps {
   netGain: number;
 }
 
-// Pill text colors from the Horizon design system — same colors used in transaction type tags
+// Pastel shades of the Horizon pill colors — softer but still recognizable
 const PALETTE = [
-  "#2563EB", // blue (pill-blue-text)
-  "#9333EA", // purple (pill-purple-text)
-  "#EA580C", // orange (pill-orange-text)
-  "#0D9488", // teal (pill-teal-text)
-  "#DC2626", // red (pill-red-text)
-  "#CA8A04", // yellow (pill-yellow-text)
-  "#4F46E5", // indigo (pill-indigo-text)
-  "#16A34A", // green (pill-green-text)
-  "#DB2777", // pink (pill-pink-text)
+  "#93C5FD", // pastel blue
+  "#C4B5FD", // pastel purple
+  "#FDBA74", // pastel orange
+  "#5EEAD4", // pastel teal
+  "#FCA5A5", // pastel red
+  "#FDE68A", // pastel yellow
+  "#A5B4FC", // pastel indigo
+  "#86EFAC", // pastel green
+  "#F9A8D4", // pastel pink
 ];
-const OTHER_COLOR = "#4B5563"; // gray (pill-gray-text)
+const OTHER_COLOR = "#D1D5DB"; // pastel gray
 
 function capItems(items: AssetAmount[]): AssetAmount[] {
   if (items.length <= 9) return items;
@@ -116,31 +116,37 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
       } else {
         // Segmented bar — each segment is its own rounded rect, overlapping slightly
         // so the visual corners are smooth. We draw back-to-front for proper layering.
+        const segGap = 3; // gap between segments
         let xAcc = ml;
         const segments: Array<{ x: number; w: number; color: string; asset: string; amount: number; idx: number }> = [];
 
         row.items.forEach((item, i) => {
           const sw = row.total > 0 ? (item.amount / row.total) * bw : 0;
-          if (sw < 0.5) return;
+          if (sw < 2) return;
           segments.push({ x: xAcc, w: sw, color: getColor(item.asset, i), asset: item.asset, amount: item.amount, idx: i });
           xAcc += sw;
+        });
+
+        // Adjust widths to account for gaps between segments
+        const totalGaps = Math.max(0, segments.length - 1) * segGap;
+        const scaleFactor = segments.length > 1 ? (bw - totalGaps) / bw : 1;
+        let xPos = ml;
+        segments.forEach((seg, si) => {
+          seg.x = xPos;
+          seg.w = seg.w * scaleFactor;
+          xPos += seg.w + (si < segments.length - 1 ? segGap : 0);
         });
 
         // Draw segments front-to-back (first segment drawn last so it's on top at the left edge)
         // Actually, draw left-to-right but use a clip on each to handle rounding
         segments.forEach((seg, si) => {
-          const isFirst = si === 0;
-          const isLast = si === segments.length - 1;
-          const isOnly = segments.length === 1;
-
-          // For proper rounding: first gets left-rounded, last gets right-rounded, only gets both
-          // We achieve this by making the rect slightly wider and clipping
+          // Every segment gets rounded corners since they're separated by gaps
           const rect = svg.append("rect")
             .attr("x", seg.x)
             .attr("y", y)
             .attr("width", 0)
             .attr("height", bh)
-            .attr("rx", isOnly ? r : isFirst || isLast ? r : 0)
+            .attr("rx", r)
             .attr("fill", seg.color)
             .attr("opacity", 0.9)
             .attr("cursor", "pointer")
@@ -175,8 +181,8 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
               .attr("text-anchor", "middle")
               .attr("dominant-baseline", "central")
               .attr("font-size", "10px")
-              .attr("font-weight", "600")
-              .attr("fill", "white")
+              .attr("font-weight", "700")
+              .attr("fill", "#1A1A1A")
               .attr("pointer-events", "none")
               .attr("opacity", 0)
               .text(seg.asset)
