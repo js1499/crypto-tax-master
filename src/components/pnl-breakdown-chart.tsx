@@ -63,9 +63,9 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
 
     const ml = 60;       // left margin for labels
     const mr = 100;      // right margin for totals
-    const bh = 28;       // bar height
-    const gap = 12;      // gap between bars
-    const r = 6;         // corner radius
+    const bh = 36;       // bar height
+    const gap = 16;      // gap between bars
+    const r = 8;         // corner radius
     const cw = width - ml - mr; // chart width
 
     const cg = capItems(gainsByAsset);
@@ -204,7 +204,7 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
     });
   }, [gainsByAsset, lossesByAsset, netGain, width]);
 
-  const totalHeight = 28 * 3 + 12 * 2;
+  const totalHeight = 36 * 3 + 16 * 2;
 
   return (
     <div ref={containerRef} className="relative w-full">
