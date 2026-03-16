@@ -1539,7 +1539,7 @@ function TransactionsContent() {
 
             {/* Right group — Activity heatmap */}
             {stats?.weeklyActivity && stats.weeklyActivity.length > 0 && (
-              <div className="min-w-[400px] flex-1 max-w-[700px]">
+              <div className="flex-1">
                 <YearHeatmap
                   weeklyActivity={stats.weeklyActivity}
                   year={yearValue !== "all" ? parseInt(yearValue) : undefined}
