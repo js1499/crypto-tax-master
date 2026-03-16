@@ -1571,7 +1571,7 @@ function TransactionsContent() {
             <div className="w-px h-12 bg-[#E5E5E0] dark:bg-[#333]" />
 
             {/* Progress bars */}
-            <div className="space-y-2 pl-7 min-w-[220px]">
+            <div className="space-y-2 pl-7 min-w-[320px]">
               <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">Transaction Identification</p>
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-[#6B7280] shrink-0">Transaction Values</span>
