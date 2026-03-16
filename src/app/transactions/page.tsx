@@ -1140,6 +1140,29 @@ function TransactionsContent() {
     return colors[hash % colors.length];
   };
 
+  // Asset icon: 18px colored circle with first letter
+  const getAssetIconColor = (symbol: string): string => {
+    const s = (symbol || "").toUpperCase();
+    if (s === "SOL" || s === "WSOL") return "#9333EA";
+    if (s === "ETH" || s === "WETH") return "#2563EB";
+    if (s === "BTC" || s === "WBTC") return "#EA580C";
+    if (s === "USDC" || s === "USDT" || s === "PYUSD" || s === "DAI") return "#0D9488";
+    if (s === "JUP") return "#16A34A";
+    if (s === "BONK" || s === "WIF" || s === "FWOG") return "#DB2777";
+    const hash = s.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+    const colors = ["#2563EB", "#9333EA", "#EA580C", "#0D9488", "#DC2626", "#CA8A04", "#4F46E5", "#16A34A", "#DB2777"];
+    return colors[hash % colors.length];
+  };
+
+  const AssetIcon = ({ symbol }: { symbol: string }) => (
+    <span
+      className="inline-flex items-center justify-center h-[18px] w-[18px] rounded-full text-[8px] font-bold text-white shrink-0"
+      style={{ backgroundColor: getAssetIconColor(symbol) }}
+    >
+      {(symbol || "?")[0]}
+    </span>
+  );
+
   // Asset symbol color helper
   const getAssetColor = (symbol: string): string => {
     const s = (symbol || "").toUpperCase();
@@ -1614,7 +1637,7 @@ function TransactionsContent() {
           </Select>
 
           <Select value={yearValue} onValueChange={handleYearChange}>
-            <SelectTrigger className="w-[120px] h-9 text-sm">
+            <SelectTrigger className={cn("w-[120px] h-9 text-sm", yearValue !== "all" && "bg-primary text-white border-primary hover:bg-primary/90")}>
               <SelectValue placeholder="All Years" />
             </SelectTrigger>
             <SelectContent>
@@ -1793,6 +1816,60 @@ function TransactionsContent() {
           </Popover>
         </div>
 
+        {/* ── Active Filter Chips ── */}
+        {(filter !== "all" || walletFilter || showOnlyUnlabelled || hideZeroTransactions || hideSpamTransactions || onlyWithGainLoss || (dateFrom || dateTo) || groupBy !== "none") && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {filter !== "all" && (
+              <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
+                Type: {filter}
+                <button onClick={() => { setFilter("all"); setCurrentPage(1); }} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
+              </span>
+            )}
+            {walletFilter && (
+              <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
+                Wallet
+                <button onClick={() => { setWalletFilter(""); setCurrentPage(1); }} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
+              </span>
+            )}
+            {showOnlyUnlabelled && (
+              <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
+                Unlabelled only
+                <button onClick={() => setShowOnlyUnlabelled(false)} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
+              </span>
+            )}
+            {hideZeroTransactions && (
+              <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
+                No $0
+                <button onClick={() => setHideZeroTransactions(false)} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
+              </span>
+            )}
+            {hideSpamTransactions && (
+              <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
+                No spam
+                <button onClick={() => setHideSpamTransactions(false)} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
+              </span>
+            )}
+            {onlyWithGainLoss && (
+              <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
+                Has gain/loss
+                <button onClick={() => { setOnlyWithGainLoss(false); setCurrentPage(1); }} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
+              </span>
+            )}
+            {(dateFrom || dateTo) && (
+              <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
+                {dateFrom ? format(dateFrom, "MMM d") : "..."} – {dateTo ? format(dateTo, "MMM d") : "..."}
+                <button onClick={() => { setDateFrom(undefined); setDateTo(undefined); setCurrentPage(1); }} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
+              </span>
+            )}
+            {groupBy !== "none" && (
+              <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
+                Grouped: {groupBy}
+                <button onClick={() => { setGroupBy("none"); setCollapsedGroups(new Set()); }} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
+              </span>
+            )}
+          </div>
+        )}
+
         {/* ── Transaction Table (no card wrapper — Horizon spec) ── */}
         <div data-onboarding="review-transactions" className="border border-[#E5E5E0] dark:border-[#333333] rounded-lg">
           <div className="overflow-auto max-h-[calc(100vh-280px)] rounded-lg">
@@ -1938,23 +2015,26 @@ function TransactionsContent() {
                       <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                         {transaction.outAsset && transaction.inAsset ? (
                           <div className="flex flex-col gap-0.5">
-                            <span className="text-sm">
+                            <span className="text-sm inline-flex items-center gap-1.5">
+                              <AssetIcon symbol={transaction.outAsset} />
                               <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.outAmount)}</span>
                               {" "}<span className={cn("font-semibold", getAssetColor(transaction.outAsset))}>{transaction.outAsset}</span>
                             </span>
-                            <span className="text-sm">
-                              <span className="text-[#9CA3AF] mr-1">{"\u2192"}</span>
+                            <span className="text-sm inline-flex items-center gap-1.5">
+                              <span className="text-[#9CA3AF] w-[18px] text-center shrink-0">{"\u2192"}</span>
                               <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.inAmount)}</span>
                               {" "}<span className={cn("font-semibold", getAssetColor(transaction.inAsset))}>{transaction.inAsset}</span>
                             </span>
                           </div>
                         ) : transaction.outAsset ? (
-                          <span className="text-sm">
+                          <span className="text-sm inline-flex items-center gap-1.5">
+                            <AssetIcon symbol={transaction.outAsset} />
                             <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.outAmount)}</span>
                             {" "}<span className={cn("font-semibold", getAssetColor(transaction.outAsset))}>{transaction.outAsset}</span>
                           </span>
                         ) : transaction.inAsset ? (
-                          <span className="text-sm">
+                          <span className="text-sm inline-flex items-center gap-1.5">
+                            <AssetIcon symbol={transaction.inAsset} />
                             <span className="text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(transaction.inAmount)}</span>
                             {" "}<span className={cn("font-semibold", getAssetColor(transaction.inAsset))}>{transaction.inAsset}</span>
                           </span>
@@ -2214,6 +2294,10 @@ function TransactionsContent() {
                   <SheetDescription>
                     {format(new Date(selectedTransaction.date), "MMM d, yyyy 'at' h:mm a")} · {selectedTransaction.exchange}
                   </SheetDescription>
+                  {/* Hero dollar value in sheet header */}
+                  <p className="text-[24px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] mt-1" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ${Math.abs(selectedTransaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
                 </SheetHeader>
 
                 <div className="mt-6 space-y-6">
@@ -2221,9 +2305,9 @@ function TransactionsContent() {
                   {selectedTransaction.costBasisComputed && (
                     <div className="grid grid-cols-2 gap-3">
                       {selectedTransaction.costBasisUsd != null && (
-                        <div className="rounded-lg border bg-muted/30 p-3">
-                          <p className="text-xs text-muted-foreground">Cost Basis</p>
-                          <p className="text-lg font-bold font-mono" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                        <div className="rounded-lg border border-[#E5E5E0] dark:border-[#333] bg-[#FAFAF7] dark:bg-[#1A1A1A] p-3">
+                          <p className="text-xs text-[#6B7280]">Cost Basis</p>
+                          <p className="text-[18px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                             ${Math.abs(selectedTransaction.costBasisUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
                         </div>
@@ -2232,15 +2316,13 @@ function TransactionsContent() {
                         <div className={cn(
                           "rounded-lg border p-3",
                           selectedTransaction.gainLossUsd >= 0
-                            ? "border-emerald-200 bg-emerald-50/30 dark:border-emerald-800/40 dark:bg-emerald-950/20"
-                            : "border-rose-200 bg-rose-50/30 dark:border-rose-800/40 dark:bg-rose-950/20"
+                            ? "border-l-4 border-l-[#16A34A] border-[#E5E5E0] dark:border-[#333] dark:border-l-[#16A34A] bg-[#FAFAF7] dark:bg-[#1A1A1A]"
+                            : "border-l-4 border-l-[#DC2626] border-[#E5E5E0] dark:border-[#333] dark:border-l-[#DC2626] bg-[#FAFAF7] dark:bg-[#1A1A1A]"
                         )}>
-                          <p className="text-xs text-muted-foreground">Gain / Loss</p>
+                          <p className="text-xs text-[#6B7280]">Gain / Loss</p>
                           <p className={cn(
-                            "text-lg font-bold font-mono",
-                            selectedTransaction.gainLossUsd >= 0
-                              ? "text-emerald-600 dark:text-emerald-400"
-                              : "text-rose-600 dark:text-rose-400"
+                            "text-[20px] font-semibold",
+                            selectedTransaction.gainLossUsd >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"
                           )} style={{ fontVariantNumeric: 'tabular-nums' }}>
                             {selectedTransaction.gainLossUsd >= 0 ? "+" : "-"}${Math.abs(selectedTransaction.gainLossUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </p>
