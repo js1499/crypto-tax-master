@@ -14,19 +14,19 @@ interface PnLBreakdownChartProps {
   netGain: number;
 }
 
-// Horizon pill text colors — same colors used in transaction type tags
+// Horizon pill background colors, arranged chromatically (warm → cool → warm)
 const PALETTE = [
-  "#2563EB", // blue
-  "#9333EA", // purple
-  "#EA580C", // orange
-  "#0D9488", // teal
-  "#DC2626", // red
-  "#CA8A04", // yellow
-  "#4F46E5", // indigo
-  "#16A34A", // green
-  "#DB2777", // pink
+  "#FEF2F2", // red-bg
+  "#FDF2F8", // pink-bg
+  "#FFF7ED", // orange-bg
+  "#FEFCE8", // yellow-bg
+  "#F0FDF4", // green-bg
+  "#F0FDFA", // teal-bg
+  "#EFF6FF", // blue-bg
+  "#EEF2FF", // indigo-bg
+  "#FAF5FF", // purple-bg
 ];
-const OTHER_COLOR = "#4B5563"; // gray
+const OTHER_COLOR = "#F9FAFB"; // gray-bg
 
 function capItems(items: AssetAmount[]): AssetAmount[] {
   if (items.length <= 9) return items;
@@ -101,7 +101,7 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
       svg.append("rect")
         .attr("x", ml).attr("y", y)
         .attr("width", cw).attr("height", bh)
-        .attr("rx", r).attr("fill", "#F0F0EB");
+        .attr("rx", r).attr("fill", "#F5F5F5").attr("stroke", "#E5E5E0").attr("stroke-width", 1);
 
       if (row.label === "NET" || row.items.length === 0) {
         // Single solid bar
@@ -141,6 +141,10 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
         // Actually, draw left-to-right but use a clip on each to handle rounding
         segments.forEach((seg, si) => {
           // Every segment gets rounded corners since they're separated by gaps
+          // Matching pill text color for the stroke (same index into text palette)
+          const strokeColors = ["#DC2626","#DB2777","#EA580C","#CA8A04","#16A34A","#0D9488","#2563EB","#4F46E5","#9333EA"];
+          const strokeColor = seg.asset === "Other" ? "#9CA3AF" : (strokeColors[seg.idx % strokeColors.length]);
+
           const rect = svg.append("rect")
             .attr("x", seg.x)
             .attr("y", y)
@@ -148,7 +152,10 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
             .attr("height", bh)
             .attr("rx", r)
             .attr("fill", seg.color)
-            .attr("opacity", 0.9)
+            .attr("stroke", strokeColor)
+            .attr("stroke-width", 1.5)
+            .attr("stroke-opacity", 0.4)
+            .attr("opacity", 1)
             .attr("cursor", "pointer")
             .on("mouseenter", function(event: MouseEvent) {
               d3.select(this).attr("opacity", 1);
@@ -182,7 +189,7 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
               .attr("dominant-baseline", "central")
               .attr("font-size", "10px")
               .attr("font-weight", "600")
-              .attr("fill", "white")
+              .attr("fill", "#4B5563")
               .attr("pointer-events", "none")
               .attr("opacity", 0)
               .text(seg.asset)
