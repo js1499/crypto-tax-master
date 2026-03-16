@@ -238,11 +238,11 @@
   bottom: 0;
   background: linear-gradient(
     105deg,
-    transparent 20%,
-    rgba(255, 255, 255, 0.6) 45%,
-    rgba(255, 255, 255, 0.8) 50%,
-    rgba(255, 255, 255, 0.6) 55%,
-    transparent 80%
+    transparent 25%,
+    rgba(255, 255, 255, 0.25) 45%,
+    rgba(255, 255, 255, 0.4) 50%,
+    rgba(255, 255, 255, 0.25) 55%,
+    transparent 75%
   );
   background-size: 250% 100%;
   animation: badgeShine 4s ease-in-out infinite;
