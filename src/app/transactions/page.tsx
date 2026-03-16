@@ -1600,11 +1600,12 @@ function TransactionsContent() {
         {/* ── P&L Breakdown by Asset ── */}
         {stats?.pnl && (stats.pnl.gainsByAsset.length > 0 || stats.pnl.lossesByAsset.length > 0) && (
           <div className="space-y-2">
-            <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">P&L by Asset</h2>
+            <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">P&L + Income by Asset</h2>
             <PnLBreakdownChart
               gainsByAsset={stats.pnl.gainsByAsset}
               lossesByAsset={stats.pnl.lossesByAsset}
               netGain={stats.pnl.netGain}
+              totalIncome={stats.income?.totalValueUsd || 0}
             />
           </div>
         )}

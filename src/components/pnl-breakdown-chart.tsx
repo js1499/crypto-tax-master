@@ -12,6 +12,7 @@ interface PnLBreakdownChartProps {
   gainsByAsset: AssetAmount[];
   lossesByAsset: AssetAmount[];
   netGain: number;
+  totalIncome?: number;
 }
 
 // Horizon pill text colors, arranged chromatically (warm → cool → warm)
@@ -58,7 +59,7 @@ function getBarSegmentColor(rowLabel: string, index: number = 0): string {
   return "#16A34A";
 }
 
-export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLBreakdownChartProps) {
+export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain, totalIncome = 0 }: PnLBreakdownChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(600);
@@ -88,13 +89,14 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
     const cl = capItems(lossesByAsset);
     const tg = cg.reduce((s, a) => s + a.amount, 0);
     const tl = cl.reduce((s, a) => s + a.amount, 0);
-    const mx = Math.max(tg, tl, Math.abs(netGain), 1);
+    const mx = Math.max(tg, tl, totalIncome, Math.abs(netGain), 1);
     const sc = d3.scaleLinear().domain([0, mx]).range([0, cw]);
 
     const rows = [
       { label: "GAINS", items: cg, total: tg, color: "#16A34A", sign: "+" },
       { label: "LOSSES", items: cl, total: tl, color: "#DC2626", sign: "-" },
-      { label: "NET", items: [] as AssetAmount[], total: Math.abs(netGain), color: netGain >= 0 ? "#16A34A" : "#DC2626", sign: netGain >= 0 ? "+" : "-" },
+      ...(totalIncome > 0 ? [{ label: "INCOME", items: [] as AssetAmount[], total: totalIncome, color: "#2563EB", sign: "+" }] : []),
+      { label: "NET", items: [] as AssetAmount[], total: Math.abs(netGain + totalIncome), color: (netGain + totalIncome) >= 0 ? "#16A34A" : "#DC2626", sign: (netGain + totalIncome) >= 0 ? "+" : "-" },
     ];
 
     rows.forEach((row, ri) => {
@@ -117,7 +119,7 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
       svg.append("rect")
         .attr("x", ml).attr("y", y)
         .attr("width", cw).attr("height", bh)
-        .attr("rx", r).attr("fill", "#F0F0EB");
+        .attr("rx", r).attr("fill", document.documentElement.classList.contains("dark") ? "#2A2A2A" : "#F0F0EB");
 
       if (row.label === "NET" || row.items.length === 0) {
         // Single solid bar
@@ -224,9 +226,10 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
         .transition().duration(400).delay(ri * 120 + 200)
         .attr("opacity", 1);
     });
-  }, [gainsByAsset, lossesByAsset, netGain, width]);
+  }, [gainsByAsset, lossesByAsset, netGain, totalIncome, width]);
 
-  const totalHeight = 36 * 3 + 16 * 2;
+  const numBars = totalIncome > 0 ? 4 : 3;
+  const totalHeight = 36 * numBars + 16 * (numBars - 1);
 
   return (
     <div ref={containerRef} className="relative w-full">
