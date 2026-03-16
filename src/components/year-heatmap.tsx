@@ -48,38 +48,47 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
       rangeEnd = new Date(dataEnd);
     }
 
-    const totalMs = rangeEnd.getTime() - rangeStart.getTime();
-    const totalDays = Math.max(1, Math.ceil(totalMs / (1000 * 60 * 60 * 24)));
-    const numBuckets = 52;
-    const bucketMs = totalMs / numBuckets;
+    const totalDays = Math.max(1, Math.ceil((rangeEnd.getTime() - rangeStart.getTime()) / (1000 * 60 * 60 * 24)));
 
-    const dataMap = new Map<number, { count: number; netGL: number }>();
-    weeklyActivity.forEach(w => {
-      const t = new Date(w.weekStart).getTime();
-      const existing = dataMap.get(t);
-      if (existing) { existing.count += w.count; existing.netGL += w.netGainLoss; }
-      else dataMap.set(t, { count: w.count, netGL: w.netGainLoss });
-    });
-
-    const buckets: Array<{ startDate: Date; count: number; netGL: number }> = [];
-    for (let i = 0; i < numBuckets; i++) {
-      const bStart = new Date(rangeStart.getTime() + i * bucketMs);
-      const bEnd = new Date(rangeStart.getTime() + (i + 1) * bucketMs);
-      let count = 0, netGL = 0;
-      dataMap.forEach((val, ts) => {
-        if (ts >= bStart.getTime() && ts < bEnd.getTime()) { count += val.count; netGL += val.netGL; }
+    // Build monthly buckets from actual calendar months
+    const buckets: Array<{ startDate: Date; endDate: Date; count: number; netGL: number; label: string }> = [];
+    const startMonth = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
+    let cursor = new Date(startMonth);
+    while (cursor <= rangeEnd) {
+      const bStart = new Date(cursor);
+      const bEnd = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59);
+      buckets.push({
+        startDate: bStart,
+        endDate: bEnd,
+        count: 0,
+        netGL: 0,
+        label: MONTHS[cursor.getMonth()] + (totalDays > 400 ? " '" + String(cursor.getFullYear()).slice(2) : ""),
       });
-      buckets.push({ startDate: bStart, count, netGL });
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
     }
 
+    // Aggregate weekly data into monthly buckets
+    weeklyActivity.forEach(w => {
+      const t = new Date(w.weekStart).getTime();
+      for (const bucket of buckets) {
+        if (t >= bucket.startDate.getTime() && t <= bucket.endDate.getTime()) {
+          bucket.count += w.count;
+          bucket.netGL += w.netGainLoss;
+          break;
+        }
+      }
+    });
+
+    const numBuckets = buckets.length;
+
     // Two rows: top = volume, bottom = P&L
-    const ml = 52;       // left margin for row labels
-    const cellGap = 3;
+    const ml = 52;
+    const cellGap = 4;
     const rowGap = 14;
     const chartW = width - ml;
     const cellW = (chartW - (numBuckets - 1) * cellGap) / numBuckets;
-    const cellH = cellW; // square
-    const r = Math.min(4, cellW / 3);
+    const cellH = Math.min(cellW, 36);
+    const r = Math.min(6, cellW / 4);
 
     const maxCount = Math.max(...buckets.map(b => b.count), 1);
     const maxAbsGL = Math.max(...buckets.map(b => Math.abs(b.netGL)), 1);
@@ -90,19 +99,17 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
       const x = ml + i * (cellW + cellGap);
 
       // Volume row (top)
-      const volY = 0;
       let volFill: string, volOp: number;
       if (bucket.count === 0) { volFill = "#E5E5E0"; volOp = 1; }
       else { volFill = "#2563EB"; volOp = 0.15 + (bucket.count / maxCount) * 0.85; }
 
       g.append("rect")
-        .attr("x", x).attr("y", volY)
+        .attr("x", x).attr("y", 0)
         .attr("width", cellW).attr("height", cellH)
         .attr("rx", r).attr("fill", volFill).attr("opacity", volOp)
         .attr("cursor", "pointer")
         .on("mouseenter", (event: MouseEvent) => {
-          const dateStr = bucket.startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(totalDays > 400 ? { year: "numeric" } : {}) });
-          setTooltip({ x: event.clientX, y: event.clientY, text: `${dateStr}: ${bucket.count} transactions` });
+          setTooltip({ x: event.clientX, y: event.clientY, text: `${bucket.label}: ${bucket.count} transactions` });
         })
         .on("mousemove", (event: MouseEvent) => setTooltip(prev => prev ? { ...prev, x: event.clientX, y: event.clientY } : null))
         .on("mouseleave", () => setTooltip(null));
@@ -126,35 +133,19 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
         .attr("rx", r).attr("fill", pnlFill).attr("opacity", pnlOp)
         .attr("cursor", "pointer")
         .on("mouseenter", (event: MouseEvent) => {
-          const dateStr = bucket.startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(totalDays > 400 ? { year: "numeric" } : {}) });
           const glText = bucket.netGL !== 0 ? `${bucket.netGL >= 0 ? "+" : "-"}$${Math.abs(bucket.netGL).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "$0";
-          setTooltip({ x: event.clientX, y: event.clientY, text: `${dateStr}: ${glText}` });
+          setTooltip({ x: event.clientX, y: event.clientY, text: `${bucket.label}: ${glText}` });
         })
         .on("mousemove", (event: MouseEvent) => setTooltip(prev => prev ? { ...prev, x: event.clientX, y: event.clientY } : null))
         .on("mouseleave", () => setTooltip(null));
-    });
 
-    // Month labels below both rows — every other month to avoid overlap
-    const labelY = cellH * 2 + rowGap + 14;
-    let lastMonth = -1;
-    let monthCount = 0;
-    buckets.forEach((bucket, i) => {
-      const m = bucket.startDate.getMonth();
-      const y = bucket.startDate.getFullYear();
-      if (m !== lastMonth) {
-        lastMonth = m;
-        monthCount++;
-        // Show every other month label to prevent overlap
-        if (monthCount % 2 === 1) {
-          const x = ml + i * (cellW + cellGap) + cellW / 2;
-          const label = totalDays > 400 ? `${MONTHS[m]} '${String(y).slice(2)}` : MONTHS[m];
-          g.append("text")
-            .attr("x", x).attr("y", labelY)
-            .attr("text-anchor", "middle")
-            .attr("font-size", "9px").attr("font-weight", "500").attr("fill", "#9CA3AF")
-            .text(label);
-        }
-      }
+      // Month label below both rows
+      g.append("text")
+        .attr("x", x + cellW / 2)
+        .attr("y", cellH * 2 + rowGap + 14)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "9px").attr("font-weight", "500").attr("fill", "#9CA3AF")
+        .text(bucket.label);
     });
 
     // Row labels on the left
@@ -173,12 +164,15 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
 
   }, [weeklyActivity, width, year]);
 
-  const numBuckets = 52;
-  const cellGap = 3;
+  // Compute height for SVG
+  const numBucketsOuter = 12;
+  const cellGapOuter = 4;
   const mlOuter = 52;
-  const cellW = (width - mlOuter - (numBuckets - 1) * cellGap) / numBuckets;
-  const rowGap = 14;
-  const svgHeight = cellW * 2 + rowGap + 20;
+  const chartWOuter = width - mlOuter;
+  const cellWOuter = (chartWOuter - (numBucketsOuter - 1) * cellGapOuter) / numBucketsOuter;
+  const cellHOuter = Math.min(cellWOuter, 36);
+  const rowGapOuter = 14;
+  const svgHeight = cellHOuter * 2 + rowGapOuter + 20;
 
   return (
     <div ref={containerRef} className="relative w-full">
