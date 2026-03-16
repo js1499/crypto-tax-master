@@ -1511,20 +1511,28 @@ function TransactionsContent() {
               <div className="w-px h-12 bg-[#E5E5E0] dark:bg-[#333]" />
             </>)}
 
-            {/* Cost Basis + Proceeds stacked */}
-            <div className="px-7 space-y-1">
-              <div>
+            {/* Cost Basis + Proceeds + Total stacked */}
+            <div className="px-7 space-y-0.5">
+              <div className="flex items-baseline justify-between gap-4">
                 <p className="text-[11px] text-[#9CA3AF]">Cost Basis</p>
-                <p className="text-[16px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                <p className="text-[14px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                   ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
-              <div>
+              <div className="flex items-baseline justify-between gap-4">
                 <p className="text-[11px] text-[#9CA3AF]">Proceeds</p>
-                <p className="text-[16px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                <p className="text-[14px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                   ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
               </div>
+              {stats.income && stats.income.count > 0 && (
+                <div className="flex items-baseline justify-between gap-4 pt-0.5 border-t border-[#F0F0EB] dark:border-[#2A2A2A]">
+                  <p className="text-[11px] text-[#9CA3AF]">Total Impact</p>
+                  <p className={cn("text-[14px] font-semibold", (stats.pnl.netGain + stats.income.totalValueUsd) >= 0 ? "text-[#16A34A]" : "text-[#DC2626]")} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {(stats.pnl.netGain + stats.income.totalValueUsd) >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain + stats.income.totalValueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                </div>
+              )}
             </div>
             </div>
             </div>
@@ -1587,15 +1595,6 @@ function TransactionsContent() {
             </div>
 
           </div>
-        )}
-
-        {/* Total gain summary */}
-        {stats?.pnl && stats.income && stats.income.count > 0 && (
-          <p className="text-[14px] text-[#6B7280]">
-            Total tax impact: <span className={cn("font-semibold", (stats.pnl.netGain + stats.income.totalValueUsd) >= 0 ? "text-[#16A34A]" : "text-[#DC2626]")} style={{ fontVariantNumeric: 'tabular-nums' }}>
-              {(stats.pnl.netGain + stats.income.totalValueUsd) >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain + stats.income.totalValueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </span> <span className="text-[12px] text-[#9CA3AF]">(capital gains + income)</span>
-          </p>
         )}
 
         {/* ── P&L Breakdown by Asset ── */}
