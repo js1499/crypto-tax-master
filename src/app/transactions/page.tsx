@@ -1525,23 +1525,16 @@ function TransactionsContent() {
             <span className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase mt-6">Badges</span>
             {/* Value Identified Badge */}
             <div className="relative group flex flex-col items-center">
-              {stats.valueIdentifiedPercentage === 100 ? (
-                <div className="relative">
-                  <img src="/badges/values-identified.png" alt="Values Identified" className="h-16 w-16 object-contain drop-shadow-md" />
-                  <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#16A34A] flex items-center justify-center shadow-sm">
-                    <Check className="h-3 w-3 text-white" />
-                  </div>
+              <div className="relative">
+                <img src="/badges/values-identified.png" alt="Values Identified" className="h-16 w-16 object-contain drop-shadow-md" />
+                <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#16A34A] flex items-center justify-center shadow-sm">
+                  <Check className="h-3 w-3 text-white" />
                 </div>
-              ) : (
-                <div className="h-16 w-16 rounded-2xl bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
-                  <span className="text-[14px] font-bold text-[#9CA3AF]">{stats.valueIdentifiedPercentage}%</span>
-                </div>
-              )}
+              </div>
               <span className="text-[11px] font-medium text-[#6B7280] mt-1.5">Values</span>
-              {/* Hover tooltip */}
               <div className="absolute -top-12 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
                 <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
-                  {stats.valueIdentifiedPercentage === 100 ? "🎉 All transaction values identified!" : `${stats.valueIdentifiedPercentage}% of values identified`}
+                  🎉 All transaction values identified!
                 </div>
               </div>
             </div>
