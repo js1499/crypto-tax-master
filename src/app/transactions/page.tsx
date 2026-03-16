@@ -1572,6 +1572,7 @@ function TransactionsContent() {
               </div>
             </div>
             {pnlView === "detailed" ? (
+              <div key="detailed" className="pnl-animate">
               <PnLBreakdownChart
                 gainsByAsset={stats.pnl.gainsByAsset}
                 lossesByAsset={stats.pnl.lossesByAsset}
@@ -1579,8 +1580,9 @@ function TransactionsContent() {
                 incomeByAsset={stats.income?.byAsset || []}
                 totalIncome={stats.income?.totalValueUsd || 0}
               />
+              </div>
             ) : (
-              <div className="flex items-center gap-4 max-w-[33%]">
+              <div key="summary" className="pnl-animate flex items-center gap-4 max-w-[33%]">
                 {(() => {
                   const totalGains = stats.pnl.gainsByAsset.reduce((s, a) => s + a.amount, 0);
                   const totalLosses = stats.pnl.lossesByAsset.reduce((s, a) => s + a.amount, 0);
