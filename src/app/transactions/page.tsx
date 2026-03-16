@@ -1521,12 +1521,13 @@ function TransactionsContent() {
 
         {/* ── Badges / Accomplishments ── */}
         {stats && (
-          <div className="flex items-start gap-6">
-            <span className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase mt-6">Badges</span>
+          <div className="flex flex-col gap-2">
+            <span className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">Badges</span>
+            <div className="flex items-start gap-6">
             {/* Value Identified Badge */}
             <div className="relative group flex flex-col items-center">
               <div className="relative">
-                <img src="/badges/values-identified.png" alt="Values Identified" className="h-16 w-16 object-contain drop-shadow-md" />
+                <img src="/badges/values-identified.png" alt="Values Identified" className="h-24 w-24 object-contain drop-shadow-md" />
                 <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#16A34A] flex items-center justify-center shadow-sm">
                   <Check className="h-3 w-3 text-white" />
                 </div>
@@ -1542,13 +1543,13 @@ function TransactionsContent() {
             <div className="relative group flex flex-col items-center">
               {stats.identifiedPercentage === 100 ? (
                 <div className="relative">
-                  <img src="/badges/types-identified.png" alt="Types Identified" className="h-16 w-16 object-contain drop-shadow-md" />
+                  <img src="/badges/types-identified.png" alt="Types Identified" className="h-24 w-24 object-contain drop-shadow-md" />
                   <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#2563EB] flex items-center justify-center shadow-sm">
                     <Check className="h-3 w-3 text-white" />
                   </div>
                 </div>
               ) : (
-                <div className="h-16 w-16 rounded-2xl bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
+                <div className="h-24 w-24 rounded-2xl bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
                   <span className="text-[14px] font-bold text-[#9CA3AF]">{stats.identifiedPercentage}%</span>
                 </div>
               )}
@@ -1559,6 +1560,7 @@ function TransactionsContent() {
                   {stats.identifiedPercentage === 100 ? "🎉 All transaction types categorized!" : `${stats.identifiedPercentage}% of types identified`}
                 </div>
               </div>
+            </div>
             </div>
           </div>
         )}
