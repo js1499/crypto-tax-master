@@ -46,11 +46,10 @@ function getColor(asset: string, index: number): string {
 const GAIN_SHADES = ["#14532D", "#166534", "#15803D", "#16A34A", "#22C55E", "#4ADE80", "#86EFAC", "#BBF7D0", "#DCFCE7", "#F0FDF4"];
 const LOSS_SHADES = ["#7F1D1D", "#991B1B", "#B91C1C", "#DC2626", "#EF4444", "#F87171", "#FCA5A5", "#FECACA", "#FEE2E2", "#FEF2F2"];
 
-function getBarSegmentColor(rowLabel: string, index: number, isOther: boolean): string {
-  if (isOther) return rowLabel === "GAINS" ? "#BBF7D0" : "#FECACA";
-  if (rowLabel === "GAINS") return GAIN_SHADES[index % GAIN_SHADES.length];
-  if (rowLabel === "LOSSES") return LOSS_SHADES[index % LOSS_SHADES.length];
-  return PALETTE[index % PALETTE.length];
+function getBarSegmentColor(rowLabel: string): string {
+  if (rowLabel === "GAINS") return "#16A34A";  // 4th green shade
+  if (rowLabel === "LOSSES") return "#DC2626"; // 4th red shade
+  return "#16A34A";
 }
 
 export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLBreakdownChartProps) {
@@ -134,7 +133,7 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
         row.items.forEach((item, i) => {
           const sw = row.total > 0 ? (item.amount / row.total) * bw : 0;
           if (sw < 2) return;
-          segments.push({ x: xAcc, w: sw, color: getBarSegmentColor(row.label, i, item.asset === "Other"), asset: item.asset, amount: item.amount, idx: i });
+          segments.push({ x: xAcc, w: sw, color: getBarSegmentColor(row.label), asset: item.asset, amount: item.amount, idx: i });
           xAcc += sw;
         });
 
@@ -193,7 +192,7 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
               .attr("dominant-baseline", "central")
               .attr("font-size", "10px")
               .attr("font-weight", "600")
-              .attr("fill", seg.idx < 5 ? "white" : "#1A1A1A")
+              .attr("fill", "white")
               .attr("pointer-events", "none")
               .attr("opacity", 0)
               .text(seg.asset)
