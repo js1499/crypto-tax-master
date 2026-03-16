@@ -1281,35 +1281,6 @@ function TransactionsContent() {
                 )
               )}
             </div>
-            {/* Badges under title */}
-            {stats && (
-              <div className="flex items-center gap-4 mt-3">
-                <div className="relative group">
-                  <div className="badge-shine rounded-xl">
-                    <img src="/badges/values-identified.png" alt="Values Identified" className="h-16 w-16 object-contain drop-shadow-sm" />
-                  </div>
-                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                    <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">🎉 All transaction values identified!</div>
-                  </div>
-                </div>
-                <div className="relative group">
-                  {stats.identifiedPercentage === 100 ? (
-                    <div className="badge-shine rounded-xl">
-                      <img src="/badges/types-identified.png" alt="Types Identified" className="h-16 w-16 object-contain drop-shadow-sm" />
-                    </div>
-                  ) : (
-                    <div className="h-16 w-16 rounded-xl bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
-                      <span className="text-[13px] font-bold text-[#9CA3AF]">{stats.identifiedPercentage}%</span>
-                    </div>
-                  )}
-                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                    <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
-                      {stats.identifiedPercentage === 100 ? "🎉 All transaction types categorized!" : `${stats.identifiedPercentage}% of types identified`}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
           <div className="flex items-start gap-2">
             {isBulkMode && selectedTransactionIds.size > 0 && (
@@ -1506,13 +1477,14 @@ function TransactionsContent() {
           </DialogContent>
         </Dialog>
 
-        {/* ── Stats Zone ── */}
+        {/* ── Stats Zone: horizontal layout ── */}
         {stats?.pnl && (
-          <div className="space-y-4">
+          <div className="flex items-start gap-8">
 
-            {/* Capital Gains + Cost/Proceeds right-aligned */}
-            <div className="flex items-end justify-between">
-              <div>
+            {/* Left: P&L numbers */}
+            <div className="flex items-start gap-0 flex-1">
+              {/* Capital Gains */}
+              <div className="pr-8">
                 <p className={cn(
                   "text-[36px] font-bold tracking-tight",
                   stats.pnl.netGain >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"
@@ -1522,57 +1494,92 @@ function TransactionsContent() {
                 <p className="text-[13px] text-[#6B7280] mt-1">
                   Net Capital {stats.pnl.netGain >= 0 ? "Gain" : "Loss"} · {yearValue !== "all" ? yearValue : "All Time"}
                 </p>
+                <div className="flex items-center gap-5 mt-2">
+                  <div>
+                    <p className="text-[11px] text-[#9CA3AF]">Cost Basis</p>
+                    <p className="text-[14px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                      ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] text-[#9CA3AF]">Proceeds</p>
+                    <p className="text-[14px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                      ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-end gap-6">
-                <div className="text-right">
-                  <p className="text-[12px] text-[#9CA3AF]">Cost Basis</p>
-                  <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+
+              {/* Divider */}
+              <div className="w-px self-stretch bg-[#E5E5E0] dark:bg-[#333] mx-2" />
+
+              {/* Income */}
+              {stats.income && stats.income.count > 0 && (
+                <div className="pl-8">
+                  <p className="text-[28px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                    +${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[13px] text-[#6B7280] mt-1">
+                    Ordinary Income · {stats.income.count} events
                   </p>
                 </div>
-                <div className="text-right">
-                  <p className="text-[12px] text-[#9CA3AF]">Proceeds</p>
-                  <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                </div>
-              </div>
+              )}
             </div>
 
-            {/* Income + Cost/Proceeds right-aligned */}
-            {stats.income && stats.income.count > 0 && (
-              <div className="border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-3">
-                <p className="text-[28px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-                  +${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-                <p className="text-[13px] text-[#6B7280] mt-1">
-                  Ordinary Income · {stats.income.count} events
-                </p>
+            {/* Right: Badges + Progress bars side by side */}
+            <div className="flex items-start gap-6 shrink-0">
+              {/* Badges */}
+              <div className="flex items-center gap-3">
+                <div className="relative group">
+                  <div className="badge-shine rounded-xl">
+                    <img src="/badges/values-identified.png" alt="Values" className="h-14 w-14 object-contain drop-shadow-sm" />
+                  </div>
+                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                    <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">🎉 All transaction values identified!</div>
+                  </div>
+                </div>
+                <div className="relative group">
+                  {stats.identifiedPercentage === 100 ? (
+                    <div className="badge-shine rounded-xl">
+                      <img src="/badges/types-identified.png" alt="Types" className="h-14 w-14 object-contain drop-shadow-sm" />
+                    </div>
+                  ) : (
+                    <div className="h-14 w-14 rounded-xl bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
+                      <span className="text-[12px] font-bold text-[#9CA3AF]">{stats.identifiedPercentage}%</span>
+                    </div>
+                  )}
+                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                    <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
+                      {stats.identifiedPercentage === 100 ? "🎉 All transaction types categorized!" : `${stats.identifiedPercentage}% identified`}
+                    </div>
+                  </div>
+                </div>
               </div>
-            )}
 
-            {/* Progress bars with glow */}
-            <div className="border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-3 space-y-2.5">
-              <p className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">Transaction Identification</p>
-              <div className="flex items-center gap-8">
-              <div className="flex items-center gap-2.5 flex-1 max-w-[320px]">
-                <span className="text-[12px] font-medium text-[#4B5563] shrink-0">Transaction Values</span>
-                <div className="flex-1 relative">
-                  <div className="h-2.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
-                    <div className="h-full rounded-full bg-[#16A34A] shadow-[0_0_8px_rgba(22,163,74,0.4)]" style={{ width: '100%' }} />
+              {/* Divider */}
+              <div className="w-px self-stretch bg-[#E5E5E0] dark:bg-[#333]" />
+
+              {/* Progress bars */}
+              <div className="space-y-2 min-w-[240px]">
+                <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">Identification</p>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-[#6B7280] w-[50px] shrink-0">Values</span>
+                  <div className="flex-1">
+                    <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
+                      <div className="h-full rounded-full bg-[#16A34A] shadow-[0_0_6px_rgba(22,163,74,0.35)]" style={{ width: '100%' }} />
+                    </div>
                   </div>
+                  <span className="text-[12px] font-bold text-[#16A34A] w-[36px] text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
                 </div>
-                <span className="text-[13px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
-              </div>
-              <div className="flex items-center gap-2.5 flex-1 max-w-[320px]">
-                <span className="text-[12px] font-medium text-[#4B5563] shrink-0">Transaction Types</span>
-                <div className="flex-1 relative">
-                  <div className="h-2.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
-                    <div className="h-full rounded-full bg-[#2563EB] shadow-[0_0_8px_rgba(37,99,235,0.4)]" style={{ width: `${stats.identifiedPercentage}%` }} />
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-[#6B7280] w-[50px] shrink-0">Types</span>
+                  <div className="flex-1">
+                    <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
+                      <div className="h-full rounded-full bg-[#2563EB] shadow-[0_0_6px_rgba(37,99,235,0.35)]" style={{ width: `${stats.identifiedPercentage}%` }} />
+                    </div>
                   </div>
+                  <span className={cn("text-[12px] font-bold w-[36px] text-right", stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
                 </div>
-                <span className={cn("text-[13px] font-bold", stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
-              </div>
               </div>
             </div>
 
