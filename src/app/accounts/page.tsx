@@ -18,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+// Tabs removed — using native select for Horizon filter bar
 import { WalletConnectDialog } from "@/components/wallet-connect-dialog";
 import type { ConnectionResult } from "@/types/wallet";
 import { toast } from "sonner";
@@ -433,27 +433,81 @@ function AccountsContent() {
 
   return (
     <Layout>
-      <div className="container py-6 space-y-8">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="space-y-6 px-0">
+        {/* ── Score-First Header ── */}
+        <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Your Accounts</h1>
-            <p className="text-muted-foreground">Manage your crypto wallets and exchanges</p>
+            <h1 className="text-[28px] font-light tracking-[-0.02em] text-[#1A1A1A] dark:text-[#F5F5F5]">Accounts</h1>
+            {!loading && (
+              <div className="mt-2">
+                <p className="text-[36px] font-bold text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                  {allAccounts.length}
+                </p>
+                <p className="text-[13px] text-[#6B7280] mt-1">
+                  Connected · {accounts.length} Wallet{accounts.length !== 1 ? "s" : ""} · {exchanges.length} Exchange{exchanges.length !== 1 ? "s" : ""}
+                </p>
+                <p className="text-[13px] text-[#9CA3AF] mt-0.5" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {accounts.reduce((sum, a) => sum + (a as WalletAccount).transactionCount, 0).toLocaleString()} total transactions
+                </p>
+              </div>
+            )}
           </div>
-          <div className="flex gap-2">
-            <Tabs value={filter} className="w-[400px]">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="all" onClick={() => setFilter("all")}>
-                  All
-                </TabsTrigger>
-                <TabsTrigger value="wallets" onClick={() => setFilter("wallets")}>
-                  Wallets
-                </TabsTrigger>
-                <TabsTrigger value="exchanges" onClick={() => setFilter("exchanges")}>
-                  Exchanges
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+          <div className="flex items-center gap-2">
+            {/* Bulk actions in header */}
+            {!loading && !error && allAccounts.length > 0 && (
+              <>
+                {exchanges.filter(e => e.isConnected).length > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      setSyncing("all");
+                      try {
+                        const response = await axios.post('/api/exchanges/sync', {});
+                        if (response.data.status === "success") {
+                          toast.success(`Synced ${response.data.transactionsAdded} transaction(s)`);
+                          fetchWallets();
+                        }
+                      } catch { toast.error("Failed to sync exchanges"); }
+                      finally { setSyncing(null); }
+                    }}
+                    disabled={syncing === "all"}
+                  >
+                    {syncing === "all" ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RotateCw className="mr-2 h-4 w-4" />}
+                    {syncing === "all" ? "Syncing..." : "Sync All"}
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  onClick={handleEnrichAll}
+                  disabled={enrichingAll || !!enriching}
+                >
+                  {enrichingAll ? <DollarSign className="mr-2 h-4 w-4 animate-pulse" /> : <DollarSign className="mr-2 h-4 w-4" />}
+                  {enrichingAll ? "Enriching..." : "Enrich All"}
+                </Button>
+                <Button variant="outline" onClick={handleRefresh}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh
+                </Button>
+              </>
+            )}
+            <Button onClick={() => setIsAddDialogOpen(true)} data-onboarding="connect-wallet">
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Add Account
+            </Button>
           </div>
+        </div>
+
+        {/* ── Filter Bar (Horizon style) ── */}
+        <div className="flex items-center gap-2">
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="h-9 rounded-lg border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] px-3 text-sm font-medium text-[#1A1A1A] dark:text-[#F5F5F5] focus:outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            <option value="all">All Accounts</option>
+            <option value="wallets">Wallets</option>
+            <option value="exchanges">Exchanges</option>
+          </select>
         </div>
 
         {/* OAuth Status Messages */}
@@ -693,80 +747,6 @@ function AccountsContent() {
           </div>
         )}
         
-        {/* Action buttons */}
-        {!loading && !error && allAccounts.length > 0 && (
-          <div className="flex justify-between items-center mt-4">
-            <div className="flex gap-2">
-              {exchanges.filter(e => e.isConnected).length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={async () => {
-                    setSyncing("all");
-                    try {
-                      const response = await axios.post('/api/exchanges/sync', {});
-                      if (response.data.status === "success") {
-                        toast.success(
-                          `Synced ${response.data.transactionsAdded} transaction(s) from ${exchanges.filter(e => e.isConnected).length} exchange(s)`
-                        );
-                        fetchWallets();
-                      }
-                    } catch (error) {
-                      toast.error("Failed to sync exchanges");
-                    } finally {
-                      setSyncing(null);
-                    }
-                  }}
-                  disabled={syncing === "all"}
-                >
-                  {syncing === "all" ? (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      Syncing...
-                    </>
-                  ) : (
-                    <>
-                      <RotateCw className="mr-2 h-4 w-4" />
-                      Sync All Exchanges
-                    </>
-                  )}
-                </Button>
-              )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleEnrichAll}
-                disabled={enrichingAll || !!enriching}
-              >
-                {enrichingAll ? (
-                  <>
-                    <DollarSign className="mr-2 h-4 w-4 animate-pulse" />
-                    Enriching...
-                  </>
-                ) : (
-                  <>
-                    <DollarSign className="mr-2 h-4 w-4" />
-                    Enrich All Prices
-                  </>
-                )}
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleRefresh}>
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Refresh Accounts
-              </Button>
-            <Button
-              size="sm"
-              onClick={() => setIsAddDialogOpen(true)}
-              data-onboarding="connect-wallet"
-            >
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add Account
-            </Button>
-            </div>
-          </div>
-        )}
       </div>
 
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
