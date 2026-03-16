@@ -300,7 +300,7 @@ function TransactionsContent() {
       setIsLoadingTransactions(true);
       try {
         // When grouping, fetch more rows so collapsing groups still shows data
-        const fetchLimit = groupBy !== "none" ? Math.max(itemsPerPage, 250) : itemsPerPage;
+        const fetchLimit = groupBy !== "none" ? 500 : itemsPerPage;
         const params = new URLSearchParams({
           page: currentPage.toString(),
           limit: fetchLimit.toString(),
