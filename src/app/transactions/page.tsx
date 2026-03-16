@@ -1388,9 +1388,9 @@ function TransactionsContent() {
                 Net Capital {stats.pnl.netGain >= 0 ? "Gain" : "Loss"} · {yearValue !== "all" ? yearValue : "All Time"}
               </p>
               {stats.income && stats.income.count > 0 && (
-                <div className="mt-3 flex items-baseline gap-2">
-                  <p className="text-[22px] font-bold text-[#CA8A04]" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-                    ${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                <div className="mt-2 flex items-baseline gap-2">
+                  <p className="text-[28px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                    +${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                   <p className="text-[13px] text-[#6B7280]">
                     Ordinary Income · {stats.income.count} events
