@@ -1479,9 +1479,10 @@ function TransactionsContent() {
 
         {/* ── Stats Zone: single horizontal row, all vertically centered ── */}
         {stats?.pnl && (
-          <div className="flex items-center gap-0">
+          <div className="flex items-center justify-between">
 
-            {/* Capital Gains */}
+            {/* Left group */}
+            <div className="flex items-center">
             <div className="pr-7">
               <p className={cn(
                 "text-[36px] font-bold tracking-tight",
@@ -1524,8 +1525,10 @@ function TransactionsContent() {
                 </p>
               </div>
             </div>
+            </div>
 
-            <div className="w-px h-12 bg-[#E5E5E0] dark:bg-[#333]" />
+            {/* Right group */}
+            <div className="flex items-center">
 
             {/* Badges */}
             <div className="flex items-center gap-3 px-7">
@@ -1578,6 +1581,7 @@ function TransactionsContent() {
                 </div>
                 <span className={cn("text-[12px] font-bold w-[36px] text-right", stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
               </div>
+            </div>
             </div>
 
           </div>
