@@ -14,19 +14,19 @@ interface PnLBreakdownChartProps {
   netGain: number;
 }
 
-// Pastel shades of the Horizon pill colors — softer but still recognizable
+// Horizon pill text colors — same colors used in transaction type tags
 const PALETTE = [
-  "#93C5FD", // pastel blue
-  "#C4B5FD", // pastel purple
-  "#FDBA74", // pastel orange
-  "#5EEAD4", // pastel teal
-  "#FCA5A5", // pastel red
-  "#FDE68A", // pastel yellow
-  "#A5B4FC", // pastel indigo
-  "#86EFAC", // pastel green
-  "#F9A8D4", // pastel pink
+  "#2563EB", // blue
+  "#9333EA", // purple
+  "#EA580C", // orange
+  "#0D9488", // teal
+  "#DC2626", // red
+  "#CA8A04", // yellow
+  "#4F46E5", // indigo
+  "#16A34A", // green
+  "#DB2777", // pink
 ];
-const OTHER_COLOR = "#D1D5DB"; // pastel gray
+const OTHER_COLOR = "#4B5563"; // gray
 
 function capItems(items: AssetAmount[]): AssetAmount[] {
   if (items.length <= 9) return items;
@@ -181,8 +181,8 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
               .attr("text-anchor", "middle")
               .attr("dominant-baseline", "central")
               .attr("font-size", "10px")
-              .attr("font-weight", "700")
-              .attr("fill", "#1A1A1A")
+              .attr("font-weight", "600")
+              .attr("fill", "white")
               .attr("pointer-events", "none")
               .attr("opacity", 0)
               .text(seg.asset)
