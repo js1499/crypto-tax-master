@@ -1745,6 +1745,18 @@ function TransactionsContent() {
             </PopoverContent>
           </Popover>
 
+          <Select value={itemsPerPage.toString()} onValueChange={(value) => { setItemsPerPage(parseInt(value)); setCurrentPage(1); }}>
+            <SelectTrigger className="w-[80px] h-9 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="50">50</SelectItem>
+              <SelectItem value="100">100</SelectItem>
+              <SelectItem value="250">250</SelectItem>
+              <SelectItem value="500">500</SelectItem>
+            </SelectContent>
+          </Select>
+
           {/* Search icon button */}
           <Popover>
             <PopoverTrigger asChild>
