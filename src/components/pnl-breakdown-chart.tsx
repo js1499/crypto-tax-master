@@ -67,9 +67,9 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
     svg.selectAll("*").remove();
 
     const margin = { left: 56, right: 100 };
-    const barHeight = 24;
-    const barGap = 8;
-    const barRadius = 5;
+    const barHeight = 32;
+    const barGap = 14;
+    const barRadius = 8;
     const chartWidth = width - margin.left - margin.right;
 
     const cappedGains = capItems(gainsByAsset);
@@ -129,27 +129,37 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
           .ease(d3.easeCubicOut)
           .attr("width", barW);
       } else {
-        // Segmented bar
-        let xOffset = margin.left;
+        // Segmented bar with clip-path for consistent rounding
         const barTotalWidth = scale(row.total);
+        const clipId = `clip-${row.label}-${rowIdx}`;
+
+        // Define clip path as a rounded rect
+        const defs = svg.select("defs").empty() ? svg.append("defs") : svg.select("defs");
+        defs.append("clipPath")
+          .attr("id", clipId)
+          .append("rect")
+          .attr("x", margin.left)
+          .attr("y", y)
+          .attr("width", barTotalWidth)
+          .attr("height", barHeight)
+          .attr("rx", barRadius);
+
+        const barGroup = g.append("g").attr("clip-path", `url(#${clipId})`);
+        let xOffset = margin.left;
 
         row.items.forEach((item, i) => {
           const segWidth = row.total > 0 ? (item.amount / row.total) * barTotalWidth : 0;
           if (segWidth < 1) return;
 
-          const isFirst = i === 0;
-          const isLast = i === row.items.length - 1 || (i < row.items.length - 1 && (row.items[i + 1].amount / row.total) * barTotalWidth < 1);
           const color = getColor(item.asset, i);
 
-          // Use clipPath for rounded corners on first/last segments
-          const rect = g.append("rect")
+          const rect = barGroup.append("rect")
             .attr("x", xOffset)
             .attr("y", y)
             .attr("width", 0)
             .attr("height", barHeight)
             .attr("fill", color)
             .attr("opacity", 0.9)
-            .attr("rx", isFirst && isLast ? barRadius : isFirst ? barRadius : isLast ? barRadius : 0)
             .attr("cursor", "pointer")
             .on("mouseenter", (event: MouseEvent) => {
               d3.select(event.target as Element).attr("opacity", 1);
@@ -216,7 +226,7 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
 
   }, [gainsByAsset, lossesByAsset, netGain, width]);
 
-  const totalHeight = 24 * 3 + 8 * 2; // 3 bars + 2 gaps
+  const totalHeight = 32 * 3 + 14 * 2; // 3 bars + 2 gaps
 
   return (
     <div ref={containerRef} className="relative w-full">
