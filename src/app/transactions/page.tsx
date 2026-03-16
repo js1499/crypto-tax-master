@@ -1281,30 +1281,6 @@ function TransactionsContent() {
                 )
               )}
             </div>
-            {/* Progress bars under title */}
-            {stats && (
-              <div className="space-y-1.5 mt-3 max-w-[360px]">
-                <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">Transaction Identification</p>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-[#6B7280] w-[110px] shrink-0">Transaction Values</span>
-                  <div className="flex-1">
-                    <div className="h-2.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
-                      <div className="h-full rounded-full bg-[#16A34A] shadow-[0_0_6px_rgba(22,163,74,0.35)]" style={{ width: '100%' }} />
-                    </div>
-                  </div>
-                  <span className="text-[12px] font-bold text-[#16A34A] w-[36px] text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] text-[#6B7280] w-[110px] shrink-0">Transaction Types</span>
-                  <div className="flex-1">
-                    <div className="h-2.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
-                      <div className="h-full rounded-full bg-[#2563EB] shadow-[0_0_6px_rgba(37,99,235,0.35)]" style={{ width: `${stats.identifiedPercentage}%` }} />
-                    </div>
-                  </div>
-                  <span className={cn("text-[12px] font-bold w-[36px] text-right", stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
-                </div>
-              </div>
-            )}
           </div>
           <div className="flex items-start gap-2">
             {isBulkMode && selectedTransactionIds.size > 0 && (
@@ -1787,6 +1763,31 @@ function TransactionsContent() {
               />
             </PopoverContent>
           </Popover>
+
+          {/* Progress bars — inline with filters */}
+          {stats && (
+            <>
+              <div className="ml-auto" />
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] text-[#9CA3AF] shrink-0">Values</span>
+                <div className="w-[80px]">
+                  <div className="h-1.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                    <div className="h-full rounded-full bg-[#16A34A]" style={{ width: '100%' }} />
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[10px] text-[#9CA3AF] shrink-0">Types</span>
+                <div className="w-[80px]">
+                  <div className="h-1.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                    <div className="h-full rounded-full bg-[#2563EB]" style={{ width: `${stats.identifiedPercentage}%` }} />
+                  </div>
+                </div>
+                <span className={cn("text-[10px] font-bold", stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* ── Active Filter Chips ── */}
