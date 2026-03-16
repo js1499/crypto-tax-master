@@ -1,0 +1,230 @@
+"use client";
+
+import { useRef, useEffect, useState } from "react";
+import * as d3 from "d3";
+
+interface AssetAmount {
+  asset: string;
+  amount: number;
+}
+
+interface PnLBreakdownChartProps {
+  gainsByAsset: AssetAmount[];
+  lossesByAsset: AssetAmount[];
+  netGain: number;
+}
+
+const ASSET_COLORS: Record<string, string> = {
+  SOL: "#9333EA", WSOL: "#9333EA",
+  ETH: "#3B82F6", WETH: "#3B82F6",
+  BTC: "#EA580C", WBTC: "#EA580C",
+  USDC: "#0D9488", USDT: "#14B8A6",
+  JUP: "#16A34A", BONK: "#DB2777",
+  WIF: "#F472B6", FWOG: "#EC4899",
+  MATIC: "#7C3AED", AVAX: "#E11D48",
+  DOT: "#E040FB", LINK: "#2563EB",
+  RAY: "#06B6D4", ORCA: "#1A1A1A",
+};
+
+const FALLBACK_COLORS = ["#6366F1", "#8B5CF6", "#A855F7", "#D946EF", "#EC4899", "#F43F5E", "#EF4444", "#F97316", "#EAB308", "#22C55E", "#14B8A6", "#06B6D4", "#3B82F6"];
+
+function getColor(asset: string, index: number): string {
+  return ASSET_COLORS[asset.toUpperCase()] || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+}
+
+export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLBreakdownChartProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(600);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string; color: string } | null>(null);
+
+  // Responsive width
+  useEffect(() => {
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setWidth(entry.contentRect.width);
+      }
+    });
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!svgRef.current) return;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll("*").remove();
+
+    const margin = { left: 56, right: 100 };
+    const barHeight = 24;
+    const barGap = 8;
+    const barRadius = 5;
+    const chartWidth = width - margin.left - margin.right;
+
+    const totalGains = gainsByAsset.reduce((s, a) => s + a.amount, 0);
+    const totalLosses = lossesByAsset.reduce((s, a) => s + a.amount, 0);
+    const maxVal = Math.max(totalGains, totalLosses, Math.abs(netGain), 1);
+
+    const scale = d3.scaleLinear().domain([0, maxVal]).range([0, chartWidth]);
+
+    const rows = [
+      { label: "GAINS", items: gainsByAsset, total: totalGains, color: "#16A34A", sign: "+" },
+      { label: "LOSSES", items: lossesByAsset, total: totalLosses, color: "#DC2626", sign: "-" },
+      { label: "NET", items: [], total: Math.abs(netGain), color: netGain >= 0 ? "#16A34A" : "#DC2626", sign: netGain >= 0 ? "+" : "-" },
+    ];
+
+    const g = svg.append("g");
+
+    rows.forEach((row, rowIdx) => {
+      const y = rowIdx * (barHeight + barGap);
+
+      // Row label
+      g.append("text")
+        .attr("x", margin.left - 10)
+        .attr("y", y + barHeight / 2)
+        .attr("text-anchor", "end")
+        .attr("dominant-baseline", "central")
+        .attr("font-size", "11px")
+        .attr("font-weight", "600")
+        .attr("fill", "#6B7280")
+        .attr("letter-spacing", "0.05em")
+        .text(row.label);
+
+      // Bar background track
+      g.append("rect")
+        .attr("x", margin.left)
+        .attr("y", y)
+        .attr("width", chartWidth)
+        .attr("height", barHeight)
+        .attr("rx", barRadius)
+        .attr("fill", "#F5F5F0")
+        .attr("class", "dark-track");
+
+      if (row.label === "NET") {
+        // Solid net bar with animated entrance
+        const barW = scale(row.total);
+        g.append("rect")
+          .attr("x", margin.left)
+          .attr("y", y)
+          .attr("width", 0)
+          .attr("height", barHeight)
+          .attr("rx", barRadius)
+          .attr("fill", row.color)
+          .attr("opacity", 0.85)
+          .transition()
+          .duration(800)
+          .ease(d3.easeCubicOut)
+          .attr("width", barW);
+      } else {
+        // Segmented bar
+        let xOffset = margin.left;
+        const barTotalWidth = scale(row.total);
+
+        row.items.forEach((item, i) => {
+          const segWidth = row.total > 0 ? (item.amount / row.total) * barTotalWidth : 0;
+          if (segWidth < 1) return;
+
+          const isFirst = i === 0;
+          const isLast = i === row.items.length - 1 || (i < row.items.length - 1 && (row.items[i + 1].amount / row.total) * barTotalWidth < 1);
+          const color = getColor(item.asset, i);
+
+          // Use clipPath for rounded corners on first/last segments
+          const rect = g.append("rect")
+            .attr("x", xOffset)
+            .attr("y", y)
+            .attr("width", 0)
+            .attr("height", barHeight)
+            .attr("fill", color)
+            .attr("opacity", 0.9)
+            .attr("rx", isFirst && isLast ? barRadius : isFirst ? barRadius : isLast ? barRadius : 0)
+            .attr("cursor", "pointer")
+            .on("mouseenter", (event: MouseEvent) => {
+              d3.select(event.target as Element).attr("opacity", 1);
+              const pct = ((item.amount / row.total) * 100).toFixed(1);
+              setTooltip({
+                x: event.clientX,
+                y: event.clientY,
+                text: `${item.asset}: $${item.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })} (${pct}%)`,
+                color,
+              });
+            })
+            .on("mouseleave", (event: MouseEvent) => {
+              d3.select(event.target as Element).attr("opacity", 0.9);
+              setTooltip(null);
+            });
+
+          // Animate entrance with stagger
+          rect.transition()
+            .duration(600)
+            .delay(i * 40 + rowIdx * 100)
+            .ease(d3.easeCubicOut)
+            .attr("width", segWidth);
+
+          // Asset label inside segment if wide enough
+          if (segWidth > 36) {
+            g.append("text")
+              .attr("x", xOffset + segWidth / 2)
+              .attr("y", y + barHeight / 2)
+              .attr("text-anchor", "middle")
+              .attr("dominant-baseline", "central")
+              .attr("font-size", "10px")
+              .attr("font-weight", "600")
+              .attr("fill", "white")
+              .attr("pointer-events", "none")
+              .attr("opacity", 0)
+              .text(item.asset)
+              .transition()
+              .duration(400)
+              .delay(i * 40 + rowIdx * 100 + 300)
+              .attr("opacity", 1);
+          }
+
+          xOffset += segWidth;
+        });
+      }
+
+      // Dollar total on the right
+      g.append("text")
+        .attr("x", width - 4)
+        .attr("y", y + barHeight / 2)
+        .attr("text-anchor", "end")
+        .attr("dominant-baseline", "central")
+        .attr("font-size", "12px")
+        .attr("font-weight", "600")
+        .attr("fill", row.color)
+        .style("font-variant-numeric", "tabular-nums")
+        .attr("opacity", 0)
+        .text(`${row.sign}$${row.total.toLocaleString(undefined, { maximumFractionDigits: 0 })}`)
+        .transition()
+        .duration(500)
+        .delay(rowIdx * 150 + 200)
+        .attr("opacity", 1);
+    });
+
+  }, [gainsByAsset, lossesByAsset, netGain, width]);
+
+  const totalHeight = 24 * 3 + 8 * 2; // 3 bars + 2 gaps
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      <svg
+        ref={svgRef}
+        width={width}
+        height={totalHeight}
+        className="overflow-visible"
+      />
+      {tooltip && (
+        <div
+          className="fixed z-50 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-white shadow-md pointer-events-none"
+          style={{
+            left: tooltip.x + 12,
+            top: tooltip.y - 8,
+            backgroundColor: tooltip.color,
+          }}
+        >
+          {tooltip.text}
+        </div>
+      )}
+    </div>
+  );
+}

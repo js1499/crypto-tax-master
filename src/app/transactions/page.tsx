@@ -75,6 +75,7 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { PnLBreakdownChart } from "@/components/pnl-breakdown-chart";
 import { getCategoryBadgeColor, formatTypeForDisplay, isOutflow, getCategory } from "@/lib/transaction-categorizer";
 import {
   Pagination,
@@ -1435,80 +1436,17 @@ function TransactionsContent() {
           </div>
         )}
 
-        {/* ── Three-Bar P&L Breakdown ── */}
-        {stats?.pnl && (stats.pnl.gainsByAsset.length > 0 || stats.pnl.lossesByAsset.length > 0) && (() => {
-          const totalGains = stats.pnl.gainsByAsset.reduce((s, a) => s + a.amount, 0);
-          const totalLosses = stats.pnl.lossesByAsset.reduce((s, a) => s + a.amount, 0);
-          const maxBar = Math.max(totalGains, totalLosses, 1);
-
-          const renderBar = (items: Array<{ asset: string; amount: number }>, total: number, barColor: string) => {
-            if (total === 0) return <div className="h-full w-full rounded" style={{ backgroundColor: barColor, opacity: 0.15 }} />;
-            return items.map((item, i) => {
-              const pct = (item.amount / total) * 100;
-              if (pct < 1) return null;
-              return (
-                <div
-                  key={item.asset}
-                  className="h-full relative group/seg"
-                  style={{
-                    width: `${pct}%`,
-                    backgroundColor: getAssetBarColor(item.asset),
-                    borderRadius: i === 0 ? '4px 0 0 4px' : i === items.length - 1 ? '0 4px 4px 0' : '0',
-                  }}
-                  title={`${item.asset}: $${item.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
-                >
-                  {pct > 8 && (
-                    <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-white truncate px-1">
-                      {item.asset}
-                    </span>
-                  )}
-                </div>
-              );
-            });
-          };
-
-          return (
-            <div className="space-y-2 pb-2">
-              {/* Gains bar */}
-              <div className="flex items-center gap-3">
-                <span className="text-[11px] font-medium text-[#6B7280] w-14 text-right shrink-0">GAINS</span>
-                <div className="flex-1 h-6 flex rounded" style={{ width: `${(totalGains / maxBar) * 100}%`, minWidth: totalGains > 0 ? '40px' : '0' }}>
-                  {renderBar(stats.pnl.gainsByAsset, totalGains, "#16A34A")}
-                </div>
-                <span className="text-[12px] font-semibold text-[#16A34A] w-24 text-right shrink-0" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                  +${totalGains.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </span>
-              </div>
-              {/* Losses bar */}
-              <div className="flex items-center gap-3">
-                <span className="text-[11px] font-medium text-[#6B7280] w-14 text-right shrink-0">LOSSES</span>
-                <div className="flex-1 h-6 flex rounded" style={{ width: `${(totalLosses / maxBar) * 100}%`, minWidth: totalLosses > 0 ? '40px' : '0' }}>
-                  {renderBar(stats.pnl.lossesByAsset, totalLosses, "#DC2626")}
-                </div>
-                <span className="text-[12px] font-semibold text-[#DC2626] w-24 text-right shrink-0" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                  -${totalLosses.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </span>
-              </div>
-              {/* Net bar */}
-              <div className="flex items-center gap-3">
-                <span className="text-[11px] font-medium text-[#6B7280] w-14 text-right shrink-0">NET</span>
-                <div className="flex-1 h-6 flex rounded">
-                  <div
-                    className="h-full rounded"
-                    style={{
-                      width: `${(Math.abs(stats.pnl.netGain) / maxBar) * 100}%`,
-                      minWidth: '40px',
-                      backgroundColor: stats.pnl.netGain >= 0 ? "#16A34A" : "#DC2626",
-                    }}
-                  />
-                </div>
-                <span className={cn("text-[12px] font-semibold w-24 text-right shrink-0", stats.pnl.netGain >= 0 ? "text-[#16A34A]" : "text-[#DC2626]")} style={{ fontVariantNumeric: 'tabular-nums' }}>
-                  {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </span>
-              </div>
-            </div>
-          );
-        })()}
+        {/* ── P&L Breakdown by Asset ── */}
+        {stats?.pnl && (stats.pnl.gainsByAsset.length > 0 || stats.pnl.lossesByAsset.length > 0) && (
+          <div className="space-y-2">
+            <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">P&L by Asset</h2>
+            <PnLBreakdownChart
+              gainsByAsset={stats.pnl.gainsByAsset}
+              lossesByAsset={stats.pnl.lossesByAsset}
+              netGain={stats.pnl.netGain}
+            />
+          </div>
+        )}
 
         {/* ── Filter Bar ── */}
         <div className="flex items-center gap-2">
