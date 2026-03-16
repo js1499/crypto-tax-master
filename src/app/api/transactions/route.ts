@@ -415,7 +415,7 @@ export async function GET(request: NextRequest) {
         date: tx.tx_timestamp.toISOString(),
         status: tx.status,
         exchange: tx.source || "Unknown",
-        identified: getCategory(tx.type) !== "other",
+        identified: getCategory(tx.type) !== "other" || tx.type === "BURN" || tx.type === "Burn" || tx.type === "Zero Transaction" || tx.type === "Spam" || tx.type === "Fee",
         valueIdentified: true,
         chain: tx.chain,
         txHash: tx.tx_hash,
@@ -432,6 +432,7 @@ export async function GET(request: NextRequest) {
       ...getTypesForCategory("transfer"), ...getTypesForCategory("swap"),
       ...getTypesForCategory("staking"), ...getTypesForCategory("defi"),
       ...getTypesForCategory("nft"), ...getTypesForCategory("income"),
+      ...getTypesForCategory("other"),
     ];
     // Stats use statsWhere (includes search/filter/wallet/date but excludes cosmetic hideZero/hideSpam)
     const [buyCount, sellCount, transferInCount, transferOutCount, swapCount, identifiedTypeCount, valueIdentifiedCount, disposalAgg, incomeAgg] = await Promise.all([

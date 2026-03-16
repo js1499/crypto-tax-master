@@ -1385,27 +1385,34 @@ function TransactionsContent() {
                 {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
               <p className="text-[13px] text-[#6B7280] mt-1">
-                Net {stats.pnl.netGain >= 0 ? "Gain" : "Loss"} · {yearValue !== "all" ? yearValue : "All Time"}
+                Net Capital {stats.pnl.netGain >= 0 ? "Gain" : "Loss"} · {yearValue !== "all" ? yearValue : "All Time"}
               </p>
-              <p className="text-[13px] text-[#9CA3AF] mt-0.5" style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {stats.income && stats.income.count > 0 && (
+                <div className="mt-3 flex items-baseline gap-2">
+                  <p className="text-[22px] font-bold text-[#CA8A04]" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                    ${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-[13px] text-[#6B7280]">
+                    Ordinary Income · {stats.income.count} events
+                  </p>
+                </div>
+              )}
+              <p className="text-[13px] text-[#9CA3AF] mt-2" style={{ fontVariantNumeric: 'tabular-nums' }}>
                 {isLoadingTransactions ? "..." : totalCount.toLocaleString()} transactions
-                {stats.income && stats.income.count > 0 && ` · $${stats.income.totalValueUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} income`}
               </p>
             </div>
-            <div className="flex flex-col items-end gap-1 text-right">
-              <div className="flex items-center gap-6">
-                <div>
-                  <p className="text-[12px] text-[#9CA3AF]">Cost Basis</p>
-                  <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[12px] text-[#9CA3AF]">Proceeds</p>
-                  <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                    ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
-                </div>
+            <div className="flex items-center gap-6 text-right">
+              <div>
+                <p className="text-[12px] text-[#9CA3AF]">Cost Basis</p>
+                <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div>
+                <p className="text-[12px] text-[#9CA3AF]">Proceeds</p>
+                <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
               </div>
             </div>
           </div>
@@ -1745,16 +1752,18 @@ function TransactionsContent() {
                       <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                         {transaction.gainLossUsd != null ? (
                           <span className={cn(
-                            "inline-flex items-center gap-1 text-sm font-medium",
-                            transaction.gainLossUsd >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"
-                          )}>
+                            "inline-flex items-center gap-1 rounded-md px-2.5 py-[4px] text-[13px] font-medium",
+                            transaction.gainLossUsd >= 0
+                              ? "bg-[#F0FDF4] text-[#16A34A] dark:bg-[rgba(22,163,74,0.12)]"
+                              : "bg-[#FEF2F2] text-[#DC2626] dark:bg-[rgba(220,38,38,0.12)]"
+                          )} style={{ fontVariantNumeric: 'tabular-nums' }}>
                             {transaction.gainLossUsd >= 0
-                              ? <span className="text-[0.55rem] leading-none">{"\u25B2"}</span>
-                              : <span className="text-[0.55rem] leading-none">{"\u25BC"}</span>}
+                              ? <span className="text-[0.6rem] leading-none">{"\u25B2"}</span>
+                              : <span className="text-[0.6rem] leading-none">{"\u25BC"}</span>}
                             ${Math.abs(transaction.gainLossUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         ) : (
-                          <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs bg-pill-gray-bg text-pill-gray-text dark:bg-[rgba(75,85,99,0.12)] dark:text-[#9CA3AF]">N/A</span>
+                          <span className="inline-flex items-center rounded-md px-2.5 py-[4px] text-[13px] bg-pill-gray-bg text-pill-gray-text dark:bg-[rgba(75,85,99,0.12)] dark:text-[#9CA3AF]">N/A</span>
                         )}
                       </TableCell>
 
