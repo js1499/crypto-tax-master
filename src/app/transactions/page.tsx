@@ -1496,6 +1496,26 @@ function TransactionsContent() {
           </div>
         )}
 
+        {/* ── Identification Progress ── */}
+        {stats && (
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 flex-1">
+              <span className="text-[12px] text-[#6B7280] shrink-0">Value Identified</span>
+              <div className="flex-1 max-w-[200px]">
+                <Progress value={stats.valueIdentifiedPercentage} className="h-1.5" indicatorClassName="bg-[#16A34A]" />
+              </div>
+              <span className="text-[13px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.valueIdentifiedPercentage}%</span>
+            </div>
+            <div className="flex items-center gap-2 flex-1">
+              <span className="text-[12px] text-[#6B7280] shrink-0">Types Identified</span>
+              <div className="flex-1 max-w-[200px]">
+                <Progress value={stats.identifiedPercentage} className="h-1.5" indicatorClassName="bg-[#2563EB]" />
+              </div>
+              <span className="text-[13px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
+            </div>
+          </div>
+        )}
+
         {/* ── P&L Breakdown by Asset ── */}
         {stats?.pnl && (stats.pnl.gainsByAsset.length > 0 || stats.pnl.lossesByAsset.length > 0) && (
           <div className="space-y-2">
