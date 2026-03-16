@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Layout } from "@/components/layout";
@@ -211,6 +211,8 @@ function TransactionsContent() {
   // UI mode state
   const [showAdvancedColumns, setShowAdvancedColumns] = useState(true);
   const [showMoreStats, setShowMoreStats] = useState(false);
+  const [groupBy, setGroupBy] = useState<"none" | "month" | "asset" | "type" | "source">("none");
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [tableDensity, setTableDensity] = useState<"condensed" | "regular" | "spacious">("regular");
 
   // Wallet filter state
@@ -460,6 +462,59 @@ function TransactionsContent() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = Math.min(startIndex + transactions.length, totalCount);
   const currentTransactions = transactions; // Already paginated from server
+
+  // Group transactions (when "none", single group with no header)
+  const groupedTransactions = (() => {
+    if (groupBy === "none") return [{ key: "__all__", label: "", transactions: currentTransactions, totalGainLoss: 0 }];
+
+    const groups = new Map<string, { key: string; label: string; transactions: Transaction[]; totalGainLoss: number }>();
+
+    currentTransactions.forEach(tx => {
+      let key: string;
+      let label: string;
+
+      switch (groupBy) {
+        case "month": {
+          const d = new Date(tx.date);
+          key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          label = d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+          break;
+        }
+        case "asset":
+          key = (tx.outAsset || tx.inAsset || "Unknown").toUpperCase();
+          label = key;
+          break;
+        case "type":
+          key = tx.type;
+          label = formatTypeForDisplay(tx.type);
+          break;
+        case "source":
+          key = tx.exchange || "Unknown";
+          label = shortenSource(tx.exchange || "Unknown");
+          break;
+        default:
+          key = "all";
+          label = "All";
+      }
+
+      if (!groups.has(key)) {
+        groups.set(key, { key, label, transactions: [], totalGainLoss: 0 });
+      }
+      const group = groups.get(key)!;
+      group.transactions.push(tx);
+      group.totalGainLoss += tx.gainLossUsd ?? 0;
+    });
+
+    return Array.from(groups.values());
+  })();
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
 
   // Year selector computed value
   const yearValue = dateFrom && dateTo
@@ -1490,6 +1545,19 @@ function TransactionsContent() {
             </SelectContent>
           </Select>
 
+          <Select value={groupBy} onValueChange={(v) => { setGroupBy(v as typeof groupBy); setCollapsedGroups(new Set()); }}>
+            <SelectTrigger className="w-[130px] h-9 text-sm">
+              <SelectValue placeholder="No Grouping" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No Grouping</SelectItem>
+              <SelectItem value="month">By Month</SelectItem>
+              <SelectItem value="asset">By Asset</SelectItem>
+              <SelectItem value="type">By Type</SelectItem>
+              <SelectItem value="source">By Source</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="outline" size="sm" className="h-9 text-sm font-medium gap-1.5">
@@ -1681,7 +1749,34 @@ function TransactionsContent() {
                 </TableRow>
               </TableHeader>
                 <TableBody>
-                  {currentTransactions.map((transaction) => (
+                  {groupedTransactions.map((group) => (
+                    <React.Fragment key={group.key}>
+                      {/* Group header (skip for ungrouped) */}
+                      {group.key !== "__all__" && (
+                        <TableRow
+                          className="cursor-pointer bg-[#FAFAF8] dark:bg-[#161616] hover:bg-[#F5F5F0] dark:hover:bg-[#1A1A1A] border-b border-[#E5E5E0] dark:border-[#333333]"
+                          onClick={() => toggleGroup(group.key)}
+                        >
+                          <TableCell colSpan={7} className="py-2.5">
+                            <div className="flex items-center gap-3">
+                              <ChevronDown className={cn("h-4 w-4 text-[#6B7280] transition-transform duration-200", collapsedGroups.has(group.key) && "-rotate-90")} />
+                              <span className="text-[14px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">{group.label}</span>
+                              <span className="text-[13px] text-[#9CA3AF]">·</span>
+                              <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>{group.transactions.length} transaction{group.transactions.length !== 1 ? "s" : ""}</span>
+                              {group.totalGainLoss !== 0 && (
+                                <>
+                                  <span className="text-[13px] text-[#9CA3AF]">·</span>
+                                  <span className={cn("text-[13px] font-medium", group.totalGainLoss >= 0 ? "text-[#16A34A]" : "text-[#DC2626]")} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                                    {group.totalGainLoss >= 0 ? "+" : "-"}${Math.abs(group.totalGainLoss).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {/* Group rows (collapsible, or always visible when ungrouped) */}
+                      {(group.key === "__all__" || !collapsedGroups.has(group.key)) && group.transactions.map((transaction) => (
                     <TableRow
                       key={transaction.id}
                       className={cn(
@@ -1904,6 +1999,8 @@ function TransactionsContent() {
                       </TableCell>
 
                     </TableRow>
+                  ))}
+                    </React.Fragment>
                   ))}
                 </TableBody>
               </Table>
