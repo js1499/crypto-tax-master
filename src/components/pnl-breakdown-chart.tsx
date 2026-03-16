@@ -14,22 +14,33 @@ interface PnLBreakdownChartProps {
   netGain: number;
 }
 
-const ASSET_COLORS: Record<string, string> = {
-  SOL: "#9333EA", WSOL: "#9333EA",
-  ETH: "#3B82F6", WETH: "#3B82F6",
-  BTC: "#EA580C", WBTC: "#EA580C",
-  USDC: "#0D9488", USDT: "#14B8A6",
-  JUP: "#16A34A", BONK: "#DB2777",
-  WIF: "#F472B6", FWOG: "#EC4899",
-  MATIC: "#7C3AED", AVAX: "#E11D48",
-  DOT: "#E040FB", LINK: "#2563EB",
-  RAY: "#06B6D4", ORCA: "#1A1A1A",
-};
+// 9 curated colors: distinct but harmonious, not rainbow
+const PALETTE = [
+  "#2563EB", // blue
+  "#9333EA", // purple
+  "#EA580C", // orange
+  "#0D9488", // teal
+  "#DC2626", // red
+  "#CA8A04", // amber
+  "#4F46E5", // indigo
+  "#16A34A", // green
+  "#DB2777", // pink
+];
+const OTHER_COLOR = "#9CA3AF"; // gray for "Other"
 
-const FALLBACK_COLORS = ["#6366F1", "#8B5CF6", "#A855F7", "#D946EF", "#EC4899", "#F43F5E", "#EF4444", "#F97316", "#EAB308", "#22C55E", "#14B8A6", "#06B6D4", "#3B82F6"];
+// Cap items at 9, roll the rest into "Other"
+function capItems(items: AssetAmount[]): AssetAmount[] {
+  if (items.length <= 9) return items;
+  const top = items.slice(0, 9);
+  const rest = items.slice(9);
+  const otherAmount = rest.reduce((s, a) => s + a.amount, 0);
+  if (otherAmount > 0) top.push({ asset: "Other", amount: otherAmount });
+  return top;
+}
 
 function getColor(asset: string, index: number): string {
-  return ASSET_COLORS[asset.toUpperCase()] || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+  if (asset === "Other") return OTHER_COLOR;
+  return PALETTE[index % PALETTE.length];
 }
 
 export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLBreakdownChartProps) {
@@ -61,16 +72,18 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
     const barRadius = 5;
     const chartWidth = width - margin.left - margin.right;
 
-    const totalGains = gainsByAsset.reduce((s, a) => s + a.amount, 0);
-    const totalLosses = lossesByAsset.reduce((s, a) => s + a.amount, 0);
+    const cappedGains = capItems(gainsByAsset);
+    const cappedLosses = capItems(lossesByAsset);
+    const totalGains = cappedGains.reduce((s, a) => s + a.amount, 0);
+    const totalLosses = cappedLosses.reduce((s, a) => s + a.amount, 0);
     const maxVal = Math.max(totalGains, totalLosses, Math.abs(netGain), 1);
 
     const scale = d3.scaleLinear().domain([0, maxVal]).range([0, chartWidth]);
 
     const rows = [
-      { label: "GAINS", items: gainsByAsset, total: totalGains, color: "#16A34A", sign: "+" },
-      { label: "LOSSES", items: lossesByAsset, total: totalLosses, color: "#DC2626", sign: "-" },
-      { label: "NET", items: [], total: Math.abs(netGain), color: netGain >= 0 ? "#16A34A" : "#DC2626", sign: netGain >= 0 ? "+" : "-" },
+      { label: "GAINS", items: cappedGains, total: totalGains, color: "#16A34A", sign: "+" },
+      { label: "LOSSES", items: cappedLosses, total: totalLosses, color: "#DC2626", sign: "-" },
+      { label: "NET", items: [] as AssetAmount[], total: Math.abs(netGain), color: netGain >= 0 ? "#16A34A" : "#DC2626", sign: netGain >= 0 ? "+" : "-" },
     ];
 
     const g = svg.append("g");
