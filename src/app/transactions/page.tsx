@@ -1498,20 +1498,47 @@ function TransactionsContent() {
 
         {/* ── Identification Progress ── */}
         {stats && (
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 flex-1">
-              <span className="text-[12px] text-[#6B7280] shrink-0">Value Identified</span>
-              <div className="flex-1 max-w-[200px]">
-                <Progress value={stats.valueIdentifiedPercentage} className="h-1.5" indicatorClassName="bg-[#16A34A]" />
+          <div className="flex items-center gap-8">
+            <div className="flex items-center gap-3 flex-1">
+              <div className="shrink-0">
+                <p className="text-[13px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">Transaction Value Identified</p>
+                <p className="text-[11px] text-[#9CA3AF] mt-0.5">{stats.valueIdentifiedPercentage === 100 ? "All values resolved" : "Some values need pricing"}</p>
               </div>
-              <span className="text-[13px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.valueIdentifiedPercentage}%</span>
+              <div className="flex items-center gap-2.5 ml-auto">
+                <div className="w-[180px]">
+                  <div className="h-2.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[#16A34A] transition-all duration-500"
+                      style={{ width: `${stats.valueIdentifiedPercentage}%` }}
+                    />
+                  </div>
+                </div>
+                <span className={cn(
+                  "text-[14px] font-bold min-w-[40px] text-right",
+                  stats.valueIdentifiedPercentage === 100 ? "text-[#16A34A]" : "text-[#CA8A04]"
+                )} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.valueIdentifiedPercentage}%</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 flex-1">
-              <span className="text-[12px] text-[#6B7280] shrink-0">Types Identified</span>
-              <div className="flex-1 max-w-[200px]">
-                <Progress value={stats.identifiedPercentage} className="h-1.5" indicatorClassName="bg-[#2563EB]" />
+            <div className="w-px h-8 bg-[#E5E5E0] dark:bg-[#333]" />
+            <div className="flex items-center gap-3 flex-1">
+              <div className="shrink-0">
+                <p className="text-[13px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">Transaction Types Identified</p>
+                <p className="text-[11px] text-[#9CA3AF] mt-0.5">{stats.identifiedPercentage === 100 ? "All types categorized" : "Some types need review"}</p>
               </div>
-              <span className="text-[13px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
+              <div className="flex items-center gap-2.5 ml-auto">
+                <div className="w-[180px]">
+                  <div className="h-2.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-[#2563EB] transition-all duration-500"
+                      style={{ width: `${stats.identifiedPercentage}%` }}
+                    />
+                  </div>
+                </div>
+                <span className={cn(
+                  "text-[14px] font-bold min-w-[40px] text-right",
+                  stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]"
+                )} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
+              </div>
             </div>
           </div>
         )}
