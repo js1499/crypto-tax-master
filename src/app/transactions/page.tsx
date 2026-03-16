@@ -1496,6 +1496,39 @@ function TransactionsContent() {
           </div>
         )}
 
+        {/* ── Badges / Accomplishments ── */}
+        {stats && (
+          <div className="flex items-center gap-4">
+            <span className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase mr-1">Badges</span>
+            {/* Value Identified Badge */}
+            <div className="relative group" title={stats.valueIdentifiedPercentage === 100 ? "All transaction values identified" : `${stats.valueIdentifiedPercentage}% of values identified`}>
+              {stats.valueIdentifiedPercentage === 100 ? (
+                <div className="h-10 w-10 rounded-full bg-[#16A34A] flex items-center justify-center shadow-sm">
+                  <Check className="h-5 w-5 text-white" />
+                </div>
+              ) : (
+                <div className="h-10 w-10 rounded-full bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-[#9CA3AF]">{stats.valueIdentifiedPercentage}%</span>
+                </div>
+              )}
+              <span className="text-[10px] text-[#6B7280] mt-1 block text-center">Values</span>
+            </div>
+            {/* Types Identified Badge */}
+            <div className="relative group" title={stats.identifiedPercentage === 100 ? "All transaction types identified" : `${stats.identifiedPercentage}% of types identified`}>
+              {stats.identifiedPercentage === 100 ? (
+                <div className="h-10 w-10 rounded-full bg-[#2563EB] flex items-center justify-center shadow-sm">
+                  <Check className="h-5 w-5 text-white" />
+                </div>
+              ) : (
+                <div className="h-10 w-10 rounded-full bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
+                  <span className="text-[10px] font-bold text-[#9CA3AF]">{stats.identifiedPercentage}%</span>
+                </div>
+              )}
+              <span className="text-[10px] text-[#6B7280] mt-1 block text-center">Types</span>
+            </div>
+          </div>
+        )}
+
         {/* ── Identification Progress ── */}
         {stats && (
           <div className="flex items-center gap-8">
