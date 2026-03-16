@@ -12,6 +12,7 @@ interface PnLBreakdownChartProps {
   gainsByAsset: AssetAmount[];
   lossesByAsset: AssetAmount[];
   netGain: number;
+  incomeByAsset?: AssetAmount[];
   totalIncome?: number;
 }
 
@@ -56,10 +57,21 @@ const LOSS_SHADES = [
 function getBarSegmentColor(rowLabel: string, index: number = 0): string {
   if (rowLabel === "GAINS") return GAIN_SHADES[index % GAIN_SHADES.length];
   if (rowLabel === "LOSSES") return LOSS_SHADES[index % LOSS_SHADES.length];
+  if (rowLabel === "INCOME") return INCOME_SHADES[index % INCOME_SHADES.length];
   return "#16A34A";
 }
 
-export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain, totalIncome = 0 }: PnLBreakdownChartProps) {
+// 10 blue shades for income segments
+const INCOME_SHADES = [
+  "#1E40AF", "#1D4ED8", "#2563EB", "#3B82F6", "#60A5FA",
+  "#7CB3FC", "#93C5FD", "#A8D1FE", "#BFDBFE", "#D4E6FF",
+];
+
+function getIncomeSegmentColor(index: number): string {
+  return INCOME_SHADES[index % INCOME_SHADES.length];
+}
+
+export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain, incomeByAsset = [], totalIncome = 0 }: PnLBreakdownChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(600);
@@ -95,7 +107,7 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain, totalI
     const rows = [
       { label: "GAINS", items: cg, total: tg, color: "#16A34A", sign: "+" },
       { label: "LOSSES", items: cl, total: tl, color: "#DC2626", sign: "-" },
-      ...(totalIncome > 0 ? [{ label: "INCOME", items: [] as AssetAmount[], total: totalIncome, color: "#2563EB", sign: "+" }] : []),
+      ...(totalIncome > 0 ? [{ label: "INCOME", items: capItems(incomeByAsset), total: totalIncome, color: "#2563EB", sign: "+" }] : []),
       { label: "NET", items: [] as AssetAmount[], total: Math.abs(netGain + totalIncome), color: (netGain + totalIncome) >= 0 ? "#16A34A" : "#DC2626", sign: (netGain + totalIncome) >= 0 ? "+" : "-" },
     ];
 
@@ -226,7 +238,7 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain, totalI
         .transition().duration(400).delay(ri * 120 + 200)
         .attr("opacity", 1);
     });
-  }, [gainsByAsset, lossesByAsset, netGain, totalIncome, width]);
+  }, [gainsByAsset, lossesByAsset, netGain, incomeByAsset, totalIncome, width]);
 
   const numBars = totalIncome > 0 ? 4 : 3;
   const totalHeight = 36 * numBars + 16 * (numBars - 1);

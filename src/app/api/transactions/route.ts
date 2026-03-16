@@ -467,6 +467,17 @@ export async function GET(request: NextRequest) {
     gainsByAsset.sort((a, b) => b.amount - a.amount);
     lossesByAsset.sort((a, b) => b.amount - a.amount);
 
+    // Per-asset income breakdown
+    const incomeByAssetRaw = await prisma.transaction.groupBy({
+      by: ['asset_symbol'],
+      where: { ...statsWhere, is_income: true, value_usd: { gt: 0 } },
+      _sum: { value_usd: true },
+    });
+    const incomeByAsset: Array<{ asset: string; amount: number }> = incomeByAssetRaw
+      .map(row => ({ asset: row.asset_symbol, amount: Number(row._sum.value_usd || 0) }))
+      .filter(r => r.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
+
     // Weekly activity heatmap data
     const weeklyRaw = await prisma.$queryRawUnsafe<Array<{ week_start: Date; txn_count: bigint; net_gl: number | null }>>(`
       SELECT
@@ -530,6 +541,7 @@ export async function GET(request: NextRequest) {
         income: {
           count: incomeAgg._count,
           totalValueUsd: Number(incomeAgg._sum.value_usd || 0),
+          byAsset: incomeByAsset,
         },
         weeklyActivity,
       },

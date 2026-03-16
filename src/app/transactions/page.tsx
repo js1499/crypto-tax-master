@@ -235,7 +235,7 @@ function TransactionsContent() {
     identifiedPercentage: number;
     valueIdentifiedPercentage: number;
     pnl: { totalCostBasis: number; totalProceeds: number; netGain: number; gainsByAsset: Array<{ asset: string; amount: number }>; lossesByAsset: Array<{ asset: string; amount: number }> };
-    income: { count: number; totalValueUsd: number };
+    income: { count: number; totalValueUsd: number; byAsset: Array<{ asset: string; amount: number }> };
     weeklyActivity: Array<{ weekStart: string; count: number; netGainLoss: number }>;
   } | null>(null);
 
@@ -1576,7 +1576,7 @@ function TransactionsContent() {
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-[#6B7280] shrink-0">Transaction Values</span>
                 <div className="flex-1">
-                  <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
+                  <div className="h-3 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
                     <div className="h-full rounded-full bg-[#16A34A] shadow-[0_0_6px_rgba(22,163,74,0.35)]" style={{ width: '100%' }} />
                   </div>
                 </div>
@@ -1585,7 +1585,7 @@ function TransactionsContent() {
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-[#6B7280] shrink-0">Transaction Types</span>
                 <div className="flex-1">
-                  <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
+                  <div className="h-3 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden shadow-inner">
                     <div className="h-full rounded-full bg-[#2563EB] shadow-[0_0_6px_rgba(37,99,235,0.35)]" style={{ width: `${stats.identifiedPercentage}%` }} />
                   </div>
                 </div>
@@ -1605,6 +1605,7 @@ function TransactionsContent() {
               gainsByAsset={stats.pnl.gainsByAsset}
               lossesByAsset={stats.pnl.lossesByAsset}
               netGain={stats.pnl.netGain}
+              incomeByAsset={stats.income?.byAsset || []}
               totalIncome={stats.income?.totalValueUsd || 0}
             />
           </div>
