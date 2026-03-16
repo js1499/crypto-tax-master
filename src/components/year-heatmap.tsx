@@ -135,19 +135,23 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
         .on("mouseleave", () => setTooltip(null));
     });
 
-    // Month labels — show every few buckets to avoid overlap
+    // Month labels — every other month to avoid overlap
     let lastMonth = -1;
+    let monthCount = 0;
     buckets.forEach((bucket, i) => {
       const m = bucket.startDate.getMonth();
       if (m !== lastMonth) {
         lastMonth = m;
-        const x = ml + i * (cellW + cellGap) + cellW / 2;
-        const label = totalDays > 400 ? `${MONTHS[m]}'${String(bucket.startDate.getFullYear()).slice(2)}` : MONTHS[m];
-        g.append("text")
-          .attr("x", x).attr("y", cellH * 2 + rowGap + 12)
-          .attr("text-anchor", "middle")
-          .attr("font-size", "8px").attr("font-weight", "500").attr("fill", "#9CA3AF")
-          .text(label);
+        monthCount++;
+        if (monthCount % 2 === 1) {
+          const x = ml + i * (cellW + cellGap) + cellW / 2;
+          const label = totalDays > 400 ? `${MONTHS[m]}'${String(bucket.startDate.getFullYear()).slice(2)}` : MONTHS[m];
+          g.append("text")
+            .attr("x", x).attr("y", cellH * 2 + rowGap + 12)
+            .attr("text-anchor", "middle")
+            .attr("font-size", "8px").attr("font-weight", "500").attr("fill", "#9CA3AF")
+            .text(label);
+        }
       }
     });
 

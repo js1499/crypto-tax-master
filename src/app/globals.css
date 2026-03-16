@@ -196,20 +196,21 @@
 
 .glow-border {
   position: relative;
-  border-radius: 12px;
-  padding: 1px;
+  border-radius: 10px;
+  padding: 1.5px;
   background: conic-gradient(
     from var(--border-angle),
-    transparent 40%,
-    rgba(22, 163, 74, 0.5) 50%,
-    rgba(37, 99, 235, 0.4) 55%,
+    transparent 35%,
+    rgba(22, 163, 74, 0.4) 48%,
+    rgba(37, 99, 235, 0.35) 52%,
     transparent 65%
   );
   animation: borderRotate 4s linear infinite;
+  overflow: hidden;
 }
 
 .glow-border > * {
-  border-radius: 11px;
+  border-radius: 9px;
   background: white;
 }
 
