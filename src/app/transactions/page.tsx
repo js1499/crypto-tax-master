@@ -230,7 +230,7 @@ function TransactionsContent() {
     unlabelledCount: number;
     identifiedPercentage: number;
     valueIdentifiedPercentage: number;
-    pnl: { totalCostBasis: number; totalProceeds: number; netGain: number };
+    pnl: { totalCostBasis: number; totalProceeds: number; netGain: number; gainsByAsset: Array<{ asset: string; amount: number }>; lossesByAsset: Array<{ asset: string; amount: number }> };
     income: { count: number; totalValueUsd: number };
   } | null>(null);
 
@@ -1062,6 +1062,23 @@ function TransactionsContent() {
     return amount.toLocaleString(undefined, { maximumFractionDigits: 6 });
   };
 
+  // Asset bar segment color helper (solid colors for the stacked bar)
+  const getAssetBarColor = (symbol: string): string => {
+    const s = (symbol || "").toUpperCase();
+    if (s === "SOL" || s === "WSOL") return "#9333EA";
+    if (s === "ETH" || s === "WETH") return "#2563EB";
+    if (s === "BTC" || s === "WBTC") return "#EA580C";
+    if (s === "USDC") return "#0D9488";
+    if (s === "USDT") return "#16A34A";
+    if (s === "JUP") return "#16A34A";
+    if (s === "BONK") return "#DB2777";
+    if (s === "WIF") return "#F472B6";
+    // Deterministic color for unknown assets based on hash
+    const hash = s.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+    const colors = ["#2563EB", "#9333EA", "#EA580C", "#0D9488", "#DB2777", "#CA8A04", "#4F46E5", "#16A34A"];
+    return colors[hash % colors.length];
+  };
+
   // Asset symbol color helper
   const getAssetColor = (symbol: string): string => {
     const s = (symbol || "").toUpperCase();
@@ -1417,6 +1434,81 @@ function TransactionsContent() {
             </div>
           </div>
         )}
+
+        {/* ── Three-Bar P&L Breakdown ── */}
+        {stats?.pnl && (stats.pnl.gainsByAsset.length > 0 || stats.pnl.lossesByAsset.length > 0) && (() => {
+          const totalGains = stats.pnl.gainsByAsset.reduce((s, a) => s + a.amount, 0);
+          const totalLosses = stats.pnl.lossesByAsset.reduce((s, a) => s + a.amount, 0);
+          const maxBar = Math.max(totalGains, totalLosses, 1);
+
+          const renderBar = (items: Array<{ asset: string; amount: number }>, total: number, barColor: string) => {
+            if (total === 0) return <div className="h-full w-full rounded" style={{ backgroundColor: barColor, opacity: 0.15 }} />;
+            return items.map((item, i) => {
+              const pct = (item.amount / total) * 100;
+              if (pct < 1) return null;
+              return (
+                <div
+                  key={item.asset}
+                  className="h-full relative group/seg"
+                  style={{
+                    width: `${pct}%`,
+                    backgroundColor: getAssetBarColor(item.asset),
+                    borderRadius: i === 0 ? '4px 0 0 4px' : i === items.length - 1 ? '0 4px 4px 0' : '0',
+                  }}
+                  title={`${item.asset}: $${item.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`}
+                >
+                  {pct > 8 && (
+                    <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-white truncate px-1">
+                      {item.asset}
+                    </span>
+                  )}
+                </div>
+              );
+            });
+          };
+
+          return (
+            <div className="space-y-2 pb-2">
+              {/* Gains bar */}
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-medium text-[#6B7280] w-14 text-right shrink-0">GAINS</span>
+                <div className="flex-1 h-6 flex rounded" style={{ width: `${(totalGains / maxBar) * 100}%`, minWidth: totalGains > 0 ? '40px' : '0' }}>
+                  {renderBar(stats.pnl.gainsByAsset, totalGains, "#16A34A")}
+                </div>
+                <span className="text-[12px] font-semibold text-[#16A34A] w-24 text-right shrink-0" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  +${totalGains.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+              {/* Losses bar */}
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-medium text-[#6B7280] w-14 text-right shrink-0">LOSSES</span>
+                <div className="flex-1 h-6 flex rounded" style={{ width: `${(totalLosses / maxBar) * 100}%`, minWidth: totalLosses > 0 ? '40px' : '0' }}>
+                  {renderBar(stats.pnl.lossesByAsset, totalLosses, "#DC2626")}
+                </div>
+                <span className="text-[12px] font-semibold text-[#DC2626] w-24 text-right shrink-0" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  -${totalLosses.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+              {/* Net bar */}
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-medium text-[#6B7280] w-14 text-right shrink-0">NET</span>
+                <div className="flex-1 h-6 flex rounded">
+                  <div
+                    className="h-full rounded"
+                    style={{
+                      width: `${(Math.abs(stats.pnl.netGain) / maxBar) * 100}%`,
+                      minWidth: '40px',
+                      backgroundColor: stats.pnl.netGain >= 0 ? "#16A34A" : "#DC2626",
+                    }}
+                  />
+                </div>
+                <span className={cn("text-[12px] font-semibold w-24 text-right shrink-0", stats.pnl.netGain >= 0 ? "text-[#16A34A]" : "text-[#DC2626]")} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                  {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── Filter Bar ── */}
         <div className="flex items-center gap-2">

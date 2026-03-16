@@ -449,6 +449,24 @@ export async function GET(request: NextRequest) {
       prisma.transaction.aggregate({ where: { ...statsWhere, is_income: true }, _count: true, _sum: { value_usd: true } }),
     ]);
 
+    // Per-asset P&L breakdown for the three-bar chart
+    const pnlByAsset = await prisma.transaction.groupBy({
+      by: ['asset_symbol'],
+      where: { ...statsWhere, gain_loss_usd: { not: null } },
+      _sum: { gain_loss_usd: true },
+      _count: true,
+    });
+
+    const gainsByAsset: Array<{ asset: string; amount: number }> = [];
+    const lossesByAsset: Array<{ asset: string; amount: number }> = [];
+    for (const row of pnlByAsset) {
+      const gl = Number(row._sum.gain_loss_usd || 0);
+      if (gl > 0) gainsByAsset.push({ asset: row.asset_symbol, amount: gl });
+      if (gl < 0) lossesByAsset.push({ asset: row.asset_symbol, amount: Math.abs(gl) });
+    }
+    gainsByAsset.sort((a, b) => b.amount - a.amount);
+    lossesByAsset.sort((a, b) => b.amount - a.amount);
+
     const otherCount = totalCount - buyCount - sellCount - transferInCount - transferOutCount - swapCount;
     const unlabelledCount = totalCount - identifiedTypeCount;
     const identifiedPercentage = totalCount > 0 ? Math.round((identifiedTypeCount / totalCount) * 100) : 0;
@@ -488,6 +506,8 @@ export async function GET(request: NextRequest) {
           totalCostBasis,
           totalProceeds,
           netGain,
+          gainsByAsset,
+          lossesByAsset,
         },
         income: {
           count: incomeAgg._count,
