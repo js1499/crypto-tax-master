@@ -231,14 +231,6 @@ export function PnLBreakdownChart({ gainsByAsset, lossesByAsset, netGain }: PnLB
   return (
     <div ref={containerRef} className="relative w-full">
       <svg ref={svgRef} width={width} height={totalHeight} className="overflow-visible" />
-      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
-        {capItems(gainsByAsset).filter(a => a.amount > 0).slice(0, 6).map((item, i) => (
-          <div key={item.asset} className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: getBarSegmentColor("GAINS") }} />
-            <span className="text-[10px] text-[#6B7280]">{item.asset}</span>
-          </div>
-        ))}
-      </div>
       {tooltip && (
         <div
           className="fixed z-50 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-white shadow-md pointer-events-none"
