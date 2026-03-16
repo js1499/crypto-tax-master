@@ -1475,137 +1475,120 @@ function TransactionsContent() {
           </DialogContent>
         </Dialog>
 
-        {/* ── Score-First P&L Hero ── */}
+        {/* ── Stats Zone: structured into clear sections ── */}
         {stats?.pnl && (
-          <div className="flex items-start justify-between pb-2">
-            <div>
-              <p className={cn(
-                "text-[36px] font-bold tracking-tight",
-                stats.pnl.netGain >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"
-              )} style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-                {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <p className="text-[13px] text-[#6B7280] mt-1">
-                Net Capital {stats.pnl.netGain >= 0 ? "Gain" : "Loss"} · {yearValue !== "all" ? yearValue : "All Time"}
-              </p>
+          <div className="grid grid-cols-[1fr_auto] gap-x-10 gap-y-6">
+
+            {/* LEFT: P&L + Income */}
+            <div className="space-y-4">
+              {/* Capital Gains */}
+              <div>
+                <p className={cn(
+                  "text-[36px] font-bold tracking-tight",
+                  stats.pnl.netGain >= 0 ? "text-[#16A34A]" : "text-[#DC2626]"
+                )} style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                  {stats.pnl.netGain >= 0 ? "+" : "-"}${Math.abs(stats.pnl.netGain).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                <p className="text-[13px] text-[#6B7280] mt-1">
+                  Net Capital {stats.pnl.netGain >= 0 ? "Gain" : "Loss"} · {yearValue !== "all" ? yearValue : "All Time"}
+                </p>
+              </div>
+
+              {/* Income */}
               {stats.income && stats.income.count > 0 && (
-                <div className="mt-2 flex items-baseline gap-2">
+                <div className="border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-3">
                   <p className="text-[28px] font-bold text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
                     +${stats.income.totalValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
-                  <p className="text-[13px] text-[#6B7280]">
+                  <p className="text-[13px] text-[#6B7280] mt-1">
                     Ordinary Income · {stats.income.count} events
                   </p>
                 </div>
               )}
-              <p className="text-[13px] text-[#9CA3AF] mt-2" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                {isLoadingTransactions ? "..." : totalCount.toLocaleString()} transactions
-              </p>
-            </div>
-            <div className="flex items-center gap-6 text-right">
-              <div>
-                <p className="text-[12px] text-[#9CA3AF]">Cost Basis</p>
-                <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                  ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-              </div>
-              <div>
-                <p className="text-[12px] text-[#9CA3AF]">Proceeds</p>
-                <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                  ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
 
-        {/* ── Badges / Accomplishments ── */}
-        {stats && (
-          <div className="flex flex-col gap-2">
-            <span className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">Badges</span>
-            <div className="flex items-start gap-6">
-            {/* Value Identified Badge */}
-            <div className="relative group flex flex-col items-center">
-              <div className="relative">
-                <img src="/badges/values-identified.png" alt="Values Identified" className="h-24 w-24 object-contain drop-shadow-md" />
-                <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#16A34A] flex items-center justify-center shadow-sm">
-                  <Check className="h-3 w-3 text-white" />
+              {/* Supporting metrics */}
+              <div className="flex items-center gap-6 border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-3">
+                <div>
+                  <p className="text-[12px] text-[#9CA3AF]">Cost Basis</p>
+                  <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ${stats.pnl.totalCostBasis.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
                 </div>
-              </div>
-              <span className="text-[11px] font-medium text-[#6B7280] mt-1.5">Values</span>
-              <div className="absolute -top-12 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
-                  🎉 All transaction values identified!
+                <div>
+                  <p className="text-[12px] text-[#9CA3AF]">Proceeds</p>
+                  <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ${stats.pnl.totalProceeds.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
                 </div>
               </div>
             </div>
-            {/* Types Identified Badge */}
-            <div className="relative group flex flex-col items-center">
-              {stats.identifiedPercentage === 100 ? (
-                <div className="relative">
-                  <img src="/badges/types-identified.png" alt="Types Identified" className="h-24 w-24 object-contain drop-shadow-md" />
-                  <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#2563EB] flex items-center justify-center shadow-sm">
-                    <Check className="h-3 w-3 text-white" />
-                  </div>
-                </div>
-              ) : (
-                <div className="h-24 w-24 rounded-2xl bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
-                  <span className="text-[14px] font-bold text-[#9CA3AF]">{stats.identifiedPercentage}%</span>
-                </div>
-              )}
-              <span className="text-[11px] font-medium text-[#6B7280] mt-1.5">Types</span>
-              {/* Hover tooltip */}
-              <div className="absolute -top-12 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
-                <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
-                  {stats.identifiedPercentage === 100 ? "🎉 All transaction types categorized!" : `${stats.identifiedPercentage}% of types identified`}
-                </div>
-              </div>
-            </div>
-            </div>
-          </div>
-        )}
 
-        {/* ── Identification Progress ── */}
-        {stats && (
-          <div className="flex items-center gap-8">
-            <div className="flex items-center gap-3 flex-1">
-              <div className="shrink-0">
-                <p className="text-[13px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">Transaction Value Identified</p>
-                <p className="text-[11px] text-[#9CA3AF] mt-0.5">All values resolved</p>
-              </div>
-              <div className="flex items-center gap-2.5 ml-auto">
-                <div className="w-[180px]">
-                  <div className="h-2.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-[#16A34A] transition-all duration-500"
-                      style={{ width: '100%' }}
-                    />
+            {/* RIGHT: Badges + Progress */}
+            <div className="space-y-5 min-w-[280px]">
+              {/* Badges */}
+              <div>
+                <p className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase mb-3">Badges</p>
+                <div className="flex items-start gap-5">
+                  <div className="relative group flex flex-col items-center">
+                    <div className="relative">
+                      <img src="/badges/values-identified.png" alt="Values Identified" className="h-24 w-24 object-contain drop-shadow-md" />
+                      <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#16A34A] flex items-center justify-center shadow-sm">
+                        <Check className="h-3 w-3 text-white" />
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-medium text-[#6B7280] mt-1.5">Values</span>
+                    <div className="absolute -top-12 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                      <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
+                        🎉 All transaction values identified!
+                      </div>
+                    </div>
+                  </div>
+                  <div className="relative group flex flex-col items-center">
+                    {stats.identifiedPercentage === 100 ? (
+                      <div className="relative">
+                        <img src="/badges/types-identified.png" alt="Types Identified" className="h-24 w-24 object-contain drop-shadow-md" />
+                        <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#2563EB] flex items-center justify-center shadow-sm">
+                          <Check className="h-3 w-3 text-white" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="h-24 w-24 rounded-2xl bg-[#E5E5E0] dark:bg-[#333] flex items-center justify-center">
+                        <span className="text-[14px] font-bold text-[#9CA3AF]">{stats.identifiedPercentage}%</span>
+                      </div>
+                    )}
+                    <span className="text-[11px] font-medium text-[#6B7280] mt-1.5">Types</span>
+                    <div className="absolute -top-12 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50">
+                      <div className="bg-[#1A1A1A] text-white text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
+                        {stats.identifiedPercentage === 100 ? "🎉 All transaction types categorized!" : `${stats.identifiedPercentage}% of types identified`}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <span className="text-[14px] font-bold min-w-[40px] text-right text-[#16A34A]" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
               </div>
-            </div>
-            <div className="w-px h-8 bg-[#E5E5E0] dark:bg-[#333]" />
-            <div className="flex items-center gap-3 flex-1">
-              <div className="shrink-0">
-                <p className="text-[13px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">Transaction Types Identified</p>
-                <p className="text-[11px] text-[#9CA3AF] mt-0.5">{stats.identifiedPercentage === 100 ? "All types categorized" : "Some types need review"}</p>
-              </div>
-              <div className="flex items-center gap-2.5 ml-auto">
-                <div className="w-[180px]">
-                  <div className="h-2.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-[#2563EB] transition-all duration-500"
-                      style={{ width: `${stats.identifiedPercentage}%` }}
-                    />
+
+              {/* Progress bars */}
+              <div className="space-y-3 border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-4">
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[12px] text-[#6B7280] w-[60px] shrink-0">Values</span>
+                  <div className="flex-1">
+                    <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                      <div className="h-full rounded-full bg-[#16A34A] transition-all duration-500" style={{ width: '100%' }} />
+                    </div>
                   </div>
+                  <span className="text-[13px] font-bold text-[#16A34A] w-[40px] text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>100%</span>
                 </div>
-                <span className={cn(
-                  "text-[14px] font-bold min-w-[40px] text-right",
-                  stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]"
-                )} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
+                <div className="flex items-center gap-2.5">
+                  <span className="text-[12px] text-[#6B7280] w-[60px] shrink-0">Types</span>
+                  <div className="flex-1">
+                    <div className="h-2 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                      <div className="h-full rounded-full bg-[#2563EB] transition-all duration-500" style={{ width: `${stats.identifiedPercentage}%` }} />
+                    </div>
+                  </div>
+                  <span className={cn("text-[13px] font-bold w-[40px] text-right", stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
+                </div>
               </div>
             </div>
+
           </div>
         )}
 
