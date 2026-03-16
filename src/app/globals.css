@@ -169,3 +169,45 @@
 .dark .transaction-table th[class*="cursor-pointer"]:hover {
   background-color: rgba(255, 255, 255, 0.03);
 }
+
+/* Scroll shadow at top of table when scrolled */
+.table-scroll-shadow {
+  background:
+    linear-gradient(to bottom, white 30%, transparent) center top,
+    linear-gradient(to top, white 30%, transparent) center bottom,
+    linear-gradient(to bottom, rgba(0,0,0,0.04), transparent 8px) center top,
+    linear-gradient(to top, rgba(0,0,0,0.04), transparent 8px) center bottom;
+  background-repeat: no-repeat;
+  background-size: 100% 20px, 100% 20px, 100% 8px, 100% 8px;
+  background-attachment: local, local, scroll, scroll;
+}
+
+/* Badge shine sweep animation */
+@keyframes badgeShine {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.badge-shine {
+  position: relative;
+  overflow: hidden;
+}
+
+.badge-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: badgeShine 3s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}

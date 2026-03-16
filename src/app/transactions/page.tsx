@@ -1265,7 +1265,7 @@ function TransactionsContent() {
         {/* ── Score-First Header ── */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h1 className="text-[28px] font-bold tracking-[-0.02em] text-[#1A1A1A] dark:text-[#F5F5F5]">Transactions</h1>
+            <h1 className="text-[28px] font-light tracking-[-0.02em] text-[#1A1A1A] dark:text-[#F5F5F5]">Transactions</h1>
             {stats && (
               stats.unlabelledCount === 0 ? (
                 <span className="inline-flex items-center gap-1 rounded-md bg-pill-green-bg dark:bg-[rgba(22,163,74,0.12)] text-pill-green-text dark:text-[#22C55E] px-2.5 py-1 text-xs font-medium">
@@ -1530,7 +1530,7 @@ function TransactionsContent() {
                 <p className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase mb-3">Badges</p>
                 <div className="flex items-start gap-5">
                   <div className="relative group flex flex-col items-center">
-                    <div className="relative">
+                    <div className="relative badge-shine">
                       <img src="/badges/values-identified.png" alt="Values Identified" className="h-24 w-24 object-contain drop-shadow-md" />
                       <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#16A34A] flex items-center justify-center shadow-sm">
                         <Check className="h-3 w-3 text-white" />
@@ -1545,7 +1545,7 @@ function TransactionsContent() {
                   </div>
                   <div className="relative group flex flex-col items-center">
                     {stats.identifiedPercentage === 100 ? (
-                      <div className="relative">
+                      <div className="relative badge-shine">
                         <img src="/badges/types-identified.png" alt="Types Identified" className="h-24 w-24 object-contain drop-shadow-md" />
                         <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-[#2563EB] flex items-center justify-center shadow-sm">
                           <Check className="h-3 w-3 text-white" />
@@ -1868,7 +1868,7 @@ function TransactionsContent() {
 
         {/* ── Transaction Table (no card wrapper — Horizon spec) ── */}
         <div data-onboarding="review-transactions" className="border border-[#E5E5E0] dark:border-[#333333] rounded-lg">
-          <div className="overflow-auto max-h-[calc(100vh-280px)] rounded-lg">
+          <div className="overflow-auto max-h-[calc(100vh-280px)] rounded-lg table-scroll-shadow">
             <Table className={cn("transaction-table", `density-${tableDensity}`)}>
               <TableHeader className="sticky top-0 z-10 bg-[#FAFAF8] dark:bg-[#161616]">
                 <TableRow className="border-b border-[#E5E5E0] dark:border-[#333333]">
@@ -1899,6 +1899,7 @@ function TransactionsContent() {
                   <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                     Status
                   </TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
                 <TableBody>
@@ -1933,18 +1934,20 @@ function TransactionsContent() {
                     <TableRow
                       key={transaction.id}
                       className={cn(
-                        "cursor-pointer border-b border-[#F0F0EB] dark:border-[#2A2A2A]",
+                        "group cursor-pointer border-b border-[#F0F0EB] dark:border-[#2A2A2A]",
                         selectedTransactionIds.has(transaction.id) && "bg-[#EFF6FF] dark:bg-[rgba(59,130,246,0.1)]"
                       )}
                       onClick={() => !isBulkMode && handleOpenDetail(transaction)}
                     >
                       {/* Checkbox — always visible */}
                       <TableCell className="w-11 border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
-                        <Checkbox
-                          checked={selectedTransactionIds.has(transaction.id)}
-                          onCheckedChange={(checked) => handleBulkSelect(transaction.id, checked as boolean)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
+                        <div className="opacity-30 group-hover:opacity-100 transition-opacity">
+                          <Checkbox
+                            checked={selectedTransactionIds.has(transaction.id)}
+                            onCheckedChange={(checked) => handleBulkSelect(transaction.id, checked as boolean)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
                       </TableCell>
 
                       {/* Type */}
@@ -2154,6 +2157,18 @@ function TransactionsContent() {
                         )}
                       </TableCell>
 
+                      {/* Row hover actions */}
+                      <TableCell className="w-10">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                          <button className="p-1 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A]" onClick={(e) => { e.stopPropagation(); handleOpenDetail(transaction); }}>
+                            <Pencil className="h-3.5 w-3.5 text-[#9CA3AF] hover:text-[#1A1A1A]" />
+                          </button>
+                          <button className="p-1 rounded hover:bg-[#FEF2F2] dark:hover:bg-[rgba(220,38,38,0.1)]" onClick={(e) => { e.stopPropagation(); handleDeleteTransaction(transaction.id); }}>
+                            <Trash2 className="h-3.5 w-3.5 text-[#9CA3AF] hover:text-[#DC2626]" />
+                          </button>
+                        </div>
+                      </TableCell>
+
                     </TableRow>
                   ))}
                     </React.Fragment>
@@ -2184,7 +2199,7 @@ function TransactionsContent() {
 
             {/* Pagination */}
             {!isLoadingTransactions && transactions.length > 0 && (
-              <div className="flex items-center justify-between px-4 h-12 border-t border-[#E5E5E0] dark:border-[#333333]">
+              <div className="flex items-center justify-between px-4 h-12 border-t border-[#E5E5E0] dark:border-[#333333] bg-[#FAFAF8] dark:bg-[#161616]">
                 <span className="text-xs text-[#6B7280]">
                   Showing <span style={{ fontVariantNumeric: 'tabular-nums' }}>{totalCount > 0 ? startIndex + 1 : 0}–{endIndex}</span> of <span className="font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">{totalCount.toLocaleString()}</span>
                 </span>
