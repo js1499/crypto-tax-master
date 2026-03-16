@@ -78,14 +78,15 @@
 @layer base {
   * {
     @apply border-border;
+    font-feature-settings: 'cv01' 1, 'cv02' 1, 'tnum' 1;
   }
 
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: 'cv01' 1, 'cv02' 1, 'tnum' 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
+    letter-spacing: -0.011em;
   }
 }
 
