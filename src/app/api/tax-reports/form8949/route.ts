@@ -93,7 +93,8 @@ export async function GET(request: NextRequest) {
       year,
       costBasisMethod,
       user.id, // Pass user ID to include CSV imports
-      filingStatus
+      filingStatus,
+      userWithWallets.timezone || "America/New_York"
     );
 
     // Optional: Get taxpayer info from request (for future enhancement)

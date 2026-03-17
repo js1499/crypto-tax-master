@@ -28,22 +28,10 @@ import {
 import {
   ArrowDownToLine,
   BarChart,
-  Calendar,
   FileText,
-  HelpCircle,
   Settings,
-  Download,
   Wallet,
 } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Progress } from "@/components/ui/progress";
 import {
   BarChart as RechartsBarChart,
   Bar,
@@ -54,121 +42,76 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useSession } from "next-auth/react";
 
-// Empty data instead of mock data
-const taxYears = ["2023", "2022", "2021", "2020"];
-
-// Removed mockReportData - using real data from API
-
 const taxForms = [
+  // IRS Forms
   {
     id: 1,
-    name: "Capital Gains CSV",
-    description: "A CSV of all of your capital gains/losses",
+    name: "IRS Form 8949 (PDF)",
+    description: "Capital gains and losses — required for filing",
     icon: FileText,
-    category: "capital-gains"
+    category: "irs",
+    pdfExport: true,
+    status: "needs-pdf" as const,
   },
   {
     id: 2,
-    name: "IRS Form 8949 (PDF)",
-    description: "Official IRS Form 8949 PDF for reporting capital gains and losses",
+    name: "IRS Schedule D",
+    description: "Summary of capital gains/losses — companion to Form 8949",
     icon: FileText,
     category: "irs",
-    pdfExport: true, // Flag to indicate PDF export
+    status: "needs-pdf" as const,
   },
+  // CSV Exports
   {
     id: 3,
-    name: "IRS Schedule D (Form 1040)",
-    description: "Reports your capital gains/losses (goes with 8949)",
+    name: "Capital Gains CSV",
+    description: "All capital gains and losses with cost basis details",
     icon: FileText,
-    category: "irs"
+    category: "csv",
+    status: "ready" as const,
   },
   {
     id: 4,
-    name: "IRS Schedule 1 (Form 1040)",
-    description: "Reports your crypto income",
+    name: "Income Report",
+    description: "All income from staking, airdrops, and rewards",
     icon: FileText,
-    category: "irs"
+    category: "csv",
+    status: "ready" as const,
   },
   {
     id: 5,
-    name: "Summary Report",
-    description: "PDF including income, expenses, and capital gains for the year",
+    name: "Transaction History",
+    description: "Complete transaction history for the year",
     icon: FileText,
-    category: "summary"
+    category: "csv",
+    status: "ready" as const,
   },
   {
     id: 6,
-    name: "TurboTax 1099-B",
-    description: "For import into TurboTax",
+    name: "Capital Gains by Asset",
+    description: "Gains and losses aggregated per asset",
     icon: FileText,
-    category: "tax-software"
+    category: "csv",
+    status: "ready" as const,
   },
   {
     id: 7,
-    name: "TurboTax 1099-B Aggregated",
-    description: "For over 4,000 transactions in the year",
+    name: "Summary Report",
+    description: "Complete tax summary with all key figures",
     icon: FileText,
-    category: "tax-software"
+    category: "csv",
+    status: "ready" as const,
   },
   {
     id: 8,
-    name: "TurboTax Futures Report",
-    description: "Separated futures trades for TurboTax",
+    name: "TurboTax 1099-B",
+    description: "CSV formatted for TurboTax import",
     icon: FileText,
-    category: "tax-software"
-  },
-  {
-    id: 9,
-    name: "TaxAct 1099-B",
-    description: "For import into TaxAct (Windows only)",
-    icon: FileText,
-    category: "tax-software"
-  },
-  {
-    id: 10,
-    name: "Perpetuals/Futures Report",
-    description: "Separated futures trades (taxed differently by jurisdiction)",
-    icon: FileText,
-    category: "detailed"
-  },
-  {
-    id: 11,
-    name: "Transaction History",
-    description: "CSV of all transactions with sent/received transfers",
-    icon: FileText,
-    category: "detailed"
-  },
-  {
-    id: 12,
-    name: "Capital Gains (Breakdown by Asset)",
-    description: "CSV with proceeds, basis, and gain/loss per asset",
-    icon: FileText,
-    category: "detailed"
-  },
-  {
-    id: 13,
-    name: "Transactions Per Asset",
-    description: "XLSX file with separate sheets for trades for each asset",
-    icon: FileText,
-    category: "detailed"
-  },
-  {
-    id: 14,
-    name: "Income Report",
-    description: "CSV of all transactions where you received income",
-    icon: FileText,
-    category: "detailed"
-  },
-  {
-    id: 15,
-    name: "Balance Report",
-    description: "Report of calculated asset balances at year-end",
-    icon: FileText,
-    category: "detailed"
+    category: "tax-software",
+    status: "ready" as const,
   },
 ];
 
@@ -196,7 +139,7 @@ export default function TaxReportsPage() {
   const [error, setError] = useState<string | null>(null);
   const [costBasisMethod, setCostBasisMethod] = useState<"FIFO" | "LIFO" | "HIFO">("FIFO");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const { data: session, status: sessionStatus } = useSession();
+  const { status: sessionStatus } = useSession();
 
   // Set mounted and current year after component mounts (client-side only)
   useEffect(() => {
@@ -336,98 +279,6 @@ export default function TaxReportsPage() {
     );
   }
 
-  const handleGenerateReport = async () => {
-    setIsGeneratingReport(true);
-    try {
-      // Generate Form 8949 PDF
-      await handleDownloadForm8949();
-      // Could add more reports here in the future
-    } catch (error) {
-      console.error("Error generating report:", error);
-    } finally {
-      setIsGeneratingReport(false);
-    }
-  };
-
-  const handleDownloadForm8949 = async () => {
-    // Check if user is authenticated
-    if (sessionStatus === "unauthenticated") {
-      toast.error("Please log in to generate tax reports");
-      return;
-    }
-    
-    if (sessionStatus === "loading") {
-      toast.info("Checking authentication...");
-      return;
-    }
-
-    try {
-      setIsGeneratingReport(true);
-      const response = await fetch(`/api/tax-reports/form8949?year=${selectedYear}`, {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMessage = errorData.error || errorData.details || "Failed to generate Form 8949 PDF";
-        
-        // If 401, suggest logging in
-        if (response.status === 401) {
-          toast.error("Session expired. Please log in again.");
-          // Could redirect to login here if needed
-          return;
-        }
-        
-        throw new Error(errorMessage);
-      }
-      
-      // Get the PDF blob
-      const blob = await response.blob();
-      
-      // Verify it's actually a PDF
-      if (blob.type !== "application/pdf" && blob.size === 0) {
-        throw new Error("Received empty or invalid PDF file");
-      }
-      
-      // Create download link
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Form8949-${selectedYear}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      
-      // Cleanup
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-      
-      // Show success message
-      toast.success(`Form 8949 PDF downloaded successfully!`);
-      
-      // Complete onboarding step if active
-      try {
-        const { useOnboarding } = require("@/components/onboarding/onboarding-provider");
-        const onboarding = useOnboarding();
-        if (onboarding.isActive) {
-          onboarding.completeCurrentStep();
-        }
-      } catch {
-        // Onboarding not available, ignore
-      }
-    } catch (error) {
-      console.error("Error downloading Form 8949:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to download Form 8949 PDF";
-      toast.error(errorMessage);
-      throw error; // Re-throw to allow handleGenerateReport to catch it
-    } finally {
-      setIsGeneratingReport(false);
-    }
-  };
-
   const handleDownloadExport = async (exportType: string, filename: string) => {
     // Check if user is authenticated
     if (sessionStatus === "unauthenticated") {
@@ -495,27 +346,30 @@ export default function TaxReportsPage() {
   };
 
   const handleFormDownload = async (form: typeof taxForms[0]) => {
+    // Block downloads for forms that need PDF implementation
+    if (form.status === "needs-pdf") {
+      toast.info(`${form.name} requires fillable PDF support — coming soon.`);
+      return;
+    }
+
     try {
-      // Map form names to export types
       const formExportMap: Record<string, { type: string; filename: string }> = {
         "Capital Gains CSV": { type: "capital-gains-csv", filename: `Capital-Gains-${selectedYear}.csv` },
         "Transaction History": { type: "transaction-history", filename: `Transaction-History-${selectedYear}.csv` },
         "Income Report": { type: "income-report", filename: `Income-Report-${selectedYear}.csv` },
-        "Capital Gains (Breakdown by Asset)": { type: "capital-gains-by-asset", filename: `Capital-Gains-by-Asset-${selectedYear}.csv` },
+        "Capital Gains by Asset": { type: "capital-gains-by-asset", filename: `Capital-Gains-by-Asset-${selectedYear}.csv` },
+        "Summary Report": { type: "summary-report", filename: `Crypto-Tax-Summary-${selectedYear}.csv` },
+        "TurboTax 1099-B": { type: "turbotax-1099b", filename: `TurboTax-1099B-${selectedYear}.csv` },
       };
 
-      if (form.pdfExport && form.name.includes("Form 8949")) {
-        await handleDownloadForm8949();
-      } else if (formExportMap[form.name]) {
+      if (formExportMap[form.name]) {
         const exportInfo = formExportMap[form.name];
         await handleDownloadExport(exportInfo.type, exportInfo.filename);
       } else {
-        // For forms not yet implemented, show a message
-        toast.info(`${form.name} export is coming soon. Please check back later.`);
+        toast.info(`${form.name} export is not yet available.`);
       }
     } catch (error) {
       console.error(`Error downloading ${form.name}:`, error);
-      // Error already handled in individual functions
     }
   };
 
@@ -552,26 +406,7 @@ export default function TaxReportsPage() {
       ]
     : [];
 
-  // Calculate income totals by type (simplified - would need detailed breakdown from API)
   const totalIncome = parseCurrency(displayData.totalIncome);
-  const incomeTotals = {
-    trading: 0,
-    interest: 0,
-    mining: 0,
-    rewards: totalIncome * 0.4, // Estimate
-    other: totalIncome * 0.6, // Estimate
-  };
-
-  // Sample data for income chart
-  const incomeData = totalIncome > 0
-    ? [
-        { name: "Rewards", value: incomeTotals.rewards },
-        { name: "Other", value: incomeTotals.other },
-      ]
-    : [];
-
-  const safeCalculate = (value: number, total: number) =>
-    total === 0 ? 0 : (value / total) * 100;
 
   // Calculate estimated tax liability using proper ST/LT rates
   // ST gains taxed as ordinary income (using ~24% as mid-bracket estimate)
@@ -644,25 +479,11 @@ export default function TaxReportsPage() {
                   </div>
                   <div className="space-y-2">
                     <h4 className="font-medium">Tax Jurisdiction</h4>
-                    <div className="grid grid-cols-1 gap-2">
-                      <Button variant="outline" className="justify-start">
-                        United States
-                      </Button>
-                      <Button variant="outline" className="justify-start">
-                        European Union
-                      </Button>
-                      <Button variant="outline" className="justify-start">
-                        Custom
-                      </Button>
-                    </div>
+                    <p className="text-sm text-muted-foreground">United States (IRS)</p>
                   </div>
                 </div>
               </DialogContent>
             </Dialog>
-            <Button variant="outline">
-              <Download className="mr-2 h-4 w-4" />
-              <span>Export</span>
-            </Button>
           </div>
         </div>
 
@@ -787,7 +608,6 @@ export default function TaxReportsPage() {
           <TabsList className="mb-6">
             <TabsTrigger value="forms">Tax Forms</TabsTrigger>
             <TabsTrigger value="summary">Tax Summary</TabsTrigger>
-            <TabsTrigger value="history">Report History</TabsTrigger>
           </TabsList>
           <TabsContent value="forms">
             <Card>
@@ -799,13 +619,11 @@ export default function TaxReportsPage() {
                   <TabsList className="mb-4 flex flex-wrap justify-start">
                     <TabsTrigger value="all">All Reports</TabsTrigger>
                     <TabsTrigger value="irs">IRS Forms</TabsTrigger>
+                    <TabsTrigger value="csv">CSV Exports</TabsTrigger>
                     <TabsTrigger value="tax-software">Tax Software</TabsTrigger>
-                    <TabsTrigger value="detailed">Detailed Reports</TabsTrigger>
-                    <TabsTrigger value="capital-gains">Capital Gains</TabsTrigger>
-                    <TabsTrigger value="summary">Summary</TabsTrigger>
                   </TabsList>
-                  
-                  {['all', 'irs', 'tax-software', 'detailed', 'capital-gains', 'summary'].map((category) => (
+
+                  {['all', 'irs', 'csv', 'tax-software'].map((category) => (
                     <TabsContent key={category} value={category}>
                       <div className="space-y-4">
                         {taxForms
@@ -826,24 +644,29 @@ export default function TaxReportsPage() {
                                   </p>
                                 </div>
                               </div>
-                              <Button
-                                size="sm"
-                                data-onboarding={form.name.includes("Form 8949") ? "generate-report" : undefined}
-                                onClick={() => handleFormDownload(form)}
-                                disabled={isGeneratingReport || isLoading}
-                              >
-                                {isGeneratingReport ? (
-                                  <>
-                                    <div className="mr-1 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                    Generating...
-                                  </>
-                                ) : (
-                                  <>
-                                    <ArrowDownToLine className="mr-1 h-4 w-4" />
-                                    Download
-                                  </>
-                                )}
-                              </Button>
+                              {form.status === "needs-pdf" ? (
+                                <span className="inline-flex items-center rounded-md bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 ring-1 ring-inset ring-amber-600/20">
+                                  PDF Coming Soon
+                                </span>
+                              ) : (
+                                <Button
+                                  size="sm"
+                                  onClick={() => handleFormDownload(form)}
+                                  disabled={isGeneratingReport || isLoading}
+                                >
+                                  {isGeneratingReport ? (
+                                    <>
+                                      <div className="mr-1 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                      Generating...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <ArrowDownToLine className="mr-1 h-4 w-4" />
+                                      Download
+                                    </>
+                                  )}
+                                </Button>
+                              )}
                             </div>
                           ))}
                       </div>
@@ -851,26 +674,6 @@ export default function TaxReportsPage() {
                   ))}
                 </Tabs>
 
-                <div className="mt-6 rounded-lg border border-dashed border-border p-6 text-center">
-                  <h3 className="text-lg font-medium">Generate Tax Report</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Generate your complete tax report package for {selectedYear}
-                  </p>
-                  <Button
-                    className="mt-4"
-                    onClick={handleGenerateReport}
-                    disabled={isGeneratingReport}
-                  >
-                    {isGeneratingReport ? (
-                      <>Generating Report...</>
-                    ) : (
-                      <>
-                        <FileText className="mr-2 h-4 w-4" />
-                        Generate Complete Report
-                      </>
-                    )}
-                  </Button>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -936,69 +739,13 @@ export default function TaxReportsPage() {
                 </div>
 
                 <div className="flex justify-center">
-                  <Button>
-                    <FileText className="mr-2 h-4 w-4" />
-                    Download Tax Summary
+                  <Button
+                    onClick={() => handleDownloadExport("summary-report", `Crypto-Tax-Summary-${selectedYear}.csv`)}
+                    disabled={isGeneratingReport || isLoading}
+                  >
+                    <ArrowDownToLine className="mr-2 h-4 w-4" />
+                    Download Tax Summary CSV
                   </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-          <TabsContent value="history">
-            <Card>
-              <CardHeader>
-                <CardTitle>Report History</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="rounded-lg border border-border p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-sm font-medium">
-                          2023 Tax Report Package
-                        </h3>
-                        <p className="text-xs text-muted-foreground">
-                          Generated on Apr 1, 2024
-                        </p>
-                      </div>
-                      <Button size="sm">
-                        <ArrowDownToLine className="mr-1 h-4 w-4" />
-                        Download
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-border p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-sm font-medium">
-                          2022 Tax Report Package
-                        </h3>
-                        <p className="text-xs text-muted-foreground">
-                          Generated on Mar 15, 2023
-                        </p>
-                      </div>
-                      <Button size="sm">
-                        <ArrowDownToLine className="mr-1 h-4 w-4" />
-                        Download
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="rounded-lg border border-border p-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="text-sm font-medium">
-                          2021 Tax Report Package
-                        </h3>
-                        <p className="text-xs text-muted-foreground">
-                          Generated on Apr 5, 2022
-                        </p>
-                      </div>
-                      <Button size="sm">
-                        <ArrowDownToLine className="mr-1 h-4 w-4" />
-                        Download
-                      </Button>
-                    </div>
-                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1074,16 +821,37 @@ export default function TaxReportsPage() {
           <CardHeader>
             <CardTitle>Income</CardTitle>
           </CardHeader>
-          <CardContent className="h-[400px]">
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <Wallet className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                <h3 className="text-lg font-medium mb-2">No income data</h3>
-                <p className="text-muted-foreground max-w-md mx-auto">
-                  Connect accounts or add transactions to see your income breakdown.
-                </p>
+          <CardContent className="h-[300px]">
+            {totalIncome > 0 ? (
+              <div className="flex flex-col items-center justify-center h-full gap-4">
+                <div className="text-center">
+                  <div className="text-3xl font-bold">
+                    ${totalIncome.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Total crypto income for {selectedYear} ({displayData.incomeEvents} events)
+                  </p>
+                </div>
+                <div className="w-full max-w-sm">
+                  <div className="h-3 rounded-full bg-blue-500/20 overflow-hidden">
+                    <div className="h-full rounded-full bg-blue-500" style={{ width: "100%" }} />
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                    Includes staking rewards, airdrops, mining, and other income
+                  </p>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center">
+                  <Wallet className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <h3 className="text-lg font-medium mb-2">No income data</h3>
+                  <p className="text-muted-foreground max-w-md mx-auto">
+                    Connect accounts or add transactions to see your income breakdown.
+                  </p>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

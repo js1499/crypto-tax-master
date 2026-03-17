@@ -288,7 +288,7 @@ export function generateForm8949PDF(
         try {
           const pages = doc.bufferedPageRange();
           if (pages && pages.count > 0) {
-            for (let i = pages.start; i <= pages.count; i++) {
+            for (let i = pages.start; i < pages.start + pages.count; i++) {
               doc.switchToPage(i);
               doc.fontSize(8).font("Helvetica");
               doc.text(

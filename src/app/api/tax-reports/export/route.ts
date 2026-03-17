@@ -14,6 +14,8 @@ import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
  * - transaction-history: CSV of all transactions
  * - income-report: CSV of income-generating transactions
  * - capital-gains-by-asset: CSV with proceeds, basis, and gain/loss per asset
+ * - turbotax-1099b: TurboTax-compatible 1099-B import CSV
+ * - summary-report: Human-readable tax summary CSV
  */
 export async function GET(request: NextRequest) {
   try {
@@ -97,7 +99,8 @@ export async function GET(request: NextRequest) {
       year,
       costBasisMethod,
       user.id,
-      filingStatus
+      filingStatus,
+      userWithWallets.timezone || "America/New_York"
     );
 
     // Generate CSV based on export type
@@ -120,6 +123,14 @@ export async function GET(request: NextRequest) {
       case "capital-gains-by-asset":
         csvContent = generateCapitalGainsByAssetCSV(report);
         filename = `Capital-Gains-by-Asset-${year}.csv`;
+        break;
+      case "turbotax-1099b":
+        csvContent = generateTurboTax1099BCSV(report);
+        filename = `TurboTax-1099B-${year}.csv`;
+        break;
+      case "summary-report":
+        csvContent = generateSummaryReportCSV(report, year);
+        filename = `Crypto-Tax-Summary-${year}.csv`;
         break;
       default:
         return NextResponse.json(
@@ -205,6 +216,13 @@ async function generateTransactionHistoryCSV(
   const startDate = new Date(`${year}-01-01T00:00:00Z`);
   const endDate = new Date(`${year}-12-31T23:59:59Z`);
 
+  // Get user's connected exchange names for filtering
+  const userExchanges = await prisma.exchange.findMany({
+    where: { userId },
+    select: { name: true },
+  });
+  const exchangeNames = userExchanges.map(e => e.name);
+
   // Build where clause (same logic as tax calculator)
   const orConditions: any[] = [];
   if (walletAddresses.length > 0) {
@@ -216,10 +234,12 @@ async function generateTransactionHistoryCSV(
       { wallet_address: null },
     ],
   });
-  // Also include exchange API imports (Coinbase, Binance, etc.)
-  orConditions.push({
-    source_type: "exchange_api",
-  });
+  // Also include exchange API imports (Coinbase, Binance, etc.) - filtered by user's exchanges
+  if (exchangeNames.length > 0) {
+    orConditions.push({
+      AND: [{ source_type: "exchange_api" }, { source: { in: exchangeNames } }],
+    });
+  }
 
   const transactions = await prisma.transaction.findMany({
     where: {
@@ -356,4 +376,80 @@ function generateCapitalGainsByAssetCSV(report: TaxReport): string {
     ]);
 
   return [headers, ...rows].map(csvRow).join("\n");
+}
+
+/**
+ * Generate TurboTax 1099-B CSV
+ * Formats capital gains data in TurboTax's expected import format
+ */
+function generateTurboTax1099BCSV(report: TaxReport): string {
+  const headers = [
+    "Description of property",
+    "Date acquired",
+    "Date sold",
+    "Sales price",
+    "Cost or other basis",
+    "Adjustment code",
+    "Adjustment amount",
+    "Gain or loss",
+  ];
+
+  const formatDate = (date: Date): string => {
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const year = date.getFullYear();
+    return `${month}/${day}/${year}`;
+  };
+
+  const rows = report.taxableEvents.map((event: any) => {
+    const isWashSale = event.washSale === true;
+    return [
+      `${event.amount} ${event.asset}`,
+      event.dateAcquired ? formatDate(new Date(event.dateAcquired)) : formatDate(new Date(event.date)),
+      formatDate(new Date(event.date)),
+      event.proceeds.toFixed(2),
+      event.costBasis.toFixed(2),
+      isWashSale ? "W" : "",
+      isWashSale ? event.washSaleDisallowed?.toFixed(2) || "0.00" : "",
+      event.gainLoss.toFixed(2),
+    ];
+  });
+
+  return [headers, ...rows].map(csvRow).join("\n");
+}
+
+/**
+ * Generate Summary Report CSV
+ * Human-readable summary of tax data for the year
+ */
+function generateSummaryReportCSV(report: TaxReport, year: number): string {
+  const fmt = (n: number): string => `$${n.toFixed(2)}`;
+
+  const netST = Math.max(0, report.netShortTermGain);
+  const netLT = Math.max(0, report.netLongTermGain);
+  const estimatedLiability = netST * 0.24 + netLT * 0.15;
+
+  const lines: string[] = [
+    `Crypto Tax Summary Report - ${year}`,
+    "",
+    "Capital Gains Summary",
+    csvRow(["Short-term Gains", fmt(report.shortTermGains)]),
+    csvRow(["Short-term Losses", fmt(report.shortTermLosses)]),
+    csvRow(["Long-term Gains", fmt(report.longTermGains)]),
+    csvRow(["Long-term Losses", fmt(report.longTermLosses)]),
+    csvRow(["Net Short-term", fmt(report.netShortTermGain)]),
+    csvRow(["Net Long-term", fmt(report.netLongTermGain)]),
+    csvRow(["Total Net Gain/Loss", fmt(report.totalTaxableGain)]),
+    csvRow(["Deductible Losses", fmt(report.deductibleLosses)]),
+    csvRow(["Loss Carryover", fmt(report.lossCarryover)]),
+    "",
+    "Income Summary",
+    csvRow(["Total Income", fmt(report.totalIncome)]),
+    csvRow(["Income Events", report.incomeEvents.length.toString()]),
+    "",
+    "Tax Estimate",
+    csvRow(["Estimated Liability", fmt(estimatedLiability)]),
+  ];
+
+  return lines.join("\n");
 }
