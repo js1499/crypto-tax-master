@@ -26,6 +26,13 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import axios from "axios";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Define types
 interface BaseAccount {
@@ -456,26 +463,29 @@ function AccountsContent() {
             {/* Bulk actions in header */}
             {!loading && !error && allAccounts.length > 0 && (
               <>
-                {exchanges.filter(e => e.isConnected).length > 0 && (
-                  <Button
-                    variant="outline"
-                    onClick={async () => {
-                      setSyncing("all");
-                      try {
-                        const response = await axios.post('/api/exchanges/sync', {});
-                        if (response.data.status === "success") {
-                          toast.success(`Synced ${response.data.transactionsAdded} transaction(s)`);
-                          fetchWallets();
-                        }
-                      } catch { toast.error("Failed to sync exchanges"); }
-                      finally { setSyncing(null); }
-                    }}
-                    disabled={syncing === "all"}
-                  >
-                    {syncing === "all" ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RotateCw className="mr-2 h-4 w-4" />}
-                    {syncing === "all" ? "Syncing..." : "Sync All"}
-                  </Button>
-                )}
+                <Button
+                  variant="outline"
+                  onClick={async () => {
+                    setSyncing("all");
+                    try {
+                      // Sync all wallets
+                      for (const wallet of accounts) {
+                        await handleSyncWallet(wallet.id);
+                      }
+                      // Sync connected exchanges
+                      for (const exchange of exchanges.filter(e => e.isConnected)) {
+                        await handleSyncExchange(exchange.id);
+                      }
+                      toast.success("All accounts synced");
+                      fetchWallets();
+                    } catch { toast.error("Failed to sync"); }
+                    finally { setSyncing(null); }
+                  }}
+                  disabled={syncing === "all"}
+                >
+                  {syncing === "all" ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RotateCw className="mr-2 h-4 w-4" />}
+                  {syncing === "all" ? "Syncing..." : "Sync All"}
+                </Button>
                 <Button
                   variant="outline"
                   onClick={handleEnrichAll}
@@ -499,15 +509,16 @@ function AccountsContent() {
 
         {/* ── Filter Bar (Horizon style) ── */}
         <div className="flex items-center gap-2">
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="h-9 rounded-lg border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] px-3 text-sm font-medium text-[#1A1A1A] dark:text-[#F5F5F5] focus:outline-none focus:ring-2 focus:ring-primary/20"
-          >
-            <option value="all">All Accounts</option>
-            <option value="wallets">Wallets</option>
-            <option value="exchanges">Exchanges</option>
-          </select>
+          <Select value={filter} onValueChange={setFilter}>
+            <SelectTrigger className="w-[160px] h-9 text-sm font-medium">
+              <SelectValue placeholder="All Accounts" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Accounts</SelectItem>
+              <SelectItem value="wallets">Wallets</SelectItem>
+              <SelectItem value="exchanges">Exchanges</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* OAuth Status Messages */}
