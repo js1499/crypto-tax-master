@@ -10,7 +10,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PlusCircle, Wallet, Building, ExternalLink, AlertCircle, CheckCircle, RefreshCw, RotateCw, Trash2, Link2, DollarSign } from "lucide-react";
+import { PlusCircle, Wallet, Building, ExternalLink, AlertCircle, CheckCircle, RefreshCw, RotateCw, Trash2, Link2, DollarSign, Pencil, Copy } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -523,240 +532,205 @@ function AccountsContent() {
 
         {/* OAuth Status Messages */}
         {oauthStatus?.success && (
-          <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/20 flex items-center gap-3">
-            <CheckCircle className="h-5 w-5 text-green-500" />
-            <p>Successfully connected to Coinbase! Your accounts are now available below.</p>
+          <div className="p-3 rounded-lg bg-pill-green-bg dark:bg-[rgba(22,163,74,0.12)] border border-[#E5E5E0] dark:border-[#333] flex items-center gap-3">
+            <CheckCircle className="h-4 w-4 text-[#16A34A]" />
+            <p className="text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5]">Successfully connected to Coinbase!</p>
           </div>
         )}
-        
         {oauthStatus?.error && (
-          <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center gap-3">
-            <AlertCircle className="h-5 w-5 text-red-500" />
-            <p>Failed to connect to Coinbase: {oauthStatus.error}</p>
-            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setIsAddDialogOpen(true)}>
-              Try Again
-            </Button>
+          <div className="p-3 rounded-lg bg-pill-red-bg dark:bg-[rgba(220,38,38,0.12)] border border-[#E5E5E0] dark:border-[#333] flex items-center gap-3">
+            <AlertCircle className="h-4 w-4 text-[#DC2626]" />
+            <p className="text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5]">Failed to connect: {oauthStatus.error}</p>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setIsAddDialogOpen(true)}>Try Again</Button>
           </div>
         )}
-
-        {/* Loading state */}
-        {loading && (
-          <div className="flex justify-center items-center p-12">
-            <RefreshCw className="h-8 w-8 animate-spin text-primary" />
-            <span className="ml-2">Loading accounts...</span>
-          </div>
-        )}
-
-        {/* Error state */}
         {error && !loading && (
-          <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center gap-3">
-            <AlertCircle className="h-5 w-5 text-red-500" />
-            <p>{error}</p>
-            <Button variant="outline" size="sm" className="ml-auto" onClick={handleRefresh}>
-              Try Again
-            </Button>
+          <div className="p-3 rounded-lg bg-pill-red-bg dark:bg-[rgba(220,38,38,0.12)] border border-[#E5E5E0] dark:border-[#333] flex items-center gap-3">
+            <AlertCircle className="h-4 w-4 text-[#DC2626]" />
+            <p className="text-[13px]">{error}</p>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={handleRefresh}>Try Again</Button>
           </div>
         )}
 
-        {/* Empty state - shows when no accounts exist */}
-        {!loading && !error && allAccounts.length === 0 && (
-          <div className="flex flex-col items-center justify-center p-12 text-center border border-dashed rounded-lg">
-            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-              <Wallet className="h-6 w-6 text-primary" />
-            </div>
-            <h3 className="text-lg font-medium mb-2">No accounts connected</h3>
-            <p className="text-muted-foreground mb-6 max-w-md">
-              Connect your crypto wallets and exchanges to track your portfolio and calculate tax reports.
-            </p>
-            <Button
-              onClick={() => setIsAddDialogOpen(true)}
-              data-onboarding="connect-wallet"
-            >
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add Account
-            </Button>
-          </div>
-        )}
-
-        {/* Account list - shows when accounts exist */}
-        {!loading && !error && allAccounts.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredAccounts.map((account) => {
-              const isExchange = account.type === "exchange";
-              const exchangeAccount = isExchange 
-                ? exchanges.find(e => e.id === account.id)
-                : null;
-
-              return (
-                <Card key={account.id}>
-                  <CardHeader className="pb-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-lg capitalize">{account.name}</CardTitle>
-                        <CardDescription>
-                          {account.provider === 'coinbase' ? 'Coinbase Account' : account.provider}
-                        </CardDescription>
+        {/* ── Accounts Table ── */}
+        <div className="border border-[#E5E5E0] dark:border-[#333] rounded-lg">
+          <div className="overflow-auto max-h-[calc(100vh-340px)]">
+            <Table>
+              <TableHeader className="sticky top-0 z-10 bg-[#FAFAF8] dark:bg-[#161616]">
+                <TableRow className="border-b border-[#E5E5E0] dark:border-[#333]">
+                  <TableHead className="w-11 border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                    <Checkbox />
+                  </TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="inline-block h-4 w-4 rounded-full bg-primary shrink-0" />
+                      {loading ? "..." : filteredAccounts.length} Accounts
+                    </span>
+                  </TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Type</TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Address</TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Transactions</TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Status</TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Last Synced</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <TableRow key={i} className="border-b border-[#F0F0EB] dark:border-[#2A2A2A]">
+                      <TableCell colSpan={8}>
+                        <div className="flex items-center gap-4 h-10">
+                          <div className="h-5 w-5 skeleton-pulse rounded" />
+                          <div className="h-4 w-32 skeleton-pulse rounded" />
+                          <div className="h-5 w-16 skeleton-pulse rounded-md" />
+                          <div className="h-4 w-24 skeleton-pulse rounded" />
+                          <div className="h-4 w-12 skeleton-pulse rounded" />
+                          <div className="h-4 w-20 skeleton-pulse rounded" />
+                          <div className="h-4 w-20 skeleton-pulse rounded" />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : !error && filteredAccounts.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8}>
+                      <div className="py-16 text-center">
+                        <Wallet className="h-12 w-12 text-[#9CA3AF] mx-auto mb-4" />
+                        <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">No accounts connected</p>
+                        <p className="text-sm text-[#6B7280] mt-2">Connect your first wallet or exchange to get started.</p>
+                        <Button className="mt-4" onClick={() => setIsAddDialogOpen(true)} data-onboarding="connect-wallet">
+                          <PlusCircle className="mr-2 h-4 w-4" />
+                          Add Account
+                        </Button>
                       </div>
-                      <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        {account.type === "wallet" ? (
-                          <Wallet className="h-5 w-5 text-primary" />
-                        ) : (
-                          <Building className="h-5 w-5 text-primary" />
-                        )}
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2 text-sm">
-                      {account.type === "wallet" ? (
-                        <>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Address</span>
-                            <span className="font-mono">
-                              {account.address && account.address.length > 10
-                                ? `${account.address.slice(0, 6)}...${account.address.slice(-4)}`
-                                : account.address || "N/A"}
-                            </span>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredAccounts.map((account) => {
+                    const isExchange = account.type === "exchange";
+                    const exchangeAccount = isExchange ? exchanges.find(e => e.id === account.id) : null;
+                    const isConnected = isExchange ? exchangeAccount?.isConnected : true;
+                    const lastSync = isExchange ? exchangeAccount?.lastSyncAt : account.updatedAt;
+                    const txCount = account.type === "wallet" ? (account as WalletAccount).transactionCount : null;
+                    const address = account.type === "wallet" ? (account as WalletAccount).address : account.id;
+
+                    return (
+                      <TableRow
+                        key={account.id}
+                        className="group cursor-pointer border-b border-[#F0F0EB] dark:border-[#2A2A2A]"
+                      >
+                        {/* Checkbox */}
+                        <TableCell className="w-11 border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                          <div className="opacity-30 group-hover:opacity-100 transition-opacity">
+                            <Checkbox onClick={(e) => e.stopPropagation()} />
                           </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Transactions</span>
-                            <span>{(account as WalletAccount).transactionCount}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Connected</span>
-                            <span>
-                              {new Date(account.createdAt).toLocaleDateString()}
-                            </span>
-                          </div>
-                          <div className="flex flex-col gap-2 pt-2">
-                            <div className="flex gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex-1"
-                                onClick={() => handleSyncWallet(account.id)}
-                                disabled={syncing === account.id || enriching === account.id}
-                              >
-                                {syncing === account.id ? (
-                                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <RefreshCw className="mr-2 h-4 w-4" />
-                                )}
-                                {syncing === account.id ? "Syncing..." : "Sync"}
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex-1"
-                                onClick={() => handleEnrichWallet(account.id)}
-                                disabled={enriching === account.id || syncing === account.id || enrichingAll}
-                              >
-                                {enriching === account.id ? (
-                                  <DollarSign className="mr-2 h-4 w-4 animate-pulse" />
-                                ) : (
-                                  <DollarSign className="mr-2 h-4 w-4" />
-                                )}
-                                {enriching === account.id ? "Enriching..." : "Enrich Prices"}
-                              </Button>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleDisconnectWallet(account.id)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Disconnect
-                            </Button>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="flex justify-between items-center">
-                            <span className="text-muted-foreground">Status</span>
+                        </TableCell>
+
+                        {/* Account name */}
+                        <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                          <div className="flex items-center gap-2.5">
                             <span className={cn(
-                              "px-2 py-1 rounded-full text-xs",
-                              exchangeAccount?.isConnected
-                                ? "bg-green-500/10 text-green-500"
-                                : "bg-amber-500/10 text-amber-500"
+                              "inline-flex items-center justify-center h-[28px] w-[28px] rounded-lg text-white text-[11px] font-bold shrink-0",
+                              isExchange ? "bg-[#9333EA]" : "bg-[#2563EB]"
                             )}>
-                              {exchangeAccount?.isConnected ? "Connected" : "Needs Reconnect"}
+                              {isExchange ? <Building className="h-3.5 w-3.5" /> : <Wallet className="h-3.5 w-3.5" />}
                             </span>
-                          </div>
-                          {exchangeAccount?.lastSyncAt && (
-                            <div className="flex justify-between">
-                              <span className="text-muted-foreground">Last Sync</span>
-                              <span>
-                                {new Date(exchangeAccount.lastSyncAt).toLocaleDateString()}
-                              </span>
+                            <div>
+                              <p className="text-[14px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5] capitalize">{account.name}</p>
+                              <p className="text-[12px] text-[#9CA3AF]">{account.provider === 'coinbase' ? 'Coinbase' : account.provider}</p>
                             </div>
-                          )}
-                          <div className="flex gap-2 pt-2">
-                            {exchangeAccount?.isConnected ? (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="flex-1"
-                                onClick={() => handleSyncExchange(account.id)}
-                                disabled={syncing === account.id}
-                              >
-                                {syncing === account.id ? (
-                                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                  <RotateCw className="mr-2 h-4 w-4" />
-                                )}
-                                Sync
-                              </Button>
-                            ) : (
-                              // Show "Reconnect" if connection needs re-auth
-                              <Button
-                                size="sm"
-                                variant="default"
-                                className="flex-1"
-                                onClick={() => {
-                                  // Open the connect dialog for all exchanges (including Coinbase)
-                                  setIsAddDialogOpen(true);
-                                }}
-                              >
-                                <Link2 className="mr-2 h-4 w-4" />
-                                Reconnect
-                              </Button>
-                            )}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="flex-1"
-                              onClick={() => handleDisconnectExchange(account.id)}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Disconnect
-                            </Button>
                           </div>
-                        </>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-            
-            {/* Add Account Card */}
-            <Card
-              className="border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-accent/50 transition-colors"
-              onClick={() => setIsAddDialogOpen(true)}
-              data-onboarding="connect-wallet"
-            >
-              <CardContent className="p-6 text-center">
-                <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4 mx-auto">
-                  <PlusCircle className="h-6 w-6 text-primary" />
-                </div>
-                <h3 className="text-lg font-medium mb-2">Add Account</h3>
-                <p className="text-muted-foreground text-sm">
-                  Connect another wallet or exchange
-                </p>
-              </CardContent>
-            </Card>
+                        </TableCell>
+
+                        {/* Type pill */}
+                        <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                          <span className={cn(
+                            "inline-flex items-center rounded-md px-2.5 py-1 text-[13px] font-medium",
+                            isExchange
+                              ? "bg-pill-purple-bg text-pill-purple-text dark:bg-[rgba(147,51,234,0.12)] dark:text-[#A855F7]"
+                              : "bg-pill-blue-bg text-pill-blue-text dark:bg-[rgba(37,99,235,0.12)] dark:text-[#3B82F6]"
+                          )}>
+                            {isExchange ? "Exchange" : "Wallet"}
+                          </span>
+                        </TableCell>
+
+                        {/* Address */}
+                        <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontFamily: "'SF Mono', 'Fira Code', monospace", fontVariantNumeric: 'tabular-nums' }}>
+                              {address && address.length > 12 ? `${address.slice(0, 6)}...${address.slice(-4)}` : address || "—"}
+                            </span>
+                            {address && (
+                              <button
+                                className="p-0.5 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(address); toast.success("Address copied"); }}
+                              >
+                                <Copy className="h-3 w-3 text-[#9CA3AF]" />
+                              </button>
+                            )}
+                          </div>
+                        </TableCell>
+
+                        {/* Transactions */}
+                        <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                          <span className="text-[14px] text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {txCount != null ? txCount.toLocaleString() : "—"}
+                          </span>
+                        </TableCell>
+
+                        {/* Status */}
+                        <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                          <span className="inline-flex items-center gap-1.5 text-[13px]">
+                            <span className={cn("h-2 w-2 rounded-full shrink-0", isConnected ? "bg-[#16A34A]" : "bg-[#F97316]")} />
+                            <span className={isConnected ? "text-[#16A34A]" : "text-[#F97316]"}>
+                              {isConnected ? "Connected" : "Needs Reconnect"}
+                            </span>
+                          </span>
+                        </TableCell>
+
+                        {/* Last Synced */}
+                        <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                          <span className="text-[13px] text-[#6B7280]">
+                            {lastSync ? new Date(lastSync).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Never"}
+                          </span>
+                        </TableCell>
+
+                        {/* Actions */}
+                        <TableCell className="w-10">
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                            <button
+                              className="p-1 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A]"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isExchange) handleSyncExchange(account.id);
+                                else handleSyncWallet(account.id);
+                              }}
+                              title="Sync"
+                            >
+                              <RefreshCw className={cn("h-3.5 w-3.5 text-[#9CA3AF] hover:text-[#1A1A1A]", syncing === account.id && "animate-spin")} />
+                            </button>
+                            <button
+                              className="p-1 rounded hover:bg-[#FEF2F2] dark:hover:bg-[rgba(220,38,38,0.1)]"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isExchange) handleDisconnectExchange(account.id);
+                                else handleDisconnectWallet(account.id);
+                              }}
+                              title="Disconnect"
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-[#9CA3AF] hover:text-[#DC2626]" />
+                            </button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
           </div>
-        )}
+        </div>
         
       </div>
 
