@@ -35,10 +35,10 @@ import { cn } from "@/lib/utils";
 const taxForms = [
   {
     id: 1,
-    name: "IRS Form 8949 (PDF)",
+    name: "IRS Form 8949",
     description: "Capital gains and losses — required for filing",
     category: "irs" as const,
-    status: "needs-pdf" as const,
+    status: "ready" as const,
   },
   {
     id: 2,
@@ -46,6 +46,13 @@ const taxForms = [
     description: "Summary of capital gains/losses — companion to Form 8949",
     category: "irs" as const,
     status: "needs-pdf" as const,
+  },
+  {
+    id: 9,
+    name: "IRS Schedule 1",
+    description: "Additional income — Line 8z for crypto staking, airdrops, rewards",
+    category: "irs" as const,
+    status: "ready" as const,
   },
   {
     id: 3,
@@ -114,6 +121,7 @@ export default function TaxReportsPage() {
   const [costBasisMethod, setCostBasisMethod] = useState<"FIFO" | "LIFO" | "HIFO">("FIFO");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [formFilter, setFormFilter] = useState<"all" | "irs" | "csv" | "tax-software">("all");
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
   const { status: sessionStatus } = useSession();
 
   useEffect(() => {
@@ -124,23 +132,77 @@ export default function TaxReportsPage() {
     }
   }, []);
 
+  // Parallel fetch: load settings and tax report simultaneously on mount / year change
   useEffect(() => {
     if (!mounted) return;
-    const fetchSettings = async () => {
+
+    const fetchTaxReportWithMethod = async (method: "FIFO" | "LIFO" | "HIFO") => {
+      const response = await fetch(`/api/tax-reports?year=${selectedYear}&method=${method}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.details || "Failed to fetch tax report");
+      }
+      const data = await response.json();
+      if (data.status === "success" && data.report) {
+        return data.report as TaxReportData;
+      }
+      throw new Error(data.error || "Failed to load tax report");
+    };
+
+    const loadData = async () => {
+      setIsLoading(true);
+      setError(null);
+
       try {
-        const response = await fetch("/api/settings");
-        if (response.ok) {
-          const data = await response.json();
-          if (data.costBasisMethod) {
-            setCostBasisMethod(data.costBasisMethod);
+        // Fire both requests in parallel: settings + tax report with default FIFO
+        const [settingsResponse, fifoReport] = await Promise.all([
+          fetch("/api/settings").catch(() => null),
+          fetchTaxReportWithMethod("FIFO"),
+        ]);
+
+        // Show FIFO results immediately
+        setReportData(fifoReport);
+
+        // Parse settings to check actual cost basis method
+        let actualMethod: "FIFO" | "LIFO" | "HIFO" = "FIFO";
+        if (settingsResponse && settingsResponse.ok) {
+          const settingsData = await settingsResponse.json();
+          if (settingsData.costBasisMethod) {
+            actualMethod = settingsData.costBasisMethod;
           }
         }
+
+        setCostBasisMethod(actualMethod);
+
+        // If user's actual method differs from FIFO, re-fetch with the correct method
+        if (actualMethod !== "FIFO") {
+          const correctedReport = await fetchTaxReportWithMethod(actualMethod);
+          setReportData(correctedReport);
+        }
       } catch (err) {
-        console.error("Error fetching settings:", err);
+        const errorMessage = err instanceof Error ? err.message : "Failed to load tax report";
+        setError(errorMessage);
+        setReportData({
+          shortTermGains: "$0.00",
+          longTermGains: "$0.00",
+          shortTermLosses: "$0.00",
+          longTermLosses: "$0.00",
+          totalIncome: "$0.00",
+          netShortTermGain: "$0.00",
+          netLongTermGain: "$0.00",
+          totalTaxableGain: "$0.00",
+          taxableEvents: 0,
+          incomeEvents: 0,
+        });
+      } finally {
+        setIsLoading(false);
+        setInitialLoadDone(true);
       }
     };
-    fetchSettings();
-  }, [mounted]);
+
+    setInitialLoadDone(false);
+    loadData();
+  }, [selectedYear, mounted]);
 
   const handleMethodChange = async (method: "FIFO" | "LIFO" | "HIFO") => {
     if (method === costBasisMethod) return;
@@ -162,8 +224,10 @@ export default function TaxReportsPage() {
     }
   };
 
+  // Re-fetch tax report when cost basis method changes (e.g., user toggles in settings dialog)
+  // Skip during initial load — the parallel fetch already handles setting the correct method
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || !initialLoadDone) return;
     const fetchTaxReport = async () => {
       setIsLoading(true);
       setError(null);
@@ -199,7 +263,7 @@ export default function TaxReportsPage() {
       }
     };
     fetchTaxReport();
-  }, [selectedYear, costBasisMethod, mounted]);
+  }, [costBasisMethod]);
 
   if (!mounted) {
     return (
@@ -258,12 +322,66 @@ export default function TaxReportsPage() {
     }
   };
 
+  const handleDownloadPdf = async (formParam: string, filename: string) => {
+    if (sessionStatus === "unauthenticated") {
+      toast.error("Please log in to generate tax reports");
+      return;
+    }
+    if (sessionStatus === "loading") {
+      toast.info("Checking authentication...");
+      return;
+    }
+    try {
+      setIsGeneratingReport(true);
+      const response = await fetch(`/api/tax-reports/pdf?year=${selectedYear}&form=${formParam}`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          toast.error("Session expired. Please log in again.");
+          return;
+        }
+        throw new Error(errorData.error || errorData.details || "Failed to generate PDF");
+      }
+      const blob = await response.blob();
+      if (blob.size === 0) throw new Error("Received empty file");
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success(`${filename} downloaded successfully!`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : `Failed to download ${filename}`;
+      toast.error(errorMessage);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
   const handleFormDownload = async (form: typeof taxForms[0]) => {
     if (form.status === "needs-pdf") {
       toast.info(`${form.name} requires fillable PDF support — coming soon.`);
       return;
     }
-    const formExportMap: Record<string, { type: string; filename: string }> = {
+
+    // IRS PDF forms
+    const pdfFormMap: Record<string, { param: string; filename: string }> = {
+      "IRS Form 8949": { param: "8949", filename: `Form8949-${selectedYear}.pdf` },
+      "IRS Schedule 1": { param: "schedule1", filename: `Schedule1-${selectedYear}.pdf` },
+    };
+    if (pdfFormMap[form.name]) {
+      const info = pdfFormMap[form.name];
+      await handleDownloadPdf(info.param, info.filename);
+      return;
+    }
+
+    // CSV exports
+    const csvExportMap: Record<string, { type: string; filename: string }> = {
       "Capital Gains CSV": { type: "capital-gains-csv", filename: `Capital-Gains-${selectedYear}.csv` },
       "Transaction History": { type: "transaction-history", filename: `Transaction-History-${selectedYear}.csv` },
       "Income Report": { type: "income-report", filename: `Income-Report-${selectedYear}.csv` },
@@ -271,12 +389,13 @@ export default function TaxReportsPage() {
       "Summary Report": { type: "summary-report", filename: `Crypto-Tax-Summary-${selectedYear}.csv` },
       "TurboTax 1099-B": { type: "turbotax-1099b", filename: `TurboTax-1099B-${selectedYear}.csv` },
     };
-    if (formExportMap[form.name]) {
-      const exportInfo = formExportMap[form.name];
+    if (csvExportMap[form.name]) {
+      const exportInfo = csvExportMap[form.name];
       await handleDownloadExport(exportInfo.type, exportInfo.filename);
-    } else {
-      toast.info(`${form.name} export is not yet available.`);
+      return;
     }
+
+    toast.info(`${form.name} export is not yet available.`);
   };
 
   const displayData = reportData || {
@@ -473,7 +592,7 @@ export default function TaxReportsPage() {
                 size="sm"
                 className="w-full text-[13px]"
                 onClick={() => handleDownloadExport("summary-report", `Crypto-Tax-Summary-${selectedYear}.csv`)}
-                disabled={isGeneratingReport || isLoading}
+                disabled={isGeneratingReport}
               >
                 <ArrowDownToLine className="mr-1.5 h-3.5 w-3.5" />
                 Download Summary CSV
@@ -535,7 +654,7 @@ export default function TaxReportsPage() {
                   ) : (
                     <button
                       onClick={() => handleFormDownload(form)}
-                      disabled={isGeneratingReport || isLoading}
+                      disabled={isGeneratingReport}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-[#E5E5E0] dark:border-[#333] px-3.5 py-1.5 text-[12px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5] hover:bg-[#F5F5F0] dark:hover:bg-[#222] transition-colors disabled:opacity-50"
                     >
                       {isGeneratingReport ? (

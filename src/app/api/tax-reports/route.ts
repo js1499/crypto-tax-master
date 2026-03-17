@@ -4,9 +4,16 @@ import { calculateTaxReport, formatTaxReport } from "@/lib/tax-calculator";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
+import { LRUCache } from "lru-cache";
+
+// In-memory LRU cache for tax report calculations
+const reportCache = new LRUCache<string, Awaited<ReturnType<typeof calculateTaxReport>>>({
+  max: 50,
+  ttl: 5 * 60 * 1000, // 5 minutes
+});
 
 /**
- * GET /api/tax-reports?year=2023
+ * GET /api/tax-reports?year=2023&detailed=true
  * Calculate tax report for a given year
  */
 export async function GET(request: NextRequest) {
@@ -19,10 +26,11 @@ export async function GET(request: NextRequest) {
         rateLimitResult.reset
       );
     }
-    
+
     const searchParams = request.nextUrl.searchParams;
     const year = parseInt(searchParams.get("year") || new Date().getFullYear().toString());
-    
+    const detailed = searchParams.get("detailed") === "true";
+
     if (isNaN(year) || year < 2000 || year > 2100) {
       return NextResponse.json(
         { error: "Invalid year parameter" },
@@ -39,7 +47,7 @@ export async function GET(request: NextRequest) {
         { status: 401 }
       );
     }
-    
+
     // Additional rate limiting by user
     const userRateLimit = rateLimitByUser(user.id, 10); // 10 reports per minute per user
     if (!userRateLimit.success) {
@@ -65,72 +73,76 @@ export async function GET(request: NextRequest) {
     // Get user's wallet addresses
     const walletAddresses = userWithWallets.wallets.map((w) => w.address);
 
-    console.log(`[Tax Reports API] Calculating tax report for year ${year}, user ${user.id}`);
-    console.log(`[Tax Reports API] User has ${walletAddresses.length} wallet(s)`);
-
     // Calculate tax report using user's wallet addresses
     // Also include CSV-imported transactions (source_type: "csv_import" with null wallet_address)
     // Pass empty array to include all transactions (both wallet-based and CSV-imported)
     // The calculateTaxReport function will handle filtering appropriately
     // Get filing status from query params (default to "single")
     const filingStatus = (searchParams.get("filingStatus") || "single") as "single" | "married_joint" | "married_separate" | "head_of_household";
-    
+
     const costBasisMethod = (userWithWallets.costBasisMethod || "FIFO") as "FIFO" | "LIFO" | "HIFO";
     const userTimezone = userWithWallets.timezone || "America/New_York";
 
-    const report = await calculateTaxReport(
-      prisma,
-      walletAddresses, // Pass wallet addresses, but also need to include CSV imports
-      year,
-      costBasisMethod,
-      user.id, // Pass user ID to filter CSV imports by user
-      filingStatus,
-      userTimezone
-    );
+    // Check cache first
+    const cacheKey = `${user.id}:${year}:${costBasisMethod}`;
+    let report = reportCache.get(cacheKey);
 
-    console.log(`[Tax Reports API] Tax report calculated:`);
-    console.log(`  - Taxable events: ${report.taxableEvents.length}`);
-    console.log(`  - Income events: ${report.incomeEvents.length}`);
-    console.log(`  - Short-term gains: $${report.shortTermGains.toFixed(2)}`);
-    console.log(`  - Long-term gains: $${report.longTermGains.toFixed(2)}`);
-    console.log(`  - Total income: $${report.totalIncome.toFixed(2)}`);
+    if (!report) {
+      report = await calculateTaxReport(
+        prisma,
+        walletAddresses, // Pass wallet addresses, but also need to include CSV imports
+        year,
+        costBasisMethod,
+        user.id, // Pass user ID to filter CSV imports by user
+        filingStatus,
+        userTimezone
+      );
+
+      reportCache.set(cacheKey, report);
+    }
+
+    console.log(`[Tax Reports API] Report for user ${user.id}, year ${year}, method ${costBasisMethod}: ${report.taxableEvents.length} taxable events, ${report.incomeEvents.length} income events`);
 
     // Format the report for frontend
     const formattedReport = formatTaxReport(report);
-    
-    console.log(`[Tax Reports API] Formatted report:`, formattedReport);
 
-    return NextResponse.json({
+    const responseBody: Record<string, unknown> = {
       status: "success",
       year,
       report: {
         ...formattedReport,
-        detailed: {
-          taxableEvents: report.taxableEvents.map((e) => ({
-            id: e.id,
-            date: e.date.toISOString(),
-            asset: e.asset,
-            amount: e.amount,
-            proceeds: e.proceeds,
-            costBasis: e.costBasis,
-            gainLoss: e.gainLoss,
-            holdingPeriod: e.holdingPeriod,
-            chain: e.chain,
-            txHash: e.txHash,
-          })),
-          incomeEvents: report.incomeEvents.map((e) => ({
-            id: e.id,
-            date: e.date.toISOString(),
-            asset: e.asset,
-            amount: e.amount,
-            valueUsd: e.valueUsd,
-            type: e.type,
-            chain: e.chain,
-            txHash: e.txHash,
-          })),
-        },
       },
-    });
+    };
+
+    // Only include detailed event arrays when explicitly requested
+    if (detailed) {
+      (responseBody.report as Record<string, unknown>).detailed = {
+        taxableEvents: report.taxableEvents.map((e) => ({
+          id: e.id,
+          date: e.date.toISOString(),
+          asset: e.asset,
+          amount: e.amount,
+          proceeds: e.proceeds,
+          costBasis: e.costBasis,
+          gainLoss: e.gainLoss,
+          holdingPeriod: e.holdingPeriod,
+          chain: e.chain,
+          txHash: e.txHash,
+        })),
+        incomeEvents: report.incomeEvents.map((e) => ({
+          id: e.id,
+          date: e.date.toISOString(),
+          asset: e.asset,
+          amount: e.amount,
+          valueUsd: e.valueUsd,
+          type: e.type,
+          chain: e.chain,
+          txHash: e.txHash,
+        })),
+      };
+    }
+
+    return NextResponse.json(responseBody);
   } catch (error) {
     console.error("[Tax Reports API] Error calculating tax report:", error);
     return NextResponse.json(
