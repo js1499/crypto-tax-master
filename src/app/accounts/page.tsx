@@ -27,7 +27,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-// Tabs removed — using native select for Horizon filter bar
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { WalletConnectDialog } from "@/components/wallet-connect-dialog";
 import type { ConnectionResult } from "@/types/wallet";
 import { toast } from "sonner";
@@ -81,6 +87,8 @@ function AccountsContent() {
   const [enriching, setEnriching] = useState<string | null>(null);
   const [enrichingAll, setEnrichingAll] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -667,6 +675,7 @@ function AccountsContent() {
                       <TableRow
                         key={account.id}
                         className="group cursor-pointer border-b border-[#F0F0EB] dark:border-[#2A2A2A]"
+                        onClick={() => { setSelectedAccount(account); setIsDetailOpen(true); }}
                       >
                         {/* Checkbox */}
                         <TableCell className="w-11 border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
@@ -813,6 +822,162 @@ function AccountsContent() {
           <WalletConnectDialog onConnect={handleAccountConnect} />
         </DialogContent>
       </Dialog>
+
+      {/* Account Detail Sheet */}
+      <Sheet open={isDetailOpen} onOpenChange={setIsDetailOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-lg overflow-y-auto">
+          {selectedAccount && (() => {
+            const isExchange = selectedAccount.type === "exchange";
+            const exchangeAccount = isExchange ? exchanges.find(e => e.id === selectedAccount.id) : null;
+            const isConnected = isExchange ? exchangeAccount?.isConnected : true;
+            const lastSync = isExchange ? exchangeAccount?.lastSyncAt : selectedAccount.updatedAt;
+            const txCount = selectedAccount.type === "wallet" ? (selectedAccount as WalletAccount).transactionCount : null;
+            const address = selectedAccount.type === "wallet" ? (selectedAccount as WalletAccount).address : selectedAccount.id;
+
+            return (
+              <>
+                <SheetHeader>
+                  <div className="flex items-center gap-3">
+                    <span className={cn(
+                      "inline-flex items-center justify-center h-[32px] w-[32px] rounded-lg text-white text-[12px] font-bold shrink-0",
+                      isExchange ? "bg-[#9333EA]" : "bg-[#2563EB]"
+                    )}>
+                      {isExchange ? <Building className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
+                    </span>
+                    <div>
+                      <SheetTitle className="text-[16px] capitalize">{selectedAccount.name}</SheetTitle>
+                      <SheetDescription className="text-[12px]">
+                        {selectedAccount.provider === 'coinbase' ? 'Coinbase' : selectedAccount.provider}
+                      </SheetDescription>
+                    </div>
+                    <span className={cn(
+                      "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium ml-auto",
+                      isExchange
+                        ? "bg-pill-purple-bg text-pill-purple-text dark:bg-[rgba(147,51,234,0.12)] dark:text-[#A855F7]"
+                        : "bg-pill-blue-bg text-pill-blue-text dark:bg-[rgba(37,99,235,0.12)] dark:text-[#3B82F6]"
+                    )}>
+                      {isExchange ? "Exchange" : "Wallet"}
+                    </span>
+                  </div>
+                </SheetHeader>
+
+                <div className="mt-6 space-y-6">
+                  {/* Hero stat */}
+                  {txCount != null && (
+                    <div>
+                      <p className="text-[24px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                        {txCount.toLocaleString()}
+                      </p>
+                      <p className="text-[13px] text-[#6B7280]">Transactions</p>
+                    </div>
+                  )}
+
+                  {/* Status */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] text-[#9CA3AF]">Status</span>
+                    <span className={cn(
+                      "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium",
+                      isConnected
+                        ? "bg-pill-green-bg text-pill-green-text dark:bg-[rgba(22,163,74,0.12)] dark:text-[#22C55E]"
+                        : "bg-pill-orange-bg text-pill-orange-text dark:bg-[rgba(234,88,12,0.12)] dark:text-[#F97316]"
+                    )}>
+                      <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", isConnected ? "bg-pill-green-text dark:bg-[#22C55E]" : "bg-pill-orange-text dark:bg-[#F97316]")} />
+                      {isConnected ? "Connected" : "Needs Reconnect"}
+                    </span>
+                  </div>
+
+                  {/* Details */}
+                  <div className="space-y-3 border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] text-[#9CA3AF]">Address</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontFamily: "'SF Mono', 'Fira Code', monospace" }}>
+                          {address && address.length > 16 ? `${address.slice(0, 8)}...${address.slice(-6)}` : address || "—"}
+                        </span>
+                        {address && (
+                          <button
+                            className="p-1 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A]"
+                            onClick={() => { navigator.clipboard.writeText(address); toast.success("Address copied"); }}
+                          >
+                            <Copy className="h-3.5 w-3.5 text-[#9CA3AF]" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] text-[#9CA3AF]">Provider</span>
+                      <span className="text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5] capitalize">{selectedAccount.provider}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] text-[#9CA3AF]">Connected</span>
+                      <span className="text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5]">
+                        {new Date(selectedAccount.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] text-[#9CA3AF]">Last Synced</span>
+                      <span className="text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5]">
+                        {lastSync ? new Date(lastSync).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Never"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Action buttons */}
+                  <div className="space-y-2 border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-4">
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={() => {
+                          if (isExchange) handleSyncExchange(selectedAccount.id);
+                          else handleSyncWallet(selectedAccount.id);
+                        }}
+                        disabled={syncing === selectedAccount.id}
+                      >
+                        <RefreshCw className={cn("mr-2 h-4 w-4", syncing === selectedAccount.id && "animate-spin")} />
+                        {syncing === selectedAccount.id ? "Syncing..." : "Sync Transactions"}
+                      </Button>
+                      {!isExchange && (
+                        <Button
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => handleEnrichWallet(selectedAccount.id)}
+                          disabled={enriching === selectedAccount.id || enrichingAll}
+                        >
+                          <DollarSign className={cn("mr-2 h-4 w-4", enriching === selectedAccount.id && "animate-pulse")} />
+                          {enriching === selectedAccount.id ? "Enriching..." : "Enrich Prices"}
+                        </Button>
+                      )}
+                      {isExchange && !isConnected && (
+                        <Button
+                          className="flex-1"
+                          onClick={() => { setIsDetailOpen(false); setIsAddDialogOpen(true); }}
+                        >
+                          <Link2 className="mr-2 h-4 w-4" />
+                          Reconnect
+                        </Button>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="w-full text-[#DC2626] border-[#DC2626]/30 hover:bg-[#FEF2F2] dark:hover:bg-[rgba(220,38,38,0.1)]"
+                      onClick={() => {
+                        if (isExchange) handleDisconnectExchange(selectedAccount.id);
+                        else handleDisconnectWallet(selectedAccount.id);
+                        setIsDetailOpen(false);
+                        setSelectedAccount(null);
+                      }}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Disconnect Account
+                    </Button>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </SheetContent>
+      </Sheet>
     </Layout>
   );
 }
