@@ -699,11 +699,11 @@ function AccountsContent() {
                           </span>
                         </TableCell>
 
-                        {/* Actions — always visible */}
+                        {/* Actions — always visible, muted */}
                         <TableCell>
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1">
                             <button
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-pill-blue-bg text-pill-blue-text dark:bg-[rgba(37,99,235,0.12)] dark:text-[#3B82F6] hover:opacity-80 transition-opacity"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[#6B7280] hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] transition-colors"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (isExchange) handleSyncExchange(account.id);
@@ -715,7 +715,7 @@ function AccountsContent() {
                             </button>
                             {!isExchange && (
                               <button
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-pill-teal-bg text-pill-teal-text dark:bg-[rgba(13,148,136,0.12)] dark:text-[#14B8A6] hover:opacity-80 transition-opacity"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[#6B7280] hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] transition-colors"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleEnrichWallet(account.id);
@@ -726,7 +726,7 @@ function AccountsContent() {
                               </button>
                             )}
                             <button
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-pill-red-bg text-pill-red-text dark:bg-[rgba(220,38,38,0.12)] dark:text-[#EF4444] hover:opacity-80 transition-opacity"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] dark:hover:bg-[rgba(220,38,38,0.1)] transition-colors"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (isExchange) handleDisconnectExchange(account.id);
@@ -734,7 +734,6 @@ function AccountsContent() {
                               }}
                             >
                               <Trash2 className="h-3 w-3" />
-                              Remove
                             </button>
                           </div>
                         </TableCell>
