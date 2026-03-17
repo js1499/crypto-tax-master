@@ -572,7 +572,7 @@ function AccountsContent() {
                   <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Transactions</TableHead>
                   <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Status</TableHead>
                   <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Last Synced</TableHead>
-                  <TableHead className="w-10" />
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -679,13 +679,16 @@ function AccountsContent() {
                           </span>
                         </TableCell>
 
-                        {/* Status */}
+                        {/* Status pill */}
                         <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
-                          <span className="inline-flex items-center gap-1.5 text-[13px]">
-                            <span className={cn("h-2 w-2 rounded-full shrink-0", isConnected ? "bg-[#16A34A]" : "bg-[#F97316]")} />
-                            <span className={isConnected ? "text-[#16A34A]" : "text-[#F97316]"}>
-                              {isConnected ? "Connected" : "Needs Reconnect"}
-                            </span>
+                          <span className={cn(
+                            "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium",
+                            isConnected
+                              ? "bg-pill-green-bg text-pill-green-text dark:bg-[rgba(22,163,74,0.12)] dark:text-[#22C55E]"
+                              : "bg-pill-orange-bg text-pill-orange-text dark:bg-[rgba(234,88,12,0.12)] dark:text-[#F97316]"
+                          )}>
+                            <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", isConnected ? "bg-pill-green-text dark:bg-[#22C55E]" : "bg-pill-orange-text dark:bg-[#F97316]")} />
+                            {isConnected ? "Connected" : "Reconnect"}
                           </span>
                         </TableCell>
 
@@ -696,30 +699,42 @@ function AccountsContent() {
                           </span>
                         </TableCell>
 
-                        {/* Actions */}
-                        <TableCell className="w-10">
-                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                        {/* Actions — always visible */}
+                        <TableCell>
+                          <div className="flex items-center gap-1.5">
                             <button
-                              className="p-1 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A]"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-pill-blue-bg text-pill-blue-text dark:bg-[rgba(37,99,235,0.12)] dark:text-[#3B82F6] hover:opacity-80 transition-opacity"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (isExchange) handleSyncExchange(account.id);
                                 else handleSyncWallet(account.id);
                               }}
-                              title="Sync"
                             >
-                              <RefreshCw className={cn("h-3.5 w-3.5 text-[#9CA3AF] hover:text-[#1A1A1A]", syncing === account.id && "animate-spin")} />
+                              <RefreshCw className={cn("h-3 w-3", syncing === account.id && "animate-spin")} />
+                              Sync
                             </button>
+                            {!isExchange && (
+                              <button
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-pill-teal-bg text-pill-teal-text dark:bg-[rgba(13,148,136,0.12)] dark:text-[#14B8A6] hover:opacity-80 transition-opacity"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEnrichWallet(account.id);
+                                }}
+                              >
+                                <DollarSign className={cn("h-3 w-3", enriching === account.id && "animate-pulse")} />
+                                Enrich
+                              </button>
+                            )}
                             <button
-                              className="p-1 rounded hover:bg-[#FEF2F2] dark:hover:bg-[rgba(220,38,38,0.1)]"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-pill-red-bg text-pill-red-text dark:bg-[rgba(220,38,38,0.12)] dark:text-[#EF4444] hover:opacity-80 transition-opacity"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (isExchange) handleDisconnectExchange(account.id);
                                 else handleDisconnectWallet(account.id);
                               }}
-                              title="Disconnect"
                             >
-                              <Trash2 className="h-3.5 w-3.5 text-[#9CA3AF] hover:text-[#DC2626]" />
+                              <Trash2 className="h-3 w-3" />
+                              Remove
                             </button>
                           </div>
                         </TableCell>
