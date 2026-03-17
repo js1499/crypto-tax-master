@@ -613,24 +613,31 @@ function AccountsContent() {
               <div className="ml-auto" />
 
               {/* Account type split bar */}
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] text-[#9CA3AF] shrink-0">Breakdown</span>
-                <div className="flex h-4 w-[140px] rounded overflow-hidden">
+              <div className="space-y-1">
+                <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">Account Breakdown</p>
+                <div className="flex h-5 w-[180px] rounded-md overflow-hidden">
                   {walletCount > 0 && (
-                    <div className="h-full bg-[#2563EB]" style={{ width: `${(walletCount / total) * 100}%` }} title={`${walletCount} Wallets`} />
+                    <div className="h-full bg-[#2563EB] flex items-center justify-center" style={{ width: `${(walletCount / total) * 100}%`, minWidth: '30px' }} title={`${walletCount} Wallets`}>
+                      <span className="text-[9px] font-semibold text-white">{walletCount}W</span>
+                    </div>
                   )}
                   {exchangeCount > 0 && (
-                    <div className="h-full bg-[#9333EA]" style={{ width: `${(exchangeCount / total) * 100}%` }} title={`${exchangeCount} Exchanges`} />
+                    <div className="h-full bg-[#9333EA] flex items-center justify-center" style={{ width: `${(exchangeCount / total) * 100}%`, minWidth: '30px' }} title={`${exchangeCount} Exchanges`}>
+                      <span className="text-[9px] font-semibold text-white">{exchangeCount}E</span>
+                    </div>
                   )}
                 </div>
               </div>
 
               {/* Health */}
-              <div className="flex items-center gap-1.5">
-                <span className={cn("h-2 w-2 rounded-full", connectedCount === total ? "bg-[#16A34A]" : "bg-[#F97316]")} />
-                <span className="text-[12px] font-medium text-[#4B5563] dark:text-[#9CA3AF]">
-                  {connectedCount === total ? "All connected" : `${connectedCount}/${total} connected`}
-                </span>
+              <div className="space-y-1">
+                <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">Health</p>
+                <div className="flex items-center gap-1.5">
+                  <span className={cn("h-2.5 w-2.5 rounded-full", connectedCount === total ? "bg-[#16A34A]" : "bg-[#F97316]")} />
+                  <span className="text-[12px] font-medium text-[#4B5563] dark:text-[#9CA3AF]">
+                    {connectedCount === total ? "All connected" : `${connectedCount}/${total} connected`}
+                  </span>
+                </div>
               </div>
             </>);
           })()}
@@ -800,7 +807,7 @@ function AccountsContent() {
 
                         {/* Transactions */}
                         <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
-                          <span className="text-[14px] text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                          <span className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                             {txCount != null ? txCount.toLocaleString() : "—"}
                           </span>
                         </TableCell>
@@ -829,7 +836,7 @@ function AccountsContent() {
                         <TableCell>
                           <div className="flex items-center gap-1.5">
                             <button
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[12px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[13px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (isExchange) handleSyncExchange(account.id);
@@ -841,7 +848,7 @@ function AccountsContent() {
                             </button>
                             {!isExchange && (
                               <button
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[12px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#0D9488] hover:text-[#0D9488] transition-colors"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[13px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#0D9488] hover:text-[#0D9488] transition-colors"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleEnrichWallet(account.id);
