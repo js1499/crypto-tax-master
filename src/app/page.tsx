@@ -1,807 +1,438 @@
 "use client";
 
 import { Layout } from "@/components/layout";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import { ArrowUpRight, ArrowDownRight, Coins, Wallet, ExternalLink, TrendingUp, TrendingDown, FileBadge, Sparkles, X } from "lucide-react";
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useOnboarding } from "@/components/onboarding/onboarding-provider";
+import { useEffect, useState, useRef } from "react";
 import { useSession } from "next-auth/react";
-import { Button } from "@/components/ui/button";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-} from "recharts";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { MoreHorizontal, TrendingUp, TrendingDown, Sparkles } from "lucide-react";
 import Link from "next/link";
-import { format } from "date-fns";
 
-// Color palette for pie chart
-const COLORS = [
-  "hsl(var(--primary))",
-  "hsl(var(--primary)/0.8)",
-  "hsl(var(--primary)/0.6)",
-  "hsl(var(--primary)/0.4)",
-  "#8884d8",
-  "#82ca9d",
-  "#ffc658",
-  "#ff7300",
-  "#8dd1e1",
-  "#d084d0",
-];
-
-interface DashboardStats {
-  totalPortfolioValue: number;
-  unrealizedGains: number;
-  taxableEvents2023: number;
-  assetAllocation: Array<{
-    name: string;
-    value: number;
-    amount: number;
-    costBasis: number;
-    currentPrice: number;
-  }>;
-  portfolioValueOverTime: Array<{
-    date: string;
-    value: number;
-  }>;
-  recentTransactions: Array<{
-    id: number;
-    type: string;
-    asset: string;
-    amount: number;
-    value: number;
-    date: string;
-    status: string;
-  }>;
+interface MonthlyData {
+  month: string;
+  gains: number;
+  losses: number;
+  income: number;
+  txnCount: number;
 }
 
-export default function Home() {
-  const [mounted, setMounted] = useState(false);
-  const [assetType, setAssetType] = useState("coins");
-  const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+interface TopAsset {
+  asset: string;
+  gainLoss: number;
+}
+
+interface AnalyticsData {
+  pnl: {
+    monthly: MonthlyData[];
+    totalGains: number;
+    totalLosses: number;
+    netPnl: number;
+    totalIncome: number;
+    totalVolume: number;
+  };
+  activity: {
+    totalTransactions: number;
+    peakMonth: string;
+    monthlyPattern: Array<{ month: string; count: number }>;
+  };
+  topAssets: TopAsset[];
+  insights: {
+    identifiedPct: number;
+    biggestGain: { asset: string; amount: number } | null;
+    biggestLoss: { asset: string; amount: number } | null;
+    distinctAssets: number;
+    accountsConnected: number;
+    taxEstimate: number;
+  };
+}
+
+// Insights content
+function getInsights(data: AnalyticsData["insights"], pnl: AnalyticsData["pnl"]) {
+  const items: Array<{ metric: string; description: string; detail: string }> = [];
+
+  items.push({
+    metric: `${data.identifiedPct}%`,
+    description: "of transactions identified and categorized",
+    detail: data.identifiedPct === 100 ? "All transactions are accounted for" : `${100 - data.identifiedPct}% still need review`,
+  });
+
+  if (data.biggestGain) {
+    items.push({
+      metric: `+$${data.biggestGain.amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+      description: `biggest gain from ${data.biggestGain.asset}`,
+      detail: "Your top performing asset by realized gain",
+    });
+  }
+
+  if (data.biggestLoss) {
+    items.push({
+      metric: `-$${Math.abs(data.biggestLoss.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+      description: `biggest loss from ${data.biggestLoss.asset}`,
+      detail: "Your worst performing asset by realized loss",
+    });
+  }
+
+  items.push({
+    metric: `${data.distinctAssets}`,
+    description: "distinct assets traded",
+    detail: `Across ${data.accountsConnected} connected account${data.accountsConnected !== 1 ? "s" : ""}`,
+  });
+
+  if (pnl.totalIncome > 0) {
+    items.push({
+      metric: `$${pnl.totalIncome.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+      description: "earned from staking, airdrops, and rewards",
+      detail: "Taxed as ordinary income at fair market value on receipt",
+    });
+  }
+
+  if (data.taxEstimate > 0) {
+    items.push({
+      metric: `~$${data.taxEstimate.toLocaleString(undefined, { maximumFractionDigits: 0 })}`,
+      description: "estimated tax liability",
+      detail: "Based on ST 24% and LT 15% rates",
+    });
+  }
+
+  return items;
+}
+
+// Asset icon helper
+function AssetIcon({ symbol }: { symbol: string }) {
+  const colors: Record<string, string> = {
+    SOL: "#9333EA", WSOL: "#9333EA", ETH: "#2563EB", WETH: "#2563EB",
+    BTC: "#EA580C", WBTC: "#EA580C", USDC: "#0D9488", USDT: "#14B8A6",
+    JUP: "#16A34A", BONK: "#DB2777",
+  };
+  const hash = (symbol || "").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
+  const fallback = ["#2563EB", "#9333EA", "#EA580C", "#0D9488", "#DC2626", "#CA8A04", "#4F46E5", "#16A34A", "#DB2777"];
+  const bg = colors[symbol.toUpperCase()] || fallback[hash % fallback.length];
+
+  return (
+    <span
+      className="inline-flex items-center justify-center h-5 w-5 rounded-full text-[8px] font-bold text-white shrink-0"
+      style={{ backgroundColor: bg }}
+    >
+      {(symbol || "?")[0]}
+    </span>
+  );
+}
+
+export default function DashboardPage() {
+  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"gains" | "losses" | "net" | "income">("net");
+  const [insightIndex, setInsightIndex] = useState(0);
+  const chartRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  const fetchInProgress = useRef(false); // Prevent multiple simultaneous fetches
-  const { data: session, status: sessionStatus } = useSession();
-  
-  // Get onboarding context (returns safe defaults if not available)
-  const onboarding = useOnboarding();
+  const { data: session, status } = useSession();
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Fetch dashboard statistics
-  const fetchStats = useCallback(async () => {
-    // Prevent multiple simultaneous fetches
-    if (fetchInProgress.current) {
-      return;
-    }
-    
-    fetchInProgress.current = true;
-    setIsLoading(true);
-    try {
-      // Add timeout to prevent hanging
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
-      
-      const response = await fetch("/api/dashboard/stats", {
-        signal: controller.signal,
-        credentials: "include", // Include cookies for authentication
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        // Don't redirect on 401 - let the session provider handle authentication state
-        // If user is truly unauthenticated, the login prompt card will be shown
-        if (response.status === 401) {
-          console.warn("Dashboard stats API returned 401 - session may be syncing");
-          // Return empty stats instead of redirecting to avoid redirect loop
-          setStats({
-            totalPortfolioValue: 0,
-            unrealizedGains: 0,
-            taxableEvents2023: 0,
-            assetAllocation: [],
-            portfolioValueOverTime: [],
-            recentTransactions: [],
-          });
-          setIsLoading(false);
-          fetchInProgress.current = false;
-          return;
-        }
-        throw new Error(`Failed to fetch dashboard statistics: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      if (data.status === "success" && data.stats) {
-        setStats(data.stats);
-      } else if (data.error) {
-        // Handle API error response
-        console.error("API error:", data.error, data.details);
-        throw new Error(data.details || data.error);
-      }
-    } catch (error) {
-      console.error("Error fetching dashboard stats:", error);
-      
-      // Don't redirect if it's just a timeout or network error
-      if (error instanceof Error && error.name === "AbortError") {
-        console.error("Request timed out");
-      }
-      
-      // Set default empty stats on error
-      setStats({
-        totalPortfolioValue: 0,
-        unrealizedGains: 0,
-        taxableEvents2023: 0,
-        assetAllocation: [],
-        portfolioValueOverTime: [],
-        recentTransactions: [],
-      });
-    } finally {
-      setIsLoading(false);
-      fetchInProgress.current = false;
-    }
-  }, [router]);
+    if (status === "unauthenticated") router.push("/login");
+  }, [status, router]);
 
   useEffect(() => {
-    if (!mounted) return;
-    
-    // Wait for session to finish loading before making API calls
-    if (sessionStatus === "loading") {
-      return; // Still loading session, wait
-    }
-    
-    // Only fetch stats if authenticated
-    if (sessionStatus === "authenticated") {
-      // Add small delay to ensure session is fully established
-      const fetchTimeout = setTimeout(() => {
-        fetchStats();
-      }, 100);
-      
-      // Fallback: stop loading after 15 seconds even if API doesn't respond
-      const timeoutId = setTimeout(() => {
-        setIsLoading((currentLoading) => {
-          if (currentLoading) {
-            console.warn("Dashboard stats loading timeout - showing empty state");
-            setStats({
-              totalPortfolioValue: 0,
-              unrealizedGains: 0,
-              taxableEvents2023: 0,
-              assetAllocation: [],
-              portfolioValueOverTime: [],
-              recentTransactions: [],
-            });
-            return false;
-          }
-          return currentLoading;
-        });
-      }, 15000);
-      
-      return () => {
-        clearTimeout(fetchTimeout);
-        clearTimeout(timeoutId);
-        fetchInProgress.current = false;
-      };
-    } else {
-      // Not authenticated - show empty state immediately
-      setIsLoading(false);
-      setStats({
-        totalPortfolioValue: 0,
-        unrealizedGains: 0,
-        taxableEvents2023: 0,
-        assetAllocation: [],
-        portfolioValueOverTime: [],
-        recentTransactions: [],
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, sessionStatus]);
+    if (status !== "authenticated") return;
+    fetch("/api/dashboard/analytics")
+      .then(r => r.json())
+      .then(d => { if (d.status === "success") setData(d); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [status]);
 
-  // Show loading state while mounting or session is loading
-  if (!mounted || sessionStatus === "loading") {
+  // Cycle insights
+  useEffect(() => {
+    if (!data) return;
+    const insights = getInsights(data.insights, data.pnl);
+    if (insights.length <= 1) return;
+    const interval = setInterval(() => {
+      setInsightIndex(i => (i + 1) % insights.length);
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [data]);
+
+  // D3 chart rendering
+  useEffect(() => {
+    if (!data || !chartRef.current) return;
+    const d3 = require("d3");
+    const container = chartRef.current;
+    const svg = d3.select(container).select("svg");
+    if (!svg.empty()) svg.remove();
+
+    const rect = container.getBoundingClientRect();
+    const w = rect.width;
+    const h = 200;
+    const m = { top: 8, right: 16, bottom: 28, left: 50 };
+
+    const chart = d3.select(container).append("svg").attr("width", w).attr("height", h);
+
+    const monthly = data.pnl.monthly;
+    if (monthly.length === 0) return;
+
+    const getValue = (d: MonthlyData) => {
+      if (activeTab === "gains") return d.gains;
+      if (activeTab === "losses") return Math.abs(d.losses);
+      if (activeTab === "income") return d.income;
+      return d.gains + d.losses + d.income;
+    };
+
+    const maxVal = Math.max(...monthly.map(getValue), 1);
+    const minVal = activeTab === "net" ? Math.min(...monthly.map(getValue), 0) : 0;
+
+    const x = d3.scalePoint().domain(monthly.map((d: MonthlyData) => d.month)).range([m.left, w - m.right]).padding(0.5);
+    const y = d3.scaleLinear().domain([minVal * 1.1, maxVal * 1.1]).range([h - m.bottom, m.top]);
+
+    // Gridlines
+    chart.append("g")
+      .attr("transform", `translate(${m.left},0)`)
+      .call(d3.axisLeft(y).ticks(4).tickSize(-(w - m.left - m.right)).tickFormat(() => ""))
+      .call((g: any) => g.select(".domain").remove())
+      .call((g: any) => g.selectAll(".tick line").attr("stroke", "#F0F0EB").attr("stroke-dasharray", "2,2"));
+
+    // Area fill
+    const color = activeTab === "losses" ? "#DC2626" : activeTab === "income" ? "#2563EB" : "#16A34A";
+    const area = d3.area()
+      .x((d: MonthlyData) => x(d.month))
+      .y0(y(Math.max(minVal, 0)))
+      .y1((d: MonthlyData) => y(getValue(d)))
+      .curve(d3.curveMonotoneX);
+
+    const gradient = chart.append("defs").append("linearGradient").attr("id", "areaGrad").attr("x1", "0%").attr("y1", "0%").attr("x2", "0%").attr("y2", "100%");
+    gradient.append("stop").attr("offset", "0%").attr("stop-color", color).attr("stop-opacity", 0.3);
+    gradient.append("stop").attr("offset", "100%").attr("stop-color", color).attr("stop-opacity", 0.02);
+
+    chart.append("path").datum(monthly).attr("fill", "url(#areaGrad)").attr("d", area);
+
+    // Line
+    const line = d3.line()
+      .x((d: MonthlyData) => x(d.month))
+      .y((d: MonthlyData) => y(getValue(d)))
+      .curve(d3.curveMonotoneX);
+
+    chart.append("path").datum(monthly).attr("fill", "none").attr("stroke", color).attr("stroke-width", 2).attr("d", line);
+
+    // X axis
+    chart.append("g")
+      .attr("transform", `translate(0,${h - m.bottom})`)
+      .call(d3.axisBottom(x).tickSize(0).tickFormat((d: string) => {
+        const parts = d.split("-");
+        return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(parts[1]) - 1] || d;
+      }))
+      .call((g: any) => g.select(".domain").remove())
+      .call((g: any) => g.selectAll("text").attr("fill", "#9CA3AF").attr("font-size", "11px"));
+
+    // Y axis
+    chart.append("g")
+      .attr("transform", `translate(${m.left},0)`)
+      .call(d3.axisLeft(y).ticks(4).tickFormat((d: number) => `$${Math.abs(d) >= 1000 ? `${(d/1000).toFixed(0)}k` : d}`))
+      .call((g: any) => g.select(".domain").remove())
+      .call((g: any) => g.selectAll("text").attr("fill", "#9CA3AF").attr("font-size", "11px"));
+
+  }, [data, activeTab]);
+
+  if (status === "loading" || loading) {
     return (
       <Layout>
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-            <p className="text-muted-foreground">Loading...</p>
+        <div className="space-y-6">
+          <div className="h-10 w-48 skeleton-pulse rounded" />
+          <div className="grid grid-cols-[1fr_340px] gap-4">
+            <div className="h-[320px] skeleton-pulse rounded-xl" />
+            <div className="h-[320px] skeleton-pulse rounded-xl" />
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="h-[240px] skeleton-pulse rounded-xl" />
+            <div className="h-[240px] skeleton-pulse rounded-xl" />
+            <div className="h-[240px] skeleton-pulse rounded-xl" />
           </div>
         </div>
       </Layout>
     );
   }
 
-  const handleCoinClick = (symbol) => {
-    router.push(`/coins/${symbol}`);
-  };
-
-  // Check if user should see onboarding welcome
-  const shouldShowWelcome = onboarding.isActive && !onboarding.state.completed;
-
-  // Format data for charts
-  const portfolioValueData = stats?.portfolioValueOverTime.map((item) => ({
-    date: format(new Date(item.date), "MMM yyyy"),
-    value: item.value,
-  })) || [];
-
-  const assetsData = stats?.assetAllocation.map((asset, index) => ({
-    name: asset.name,
-    value: asset.value,
-    color: COLORS[index % COLORS.length],
-  })) || [];
-
-  const transactionsData = stats?.recentTransactions.map((tx) => ({
-    id: tx.id,
-    type: tx.type,
-    asset: tx.asset,
-    amount: `${tx.amount.toFixed(6)} ${tx.asset}`,
-    value: `$${Math.abs(tx.value).toFixed(2)}`,
-    date: format(new Date(tx.date), "MMM dd, yyyy"),
-    status: tx.status,
-  })) || [];
-
-  // Format currency values
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(value);
-  };
+  const insights = data ? getInsights(data.insights, data.pnl) : [];
+  const currentInsight = insights[insightIndex % insights.length] || { metric: "—", description: "", detail: "" };
 
   return (
     <Layout>
-      <div className="space-y-8">
-        {isLoading && stats === null && (
-          <div className="flex items-center justify-center py-12 border-b">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-              <p className="text-muted-foreground">Loading dashboard...</p>
-              <p className="text-sm text-muted-foreground mt-2">This may take a moment</p>
+      <div className="space-y-5">
+        {/* Page title */}
+        <h1 className="text-[40px] font-normal tracking-[-0.02em] text-[#1A1A1A] dark:text-[#F5F5F5]">Overview</h1>
+
+        {/* Row 1: P&L Chart + Gross Volume */}
+        <div className="grid grid-cols-[1fr_340px] gap-4">
+
+          {/* P&L Over Time */}
+          <div className="border border-[#E5E5E0] dark:border-[#333] rounded-xl p-6 bg-white dark:bg-[#1A1A1A]">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">P&L Over Time</h2>
+              <MoreHorizontal className="h-4 w-4 text-[#9CA3AF]" />
             </div>
-          </div>
-        )}
-        
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <div className="flex items-center gap-2">
-            {sessionStatus === "authenticated" && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={fetchStats}
-                disabled={isLoading}
-              >
-                {isLoading ? "Refreshing..." : "Refresh"}
-              </Button>
-            )}
-            {onboarding && onboarding.isActive && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => onboarding.startOnboarding()}
-              >
-                <Sparkles className="mr-2 h-4 w-4" />
-                Start Guide
-              </Button>
-            )}
-          </div>
-        </div>
 
-        {/* Login Prompt - Show when not authenticated */}
-        {sessionStatus === "unauthenticated" && (
-          <Card className="border-2 border-primary/50 bg-primary/5">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Wallet className="h-5 w-5" />
-                Sign in to view your portfolio
-              </CardTitle>
-              <CardDescription>
-                Connect your wallets and exchanges to track your crypto portfolio and calculate taxes
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-3">
-                <Button asChild>
-                  <Link href="/login">Sign In</Link>
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link href="/register">Create Account</Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Onboarding Welcome Card */}
-        {onboarding && onboarding.isActive && onboarding.state.currentStep === 0 && (
-          <Card className="border-2 border-primary bg-primary/5">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary text-primary-foreground">
-                    <Sparkles className="h-6 w-6" />
-                  </div>
-                  <div>
-                    <CardTitle>Welcome to Crypto Tax Calculator!</CardTitle>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Let's get you started with a quick 4-step guide
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onboarding.skip()}
+            {/* Metric tabs */}
+            <div className="flex items-center gap-6 mb-4">
+              {[
+                { key: "gains" as const, label: "Total Gains", value: data?.pnl.totalGains || 0, color: "#16A34A", sign: "+" },
+                { key: "losses" as const, label: "Total Losses", value: data?.pnl.totalLosses || 0, color: "#DC2626", sign: "-" },
+                { key: "net" as const, label: "Net P&L", value: data?.pnl.netPnl || 0, color: (data?.pnl.netPnl || 0) >= 0 ? "#16A34A" : "#DC2626", sign: (data?.pnl.netPnl || 0) >= 0 ? "+" : "" },
+                { key: "income" as const, label: "Income", value: data?.pnl.totalIncome || 0, color: "#2563EB", sign: "+" },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={cn("text-left transition-colors", activeTab === tab.key ? "opacity-100" : "opacity-50 hover:opacity-75")}
                 >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-bold">
-                    1
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">Connect Your Wallet or Exchange</p>
-                    <p className="text-sm text-muted-foreground">
-                      Link your crypto accounts to automatically import transactions
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-bold">
-                    2
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">Import Transactions</p>
-                    <p className="text-sm text-muted-foreground">
-                      Sync transactions from exchanges or upload CSV files
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-bold">
-                    3
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">Review & Categorize</p>
-                    <p className="text-sm text-muted-foreground">
-                      Review transactions and ensure they're correctly categorized
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-muted text-sm font-bold">
-                    4
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">Generate Tax Report</p>
-                    <p className="text-sm text-muted-foreground">
-                      Create IRS Form 8949 and other tax documents
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-6 flex gap-2">
-                <Button onClick={() => onboarding?.startOnboarding()}>
-                  Start Guided Tour
-                </Button>
-                <Button variant="outline" onClick={() => onboarding?.skip()}>
-                  Skip for Now
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Total Portfolio Value
-              </CardTitle>
-              <ExternalLink className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {isLoading ? "..." : formatCurrency(stats?.totalPortfolioValue || 0)}
-              </div>
-              <div className="flex items-center text-xs text-muted-foreground">
-                {isLoading ? "Loading..." : stats && stats.totalPortfolioValue > 0 
-                  ? `${stats.assetAllocation.length} asset${stats.assetAllocation.length !== 1 ? "s" : ""}`
-                  : "No portfolio data"}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Unrealized Gains
-              </CardTitle>
-              {stats && stats.unrealizedGains >= 0 ? (
-                <TrendingUp className="h-4 w-4 text-green-500" />
-              ) : (
-                <TrendingDown className="h-4 w-4 text-red-500" />
-              )}
-            </CardHeader>
-            <CardContent>
-              <div className={`text-2xl font-bold ${stats && stats.unrealizedGains >= 0 ? "text-green-500" : "text-red-500"}`}>
-                {isLoading ? "..." : formatCurrency(stats?.unrealizedGains || 0)}
-              </div>
-              <div className="flex items-center text-xs text-muted-foreground">
-                {isLoading ? "Loading..." : stats && stats.unrealizedGains !== 0
-                  ? `${stats.unrealizedGains >= 0 ? "Gain" : "Loss"} from cost basis`
-                  : "No gains data"}
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Taxable Events (2023)
-              </CardTitle>
-              <FileBadge className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {isLoading ? "..." : stats?.taxableEvents2023 || 0}
-              </div>
-              <div className="flex items-center text-xs text-muted-foreground">
-                {isLoading ? "Loading..." : `${stats?.taxableEvents2023 || 0} transaction${(stats?.taxableEvents2023 || 0) !== 1 ? "s" : ""}`}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-4">
-          <Tabs defaultValue="portfolio">
-            <TabsList>
-              <TabsTrigger value="portfolio">Portfolio Value</TabsTrigger>
-              <TabsTrigger value="asset">Asset Allocation</TabsTrigger>
-              <TabsTrigger value="transactions">Recent Transactions</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="portfolio">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Portfolio Value Over Time</CardTitle>
-                </CardHeader>
-                <CardContent className="h-[400px]">
-                  {portfolioValueData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart
-                        data={portfolioValueData}
-                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                      >
-                        <CartesianGrid 
-                          strokeDasharray="3 3" 
-                          stroke="hsl(var(--muted-foreground))"
-                          strokeOpacity={0.6}
-                        />
-                        <XAxis 
-                          dataKey="date" 
-                          tick={{ fontSize: 12 }}
-                          tickLine={false}
-                        />
-                        <YAxis 
-                          tickFormatter={(value) => `$${value.toLocaleString()}`}
-                          tick={{ fontSize: 12 }}
-                          tickLine={false}
-                        />
-                        <Tooltip 
-                          formatter={(value) => [`$${value.toLocaleString()}`, 'Portfolio Value']}
-                          labelFormatter={(label) => `Date: ${label}`}
-                          contentStyle={{
-                            backgroundColor: 'hsl(var(--card))',
-                            borderColor: 'hsl(var(--border))',
-                            color: 'hsl(var(--card-foreground))',
-                            borderRadius: 'var(--radius)',
-                            boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-                          }}
-                          labelStyle={{
-                            color: 'hsl(var(--card-foreground))',
-                            fontWeight: 500
-                          }}
-                          itemStyle={{
-                            color: 'hsl(var(--card-foreground))'
-                          }}
-                        />
-                        <Line 
-                          type="monotone" 
-                          dataKey="value" 
-                          stroke="hsl(var(--primary))" 
-                          strokeWidth={2}
-                          dot={false}
-                          activeDot={{ r: 6 }}
-                        />
-                      </LineChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <div className="text-center">
-                        <Wallet className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                        <h3 className="text-lg font-medium mb-2">No portfolio data</h3>
-                        <p className="text-muted-foreground max-w-md mx-auto">
-                          Connect accounts or add transactions to see your portfolio value over time.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-            
-            <TabsContent value="asset">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Asset Allocation</CardTitle>
-                </CardHeader>
-                <CardContent className="h-[400px]">
-                  {assetsData.length > 0 ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={assetsData}
-                          cx="50%"
-                          cy="50%"
-                          labelLine={false}
-                          outerRadius={150}
-                          fill="#8884d8"
-                          dataKey="value"
-                          nameKey="name"
-                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                        >
-                          {assetsData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip
-                          formatter={(value: number, name: string, props: any) => {
-                            const total = assetsData.reduce((sum, item) => sum + item.value, 0);
-                            const percent = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
-                            return [`$${value.toLocaleString()} (${percent}%)`, 'Allocation'];
-                          }}
-                          contentStyle={{
-                            backgroundColor: 'hsl(var(--card))',
-                            borderColor: 'hsl(var(--border))',
-                            color: 'hsl(var(--card-foreground))',
-                            borderRadius: 'var(--radius)',
-                            boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-                          }}
-                          labelStyle={{
-                            color: 'hsl(var(--card-foreground))',
-                            fontWeight: 500
-                          }}
-                          itemStyle={{
-                            color: 'hsl(var(--card-foreground))'
-                          }}
-                        />
-                      </PieChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <div className="text-center">
-                        <Coins className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                        <h3 className="text-lg font-medium mb-2">No assets found</h3>
-                        <p className="text-muted-foreground max-w-md mx-auto">
-                          Connect accounts or add transactions to see your asset allocation.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-            
-            <TabsContent value="transactions">
-              <Card>
-                <CardContent className="p-0">
-                  {transactionsData.length > 0 ? (
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead>
-                          <tr className="border-b">
-                            <th className="text-left font-medium text-muted-foreground p-4">Type</th>
-                            <th className="text-left font-medium text-muted-foreground p-4">Asset</th>
-                            <th className="text-right font-medium text-muted-foreground p-4">Amount</th>
-                            <th className="text-right font-medium text-muted-foreground p-4">Value</th>
-                            <th className="text-right font-medium text-muted-foreground p-4">Date</th>
-                            <th className="text-right font-medium text-muted-foreground p-4">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {transactionsData.map((transaction) => (
-                            <tr key={transaction.id} className="border-b last:border-b-0">
-                              <td className="p-4">
-                                <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                                  transaction.type === "Buy"
-                                    ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                                    : transaction.type === "Sell"
-                                    ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                                    : "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"
-                                }`}>
-                                  {transaction.type}
-                                </span>
-                              </td>
-                              <td className="p-4">{transaction.asset}</td>
-                              <td className="p-4 text-right">{transaction.amount}</td>
-                              <td className="p-4 text-right">{transaction.value}</td>
-                              <td className="p-4 text-right">{transaction.date}</td>
-                              <td className="p-4 text-right">
-                                <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                                  {transaction.status}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-[400px]">
-                      <div className="text-center">
-                        <ArrowUpRight className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                        <h3 className="text-lg font-medium mb-2">No transactions</h3>
-                        <p className="text-muted-foreground max-w-md mx-auto">
-                          Connect accounts or add transactions to see your recent activity.
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </div>
-      </div>
-
-      {/* Holdings Section */}
-      <div className="mt-10 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-2xl font-bold">Holdings</h2>
-          <div className="mt-2 sm:mt-0 flex items-center gap-2">
-            <div className="bg-muted rounded-lg p-1 inline-flex">
-              <button 
-                className={`px-3 py-1.5 text-sm font-medium rounded-md ${assetType === "coins" 
-                  ? "bg-background shadow-sm" 
-                  : "text-muted-foreground hover:text-foreground"}`}
-                onClick={() => setAssetType("coins")}
-              >
-                Coins
-              </button>
-              <button 
-                className={`px-3 py-1.5 text-sm font-medium rounded-md ${assetType === "nfts" 
-                  ? "bg-background shadow-sm" 
-                  : "text-muted-foreground hover:text-foreground"}`}
-                onClick={() => setAssetType("nfts")}
-              >
-                NFTs
-              </button>
-              <button 
-                className={`px-3 py-1.5 text-sm font-medium rounded-md ${assetType === "defi" 
-                  ? "bg-background shadow-sm" 
-                  : "text-muted-foreground hover:text-foreground"}`}
-                onClick={() => setAssetType("defi")}
-              >
-                DeFi
-              </button>
+                  <p className="text-[12px] text-[#6B7280]">{tab.label}</p>
+                  <p className="text-[18px] font-semibold" style={{ color: activeTab === tab.key ? tab.color : "#1A1A1A", fontVariantNumeric: 'tabular-nums' }}>
+                    {tab.sign}${Math.abs(tab.value).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </p>
+                  {activeTab === tab.key && <div className="h-[2px] mt-1 rounded-full" style={{ backgroundColor: tab.color }} />}
+                </button>
+              ))}
             </div>
-            <button className="p-1.5 rounded-md hover:bg-muted">
-              <ArrowUpRight className="h-5 w-5 text-muted-foreground" />
-            </button>
+
+            {/* Chart */}
+            <div ref={chartRef} className="w-full" style={{ height: 200 }} />
+          </div>
+
+          {/* Gross Volume */}
+          <div className="border border-[#E5E5E0] dark:border-[#333] rounded-xl p-6 bg-white dark:bg-[#1A1A1A]">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Gross Volume</h2>
+              <MoreHorizontal className="h-4 w-4 text-[#9CA3AF]" />
+            </div>
+
+            <div className="flex items-baseline gap-2 mb-6">
+              <p className="text-[36px] font-bold text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+                ${(data?.pnl.totalVolume || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </p>
+            </div>
+
+            <div className="space-y-5">
+              {[
+                { label: "Capital Gains", value: data?.pnl.totalGains || 0, color: "#16A34A", max: data?.pnl.totalVolume || 1 },
+                { label: "Capital Losses", value: data?.pnl.totalLosses || 0, color: "#DC2626", max: data?.pnl.totalVolume || 1 },
+                { label: "Income", value: data?.pnl.totalIncome || 0, color: "#2563EB", max: data?.pnl.totalVolume || 1 },
+              ].map(row => (
+                <div key={row.label}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[14px] text-[#6B7280]">{row.label}</span>
+                    <span className="text-[14px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                      ${row.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                  <div className="h-[6px] w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all duration-500"
+                      style={{ width: `${Math.min((row.value / row.max) * 100, 100)}%`, backgroundColor: row.color }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
-        {assetType === "coins" && (
-          <Card>
-            <CardContent className="p-0">
-              {isLoading ? (
-                <div className="flex items-center justify-center h-[400px]">
-                  <div className="text-center">
-                    <Coins className="h-12 w-12 mx-auto mb-4 text-muted-foreground animate-pulse" />
-                    <p className="text-muted-foreground">Loading holdings...</p>
-                  </div>
-                </div>
-              ) : stats && stats.assetAllocation.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left font-medium text-muted-foreground p-4">Asset</th>
-                        <th className="text-right font-medium text-muted-foreground p-4">Amount</th>
-                        <th className="text-right font-medium text-muted-foreground p-4">Current Price</th>
-                        <th className="text-right font-medium text-muted-foreground p-4">Current Value</th>
-                        <th className="text-right font-medium text-muted-foreground p-4">Cost Basis</th>
-                        <th className="text-right font-medium text-muted-foreground p-4">Gain/Loss</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {stats.assetAllocation.map((asset) => {
-                        const gainLoss = asset.value - asset.costBasis;
-                        const gainLossPercent = asset.costBasis > 0 
-                          ? ((gainLoss / asset.costBasis) * 100).toFixed(2)
-                          : "0.00";
-                        return (
-                          <tr key={asset.name} className="border-b last:border-b-0 hover:bg-muted/50">
-                            <td className="p-4 font-medium">{asset.name}</td>
-                            <td className="p-4 text-right">{asset.amount.toFixed(6)}</td>
-                            <td className="p-4 text-right">{formatCurrency(asset.currentPrice)}</td>
-                            <td className="p-4 text-right font-medium">{formatCurrency(asset.value)}</td>
-                            <td className="p-4 text-right">{formatCurrency(asset.costBasis)}</td>
-                            <td className={`p-4 text-right font-medium ${gainLoss >= 0 ? "text-green-500" : "text-red-500"}`}>
-                              {gainLoss >= 0 ? "+" : ""}{formatCurrency(gainLoss)} ({gainLossPercent}%)
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-[400px]">
-                  <div className="text-center">
-                    <Coins className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                    <h3 className="text-lg font-medium mb-2">No coins found</h3>
-                    <p className="text-muted-foreground max-w-md mx-auto">
-                      Connect accounts or add transactions to see your coin holdings.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
+        {/* Row 2: Activity + Top Assets + Insights */}
+        <div className="grid grid-cols-3 gap-4">
 
-        {assetType === "nfts" && (
-          <Card>
-            <CardContent className="p-0">
-              <div className="flex items-center justify-center h-[400px]">
-                <div className="text-center">
-                  <Wallet className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-lg font-medium mb-2">No NFTs found</h3>
-                  <p className="text-muted-foreground max-w-md mx-auto">
-                    Connect accounts or add transactions to see your NFT holdings.
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+          {/* Activity */}
+          <div className="border border-[#E5E5E0] dark:border-[#333] rounded-xl p-6 bg-white dark:bg-[#1A1A1A]">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Transactions</h2>
+              <MoreHorizontal className="h-4 w-4 text-[#9CA3AF]" />
+            </div>
+            {data?.activity.peakMonth && (
+              <span className="inline-flex items-center rounded-full bg-[#F5F5F0] dark:bg-[#222] px-2 py-0.5 text-[11px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5] mb-3">
+                Peak: {data.activity.peakMonth}
+              </span>
+            )}
+            <p className="text-[36px] font-bold text-[#1A1A1A] dark:text-[#F5F5F5] mb-3" style={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+              {(data?.activity.totalTransactions || 0).toLocaleString()}
+            </p>
 
-        {assetType === "defi" && (
-          <Card>
-            <CardContent className="p-0">
-              <div className="flex items-center justify-center h-[400px]">
-                <div className="text-center">
-                  <Wallet className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-lg font-medium mb-2">No DeFi positions</h3>
-                  <p className="text-muted-foreground max-w-md mx-auto">
-                    Connect accounts or add transactions to see your DeFi positions.
-                  </p>
+            {/* Dot grid pattern */}
+            <div className="flex items-end gap-[3px] h-[60px] mb-3">
+              {(data?.activity.monthlyPattern || []).slice(-12).map((m, i) => {
+                const max = Math.max(...(data?.activity.monthlyPattern || []).map(p => p.count), 1);
+                const height = Math.max(4, (m.count / max) * 50);
+                return (
+                  <div key={i} className="flex-1 rounded-sm bg-[#2563EB]" style={{ height, opacity: 0.3 + (m.count / max) * 0.7 }} title={`${m.month}: ${m.count}`} />
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Top Assets */}
+          <div className="border border-[#E5E5E0] dark:border-[#333] rounded-xl p-6 bg-white dark:bg-[#1A1A1A]">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Top Assets</h2>
+              <MoreHorizontal className="h-4 w-4 text-[#9CA3AF]" />
+            </div>
+
+            <div className="space-y-0">
+              {(data?.topAssets || []).slice(0, 6).map((asset, i) => (
+                <div key={asset.asset} className={cn("flex items-center justify-between py-2.5", i > 0 && "border-t border-[#F0F0EB] dark:border-[#2A2A2A]")}>
+                  <div className="flex items-center gap-2.5">
+                    <AssetIcon symbol={asset.asset} />
+                    <span className="text-[14px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">{asset.asset}</span>
+                  </div>
+                  <span className={cn("text-[14px] font-medium", asset.gainLoss >= 0 ? "text-[#16A34A]" : "text-[#DC2626]")} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {asset.gainLoss >= 0 ? "+" : "-"}${Math.abs(asset.gainLoss).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </span>
                 </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Insights */}
+          <div className="rounded-xl p-6 text-white overflow-hidden relative" style={{ background: "linear-gradient(135deg, #1E3A5F 0%, #0C1929 100%)" }}>
+            <div className="flex items-center justify-between mb-6">
+              <span className="inline-flex items-center gap-1 rounded-full bg-[rgba(147,197,253,0.15)] px-2.5 py-0.5 text-[11px] font-medium text-[#93C5FD]">
+                <Sparkles className="h-3 w-3" />
+                Insights
+              </span>
+              <MoreHorizontal className="h-4 w-4 text-white/40" />
+            </div>
+
+            <div className="transition-opacity duration-300" key={insightIndex}>
+              <p className="text-[48px] font-bold leading-none mb-3" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {currentInsight.metric}
+              </p>
+              <p className="text-[16px] font-normal text-white/80 mb-2">
+                {currentInsight.description}
+              </p>
+              <p className="text-[13px] text-white/50">
+                {currentInsight.detail}
+              </p>
+            </div>
+
+            {/* Progress dots */}
+            {insights.length > 1 && (
+              <div className="flex items-center gap-1.5 mt-6">
+                {insights.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setInsightIndex(i)}
+                    className={cn("h-1 rounded-full transition-all duration-300", i === insightIndex % insights.length ? "w-4 bg-white" : "w-1.5 bg-white/30")}
+                  />
+                ))}
               </div>
-            </CardContent>
-          </Card>
-        )}
+            )}
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="flex items-center gap-6 pt-2">
+          <Link href="/transactions" className="text-[13px] text-[#6B7280] hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors">
+            View Transactions →
+          </Link>
+          <Link href="/tax-reports" className="text-[13px] text-[#6B7280] hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors">
+            Generate Tax Report →
+          </Link>
+          <Link href="/accounts" className="text-[13px] text-[#6B7280] hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors">
+            Manage Accounts →
+          </Link>
+        </div>
       </div>
     </Layout>
   );
