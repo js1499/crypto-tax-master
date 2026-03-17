@@ -80,6 +80,7 @@ function AccountsContent() {
   const [syncing, setSyncing] = useState<string | null>(null);
   const [enriching, setEnriching] = useState<string | null>(null);
   const [enrichingAll, setEnrichingAll] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -469,8 +470,49 @@ function AccountsContent() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            {/* Bulk actions in header */}
-            {!loading && !error && allAccounts.length > 0 && (
+            {/* Selection bulk actions */}
+            {selectedIds.size > 0 && (
+              <>
+                <span className="text-[13px] text-[#6B7280]">{selectedIds.size} selected</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    for (const id of selectedIds) {
+                      const acct = allAccounts.find(a => a.id === id);
+                      if (acct?.type === "wallet") await handleSyncWallet(id);
+                      else if (acct?.type === "exchange") {
+                        const ex = exchanges.find(e => e.id === id);
+                        if (ex?.isConnected) await handleSyncExchange(id);
+                      }
+                    }
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                  Sync Selected
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-[#DC2626] border-[#DC2626]/30 hover:bg-[#FEF2F2] dark:hover:bg-[rgba(220,38,38,0.1)]"
+                  onClick={async () => {
+                    if (!confirm(`Disconnect ${selectedIds.size} account(s)?`)) return;
+                    for (const id of selectedIds) {
+                      const acct = allAccounts.find(a => a.id === id);
+                      if (acct?.type === "wallet") await handleDisconnectWallet(id);
+                      else await handleDisconnectExchange(id);
+                    }
+                    setSelectedIds(new Set());
+                  }}
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Remove Selected
+                </Button>
+              </>
+            )}
+            {/* Standard actions in header */}
+            {!loading && !error && allAccounts.length > 0 && selectedIds.size === 0 && (
               <>
                 <Button
                   variant="outline"
@@ -559,7 +601,13 @@ function AccountsContent() {
               <TableHeader className="sticky top-0 z-10 bg-[#FAFAF8] dark:bg-[#161616]">
                 <TableRow className="border-b border-[#E5E5E0] dark:border-[#333]">
                   <TableHead className="w-11 border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
-                    <Checkbox />
+                    <Checkbox
+                      checked={filteredAccounts.length > 0 && selectedIds.size === filteredAccounts.length}
+                      onCheckedChange={(checked) => {
+                        if (checked) setSelectedIds(new Set(filteredAccounts.map(a => a.id)));
+                        else setSelectedIds(new Set());
+                      }}
+                    />
                   </TableHead>
                   <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                     <span className="inline-flex items-center gap-1.5">
@@ -622,9 +670,15 @@ function AccountsContent() {
                       >
                         {/* Checkbox */}
                         <TableCell className="w-11 border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
-                          <div className="opacity-30 group-hover:opacity-100 transition-opacity">
-                            <Checkbox onClick={(e) => e.stopPropagation()} />
-                          </div>
+                          <Checkbox
+                            checked={selectedIds.has(account.id)}
+                            onCheckedChange={(checked) => {
+                              const next = new Set(selectedIds);
+                              if (checked) next.add(account.id); else next.delete(account.id);
+                              setSelectedIds(next);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
                         </TableCell>
 
                         {/* Account name */}
@@ -699,11 +753,11 @@ function AccountsContent() {
                           </span>
                         </TableCell>
 
-                        {/* Actions — always visible, muted */}
+                        {/* Actions — always visible, subtle bordered */}
                         <TableCell>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1.5">
                             <button
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[#6B7280] hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] transition-colors"
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[11px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (isExchange) handleSyncExchange(account.id);
@@ -715,7 +769,7 @@ function AccountsContent() {
                             </button>
                             {!isExchange && (
                               <button
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[#6B7280] hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] transition-colors"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[11px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#0D9488] hover:text-[#0D9488] transition-colors"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleEnrichWallet(account.id);
@@ -726,7 +780,7 @@ function AccountsContent() {
                               </button>
                             )}
                             <button
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[#9CA3AF] hover:text-[#DC2626] hover:bg-[#FEF2F2] dark:hover:bg-[rgba(220,38,38,0.1)] transition-colors"
+                              className="inline-flex items-center px-1.5 py-1 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF] hover:border-[#DC2626] hover:text-[#DC2626] transition-colors"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (isExchange) handleDisconnectExchange(account.id);
