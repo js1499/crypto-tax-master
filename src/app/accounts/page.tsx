@@ -776,7 +776,7 @@ function AccountsContent() {
                             {(() => {
                               const logo = getProviderLogo(account.provider) || getProviderLogo(account.name);
                               return logo ? (
-                                <img src={logo} alt={account.provider} className="h-[28px] w-[28px] rounded-full object-cover shrink-0" />
+                                <img src={logo} alt={account.provider} className="h-[28px] w-[28px] rounded-full object-contain shrink-0 border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] p-[2px]" />
                               ) : (
                                 <span className={cn(
                                   "inline-flex items-center justify-center h-[28px] w-[28px] rounded-full text-white text-[11px] font-bold shrink-0",
@@ -928,7 +928,7 @@ function AccountsContent() {
                     {(() => {
                       const logo = getProviderLogo(selectedAccount.provider) || getProviderLogo(selectedAccount.name);
                       return logo ? (
-                        <img src={logo} alt={selectedAccount.provider} className="h-[32px] w-[32px] rounded-full object-cover shrink-0" />
+                        <img src={logo} alt={selectedAccount.provider} className="h-[32px] w-[32px] rounded-full object-contain shrink-0 border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] p-[3px]" />
                       ) : (
                         <span className={cn(
                           "inline-flex items-center justify-center h-[32px] w-[32px] rounded-full text-white text-[12px] font-bold shrink-0",
