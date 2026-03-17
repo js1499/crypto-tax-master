@@ -45,7 +45,7 @@ const taxForms = [
     name: "IRS Schedule D",
     description: "Summary of capital gains/losses — companion to Form 8949",
     category: "irs" as const,
-    status: "needs-pdf" as const,
+    status: "ready" as const,
   },
   {
     id: 9,
@@ -372,6 +372,7 @@ export default function TaxReportsPage() {
     // IRS PDF forms
     const pdfFormMap: Record<string, { param: string; filename: string }> = {
       "IRS Form 8949": { param: "8949", filename: `Form8949-${selectedYear}.pdf` },
+      "IRS Schedule D": { param: "scheduled", filename: `ScheduleD-${selectedYear}.pdf` },
       "IRS Schedule 1": { param: "schedule1", filename: `Schedule1-${selectedYear}.pdf` },
     };
     if (pdfFormMap[form.name]) {

@@ -341,15 +341,83 @@ async function generateSchedule1(
 }
 
 // ---------------------------------------------------------------------------
+// Schedule D generation
+// ---------------------------------------------------------------------------
+
+async function generateScheduleD(
+  report: TaxReport,
+  taxpayerName?: string,
+  ssn?: string,
+): Promise<Uint8Array> {
+  const templatePath = path.join(process.cwd(), "public", "forms", "f1040sd.pdf");
+  const templateBytes = new Uint8Array(fs.readFileSync(templatePath));
+
+  const doc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
+  const form = doc.getForm();
+
+  // Header
+  if (taxpayerName) setTextField(form, "f1_1[0]", taxpayerName);
+  if (ssn) setTextField(form, "f1_2[0]", ssn);
+
+  // Checkbox: "Did you dispose of any investments?" — Yes
+  checkCheckbox(form, "c1_1[0]");
+
+  // ---- Part I: Short-Term ----
+  // Line 1a (Form 8949 Box A totals): proceeds, cost, adjustments, gain/loss
+  const stEvents = report.taxableEvents.filter((e) => e.holdingPeriod === "short");
+  const stProceeds = stEvents.reduce((s, e) => s + e.proceeds, 0);
+  const stCostBasis = stEvents.reduce((s, e) => s + e.costBasis, 0);
+  const stGainLoss = stEvents.reduce((s, e) => s + e.gainLoss, 0);
+
+  setTextField(form, "f1_3[0]", formatCurrency(stProceeds));
+  setTextField(form, "f1_4[0]", formatCurrency(stCostBasis));
+  // f1_5 = adjustments (skip)
+  setTextField(form, "f1_6[0]", formatCurrency(stGainLoss));
+
+  // Line 7: Net short-term capital gain or loss
+  setTextField(form, "f1_22[0]", formatCurrency(report.netShortTermGain));
+
+  // ---- Part II: Long-Term ----
+  // Line 8a (Form 8949 Box D totals)
+  const ltEvents = report.taxableEvents.filter((e) => e.holdingPeriod === "long");
+  const ltProceeds = ltEvents.reduce((s, e) => s + e.proceeds, 0);
+  const ltCostBasis = ltEvents.reduce((s, e) => s + e.costBasis, 0);
+  const ltGainLoss = ltEvents.reduce((s, e) => s + e.gainLoss, 0);
+
+  setTextField(form, "f1_23[0]", formatCurrency(ltProceeds));
+  setTextField(form, "f1_24[0]", formatCurrency(ltCostBasis));
+  // f1_25 = adjustments (skip)
+  setTextField(form, "f1_26[0]", formatCurrency(ltGainLoss));
+
+  // Line 15: Net long-term capital gain or loss
+  setTextField(form, "f1_43[0]", formatCurrency(report.netLongTermGain));
+
+  // ---- Part III: Summary (Page 2) ----
+  // Line 16: Combine lines 7 and 15
+  const combined = report.netShortTermGain + report.netLongTermGain;
+  setTextField(form, "f2_1[0]", formatCurrency(combined));
+
+  // Line 21: If loss, capital loss deduction (max $3,000)
+  if (combined < 0) {
+    const deductible = Math.max(combined, -3000);
+    setTextField(form, "f2_4[0]", formatCurrency(deductible));
+  }
+
+  form.flatten();
+  return doc.save();
+}
+
+// ---------------------------------------------------------------------------
 // API Route Handler
 // ---------------------------------------------------------------------------
 
 /**
  * GET /api/tax-reports/pdf?year=2024&form=8949
+ * GET /api/tax-reports/pdf?year=2024&form=scheduled
  * GET /api/tax-reports/pdf?year=2024&form=schedule1
  *
- * Generates a fillable IRS PDF for Form 8949 or Schedule 1 using pdf-lib,
- * populated with the user's tax data for the requested year.
+ * Generates a fillable IRS PDF for Form 8949, Schedule D, or Schedule 1
+ * using pdf-lib, populated with the user's tax data for the requested year.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -375,9 +443,9 @@ export async function GET(request: NextRequest) {
     }
 
     const formParam = (searchParams.get("form") || "").toLowerCase();
-    if (formParam !== "8949" && formParam !== "schedule1") {
+    if (formParam !== "8949" && formParam !== "schedule1" && formParam !== "scheduled") {
       return NextResponse.json(
-        { error: "Invalid form parameter. Must be '8949' or 'schedule1'." },
+        { error: "Invalid form parameter. Must be '8949', 'schedule1', or 'scheduled'." },
         { status: 400 },
       );
     }
@@ -466,6 +534,9 @@ export async function GET(request: NextRequest) {
     if (formParam === "8949") {
       pdfBytes = await generateForm8949(report, taxpayerName, ssn);
       filename = `Form8949-${year}.pdf`;
+    } else if (formParam === "scheduled") {
+      pdfBytes = await generateScheduleD(report, taxpayerName, ssn);
+      filename = `ScheduleD-${year}.pdf`;
     } else {
       pdfBytes = await generateSchedule1(report, taxpayerName, ssn);
       filename = `Schedule1-${year}.pdf`;
