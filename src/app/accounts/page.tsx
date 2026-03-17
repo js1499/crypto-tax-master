@@ -580,6 +580,82 @@ function AccountsContent() {
           </Select>
         </div>
 
+        {/* ── Account Breakdown + Sync Status ── */}
+        {!loading && !error && allAccounts.length > 0 && (() => {
+          const walletCount = accounts.length;
+          const exchangeCount = exchanges.length;
+          const total = walletCount + exchangeCount;
+          const connectedCount = walletCount + exchanges.filter(e => e.isConnected).length;
+          const totalTxns = accounts.reduce((sum, a) => sum + (a as WalletAccount).transactionCount, 0);
+
+          // Sync freshness: accounts synced in last 24h
+          const now = Date.now();
+          const recentlySynced = allAccounts.filter(a => {
+            const syncDate = a.type === "exchange" ? (exchanges.find(e => e.id === a.id)?.lastSyncAt) : a.updatedAt;
+            if (!syncDate) return false;
+            return (now - new Date(syncDate).getTime()) < 24 * 60 * 60 * 1000;
+          }).length;
+          const syncPct = total > 0 ? Math.round((recentlySynced / total) * 100) : 0;
+
+          return (
+            <div className="flex items-center gap-8">
+              {/* Account type split bar */}
+              <div className="flex-1 max-w-[400px] space-y-1.5">
+                <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">Account Breakdown</p>
+                <div className="flex h-5 w-full rounded-md overflow-hidden">
+                  {walletCount > 0 && (
+                    <div
+                      className="h-full bg-[#2563EB] flex items-center justify-center"
+                      style={{ width: `${(walletCount / total) * 100}%`, minWidth: walletCount > 0 ? '30px' : '0' }}
+                      title={`${walletCount} Wallet${walletCount !== 1 ? "s" : ""}`}
+                    >
+                      {(walletCount / total) > 0.15 && <span className="text-[9px] font-semibold text-white">{walletCount} Wallet{walletCount !== 1 ? "s" : ""}</span>}
+                    </div>
+                  )}
+                  {exchangeCount > 0 && (
+                    <div
+                      className="h-full bg-[#9333EA] flex items-center justify-center"
+                      style={{ width: `${(exchangeCount / total) * 100}%`, minWidth: exchangeCount > 0 ? '30px' : '0' }}
+                      title={`${exchangeCount} Exchange${exchangeCount !== 1 ? "s" : ""}`}
+                    >
+                      {(exchangeCount / total) > 0.15 && <span className="text-[9px] font-semibold text-white">{exchangeCount} Exchange{exchangeCount !== 1 ? "s" : ""}</span>}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sync freshness */}
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">Sync Status</p>
+                <div className="flex items-center gap-2">
+                  <div className="w-[120px]">
+                    <div className="h-2.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full", syncPct === 100 ? "bg-[#16A34A]" : syncPct > 50 ? "bg-[#2563EB]" : "bg-[#F97316]")}
+                        style={{ width: `${syncPct}%` }}
+                      />
+                    </div>
+                  </div>
+                  <span className={cn("text-[12px] font-bold", syncPct === 100 ? "text-[#16A34A]" : syncPct > 50 ? "text-[#2563EB]" : "text-[#F97316]")} style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    {recentlySynced}/{total} synced today
+                  </span>
+                </div>
+              </div>
+
+              {/* Connected status */}
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">Health</p>
+                <div className="flex items-center gap-2">
+                  <span className={cn("h-2.5 w-2.5 rounded-full", connectedCount === total ? "bg-[#16A34A]" : "bg-[#F97316]")} />
+                  <span className="text-[12px] font-medium text-[#4B5563] dark:text-[#9CA3AF]">
+                    {connectedCount === total ? "All connected" : `${connectedCount}/${total} connected`}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* OAuth Status Messages */}
         {oauthStatus?.success && (
           <div className="p-3 rounded-lg bg-pill-green-bg dark:bg-[rgba(22,163,74,0.12)] border border-[#E5E5E0] dark:border-[#333] flex items-center gap-3">
