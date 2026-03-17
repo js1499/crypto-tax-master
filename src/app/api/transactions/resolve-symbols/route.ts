@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import { getHeliusTokenData, getJupiterTokenMap } from "@/lib/helius-transactions";
 import * as Sentry from "@sentry/nextjs";
+import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 
 /**
  * POST /api/transactions/resolve-symbols
@@ -161,6 +162,11 @@ export async function POST(request: NextRequest) {
     console.log(
       `[Resolve Symbols] Done: ${resolvedCount} DB records updated, ${finalUnresolved} mints still unresolved`
     );
+
+    // Invalidate tax report cache after symbol resolution updates
+    if (resolvedCount > 0) {
+      await invalidateTaxReportCache(user.id);
+    }
 
     return NextResponse.json({
       status: "success",

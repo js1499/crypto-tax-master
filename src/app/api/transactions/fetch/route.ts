@@ -4,6 +4,7 @@ import { fetchWalletTransactions } from "@/lib/blockchain-apis";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
+import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 
 // Configure for long-running operations on Vercel
 export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
@@ -139,6 +140,9 @@ export async function POST(request: NextRequest) {
         // Continue with next transaction
       }
     }
+
+    // Invalidate tax report cache after transaction mutations
+    await invalidateTaxReportCache(user.id);
 
     // Update or create wallet record
     const walletProvider = chain === "ethereum" ? "ethereum" : "solana";

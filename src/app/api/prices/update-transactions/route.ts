@@ -3,7 +3,9 @@ import prisma from "@/lib/prisma";
 import { getHistoricalPriceAtTimestamp } from "@/lib/coingecko";
 import { Decimal } from "@prisma/client/runtime/library";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
+import { getCurrentUser } from "@/lib/auth-helpers";
 import * as Sentry from "@sentry/nextjs";
+import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 
 /**
  * POST /api/prices/update-transactions
@@ -20,6 +22,15 @@ export async function POST(request: NextRequest) {
         rateLimitResult.reset
       );
     }
+
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json(
+        { error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json().catch(() => ({}));
     const limit = body.limit || 100; // Default to 100 transactions per request
 
@@ -86,6 +97,11 @@ export async function POST(request: NextRequest) {
         );
         errors++;
       }
+    }
+
+    // Invalidate tax report cache after price updates
+    if (updated > 0) {
+      await invalidateTaxReportCache(user.id);
     }
 
     return NextResponse.json({

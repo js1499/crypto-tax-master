@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import { getCategory } from "@/lib/transaction-categorizer";
 import * as Sentry from "@sentry/nextjs";
+import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 
 /**
  * POST /api/transactions/categorize
@@ -134,6 +135,9 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[Categorize Transactions] User ${user.id}: Updated ${updated} transactions, ${categorized} identified`);
+
+    // Invalidate tax report cache after categorization updates
+    await invalidateTaxReportCache(user.id);
 
     return NextResponse.json({
       status: "success",

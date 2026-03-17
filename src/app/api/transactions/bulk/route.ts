@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { Decimal } from "@prisma/client/runtime/library";
+import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 
 /**
  * POST /api/transactions/bulk
@@ -194,6 +195,9 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
     }
+
+    // Invalidate tax report cache after bulk transaction mutations
+    await invalidateTaxReportCache(user.id);
 
     return NextResponse.json({
       status: "success",

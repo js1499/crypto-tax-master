@@ -12,6 +12,7 @@ import {
 } from "@/lib/exchange-clients";
 import { getCoinbaseTransactions, getCoinbaseTransactionsWithApiKey } from "@/lib/coinbase-transactions";
 import { recomputeCostBasis } from "@/lib/compute-cost-basis";
+import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 
 // Encryption key - REQUIRED for decrypting exchange credentials
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
@@ -332,6 +333,9 @@ export async function POST(request: NextRequest) {
 
     // Auto-recompute cost basis after sync
     await recomputeCostBasis(user.id);
+
+    // Invalidate tax report cache after transaction mutations
+    await invalidateTaxReportCache(user.id);
 
     // PRD Observability: Structured response with metrics
     const response = {

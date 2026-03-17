@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { recomputeCostBasis } from "@/lib/compute-cost-basis";
+import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 import {
   getWalletTransactions,
   getWalletTransactionsAllChains,
@@ -329,6 +330,9 @@ export async function POST(request: NextRequest) {
 
     // Auto-recompute cost basis after sync
     await recomputeCostBasis(user.id);
+
+    // Invalidate tax report cache after transaction mutations
+    await invalidateTaxReportCache(user.id);
 
     const response = {
       status: "success",

@@ -171,6 +171,19 @@ model HeliusRawTransaction {
   @@map("helius_raw_transactions")
 }
 
+model TaxReportCache {
+  id              String   @id @default(cuid())
+  userId          String
+  year            Int
+  costBasisMethod String   @default("FIFO")
+  reportData      Json
+  computedAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([userId, year, costBasisMethod])
+  @@index([userId])
+  @@map("tax_report_cache")
+}
+
 // Persistent cache for OHLCV mint address lookups.
 // Stores whether a mint has on-chain price data so subsequent
 // enrichment runs skip already-failed mints (404s).

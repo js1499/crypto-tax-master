@@ -6,6 +6,7 @@ import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { Decimal } from "@prisma/client/runtime/library";
 import { isOutflow } from "@/lib/transaction-categorizer";
+import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 
 /**
  * PATCH /api/transactions/:id
@@ -148,6 +149,9 @@ export async function PATCH(
       },
     });
 
+    // Invalidate tax report cache after transaction update
+    await invalidateTaxReportCache(user.id);
+
     // Format response
     const amountValue = Number(updatedTransaction.amount_value);
     const valueUsd = Number(updatedTransaction.value_usd);
@@ -277,6 +281,9 @@ export async function DELETE(
     await prisma.transaction.delete({
       where: { id: transactionId },
     });
+
+    // Invalidate tax report cache after transaction deletion
+    await invalidateTaxReportCache(user.id);
 
     return NextResponse.json({
       status: "success",

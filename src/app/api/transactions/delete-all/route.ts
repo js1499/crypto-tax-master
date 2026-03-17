@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitByUser, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
+import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 
 /**
  * DELETE /api/transactions/delete-all
@@ -129,6 +130,9 @@ export async function DELETE(request: NextRequest) {
     });
 
     console.log(`[Delete All Transactions] User ${user.id} deleted ${result.count} transactions`);
+
+    // Invalidate tax report cache after deleting all transactions
+    await invalidateTaxReportCache(user.id);
 
     return NextResponse.json({
       status: "success",
