@@ -615,15 +615,15 @@ function AccountsContent() {
               {/* Account type split bar */}
               <div className="space-y-1">
                 <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">Account Breakdown</p>
-                <div className="flex h-5 w-[180px] rounded-md overflow-hidden">
+                <div className="flex h-5 w-[280px] rounded-md overflow-hidden">
                   {walletCount > 0 && (
-                    <div className="h-full bg-[#2563EB] flex items-center justify-center" style={{ width: `${(walletCount / total) * 100}%`, minWidth: '30px' }} title={`${walletCount} Wallets`}>
-                      <span className="text-[9px] font-semibold text-white">{walletCount}W</span>
+                    <div className="h-full bg-[#2563EB] flex items-center justify-center" style={{ width: `${(walletCount / total) * 100}%`, minWidth: '60px' }} title={`${walletCount} Wallets`}>
+                      <span className="text-[10px] font-semibold text-white">{walletCount} Wallet{walletCount !== 1 ? "s" : ""}</span>
                     </div>
                   )}
                   {exchangeCount > 0 && (
-                    <div className="h-full bg-[#9333EA] flex items-center justify-center" style={{ width: `${(exchangeCount / total) * 100}%`, minWidth: '30px' }} title={`${exchangeCount} Exchanges`}>
-                      <span className="text-[9px] font-semibold text-white">{exchangeCount}E</span>
+                    <div className="h-full bg-[#9333EA] flex items-center justify-center" style={{ width: `${(exchangeCount / total) * 100}%`, minWidth: '70px' }} title={`${exchangeCount} Exchanges`}>
+                      <span className="text-[10px] font-semibold text-white">{exchangeCount} Exchange{exchangeCount !== 1 ? "s" : ""}</span>
                     </div>
                   )}
                 </div>
