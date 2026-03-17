@@ -69,12 +69,28 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // ── Year parameter ─────────────────────────────────────────────
+    // ── Date range parameter ────────────────────────────────────────
     const { searchParams } = new URL(request.url);
     const yearParam = searchParams.get("year");
-    const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
-    const yearStart = new Date(`${year}-01-01T00:00:00Z`);
-    const yearEnd = new Date(`${year}-12-31T23:59:59.999Z`);
+    const dateFromParam = searchParams.get("dateFrom");
+    const dateToParam = searchParams.get("dateTo");
+
+    let yearStart: Date;
+    let yearEnd: Date;
+    let year: number | null = null;
+
+    if (dateFromParam && dateToParam) {
+      yearStart = new Date(dateFromParam);
+      yearEnd = new Date(dateToParam + "T23:59:59.999Z");
+    } else if (yearParam && yearParam !== "all") {
+      year = parseInt(yearParam, 10);
+      yearStart = new Date(`${year}-01-01T00:00:00Z`);
+      yearEnd = new Date(`${year}-12-31T23:59:59.999Z`);
+    } else {
+      // All time — use very wide range
+      yearStart = new Date("2009-01-01T00:00:00Z");
+      yearEnd = new Date("2099-12-31T23:59:59.999Z");
+    }
 
     // ── Resolve wallet addresses & exchange names (same as stats) ──
     const userWithWallets = await prisma.user.findUnique({
