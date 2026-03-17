@@ -73,6 +73,26 @@ interface ExchangeAccount extends BaseAccount {
 
 type Account = WalletAccount | ExchangeAccount;
 
+// Provider logo mapping
+const PROVIDER_LOGOS: Record<string, string> = {
+  solana: "/logos/SOL.png",
+  "solana wallet": "/logos/SOL.png",
+  ethereum: "/logos/ETH.png",
+  "ethereum wallet": "/logos/ETH.png",
+  bitcoin: "/logos/BTC.png",
+  "bitcoin wallet": "/logos/BTC.png",
+  coinbase: "/logos/coinbase.png",
+  binance: "/logos/binance.jpg",
+  kraken: "/logos/kraken.svg",
+  gemini: "/logos/gemini.png",
+  kucoin: "/logos/kucoin.png",
+};
+
+function getProviderLogo(provider: string): string | null {
+  const key = provider.toLowerCase();
+  return PROVIDER_LOGOS[key] || null;
+}
+
 // Create a separate component for the accounts page content
 function AccountsContent() {
   const [mounted, setMounted] = useState(false);
@@ -753,12 +773,19 @@ function AccountsContent() {
                         {/* Account name */}
                         <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                           <div className="flex items-center gap-2.5">
-                            <span className={cn(
-                              "inline-flex items-center justify-center h-[28px] w-[28px] rounded-lg text-white text-[11px] font-bold shrink-0",
-                              isExchange ? "bg-[#9333EA]" : "bg-[#2563EB]"
-                            )}>
-                              {isExchange ? <Building className="h-3.5 w-3.5" /> : <Wallet className="h-3.5 w-3.5" />}
-                            </span>
+                            {(() => {
+                              const logo = getProviderLogo(account.provider) || getProviderLogo(account.name);
+                              return logo ? (
+                                <img src={logo} alt={account.provider} className="h-[28px] w-[28px] rounded-full object-cover shrink-0" />
+                              ) : (
+                                <span className={cn(
+                                  "inline-flex items-center justify-center h-[28px] w-[28px] rounded-full text-white text-[11px] font-bold shrink-0",
+                                  isExchange ? "bg-[#9333EA]" : "bg-[#2563EB]"
+                                )}>
+                                  {isExchange ? <Building className="h-3.5 w-3.5" /> : <Wallet className="h-3.5 w-3.5" />}
+                                </span>
+                              );
+                            })()}
                             <div>
                               <p className="text-[14px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5] capitalize">{account.name}</p>
                               <p className="text-[12px] text-[#9CA3AF]">{account.provider === 'coinbase' ? 'Coinbase' : account.provider}</p>
@@ -898,12 +925,19 @@ function AccountsContent() {
               <>
                 <SheetHeader>
                   <div className="flex items-center gap-3">
-                    <span className={cn(
-                      "inline-flex items-center justify-center h-[32px] w-[32px] rounded-lg text-white text-[12px] font-bold shrink-0",
-                      isExchange ? "bg-[#9333EA]" : "bg-[#2563EB]"
-                    )}>
-                      {isExchange ? <Building className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
-                    </span>
+                    {(() => {
+                      const logo = getProviderLogo(selectedAccount.provider) || getProviderLogo(selectedAccount.name);
+                      return logo ? (
+                        <img src={logo} alt={selectedAccount.provider} className="h-[32px] w-[32px] rounded-full object-cover shrink-0" />
+                      ) : (
+                        <span className={cn(
+                          "inline-flex items-center justify-center h-[32px] w-[32px] rounded-full text-white text-[12px] font-bold shrink-0",
+                          isExchange ? "bg-[#9333EA]" : "bg-[#2563EB]"
+                        )}>
+                          {isExchange ? <Building className="h-4 w-4" /> : <Wallet className="h-4 w-4" />}
+                        </span>
+                      );
+                    })()}
                     <div>
                       <SheetTitle className="text-[16px] capitalize">{selectedAccount.name}</SheetTitle>
                       <SheetDescription className="text-[12px]">
