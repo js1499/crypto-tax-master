@@ -132,52 +132,39 @@ export default function TaxReportsPage() {
     }
   }, []);
 
-  // Parallel fetch: load settings and tax report simultaneously on mount / year change
+  // Fetch tax report + settings on mount / year change
   useEffect(() => {
     if (!mounted) return;
-
-    const fetchTaxReportWithMethod = async (method: "FIFO" | "LIFO" | "HIFO") => {
-      const response = await fetch(`/api/tax-reports?year=${selectedYear}&method=${method}`);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.details || "Failed to fetch tax report");
-      }
-      const data = await response.json();
-      if (data.status === "success" && data.report) {
-        return data.report as TaxReportData;
-      }
-      throw new Error(data.error || "Failed to load tax report");
-    };
 
     const loadData = async () => {
       setIsLoading(true);
       setError(null);
 
       try {
-        // Fire both requests in parallel: settings + tax report with default FIFO
-        const [settingsResponse, fifoReport] = await Promise.all([
+        // Fetch settings and tax report in parallel
+        const [settingsRes, reportRes] = await Promise.all([
           fetch("/api/settings").catch(() => null),
-          fetchTaxReportWithMethod("FIFO"),
+          fetch(`/api/tax-reports?year=${selectedYear}`),
         ]);
 
-        // Show FIFO results immediately
-        setReportData(fifoReport);
-
-        // Parse settings to check actual cost basis method
-        let actualMethod: "FIFO" | "LIFO" | "HIFO" = "FIFO";
-        if (settingsResponse && settingsResponse.ok) {
-          const settingsData = await settingsResponse.json();
+        // Parse settings
+        if (settingsRes && settingsRes.ok) {
+          const settingsData = await settingsRes.json();
           if (settingsData.costBasisMethod) {
-            actualMethod = settingsData.costBasisMethod;
+            setCostBasisMethod(settingsData.costBasisMethod);
           }
         }
 
-        setCostBasisMethod(actualMethod);
-
-        // If user's actual method differs from FIFO, re-fetch with the correct method
-        if (actualMethod !== "FIFO") {
-          const correctedReport = await fetchTaxReportWithMethod(actualMethod);
-          setReportData(correctedReport);
+        // Parse report
+        if (!reportRes.ok) {
+          const errorData = await reportRes.json().catch(() => ({}));
+          throw new Error(errorData.error || errorData.details || "Failed to fetch tax report");
+        }
+        const data = await reportRes.json();
+        if (data.status === "success" && data.report) {
+          setReportData(data.report as TaxReportData);
+        } else {
+          throw new Error(data.error || "Failed to load tax report");
         }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : "Failed to load tax report";
@@ -414,21 +401,17 @@ export default function TaxReportsPage() {
 
   const parseCurrency = (value: string): number => parseFloat(value.replace(/[$,]/g, "")) || 0;
 
-  const stGains = parseCurrency(displayData.shortTermGains);
-  const ltGains = parseCurrency(displayData.longTermGains);
-  const stLosses = parseCurrency(displayData.shortTermLosses);
-  const ltLosses = parseCurrency(displayData.longTermLosses);
+  const totalGains = parseCurrency(displayData.shortTermGains); // API puts total gains here
+  const totalLosses = parseCurrency(displayData.shortTermLosses); // API puts total losses here (negative)
   const totalIncome = parseCurrency(displayData.totalIncome);
-  const netST = parseCurrency(displayData.netShortTermGain);
-  const netLT = parseCurrency(displayData.netLongTermGain);
   const netTaxable = parseCurrency(displayData.totalTaxableGain);
-  const estimatedTax = Math.max(0, netST) * 0.24 + Math.max(0, netLT) * 0.15;
+  const estimatedTax = Math.max(0, netTaxable) * 0.24; // simplified estimate
 
   const fmtUsd = (n: number) => `$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtSign = (n: number) => n >= 0 ? `+${fmtUsd(n)}` : `-${fmtUsd(n)}`;
 
   // Bar widths for breakdown
-  const maxBar = Math.max(stGains, Math.abs(stLosses), ltGains, Math.abs(ltLosses), totalIncome, 1);
+  const maxBar = Math.max(totalGains, Math.abs(totalLosses), totalIncome, 1);
   const barPct = (v: number) => `${Math.min((Math.abs(v) / maxBar) * 100, 100)}%`;
 
   const filteredForms = formFilter === "all" ? taxForms : taxForms.filter(f => f.category === formFilter);
@@ -534,8 +517,8 @@ export default function TaxReportsPage() {
               {/* Metric tabs */}
               <div className="flex items-start gap-6 border-t border-[#F0F0EB] dark:border-[#2A2A2A] pt-4">
                 {[
-                  { label: "Short-term", value: netST, color: netST >= 0 ? "#16A34A" : "#DC2626" },
-                  { label: "Long-term", value: netLT, color: netLT >= 0 ? "#16A34A" : "#DC2626" },
+                  { label: "Gains", value: totalGains, color: "#16A34A" },
+                  { label: "Losses", value: totalLosses, color: "#DC2626" },
                   { label: "Income", value: totalIncome, color: "#2563EB" },
                   { label: "Est. Tax", value: estimatedTax, color: "#EA580C" },
                 ].map(tab => (
@@ -560,10 +543,8 @@ export default function TaxReportsPage() {
 
             <div className="space-y-4">
               {[
-                { label: "Short-term Gains", value: stGains, color: "#16A34A" },
-                { label: "Short-term Losses", value: stLosses, color: "#DC2626" },
-                { label: "Long-term Gains", value: ltGains, color: "#16A34A" },
-                { label: "Long-term Losses", value: ltLosses, color: "#DC2626" },
+                { label: "Capital Gains", value: totalGains, color: "#16A34A" },
+                { label: "Capital Losses", value: totalLosses, color: "#DC2626" },
                 { label: "Income", value: totalIncome, color: "#2563EB" },
               ].map(row => (
                 <div key={row.label}>

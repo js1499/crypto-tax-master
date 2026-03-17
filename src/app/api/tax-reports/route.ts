@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
-import { calculateTaxReport, formatTaxReport } from "@/lib/tax-calculator";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 
 /**
- * GET /api/tax-reports?year=2023&detailed=true
+ * GET /api/tax-reports?year=2025
  *
- * Returns the tax report for a given year. Reads from the persistent
- * TaxReportCache table first — only runs the full tax calculation on a
- * cache miss.  Cache is invalidated whenever transactions are mutated.
+ * Aggregates tax report data directly from the transactions table — the same
+ * source of truth the transactions page and dashboard use.  Results are
+ * persisted in TaxReportCache so subsequent loads are instant.
+ *
+ * Cache is invalidated whenever transactions are mutated (see
+ * invalidateTaxReportCache calls across all mutation endpoints).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -20,7 +23,6 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const year = parseInt(searchParams.get("year") || new Date().getFullYear().toString());
-    const detailed = searchParams.get("detailed") === "true";
 
     if (isNaN(year) || year < 2000 || year > 2100) {
       return NextResponse.json({ error: "Invalid year parameter" }, { status: 400 });
@@ -36,6 +38,25 @@ export async function GET(request: NextRequest) {
       return createRateLimitResponse(userRateLimit.remaining, userRateLimit.reset);
     }
 
+    const costBasisMethod = "FIFO"; // Used as cache key; actual aggregation doesn't depend on method
+
+    // ── Try persistent cache first ─────────────────────────────────
+    const cached = await prisma.taxReportCache.findUnique({
+      where: {
+        userId_year_costBasisMethod: { userId: user.id, year, costBasisMethod },
+      },
+    });
+
+    if (cached) {
+      return NextResponse.json({
+        status: "success",
+        year,
+        cached: true,
+        report: cached.reportData,
+      });
+    }
+
+    // ── Cache miss — aggregate from transactions table ─────────────
     const userWithWallets = await prisma.user.findUnique({
       where: { id: user.id },
       include: { wallets: true },
@@ -45,85 +66,101 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const costBasisMethod = (userWithWallets.costBasisMethod || "FIFO") as "FIFO" | "LIFO" | "HIFO";
+    const walletAddresses = userWithWallets.wallets.map((w) => w.address);
 
-    // ── Try persistent cache first ─────────────────────────────────
-    const cached = await prisma.taxReportCache.findUnique({
-      where: {
-        userId_year_costBasisMethod: {
-          userId: user.id,
-          year,
-          costBasisMethod,
-        },
-      },
+    const userExchanges = await prisma.exchange.findMany({
+      where: { userId: user.id },
+      select: { name: true },
     });
+    const exchangeNames = userExchanges.map((e) => e.name);
 
-    if (cached) {
-      // Cache hit — return immediately
-      return NextResponse.json({
-        status: "success",
-        year,
-        cached: true,
-        report: cached.reportData,
+    // Build ownership filter (same logic as dashboard analytics)
+    const orConditions: Prisma.TransactionWhereInput[] = [];
+    if (walletAddresses.length > 0) {
+      orConditions.push({ wallet_address: { in: walletAddresses } });
+    }
+    orConditions.push({
+      AND: [{ source_type: "csv_import" }, { wallet_address: null }],
+    });
+    if (exchangeNames.length > 0) {
+      orConditions.push({
+        AND: [{ source_type: "exchange_api" }, { source: { in: exchangeNames } }],
       });
     }
 
-    // ── Cache miss — compute and store ─────────────────────────────
-    const walletAddresses = userWithWallets.wallets.map((w) => w.address);
-    const filingStatus = (searchParams.get("filingStatus") || "single") as
-      | "single" | "married_joint" | "married_separate" | "head_of_household";
-    const userTimezone = userWithWallets.timezone || "America/New_York";
+    const yearStart = new Date(`${year}-01-01T00:00:00Z`);
+    const yearEnd = new Date(`${year}-12-31T23:59:59.999Z`);
 
-    const report = await calculateTaxReport(
-      prisma,
-      walletAddresses,
-      year,
-      costBasisMethod,
-      user.id,
-      filingStatus,
-      userTimezone,
-    );
-
-    const formattedReport = formatTaxReport(report);
-
-    // Build the object we'll cache (and return)
-    const reportPayload: Record<string, unknown> = { ...formattedReport };
-
-    // Always store detailed data in the cache so PDF/export endpoints can use it
-    reportPayload.detailed = {
-      taxableEvents: report.taxableEvents.map((e) => ({
-        id: e.id,
-        date: e.date.toISOString(),
-        asset: e.asset,
-        amount: e.amount,
-        proceeds: e.proceeds,
-        costBasis: e.costBasis,
-        gainLoss: e.gainLoss,
-        holdingPeriod: e.holdingPeriod,
-        chain: e.chain,
-        txHash: e.txHash,
-      })),
-      incomeEvents: report.incomeEvents.map((e) => ({
-        id: e.id,
-        date: e.date.toISOString(),
-        asset: e.asset,
-        amount: e.amount,
-        valueUsd: e.valueUsd,
-        type: e.type,
-        chain: e.chain,
-        txHash: e.txHash,
-      })),
+    const whereFilter: Prisma.TransactionWhereInput = {
+      OR: orConditions,
+      status: { in: ["confirmed", "completed", "pending"] },
+      tx_timestamp: { gte: yearStart, lte: yearEnd },
     };
 
-    // Persist to DB (upsert in case of race condition)
+    // Fetch transactions for this year
+    const transactions = await prisma.transaction.findMany({
+      where: whereFilter,
+      select: {
+        gain_loss_usd: true,
+        value_usd: true,
+        is_income: true,
+        type: true,
+      },
+    });
+
+    // Aggregate — same data source as transactions page & dashboard
+    let totalGains = 0;
+    let totalLosses = 0;
+    let totalIncome = 0;
+    let taxableEventCount = 0;
+    let incomeEventCount = 0;
+
+    for (const tx of transactions) {
+      const gainLoss = tx.gain_loss_usd ? Number(tx.gain_loss_usd) : 0;
+
+      if (gainLoss > 0) {
+        totalGains += gainLoss;
+        taxableEventCount++;
+      } else if (gainLoss < 0) {
+        totalLosses += gainLoss; // negative
+        taxableEventCount++;
+      }
+
+      if (tx.is_income) {
+        totalIncome += Number(tx.value_usd);
+        incomeEventCount++;
+      }
+    }
+
+    const netGainLoss = totalGains + totalLosses;
+
+    // Format currency helper
+    const fmt = (n: number) =>
+      `$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const fmtSigned = (n: number) =>
+      n < 0 ? `-${fmt(n)}` : fmt(n);
+
+    const reportPayload = {
+      // The transactions page doesn't distinguish ST/LT — show totals
+      // ST/LT breakdown is only available via the tax calculator (used in PDF generation)
+      shortTermGains: fmtSigned(totalGains),
+      shortTermLosses: fmtSigned(totalLosses),
+      longTermGains: "$0.00",
+      longTermLosses: "$0.00",
+      totalIncome: fmt(totalIncome),
+      netShortTermGain: fmtSigned(netGainLoss),
+      netLongTermGain: "$0.00",
+      totalTaxableGain: fmtSigned(netGainLoss),
+      taxableEvents: taxableEventCount,
+      incomeEvents: incomeEventCount,
+      totalTransactions: transactions.length,
+    };
+
+    // Persist to cache
     try {
       await prisma.taxReportCache.upsert({
         where: {
-          userId_year_costBasisMethod: {
-            userId: user.id,
-            year,
-            costBasisMethod,
-          },
+          userId_year_costBasisMethod: { userId: user.id, year, costBasisMethod },
         },
         update: {
           reportData: reportPayload as any,
@@ -140,16 +177,11 @@ export async function GET(request: NextRequest) {
       console.error("[Tax Reports API] Failed to persist cache:", cacheErr);
     }
 
-    // Strip detailed data from response unless requested
-    const responsePayload = detailed
-      ? reportPayload
-      : (({ detailed: _, ...rest }) => rest)(reportPayload as any);
-
     return NextResponse.json({
       status: "success",
       year,
       cached: false,
-      report: responsePayload,
+      report: reportPayload,
     });
   } catch (error) {
     console.error("[Tax Reports API] Error:", error);
