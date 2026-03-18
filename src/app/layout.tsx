@@ -44,7 +44,7 @@ export default function RootLayout({
             <ThemeProvider
               attribute="class"
               defaultTheme="light"
-              enableSystem={true} // Updated to support both light and dark modes
+              enableSystem={false}
               disableTransitionOnChange
             >
               <OnboardingProvider>
