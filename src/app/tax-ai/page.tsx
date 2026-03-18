@@ -41,8 +41,8 @@ const PRESET_CARDS = [
     icon: Search,
     iconColor: "#16A34A",
     iconBg: "#F0FDF4",
-    title: "Audit my taxes",
-    description: "Review your taxes with AI and find potential issues.",
+    title: "Breakdown my P&L",
+    description: "Get a detailed breakdown of your P&L and income by year.",
   },
   {
     icon: ShieldCheck,
@@ -254,14 +254,14 @@ export default function TaxAIPage() {
               {PRESET_CARDS.map((card) => (
                 <button key={card.title} onClick={() => {
                   if (card.title === "Analyze my data") fileInputRef.current?.click();
-                  else if (card.title === "Audit my taxes") sendMessage("Audit my tax data — look for potential issues, missing cost basis, unusual transactions, and anything that might need attention before filing.");
+                  else if (card.title === "Breakdown my P&L") sendMessage("Give me a detailed breakdown of my P&L (gains, losses, net) and income by year. Include totals for each year and an overall summary.");
                   else if (card.title === "Check for spam") sendMessage("Check my transactions for spam tokens, dust attacks, or suspicious low-value assets. Flag anything that looks like spam.");
-                }} className="text-left p-4 rounded-xl border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] hover:border-[#C0C0B8] dark:hover:border-[#444] transition-colors">
-                  <div className="flex items-center justify-center h-8 w-8 rounded-lg mb-3" style={{ backgroundColor: card.iconBg }}>
-                    <card.icon className="h-4 w-4" style={{ color: card.iconColor }} />
+                }} className="text-left p-5 rounded-xl border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] hover:border-[#C0C0B8] dark:hover:border-[#444] transition-colors">
+                  <div className="flex items-center justify-center h-10 w-10 rounded-lg mb-3" style={{ backgroundColor: card.iconBg }}>
+                    <card.icon className="h-5 w-5" style={{ color: card.iconColor }} />
                   </div>
-                  <h3 className="text-[13px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] mb-1">{card.title}</h3>
-                  <p className="text-[12px] text-[#9CA3AF] leading-snug">{card.description}</p>
+                  <h3 className="text-[14px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] mb-1">{card.title}</h3>
+                  <p className="text-[13px] text-[#9CA3AF] leading-snug">{card.description}</p>
                 </button>
               ))}
             </div>
