@@ -6,6 +6,7 @@ import {
   FileText,
   Landmark,
   Settings,
+  Sparkles,
   Wallet,
   HelpCircle,
 } from "lucide-react";
@@ -27,6 +28,7 @@ const navItems = [
   { title: "Accounts", href: "/accounts", icon: Landmark },
   { title: "Transactions", href: "/transactions", icon: Wallet },
   { title: "Tax Reports", href: "/tax-reports", icon: FileText },
+  { title: "Tax AI", href: "/tax-ai", icon: Sparkles },
 ];
 
 const footerItems = [
