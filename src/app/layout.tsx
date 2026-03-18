@@ -43,7 +43,7 @@ export default function RootLayout({
           <NextAuthSessionProvider>
             <ThemeProvider
               attribute="class"
-              defaultTheme="dark"
+              defaultTheme="light"
               enableSystem={true} // Updated to support both light and dark modes
               disableTransitionOnChange
             >

@@ -24,7 +24,7 @@ export default function LoginPage() {
   // Auto-redirect authenticated users to dashboard
   useEffect(() => {
     if (status === "authenticated") {
-      router.replace("/");
+      router.replace("/accounts");
     }
   }, [status, router]);
   
@@ -67,7 +67,7 @@ export default function LoginPage() {
         toast.success("Login successful!");
         // Redirect to dashboard - NextAuth will handle session establishment
         // Using replace to prevent back-button returning to login
-        router.replace("/");
+        router.replace("/accounts");
       }
     } catch (error) {
       const errorMessage =
@@ -196,7 +196,7 @@ export default function LoginPage() {
                 // signIn with redirect: true will automatically redirect to Google OAuth page
                 // This will redirect the browser, so the code after won't execute
                 signIn("google", { 
-                  callbackUrl: "/",
+                  callbackUrl: "/accounts",
                   redirect: true 
                 }).catch((error) => {
                   // Only runs if redirect fails (shouldn't happen normally)

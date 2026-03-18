@@ -83,7 +83,7 @@ export default function RegisterPage() {
         router.push("/login");
       } else if (result?.ok) {
         toast.success("Account created and signed in!");
-        router.push("/");
+        router.push("/accounts");
         router.refresh();
       }
     } catch (error) {

@@ -275,7 +275,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       }}
     >
       {children}
-      {state.isActive && !state.completed && currentStep && (
+      {isAuthenticated && state.isActive && !state.completed && currentStep && (
         <OnboardingTooltip
           step={currentStep}
           currentStepIndex={state.currentStep}
