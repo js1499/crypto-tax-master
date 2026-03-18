@@ -26,7 +26,7 @@ const EVM_CHAINS = [
 const WALLET_OPTIONS = [
   { id: "solana", name: "SOL Wallet", logo: "/logos/SOL.png", placeholder: "Enter Solana address...", addressPattern: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/, errorMsg: "Invalid Solana address" },
   { id: "evm", name: "ETH Wallet", logo: "/logos/ETH.png", placeholder: "0x...", addressPattern: /^0x[a-fA-F0-9]{40}$/, errorMsg: "Invalid ETH address (must start with 0x, 42 chars)" },
-  { id: "bitcoin", name: "BTC Wallet", logo: "/logos/BTC.png", placeholder: "Enter Bitcoin address...", addressPattern: /^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,62}$/, errorMsg: "Invalid Bitcoin address" },
+  { id: "bitcoin", name: "BTC Wallet", logo: "/logos/BTC.svg", placeholder: "Enter Bitcoin address...", addressPattern: /^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,62}$/, errorMsg: "Invalid Bitcoin address" },
 ];
 
 const EXCHANGE_OPTIONS = [
