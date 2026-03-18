@@ -166,8 +166,9 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       return;
     }
 
-    // Navigate to target page if needed
-    if (currentStep.targetPage && pathname !== currentStep.targetPage) {
+    // Navigate to target page if needed (but not on public pages like login/register)
+    const isPublicPage = pathname === "/login" || pathname === "/register";
+    if (currentStep.targetPage && pathname !== currentStep.targetPage && !isPublicPage && isAuthenticated) {
       router.push(currentStep.targetPage);
       return;
     }
