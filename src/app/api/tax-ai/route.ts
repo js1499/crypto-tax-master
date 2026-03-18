@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { question, history, fileContent, fileName } = await request.json();
+    const { question, history, fileContent, fileName, stream: wantStream } = await request.json();
     if (!question || typeof question !== "string" || question.trim().length === 0) {
       return NextResponse.json({ error: "Question is required" }, { status: 400 });
     }
@@ -305,10 +305,7 @@ Respond with ONLY the raw SQL query. No markdown fences, no explanation, no comm
       });
     }
 
-    const answerResponse = await anthropic.messages.create({
-      model: "claude-opus-4-20250514",
-      max_tokens: 4096,
-      system: `You are a helpful crypto tax AI assistant. You help users understand their transaction data, trading activity, gains/losses, and tax implications.
+    const answerSystemPrompt = `You are a helpful crypto tax AI assistant. You help users understand their transaction data, trading activity, gains/losses, and tax implications.
 ${userContext}
 
 Guidelines:
@@ -323,13 +320,80 @@ If the user asks for data as a downloadable file, include a CSV block at the END
 header1,header2
 value1,value2
 \`\`\`
-Only include this when explicitly asked for a download/export.`,
+Only include this when explicitly asked for a download/export.`;
+
+    // ── Streaming response ─────────────────────────────────────────
+    if (wantStream) {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          try {
+            // Send metadata first
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({ type: "meta", sql: sqlUsed, rowCount: queryResult ? queryResult.length : null })}\n\n`
+            ));
+
+            // Stream the answer
+            const streamResponse = anthropic.messages.stream({
+              model: "claude-opus-4-20250514",
+              max_tokens: 4096,
+              system: answerSystemPrompt,
+              messages: answerMessages,
+            });
+
+            let fullText = "";
+            for await (const event of streamResponse) {
+              if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+                fullText += event.delta.text;
+                controller.enqueue(encoder.encode(
+                  `data: ${JSON.stringify({ type: "text", content: event.delta.text })}\n\n`
+                ));
+              }
+            }
+
+            // Extract file download from complete text
+            let answer = fullText;
+            let fileDownload: { name: string; content: string } | null = null;
+            const csvMatch = fullText.match(/```csv-download:(.+?)\n([\s\S]*?)```/);
+            if (csvMatch) {
+              fileDownload = { name: csvMatch[1].trim(), content: csvMatch[2].trim() };
+              answer = fullText.replace(/```csv-download:.+?\n[\s\S]*?```/, "").trim();
+            }
+
+            // Send final event with clean answer
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({ type: "done", answer, fileDownload })}\n\n`
+            ));
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          } catch (err) {
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({ type: "error", error: err instanceof Error ? err.message : "Stream failed" })}\n\n`
+            ));
+          } finally {
+            controller.close();
+          }
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    }
+
+    // ── Non-streaming fallback ─────────────────────────────────────
+    const answerResponse = await anthropic.messages.create({
+      model: "claude-opus-4-20250514",
+      max_tokens: 4096,
+      system: answerSystemPrompt,
       messages: answerMessages,
     });
 
     const rawAnswer = (answerResponse.content[0] as Anthropic.TextBlock).text;
 
-    // Extract CSV download block if present
     let answer = rawAnswer;
     let fileDownload: { name: string; content: string } | null = null;
 

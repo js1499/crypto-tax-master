@@ -229,7 +229,7 @@
   animation: pnlSlideIn 0.3s ease-out both;
 }
 
-/* AI input glow — double orbiting segments */
+/* AI input — two parallel orbiting segments + outer glow */
 @property --ai-angle {
   syntax: "<angle>";
   inherits: false;
@@ -241,14 +241,39 @@
   100% { --ai-angle: 360deg; }
 }
 
+/* Shimmer wave for thinking indicator */
+@keyframes aiShimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.ai-thinking-bar {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(37, 99, 235, 0.15) 20%,
+    rgba(37, 99, 235, 0.6) 40%,
+    rgba(99, 146, 255, 0.9) 50%,
+    rgba(37, 99, 235, 0.6) 60%,
+    rgba(37, 99, 235, 0.15) 80%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: aiShimmer 1.8s ease-in-out infinite;
+}
+
 .ai-glow-box {
   position: relative;
   border-radius: 16px;
   z-index: 0;
+  /* Outer glow */
+  box-shadow: 0 0 20px rgba(37, 99, 235, 0.08), 0 0 40px rgba(37, 99, 235, 0.04);
 }
 
-.ai-glow-box::before,
-.ai-glow-box::after {
+/* Inner border — two parallel segments (top and bottom) */
+.ai-glow-box::before {
   content: '';
   position: absolute;
   inset: -2px;
@@ -257,12 +282,14 @@
   background: conic-gradient(
     from var(--ai-angle),
     transparent 0%,
-    transparent 35%,
-    rgba(37, 99, 235, 0.6) 42%,
-    rgba(99, 146, 255, 0.9) 50%,
-    rgba(37, 99, 235, 0.6) 58%,
-    transparent 65%,
-    transparent 100%
+    transparent 38%,
+    rgba(37, 99, 235, 0.5) 44%,
+    rgba(99, 146, 255, 0.85) 50%,
+    rgba(37, 99, 235, 0.5) 56%,
+    transparent 62%,
+    transparent 88%,
+    rgba(37, 99, 235, 0.5) 94%,
+    rgba(99, 146, 255, 0.85) 100%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
@@ -273,21 +300,32 @@
   z-index: -1;
 }
 
+/* Outer blurred ring — same two segments, offset 180° */
 .ai-glow-box::after {
-  inset: -5px;
-  border-radius: 21px;
-  padding: 1px;
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 22px;
+  padding: 2px;
   background: conic-gradient(
-    from calc(var(--ai-angle) + 180deg),
+    from var(--ai-angle),
     transparent 0%,
-    transparent 35%,
-    rgba(37, 99, 235, 0.3) 45%,
-    rgba(99, 146, 255, 0.5) 50%,
-    rgba(37, 99, 235, 0.3) 55%,
-    transparent 65%,
-    transparent 100%
+    transparent 38%,
+    rgba(37, 99, 235, 0.25) 44%,
+    rgba(99, 146, 255, 0.4) 50%,
+    rgba(37, 99, 235, 0.25) 56%,
+    transparent 62%,
+    transparent 88%,
+    rgba(37, 99, 235, 0.25) 94%,
+    rgba(99, 146, 255, 0.4) 100%
   );
-  filter: blur(6px);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  filter: blur(8px);
+  animation: aiOrbit 4s linear infinite;
+  pointer-events: none;
   z-index: -2;
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Layout } from "@/components/layout";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,7 @@ export default function TaxAIPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
   const [expandedSql, setExpandedSql] = useState<number | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [attachedFileContent, setAttachedFileContent] = useState<string | null>(null);
@@ -65,11 +66,13 @@ export default function TaxAIPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { status } = useSession();
 
-  const inChat = messages.length > 0;
+  const inChat = messages.length > 0 || isLoading;
 
-  useEffect(() => {
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, []);
+
+  useEffect(() => { scrollToBottom(); }, [messages, streamingText, scrollToBottom]);
 
   useEffect(() => {
     if (inputRef.current) {
@@ -81,15 +84,10 @@ export default function TaxAIPage() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      alert("File must be under 2MB");
-      return;
-    }
+    if (file.size > 2 * 1024 * 1024) { alert("File must be under 2MB"); return; }
     setAttachedFile(file);
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      setAttachedFileContent(ev.target?.result as string);
-    };
+    reader.onload = (ev) => setAttachedFileContent(ev.target?.result as string);
     reader.readAsText(file);
   };
 
@@ -114,22 +112,17 @@ export default function TaxAIPage() {
   const sendMessage = async (question: string) => {
     if (!question.trim() || isLoading) return;
 
-    const displayContent = attachedFile
-      ? `${question}\n\n📎 ${attachedFile.name}`
-      : question;
-
-    const userMessage: Message = {
-      role: "user",
-      content: displayContent,
-      fileName: attachedFile?.name || null,
-    };
+    const displayContent = attachedFile ? `${question}\n\n📎 ${attachedFile.name}` : question;
+    const userMessage: Message = { role: "user", content: displayContent, fileName: attachedFile?.name || null };
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setIsLoading(true);
+    setStreamingText("");
 
     const payload: Record<string, unknown> = {
       question,
       history: messages.slice(-10),
+      stream: true,
     };
     if (attachedFileContent) {
       payload.fileContent = attachedFileContent;
@@ -145,143 +138,126 @@ export default function TaxAIPage() {
         body: JSON.stringify(payload),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: data.error || "Something went wrong.", error: data.error },
-        ]);
+        const data = await response.json();
+        setMessages((prev) => [...prev, { role: "assistant", content: data.error || "Something went wrong.", error: data.error }]);
         return;
       }
 
-      setMessages((prev) => [
-        ...prev,
-        {
+      const contentType = response.headers.get("content-type") || "";
+
+      if (contentType.includes("text/event-stream")) {
+        // Streaming response
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let fullText = "";
+        let sql: string | null = null;
+        let rowCount: number | null = null;
+        let fileDownload: { name: string; content: string } | null = null;
+
+        if (reader) {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const lines = chunk.split("\n");
+
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                const data = line.slice(6);
+                if (data === "[DONE]") continue;
+                try {
+                  const parsed = JSON.parse(data);
+                  if (parsed.type === "meta") {
+                    sql = parsed.sql || null;
+                    rowCount = parsed.rowCount ?? null;
+                  } else if (parsed.type === "text") {
+                    fullText += parsed.content;
+                    setStreamingText(fullText);
+                  } else if (parsed.type === "file") {
+                    fileDownload = parsed.fileDownload;
+                  } else if (parsed.type === "done") {
+                    fullText = parsed.answer || fullText;
+                    fileDownload = parsed.fileDownload || fileDownload;
+                  }
+                } catch {
+                  // Ignore parse errors from partial chunks
+                }
+              }
+            }
+          }
+        }
+
+        setStreamingText("");
+        setMessages((prev) => [...prev, { role: "assistant", content: fullText, sql, rowCount, fileDownload }]);
+      } else {
+        // Non-streaming fallback
+        const data = await response.json();
+        setMessages((prev) => [...prev, {
           role: "assistant",
           content: data.answer,
           sql: data.sql,
           rowCount: data.rowCount,
           fileDownload: data.fileDownload || null,
-        },
-      ]);
+        }]);
+      }
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Failed to connect. Please try again.", error: "Connection failed" },
-      ]);
+      setMessages((prev) => [...prev, { role: "assistant", content: "Failed to connect. Please try again.", error: "Connection failed" }]);
     } finally {
       setIsLoading(false);
+      setStreamingText("");
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(input);
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
   };
 
   if (status === "loading") {
-    return (
-      <Layout>
-        <div className="flex items-center justify-center h-[80vh]">
-          <Loader2 className="h-6 w-6 animate-spin text-[#9CA3AF]" />
-        </div>
-      </Layout>
-    );
+    return <Layout><div className="flex items-center justify-center h-[80vh]"><Loader2 className="h-6 w-6 animate-spin text-[#9CA3AF]" /></div></Layout>;
   }
 
   return (
     <Layout>
-      <div className="flex flex-col h-[calc(100vh-64px)]">
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".csv,.txt,.json"
-          className="hidden"
-          onChange={handleFileSelect}
-        />
+      <div className="flex flex-col" style={{ height: "calc(100vh - 72px)" }}>
+        <input ref={fileInputRef} type="file" accept=".csv,.txt,.json" className="hidden" onChange={handleFileSelect} />
 
         {!inChat ? (
-          /* ── LANDING STATE ─────────────────────────────────── */
-          <div className="flex-1 flex flex-col items-center justify-center px-4">
-            {/* Bold heading */}
-            <h1
-              className="text-[32px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] mb-8 text-center"
-              style={{ letterSpacing: "-0.02em" }}
-            >
+          /* ── LANDING ─────────────────────────────────────────── */
+          <div className="flex-1 flex flex-col items-center justify-center px-4 -mt-16">
+            <h1 className="text-[32px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] mb-8 text-center" style={{ letterSpacing: "-0.02em" }}>
               Let&apos;s make taxes a tad easier.
             </h1>
 
-            {/* Glowing input box */}
             <div className="ai-glow-box w-full max-w-[560px] mb-8">
               <div className="flex items-center gap-2 bg-white dark:bg-[#1A1A1A] rounded-2xl border border-[#E5E5E0] dark:border-[#333] px-4 py-3">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center justify-center h-8 w-8 rounded-full border border-[#E5E5E0] dark:border-[#444] text-[#9CA3AF] hover:text-[#6B7280] hover:border-[#9CA3AF] transition-colors shrink-0"
-                >
+                <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center h-8 w-8 rounded-full border border-[#E5E5E0] dark:border-[#444] text-[#9CA3AF] hover:text-[#6B7280] hover:border-[#9CA3AF] transition-colors shrink-0">
                   <Plus className="h-4 w-4" />
                 </button>
-
                 <div className="flex-1 relative">
                   {attachedFile && (
                     <div className="flex items-center gap-1.5 mb-1.5 text-[11px] text-[#2563EB] bg-[#EFF6FF] dark:bg-[#1A1A3A] rounded-md px-2 py-1 w-fit">
-                      <Paperclip className="h-3 w-3" />
-                      {attachedFile.name}
-                      <button onClick={clearFile} className="ml-1 hover:text-[#1A1A1A]">
-                        <X className="h-3 w-3" />
-                      </button>
+                      <Paperclip className="h-3 w-3" />{attachedFile.name}
+                      <button onClick={clearFile} className="ml-1 hover:text-[#1A1A1A]"><X className="h-3 w-3" /></button>
                     </div>
                   )}
-                  <textarea
-                    ref={inputRef}
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Ask anything"
-                    rows={1}
-                    className="w-full bg-transparent border-0 outline-none resize-none text-[14px] text-[#1A1A1A] dark:text-[#F5F5F5] placeholder:text-[#C0C0B8] py-0.5"
-                  />
+                  <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask anything" rows={1} className="w-full bg-transparent border-0 outline-none resize-none text-[14px] text-[#1A1A1A] dark:text-[#F5F5F5] placeholder:text-[#C0C0B8] py-0.5" />
                 </div>
-
-                <button
-                  onClick={() => sendMessage(input)}
-                  disabled={!input.trim() || isLoading}
-                  className={cn(
-                    "flex items-center justify-center h-8 w-8 rounded-full transition-all shrink-0",
-                    input.trim() && !isLoading
-                      ? "bg-[#2563EB] text-white shadow-md shadow-blue-500/20 hover:bg-[#1D4ED8]"
-                      : "bg-[#E5E5E0] dark:bg-[#333] text-[#9CA3AF] cursor-not-allowed"
-                  )}
-                >
+                <button onClick={() => sendMessage(input)} disabled={!input.trim() || isLoading} className={cn("flex items-center justify-center h-8 w-8 rounded-full transition-all shrink-0", input.trim() && !isLoading ? "bg-[#2563EB] text-white shadow-md shadow-blue-500/20 hover:bg-[#1D4ED8]" : "bg-[#E5E5E0] dark:bg-[#333] text-[#9CA3AF] cursor-not-allowed")}>
                   <Send className="h-4 w-4" />
                 </button>
               </div>
             </div>
 
-            {/* Preset cards */}
             <div className="grid grid-cols-3 gap-3 max-w-[560px] w-full">
               {PRESET_CARDS.map((card) => (
-                <button
-                  key={card.title}
-                  onClick={() => {
-                    setInput(card.title === "Analyze my data" ? "" : "");
-                    if (card.title === "Analyze my data") {
-                      fileInputRef.current?.click();
-                    } else if (card.title === "Audit my taxes") {
-                      sendMessage("Audit my tax data — look for potential issues, missing cost basis, unusual transactions, and anything that might need attention before filing.");
-                    } else if (card.title === "Check for spam") {
-                      sendMessage("Check my transactions for spam tokens, dust attacks, or suspicious low-value assets. Flag anything that looks like spam.");
-                    }
-                  }}
-                  className="text-left p-4 rounded-xl border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] hover:border-[#C0C0B8] dark:hover:border-[#444] transition-colors group"
-                >
-                  <div
-                    className="flex items-center justify-center h-8 w-8 rounded-lg mb-3"
-                    style={{ backgroundColor: card.iconBg }}
-                  >
+                <button key={card.title} onClick={() => {
+                  if (card.title === "Analyze my data") fileInputRef.current?.click();
+                  else if (card.title === "Audit my taxes") sendMessage("Audit my tax data — look for potential issues, missing cost basis, unusual transactions, and anything that might need attention before filing.");
+                  else if (card.title === "Check for spam") sendMessage("Check my transactions for spam tokens, dust attacks, or suspicious low-value assets. Flag anything that looks like spam.");
+                }} className="text-left p-4 rounded-xl border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] hover:border-[#C0C0B8] dark:hover:border-[#444] transition-colors">
+                  <div className="flex items-center justify-center h-8 w-8 rounded-lg mb-3" style={{ backgroundColor: card.iconBg }}>
                     <card.icon className="h-4 w-4" style={{ color: card.iconColor }} />
                   </div>
                   <h3 className="text-[13px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] mb-1">{card.title}</h3>
@@ -291,50 +267,33 @@ export default function TaxAIPage() {
             </div>
           </div>
         ) : (
-          /* ── CHAT STATE ─────────────────────────────────────── */
+          /* ── CHAT ────────────────────────────────────────────── */
           <>
-            {/* Messages */}
-            <div className="flex-1 overflow-y-auto px-1 space-y-4 pb-4 pt-2">
+            <div className="flex-1 overflow-y-auto px-2 space-y-3 pb-3 pt-3 min-h-0">
               {messages.map((msg, i) => (
                 <div key={i} className={cn("flex", msg.role === "user" ? "justify-end" : "justify-start")}>
-                  <div
-                    className={cn(
-                      "max-w-[80%] rounded-2xl px-4 py-3",
-                      msg.role === "user"
-                        ? "bg-[#1A1A1A] dark:bg-[#F5F5F5] text-white dark:text-[#1A1A1A]"
-                        : "bg-[#F5F5F0] dark:bg-[#1E1E1E] text-[#1A1A1A] dark:text-[#F5F5F5]"
-                    )}
-                  >
+                  <div className={cn(
+                    "max-w-[80%] rounded-2xl px-4 py-2.5",
+                    msg.role === "user"
+                      ? "bg-[#007AFF] text-white"
+                      : "bg-[#E9E9EB] dark:bg-[#262628] text-[#1A1A1A] dark:text-[#F5F5F5]"
+                  )}>
                     {msg.role === "assistant" ? (
                       <div className="space-y-2">
-                        <div
-                          className="text-[13px] leading-relaxed prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-[15px] [&_h2]:text-[14px] [&_h3]:text-[13px] [&_code]:text-[12px] [&_code]:bg-black/5 [&_code]:dark:bg-white/10 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded"
-                          dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }}
-                        />
+                        <div className="text-[13px] leading-relaxed prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0.5 [&_h1]:text-[15px] [&_h2]:text-[14px] [&_h3]:text-[13px] [&_code]:text-[12px] [&_code]:bg-black/5 [&_code]:dark:bg-white/10 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_strong]:text-inherit" dangerouslySetInnerHTML={{ __html: formatMarkdown(msg.content) }} />
                         {msg.fileDownload && (
-                          <button
-                            onClick={() => handleDownloadCsv(msg.fileDownload!.name, msg.fileDownload!.content)}
-                            className="inline-flex items-center gap-1.5 mt-1 px-3 py-1.5 rounded-lg bg-[#2563EB] text-white text-[12px] font-medium hover:bg-[#1D4ED8] transition-colors"
-                          >
-                            <Download className="h-3 w-3" />
-                            Download {msg.fileDownload.name}
+                          <button onClick={() => handleDownloadCsv(msg.fileDownload!.name, msg.fileDownload!.content)} className="inline-flex items-center gap-1.5 mt-1 px-3 py-1.5 rounded-lg bg-[#2563EB] text-white text-[12px] font-medium hover:bg-[#1D4ED8] transition-colors">
+                            <Download className="h-3 w-3" />Download {msg.fileDownload.name}
                           </button>
                         )}
                         {msg.sql && (
-                          <div className="mt-2">
-                            <button
-                              onClick={() => setExpandedSql(expandedSql === i ? null : i)}
-                              className="inline-flex items-center gap-1 text-[11px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
-                            >
-                              <Database className="h-3 w-3" />
-                              SQL query
-                              {msg.rowCount !== null && ` (${msg.rowCount} rows)`}
+                          <div className="mt-1">
+                            <button onClick={() => setExpandedSql(expandedSql === i ? null : i)} className="inline-flex items-center gap-1 text-[11px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">
+                              <Database className="h-3 w-3" />SQL{msg.rowCount !== null && ` · ${msg.rowCount} rows`}
                               {expandedSql === i ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                             </button>
                             {expandedSql === i && (
-                              <pre className="mt-1.5 p-2.5 rounded-lg bg-[#1A1A1A] dark:bg-[#0D0D0D] text-[11px] text-[#93C5FD] overflow-x-auto font-mono">
-                                {msg.sql}
-                              </pre>
+                              <pre className="mt-1.5 p-2.5 rounded-lg bg-[#1A1A1A] dark:bg-[#0D0D0D] text-[11px] text-[#93C5FD] overflow-x-auto font-mono">{msg.sql}</pre>
                             )}
                           </div>
                         )}
@@ -345,60 +304,48 @@ export default function TaxAIPage() {
                   </div>
                 </div>
               ))}
-              {isLoading && (
+
+              {/* Streaming text */}
+              {isLoading && streamingText && (
                 <div className="flex justify-start">
-                  <div className="bg-[#F5F5F0] dark:bg-[#1E1E1E] rounded-2xl px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex gap-1">
-                        <div className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-bounce" style={{ animationDelay: "0ms" }} />
-                        <div className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-bounce" style={{ animationDelay: "150ms" }} />
-                        <div className="h-1.5 w-1.5 rounded-full bg-[#2563EB] animate-bounce" style={{ animationDelay: "300ms" }} />
-                      </div>
-                      <span className="text-[12px] text-[#9CA3AF]">Thinking...</span>
-                    </div>
+                  <div className="max-w-[80%] rounded-2xl px-4 py-2.5 bg-[#E9E9EB] dark:bg-[#262628] text-[#1A1A1A] dark:text-[#F5F5F5]">
+                    <div className="text-[13px] leading-relaxed prose prose-sm dark:prose-invert max-w-none [&_strong]:text-inherit" dangerouslySetInnerHTML={{ __html: formatMarkdown(streamingText) }} />
                   </div>
                 </div>
               )}
+
+              {/* Thinking indicator */}
+              {isLoading && !streamingText && (
+                <div className="flex justify-start">
+                  <div className="rounded-2xl px-4 py-3 bg-[#E9E9EB] dark:bg-[#262628] w-48">
+                    <div className="flex items-center gap-2.5 mb-2">
+                      <div className="h-5 w-5 rounded-full border-2 border-[#2563EB] border-t-transparent animate-spin" />
+                      <span className="text-[12px] font-medium text-[#6B7280]">Thinking</span>
+                    </div>
+                    <div className="ai-thinking-bar" />
+                  </div>
+                </div>
+              )}
+
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Chat input bar */}
-            <div className="border-t border-[#E5E5E0] dark:border-[#333] pt-3 pb-2 px-1">
+            {/* Chat input */}
+            <div className="border-t border-[#E5E5E0] dark:border-[#333] pt-2.5 pb-1.5 px-2 shrink-0">
               <div className="flex items-end gap-2 bg-[#F5F5F0] dark:bg-[#1E1E1E] rounded-xl px-3 py-2">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center justify-center h-7 w-7 rounded-full text-[#9CA3AF] hover:text-[#6B7280] transition-colors shrink-0 mb-0.5"
-                >
+                <button onClick={() => fileInputRef.current?.click()} className="flex items-center justify-center h-7 w-7 rounded-full text-[#9CA3AF] hover:text-[#6B7280] transition-colors shrink-0 mb-0.5">
                   <Plus className="h-4 w-4" />
                 </button>
                 <div className="flex-1">
                   {attachedFile && (
                     <div className="flex items-center gap-1.5 mb-1 text-[11px] text-[#2563EB] bg-[#EFF6FF] dark:bg-[#1A1A3A] rounded-md px-2 py-0.5 w-fit">
-                      <Paperclip className="h-3 w-3" />
-                      {attachedFile.name}
+                      <Paperclip className="h-3 w-3" />{attachedFile.name}
                       <button onClick={clearFile} className="ml-1 hover:text-[#1A1A1A]"><X className="h-3 w-3" /></button>
                     </div>
                   )}
-                  <textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Ask a follow-up..."
-                    rows={1}
-                    className="w-full bg-transparent border-0 outline-none resize-none text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5] placeholder:text-[#C0C0B8] py-1"
-                    style={{ maxHeight: 120 }}
-                  />
+                  <textarea value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder="Ask a follow-up..." rows={1} className="w-full bg-transparent border-0 outline-none resize-none text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5] placeholder:text-[#C0C0B8] py-1" style={{ maxHeight: 120 }} />
                 </div>
-                <button
-                  onClick={() => sendMessage(input)}
-                  disabled={!input.trim() || isLoading}
-                  className={cn(
-                    "flex items-center justify-center h-7 w-7 rounded-full transition-all shrink-0 mb-0.5",
-                    input.trim() && !isLoading
-                      ? "bg-[#2563EB] text-white hover:bg-[#1D4ED8]"
-                      : "text-[#D4D4CF] cursor-not-allowed"
-                  )}
-                >
+                <button onClick={() => sendMessage(input)} disabled={!input.trim() || isLoading} className={cn("flex items-center justify-center h-7 w-7 rounded-full transition-all shrink-0 mb-0.5", input.trim() && !isLoading ? "bg-[#2563EB] text-white hover:bg-[#1D4ED8]" : "text-[#D4D4CF] cursor-not-allowed")}>
                   <Send className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -413,7 +360,7 @@ export default function TaxAIPage() {
 function formatMarkdown(text: string): string {
   return text
     .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+    .replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, "<em>$1</em>")
     .replace(/`(.*?)`/g, "<code>$1</code>")
     .replace(/^### (.*$)/gm, "<h3>$1</h3>")
     .replace(/^## (.*$)/gm, "<h2>$1</h2>")
