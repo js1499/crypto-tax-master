@@ -14,6 +14,10 @@ import { execSync } from "child_process";
  *   npx prisma migrate deploy
  */
 export async function POST(request: NextRequest) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not available" }, { status: 404 });
+  }
+
   // Optional: Add authentication check
   // const user = await getCurrentUser();
   // if (!user || user.email !== 'admin@example.com') {

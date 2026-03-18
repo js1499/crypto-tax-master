@@ -3,10 +3,9 @@ import { getCoinbaseAccounts, refreshAccessToken, CoinbaseTokens } from "@/lib/c
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { decryptApiKey, encryptApiKey } from "@/lib/exchange-clients";
 import prisma from "@/lib/prisma";
-import crypto from "crypto";
 
 // Encryption key for OAuth tokens
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
 /**
  * API route to fetch Coinbase accounts
@@ -15,6 +14,10 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toSt
  */
 export async function GET(request: NextRequest) {
   console.log("[Coinbase Accounts API] Fetching accounts");
+
+  if (!ENCRYPTION_KEY) {
+    return NextResponse.json({ error: "Server configuration error" }, { status: 503 });
+  }
 
   try {
     // Get authenticated user

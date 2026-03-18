@@ -7,6 +7,10 @@ import { logBuffer } from "@/lib/log-buffer";
  * Test endpoint to verify log buffer is working
  */
 export async function GET(request: NextRequest) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not available" }, { status: 404 });
+  }
+
   try {
     const user = await getCurrentUser();
     if (!user) {

@@ -7,7 +7,7 @@ import axios from "axios";
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
 // Generate JWT for Coinbase CDP API
 function generateCoinbaseJWT(
@@ -64,6 +64,10 @@ function escapeCSV(value: any): string {
 }
 
 export async function GET(request: NextRequest) {
+  if (!ENCRYPTION_KEY) {
+    return NextResponse.json({ error: "Server configuration error" }, { status: 503 });
+  }
+
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {

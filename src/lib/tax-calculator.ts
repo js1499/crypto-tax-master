@@ -448,16 +448,15 @@ export async function calculateTaxReport(
     orConditions.push({ wallet_address: { in: walletAddresses } });
   }
   
-  // Include CSV imports — scoped to user's wallets if possible.
-  // LIMITATION: CSV imports have no userId column, so in a multi-user database
-  // all CSV imports with wallet_address=null are visible to every user.
-  // A schema migration adding userId to Transaction would fix this.
-  orConditions.push({
-    AND: [
-      { source_type: "csv_import" },
-      { wallet_address: null },
-    ],
-  });
+  // Include CSV imports — scoped to this user via userId column
+  if (userId) {
+    orConditions.push({
+      AND: [
+        { source_type: "csv_import" },
+        { userId },
+      ],
+    });
+  }
 
   // Include exchange API imports — scoped to user's connected exchanges
   if (userId) {

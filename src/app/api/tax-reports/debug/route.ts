@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
     orConditions.push({
       AND: [
         { source_type: "csv_import" },
-        { wallet_address: null },
+        { userId: user.id },
       ],
     });
     // Also include exchange API imports

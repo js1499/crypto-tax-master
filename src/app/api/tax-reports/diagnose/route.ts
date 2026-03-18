@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
         {
           AND: [
             { source_type: "csv_import" },
-            { wallet_address: null },
+            { userId: user.id },
           ],
         },
         // Also include exchange API imports

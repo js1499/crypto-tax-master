@@ -4,10 +4,9 @@ import prisma from "@/lib/prisma";
 import { encode } from "next-auth/jwt";
 import { authOptions } from "@/lib/auth-config";
 import { encryptApiKey } from "@/lib/exchange-clients";
-import crypto from "crypto";
 
 // Encryption key for OAuth tokens (PRD requires AES-256-GCM encryption at rest)
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
 /**
  * Handles the OAuth callback from Coinbase
@@ -15,7 +14,11 @@ const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toSt
  */
 export async function GET(request: NextRequest) {
   console.log("[Coinbase Callback] Received callback request");
-  
+
+  if (!ENCRYPTION_KEY) {
+    return NextResponse.json({ error: "Server configuration error" }, { status: 503 });
+  }
+
   // Get the authorization code and state from URL
   const searchParams = request.nextUrl.searchParams;
   const code = searchParams.get('code');

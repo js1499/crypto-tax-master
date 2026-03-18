@@ -101,11 +101,19 @@ function validateQuery(sql: string): { safe: boolean; reason?: string } {
 
   const dangerous = [
     "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE",
-    "GRANT", "REVOKE", "COPY", "LOCK", "VACUUM",
+    "GRANT", "REVOKE", "COPY", "LOCK", "VACUUM", "UNION",
   ];
   for (const kw of dangerous) {
     if (new RegExp(`\\b${kw}\\b`).test(upper)) {
       return { safe: false, reason: `Query contains forbidden keyword: ${kw}` };
+    }
+  }
+
+  // Block access to system catalogs
+  const systemPatterns = ["INFORMATION_SCHEMA", "PG_CATALOG", "PG_TABLES", "PG_STAT"];
+  for (const pattern of systemPatterns) {
+    if (upper.includes(pattern)) {
+      return { safe: false, reason: `Query references forbidden system object: ${pattern}` };
     }
   }
 
@@ -193,7 +201,8 @@ export async function POST(request: NextRequest) {
         `wallet_address IN (${walletAddresses.map((a) => `'${a.replace(/'/g, "''")}'`).join(", ")})`
       );
     }
-    ownershipClauses.push(`(source_type = 'csv_import' AND wallet_address IS NULL)`);
+    ownershipClauses.push(`(source_type = 'csv_import' AND user_id = '${user.id.replace(/'/g, "''")}')`);
+
     if (exchangeNames.length > 0) {
       ownershipClauses.push(
         `(source_type = 'exchange_api' AND source IN (${exchangeNames.map((n) => `'${n.replace(/'/g, "''")}'`).join(", ")}))`

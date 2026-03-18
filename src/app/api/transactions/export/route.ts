@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
     }
 
     userTransactionConditions.push({
-      AND: [{ source_type: "csv_import" }, { wallet_address: null }],
+      AND: [{ source_type: "csv_import" }, { userId: user.id }],
     });
 
     const userExchanges = await prisma.exchange.findMany({

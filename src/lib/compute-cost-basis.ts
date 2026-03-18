@@ -27,7 +27,7 @@ export async function recomputeCostBasis(userId: string): Promise<void> {
     }
 
     orConditions.push({
-      AND: [{ source_type: "csv_import" }, { wallet_address: null }],
+      AND: [{ source_type: "csv_import" }, { userId }],
     });
 
     const userExchanges = await prisma.exchange.findMany({

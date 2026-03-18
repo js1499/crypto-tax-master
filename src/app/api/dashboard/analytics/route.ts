@@ -113,9 +113,9 @@ export async function GET(request: NextRequest) {
     if (walletAddresses.length > 0) {
       orConditions.push({ wallet_address: { in: walletAddresses } });
     }
-    // CSV imports (no wallet_address)
+    // CSV imports — scoped to this user via userId
     orConditions.push({
-      AND: [{ source_type: "csv_import" }, { wallet_address: null }],
+      AND: [{ source_type: "csv_import" }, { userId: user.id }],
     });
     // Exchange API imports scoped to user's exchanges
     if (exchangeNames.length > 0) {

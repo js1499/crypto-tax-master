@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
-import { verifyPassword, createSession, isValidEmail } from "@/lib/auth";
+import crypto from "crypto";
+import { verifyPassword, isValidEmail } from "@/lib/auth";
 import { rateLimitAuth, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 
@@ -68,8 +69,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create session
-    const sessionToken = createSession(user.id);
+    // Create session with cryptographically secure token
+    const sessionToken = crypto.randomBytes(32).toString("hex");
 
     // Set session cookie
     const response = NextResponse.json(

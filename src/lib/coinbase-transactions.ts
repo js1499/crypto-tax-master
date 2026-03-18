@@ -8,7 +8,7 @@ import crypto from "crypto";
 import jwt from "jsonwebtoken";
 
 // Encryption key for OAuth tokens
-const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
 /**
  * Generate a JWT for Coinbase CDP API authentication

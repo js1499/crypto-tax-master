@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
       orConditions.push({ wallet_address: { in: walletAddresses } });
     }
     orConditions.push({
-      AND: [{ source_type: "csv_import" }, { wallet_address: null }],
+      AND: [{ source_type: "csv_import" }, { userId: user.id }],
     });
     if (exchangeNames.length > 0) {
       orConditions.push({

@@ -103,7 +103,7 @@ export async function enrichHistoricalPrices(
         orConditions.push({ wallet_address: { in: walletAddresses } });
       }
       orConditions.push({
-        AND: [{ source_type: "csv_import" }, { wallet_address: null }],
+        AND: [{ source_type: "csv_import" }, { userId }],
       });
       const userExchanges = await prisma.exchange.findMany({
         where: { userId },

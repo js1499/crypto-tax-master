@@ -13,11 +13,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    // Get CSV-imported sell transactions
+    // Get CSV-imported sell transactions — scoped to this user
     const csvSellTransactions = await prisma.transaction.findMany({
       where: {
         source_type: "csv_import",
-        wallet_address: null,
+        userId: user.id,
         type: "Sell",
       },
       take: 20,

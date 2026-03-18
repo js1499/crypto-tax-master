@@ -79,9 +79,9 @@ export async function GET(request: NextRequest) {
     if (walletAddresses.length > 0) {
       orConditions.push({ wallet_address: { in: walletAddresses } });
     }
-    // Include CSV imports (see LIMITATION note in tax-calculator.ts)
+    // Include CSV imports — scoped to this user via userId
     orConditions.push({
-      AND: [{ source_type: "csv_import" }, { wallet_address: null }],
+      AND: [{ source_type: "csv_import" }, { userId: user.id }],
     });
     // Include exchange API imports — scoped to user's connected exchanges
     const userExchanges = await prisma.exchange.findMany({

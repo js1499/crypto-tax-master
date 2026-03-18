@@ -145,6 +145,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Check if wallet already belongs to a different user
+    const existing = await prisma.wallet.findUnique({
+      where: { address_provider: { address, provider } },
+    });
+    if (existing && existing.userId !== user.id) {
+      return NextResponse.json(
+        { error: "This wallet is already connected to another account" },
+        { status: 409 }
+      );
+    }
+
     // Create or update wallet (upsert to avoid duplicates)
     const wallet = await prisma.wallet.upsert({
       where: {

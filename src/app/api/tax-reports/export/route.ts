@@ -231,7 +231,7 @@ async function generateTransactionHistoryCSV(
   orConditions.push({
     AND: [
       { source_type: "csv_import" },
-      { wallet_address: null },
+      { userId },
     ],
   });
   // Also include exchange API imports (Coinbase, Binance, etc.) - filtered by user's exchanges

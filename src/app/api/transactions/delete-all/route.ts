@@ -84,12 +84,12 @@ export async function DELETE(request: NextRequest) {
       whereClause.OR.push({ wallet_address: { in: walletAddresses } });
     }
 
-    // Also delete CSV imports with null wallet_address
+    // Also delete CSV imports owned by this user
     // This handles the case where users import CSV files without connecting wallets
     whereClause.OR.push({
       AND: [
         { source_type: "csv_import" },
-        { wallet_address: null },
+        { userId: user.id },
       ],
     });
 

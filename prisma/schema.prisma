@@ -131,6 +131,7 @@ model Transaction {
   gain_loss_usd          Decimal? @db.Decimal(30, 15)
   is_income              Boolean  @default(false)
   helius_raw_id          Int?
+  userId                 String?  @map("user_id")
 
   heliusRaw              HeliusRawTransaction? @relation(fields: [helius_raw_id], references: [id])
 
@@ -140,6 +141,7 @@ model Transaction {
   @@index([identified])
   @@index([chain])
   @@index([source_type])
+  @@index([userId])
   @@map("transactions")
 }
 

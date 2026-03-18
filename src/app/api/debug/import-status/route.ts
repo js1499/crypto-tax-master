@@ -7,17 +7,21 @@ import { getCurrentUser } from "@/lib/auth-helpers";
  * Check the status of recently imported transactions and their notes
  */
 export async function GET(request: NextRequest) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not available" }, { status: 404 });
+  }
+
   try {
     const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    // Get recent CSV imports
+    // Get recent CSV imports — scoped to this user
     const recentTransactions = await prisma.transaction.findMany({
       where: {
         source_type: "csv_import",
-        wallet_address: null,
+        userId: user.id,
       },
       orderBy: {
         tx_timestamp: "desc",

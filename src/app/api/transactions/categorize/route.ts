@@ -64,11 +64,11 @@ export async function POST(request: NextRequest) {
       whereClause.OR.push({ wallet_address: { in: walletAddresses } });
     }
 
-    // Also include CSV imports
+    // Also include CSV imports — scoped to this user via userId
     whereClause.OR.push({
       AND: [
         { source_type: "csv_import" },
-        { wallet_address: null },
+        { userId: user.id },
       ],
     });
 

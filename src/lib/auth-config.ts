@@ -53,7 +53,6 @@ export const authOptions: NextAuthOptions = {
           GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-            allowDangerousEmailAccountLinking: true, // Allow linking accounts with same email
           }),
         ]
       : []),
@@ -63,7 +62,6 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account, profile }) {
       // PrismaAdapter automatically handles OAuth account creation and linking
-      // The allowDangerousEmailAccountLinking option allows linking accounts with same email
       return true;
     },
     async session({ session, token }) {

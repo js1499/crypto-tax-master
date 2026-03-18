@@ -97,11 +97,11 @@ export async function GET(request: NextRequest) {
       userTransactionConditions.push({ wallet_address: { in: walletAddresses } });
     }
 
-    // Include CSV imports (see LIMITATION note in tax-calculator.ts re: multi-user scoping)
+    // Include CSV imports — scoped to this user via userId
     userTransactionConditions.push({
       AND: [
         { source_type: "csv_import" },
-        { wallet_address: null },
+        { userId: user.id },
       ],
     });
 
@@ -485,10 +485,10 @@ export async function GET(request: NextRequest) {
         COUNT(*)::bigint as txn_count,
         SUM(CASE WHEN gain_loss_usd IS NOT NULL THEN gain_loss_usd ELSE 0 END)::float as net_gl
       FROM transactions t
-      WHERE ${walletAddresses.length > 0 ? `(t.wallet_address = ANY($1) OR (t.source_type = 'csv_import' AND t.wallet_address IS NULL))` : `(t.source_type = 'csv_import' AND t.wallet_address IS NULL)`}
+      WHERE ${walletAddresses.length > 0 ? `(t.wallet_address = ANY($1) OR (t.source_type = 'csv_import' AND t.user_id = $2))` : `(t.source_type = 'csv_import' AND t.user_id = $1)`}
       GROUP BY date_trunc('week', tx_timestamp)
       ORDER BY week_start
-    `, ...(walletAddresses.length > 0 ? [walletAddresses] : []));
+    `, ...(walletAddresses.length > 0 ? [walletAddresses, user.id] : [user.id]));
 
     const weeklyActivity = weeklyRaw.map(w => ({
       weekStart: new Date(w.week_start).toISOString(),
