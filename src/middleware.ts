@@ -2,22 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
-const PUBLIC_PATHS = ["/login", "/register", "/api/auth"];
-
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
-  // Allow public paths and API routes (except auth-required ones handled by route handlers)
-  if (
-    PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
-    pathname.startsWith("/api/") ||
-    pathname.startsWith("/_next/") ||
-    pathname.startsWith("/favicon") ||
-    pathname.startsWith("/logos/") ||
-    pathname.startsWith("/forms/")
-  ) {
-    return NextResponse.next();
-  }
 
   // Check for session token
   const token = await getToken({
@@ -25,7 +11,7 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Not authenticated → redirect to login
+  // Not authenticated → redirect to login (unless already on login/register)
   if (!token) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
@@ -33,21 +19,20 @@ export async function middleware(request: NextRequest) {
 
   // Authenticated user hitting root → redirect to accounts
   if (pathname === "/") {
-    const accountsUrl = new URL("/accounts", request.url);
-    return NextResponse.redirect(accountsUrl);
+    return NextResponse.redirect(new URL("/accounts", request.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
+  // Only run middleware on protected pages — NOT on login, register, API, or static assets
   matcher: [
-    /*
-     * Match all paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - favicon.ico
-     */
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    "/",
+    "/accounts/:path*",
+    "/transactions/:path*",
+    "/tax-reports/:path*",
+    "/tax-ai/:path*",
+    "/settings/:path*",
   ],
 };
