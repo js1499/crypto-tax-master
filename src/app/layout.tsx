@@ -32,7 +32,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className="light" style={{ colorScheme: "light" }} suppressHydrationWarning>
       <body
         className={cn(
           "min-h-screen bg-white dark:bg-[#111111] font-sans antialiased",
@@ -49,7 +49,7 @@ export default function RootLayout({
             >
               <OnboardingProvider>
                 {children}
-                <Toaster theme="system" position="top-right" /> {/* Updated Toaster component */}
+                <Toaster theme="light" position="top-right" />
               </OnboardingProvider>
             </ThemeProvider>
           </NextAuthSessionProvider>
