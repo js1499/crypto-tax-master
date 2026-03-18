@@ -113,10 +113,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { question, history } = await request.json();
+    const { question, history, fileContent, fileName } = await request.json();
     if (!question || typeof question !== "string" || question.trim().length === 0) {
       return NextResponse.json({ error: "Question is required" }, { status: 400 });
     }
+
+    // If file attached, truncate to ~50k chars to stay within context limits
+    const fileSummary = fileContent
+      ? `\n\nThe user attached a file named "${fileName || "file.csv"}".\nHere are the first 50,000 characters of its contents:\n\`\`\`\n${String(fileContent).slice(0, 50000)}\n\`\`\``
+      : "";
 
     // Get user's wallet addresses for scoping queries
     const userWithWallets = await prisma.user.findUnique({
@@ -160,7 +165,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    messages.push({ role: "user", content: question });
+    messages.push({ role: "user", content: question + fileSummary });
 
     // Step 1: Generate SQL query
     const sqlResponse = await anthropic.messages.create({
@@ -169,6 +174,7 @@ export async function POST(request: NextRequest) {
       system: `${SCHEMA_CONTEXT}
 
 You are a SQL expert for a crypto tax application. The user will ask questions about their transaction data.
+They may also attach files (CSV, etc.) — if so, their content is included in the message. Use the file data to inform your analysis or answer directly without SQL if appropriate.
 
 CRITICAL SECURITY RULES:
 1. ONLY generate SELECT queries. Never generate INSERT, UPDATE, DELETE, or any mutation.
@@ -178,8 +184,7 @@ CRITICAL SECURITY RULES:
 5. Cast DECIMAL fields to NUMERIC before aggregating: e.g. SUM(value_usd::numeric)
 
 Respond with ONLY the SQL query, nothing else. No markdown, no explanation, just the raw SQL.
-If the question cannot be answered with a SQL query, respond with exactly: NO_QUERY_NEEDED
-If you need to provide a text-only answer, respond with: NO_QUERY_NEEDED`,
+If the question can be answered from the attached file alone, or doesn't need a SQL query, respond with exactly: NO_QUERY_NEEDED`,
       messages,
     });
 
@@ -248,17 +253,35 @@ If you need to provide a text-only answer, respond with: NO_QUERY_NEEDED`,
 
     const answerResponse = await anthropic.messages.create({
       model: "claude-opus-4-20250514",
-      max_tokens: 2048,
-      system: "You are a helpful crypto tax assistant. Provide clear, concise answers about the user's transaction data. Use markdown formatting for readability. Be conversational but precise with numbers.",
+      max_tokens: 4096,
+      system: `You are a helpful crypto tax assistant. Provide clear, concise answers about the user's transaction data. Use markdown formatting for readability. Be conversational but precise with numbers.
+
+If the user asks for data in a downloadable format (CSV, export, file), include a CSV block at the END of your response in this exact format:
+\`\`\`csv-download:filename.csv
+header1,header2,header3
+value1,value2,value3
+\`\`\`
+The filename should be descriptive. Only include this when the user explicitly asks for a download or export.`,
       messages: answerMessages,
     });
 
-    const answer = (answerResponse.content[0] as Anthropic.TextBlock).text;
+    const rawAnswer = (answerResponse.content[0] as Anthropic.TextBlock).text;
+
+    // Extract CSV download block if present
+    let answer = rawAnswer;
+    let fileDownload: { name: string; content: string } | null = null;
+
+    const csvMatch = rawAnswer.match(/```csv-download:(.+?)\n([\s\S]*?)```/);
+    if (csvMatch) {
+      fileDownload = { name: csvMatch[1].trim(), content: csvMatch[2].trim() };
+      answer = rawAnswer.replace(/```csv-download:.+?\n[\s\S]*?```/, "").trim();
+    }
 
     return NextResponse.json({
       answer,
       sql: sqlUsed,
       rowCount: queryResult ? queryResult.length : null,
+      fileDownload,
     });
   } catch (error) {
     console.error("[Tax AI API] Error:", error);
