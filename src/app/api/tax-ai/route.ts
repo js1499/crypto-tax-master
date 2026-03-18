@@ -4,72 +4,93 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 
+// ─── Rich schema + domain context ──────────────────────────────────────────
+
 const SCHEMA_CONTEXT = `
-You have access to a PostgreSQL database with a "transactions" table. Here is the schema:
+You have access to a PostgreSQL database for a crypto tax application.
 
-CREATE TABLE transactions (
-  id                     SERIAL PRIMARY KEY,
-  type                   VARCHAR(50),        -- e.g. SWAP, TRANSFER_IN, TRANSFER_OUT, COMPRESSED_NFT_MINT, INITIALIZE_ACCOUNT, TOKEN_MINT, UNKNOWN, buy, sell, income, etc.
-  subtype                VARCHAR(50),        -- nullable
-  status                 VARCHAR(30) DEFAULT 'pending', -- confirmed, completed, pending, failed
-  source                 VARCHAR(100),       -- e.g. JUPITER, RAYDIUM, ORCA, Coinbase, Binance, csv_import
-  source_type            VARCHAR(30),        -- helius, csv_import, exchange_api
-  asset_symbol           VARCHAR(50),        -- e.g. SOL, USDC, ETH, BTC, FWOG, JUP, BONK
-  asset_address          VARCHAR(255),       -- token mint address (nullable)
-  asset_chain            VARCHAR(30),        -- e.g. solana, ethereum
-  amount_value           DECIMAL(30,15),     -- amount of the asset
-  price_per_unit         DECIMAL(30,15),     -- USD price per unit (nullable)
-  value_usd              DECIMAL(30,15),     -- total USD value
-  fee_usd                DECIMAL(30,15),     -- fee in USD (nullable)
-  incoming_asset_symbol  VARCHAR(50),        -- for swaps: the asset received (nullable)
-  incoming_amount_value  DECIMAL(30,15),     -- for swaps: amount received (nullable)
-  incoming_value_usd     DECIMAL(30,15),     -- for swaps: USD value received (nullable)
-  wallet_address         VARCHAR(100),       -- user's wallet address (nullable for CSV imports)
-  counterparty_address   VARCHAR(100),       -- other party's address (nullable)
-  tx_hash                VARCHAR(255) UNIQUE,-- transaction hash (nullable)
-  chain                  VARCHAR(30),        -- blockchain (solana, ethereum, etc.)
-  block_number           BIGINT,             -- (nullable)
-  tx_timestamp           TIMESTAMPTZ,        -- when the transaction occurred
-  created_at             TIMESTAMPTZ DEFAULT NOW(),
-  updated_at             TIMESTAMPTZ,
-  identified             BOOLEAN DEFAULT false, -- whether the transaction has been reviewed/categorized
-  notes                  TEXT,               -- user notes (nullable)
-  cost_basis_usd         DECIMAL(30,15),     -- computed cost basis (nullable)
-  gain_loss_usd          DECIMAL(30,15),     -- computed gain/loss (nullable)
-  is_income              BOOLEAN DEFAULT false -- whether this is an income event
-);
+## Tables
 
-Key notes:
-- For swaps, the outgoing asset is in asset_symbol/amount_value and the incoming asset is in incoming_asset_symbol/incoming_amount_value
-- gain_loss_usd contains the realized gain or loss for the transaction (positive = gain, negative = loss, null = not computed)
-- value_usd is the USD value of the primary asset
-- Dates are in tx_timestamp (timestamptz)
-- Common types: SWAP, TRANSFER_IN, TRANSFER_OUT, buy, sell
-- Common sources: JUPITER, RAYDIUM, ORCA (DEXes), Coinbase, Binance (exchanges)
+### transactions (main table — this is what you'll query most)
+| Column | Type | Description |
+|--------|------|-------------|
+| id | SERIAL PK | Auto-increment ID |
+| type | VARCHAR(50) | Transaction type. Common values: SWAP, TRANSFER_IN, TRANSFER_OUT, COMPRESSED_NFT_MINT, INITIALIZE_ACCOUNT, TOKEN_MINT, UNKNOWN, buy, sell, income |
+| subtype | VARCHAR(50) | Optional sub-classification (nullable) |
+| status | VARCHAR(30) | confirmed, completed, pending, or failed |
+| source | VARCHAR(100) | Where the tx came from: JUPITER, RAYDIUM, ORCA, PHOENIX, LIFINITY (Solana DEXes), Coinbase, Binance, Kraken, Gemini, KuCoin (exchanges), or csv_import |
+| source_type | VARCHAR(30) | helius (on-chain via Helius API), csv_import (user CSV upload), exchange_api (exchange sync) |
+| asset_symbol | VARCHAR(50) | Primary asset ticker: SOL, USDC, ETH, BTC, FWOG, JUP, BONK, WIF, POPCAT, etc. |
+| asset_address | VARCHAR(255) | Token mint/contract address (nullable) |
+| asset_chain | VARCHAR(30) | solana, ethereum, bitcoin, etc. |
+| amount_value | DECIMAL(30,15) | Amount of the primary asset |
+| price_per_unit | DECIMAL(30,15) | USD price per unit at time of tx (nullable) |
+| value_usd | DECIMAL(30,15) | Total USD value of primary asset side |
+| fee_usd | DECIMAL(30,15) | Transaction fee in USD (nullable) |
+| incoming_asset_symbol | VARCHAR(50) | For SWAPs: the asset received (nullable) |
+| incoming_amount_value | DECIMAL(30,15) | For SWAPs: amount received (nullable) |
+| incoming_value_usd | DECIMAL(30,15) | For SWAPs: USD value of received asset (nullable) |
+| wallet_address | VARCHAR(100) | User's wallet address (NULL for CSV imports) |
+| counterparty_address | VARCHAR(100) | Other party's address (nullable) |
+| tx_hash | VARCHAR(255) UNIQUE | On-chain transaction hash/signature (nullable) |
+| chain | VARCHAR(30) | Blockchain: solana, ethereum, bitcoin, etc. |
+| block_number | BIGINT | Block number (nullable) |
+| tx_timestamp | TIMESTAMPTZ | When the transaction occurred |
+| created_at | TIMESTAMPTZ | When the record was created |
+| updated_at | TIMESTAMPTZ | Last update time |
+| identified | BOOLEAN | Whether the user has reviewed/categorized this transaction |
+| notes | TEXT | User-added notes (nullable) |
+| cost_basis_usd | DECIMAL(30,15) | Computed cost basis for the asset (nullable — NULL means not yet computed) |
+| gain_loss_usd | DECIMAL(30,15) | Realized gain (+) or loss (-). NULL = not computed. 0 = computed as zero. |
+| is_income | BOOLEAN | Whether this is a taxable income event (staking reward, airdrop, etc.) |
+
+### wallets (user's connected wallets — READ ONLY context, don't query directly)
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT PK | Wallet ID |
+| name | TEXT | Display name |
+| address | TEXT | Wallet address (matches transactions.wallet_address) |
+| provider | TEXT | "solana", "ethereum", "bitcoin" |
+| chains | TEXT | Supported chains (nullable) |
+| lastSyncAt | TIMESTAMPTZ | Last sync time (nullable) |
+
+### exchanges (connected exchange accounts — READ ONLY context, don't query directly)
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT PK | Exchange ID |
+| name | TEXT | Coinbase, Binance, Kraken, Gemini, KuCoin |
+| isConnected | BOOLEAN | Whether currently connected |
+| lastSyncAt | TIMESTAMPTZ | Last sync time (nullable) |
+
+## Key domain knowledge
+
+**Swap mechanics**: A SWAP has both outgoing (asset_symbol, amount_value, value_usd) and incoming (incoming_asset_symbol, incoming_amount_value, incoming_value_usd) sides. Example: swapping 1 SOL ($150) for 10,000 BONK ($150).
+
+**Gain/loss**: gain_loss_usd is the realized profit or loss. Positive = gain, negative = loss. Many transactions have NULL (not yet computed). To get P&L, aggregate only non-NULL values.
+
+**Income**: is_income=true means the transaction is taxable as ordinary income (staking rewards, airdrops, mining rewards). The income amount is value_usd.
+
+**Identification**: identified=true means the user has reviewed and categorized the transaction. Unidentified transactions may need attention.
+
+**Common Solana tokens**: SOL (native), USDC (stablecoin), JUP (Jupiter DEX), BONK (memecoin), WIF (memecoin), FWOG (memecoin), POPCAT (memecoin), RAY (Raydium), ORCA, PYTH, W (Wormhole), RENDER, HNT (Helium).
+
+**Common sources**: JUPITER (largest Solana DEX aggregator), RAYDIUM (Solana AMM), ORCA (Solana DEX), PHOENIX (Solana order book), Coinbase/Binance/Kraken/Gemini/KuCoin (centralized exchanges).
+
+**Value/volume**: value_usd represents the USD value of the transaction. For total trading volume, sum value_usd. For swap volume specifically, filter type='SWAP'.
+
+**Fees**: fee_usd is per-transaction. Sum for total fee spend. Solana fees are typically very small ($0.001-0.01), while exchange fees can be 0.1-0.5% of trade value.
+
+**Time**: tx_timestamp is the authoritative date. Use EXTRACT(YEAR FROM tx_timestamp) for yearly aggregation, TO_CHAR(tx_timestamp, 'YYYY-MM') for monthly.
+
+## IMPORTANT SQL notes
+- Always cast DECIMAL to NUMERIC before aggregating: SUM(value_usd::numeric), not SUM(value_usd)
+- Use ROUND(..., 2) for USD amounts
+- Use COALESCE() for nullable fields when aggregating
+- LIMIT 100 rows max on all queries
 `;
 
-const BLOCKED_KEYWORDS = [
-  "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE",
-  "GRANT", "REVOKE", "EXEC", "EXECUTE", "INTO", "SET ", "MERGE",
-  "REPLACE", "CALL", "COPY", "LOCK", "UNLOCK", "VACUUM", "REINDEX",
-];
+// ─── Query safety ──────────────────────────────────────────────────────────
 
-function isSafeQuery(sql: string): boolean {
-  const upper = sql.toUpperCase().trim();
-  if (!upper.startsWith("SELECT")) return false;
-  for (const keyword of BLOCKED_KEYWORDS) {
-    // Check for keyword as a standalone word (not part of another word)
-    const regex = new RegExp(`\\b${keyword.trim()}\\b`, "i");
-    if (regex.test(upper) && keyword.trim() !== "SET") continue; // SET is ok in some contexts
-    if (keyword.trim() === "SET " && upper.includes("SET ")) return false;
-    if (keyword.trim() !== "SET " && regex.test(upper)) return false;
-  }
-  // Block semicolons (prevent multi-statement)
-  if (sql.includes(";") && sql.indexOf(";") < sql.length - 1) return false;
-  return true;
-}
-
-// Simpler safety check
 function validateQuery(sql: string): { safe: boolean; reason?: string } {
   const trimmed = sql.trim().replace(/;$/, "");
   const upper = trimmed.toUpperCase();
@@ -78,15 +99,45 @@ function validateQuery(sql: string): { safe: boolean; reason?: string } {
     return { safe: false, reason: "Only SELECT queries are allowed." };
   }
 
-  const dangerous = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE", "GRANT", "REVOKE"];
+  const dangerous = [
+    "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE",
+    "GRANT", "REVOKE", "COPY", "LOCK", "VACUUM",
+  ];
   for (const kw of dangerous) {
     if (new RegExp(`\\b${kw}\\b`).test(upper)) {
       return { safe: false, reason: `Query contains forbidden keyword: ${kw}` };
     }
   }
 
+  // Block multiple statements
+  const semiCount = (trimmed.match(/;/g) || []).length;
+  if (semiCount > 0) {
+    return { safe: false, reason: "Multiple statements not allowed." };
+  }
+
   return { safe: true };
 }
+
+/**
+ * Wrap the AI-generated query in a CTE that enforces ownership.
+ * This is the SERVER-SIDE security gate — no matter what SQL Claude generates,
+ * it can only read from the scoped subset of transactions.
+ */
+function wrapWithOwnershipFilter(
+  sql: string,
+  ownershipFilter: string,
+): string {
+  // Replace bare "transactions" table reference with our scoped CTE
+  // The CTE pre-filters to only the user's data
+  return `
+WITH user_transactions AS (
+  SELECT * FROM transactions WHERE (${ownershipFilter}) AND status IN ('confirmed', 'completed', 'pending')
+)
+${sql.replace(/\btransactions\b/gi, "user_transactions")}
+  `.trim();
+}
+
+// ─── Route handler ─────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
   try {
@@ -100,7 +151,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const userRateLimit = rateLimitByUser(user.id, 10); // 10 questions per minute
+    const userRateLimit = rateLimitByUser(user.id, 10);
     if (!userRateLimit.success) {
       return createRateLimitResponse(userRateLimit.remaining, userRateLimit.reset);
     }
@@ -118,12 +169,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Question is required" }, { status: 400 });
     }
 
-    // If file attached, truncate to ~50k chars to stay within context limits
     const fileSummary = fileContent
       ? `\n\nThe user attached a file named "${fileName || "file.csv"}".\nHere are the first 50,000 characters of its contents:\n\`\`\`\n${String(fileContent).slice(0, 50000)}\n\`\`\``
       : "";
 
-    // Get user's wallet addresses for scoping queries
+    // ── Resolve user's data ownership ──────────────────────────────
     const userWithWallets = await prisma.user.findUnique({
       where: { id: user.id },
       include: { wallets: true },
@@ -136,7 +186,7 @@ export async function POST(request: NextRequest) {
     });
     const exchangeNames = userExchanges.map((e) => e.name);
 
-    // Build the ownership WHERE clause the AI must use
+    // Build SQL ownership filter (used server-side in CTE wrapper)
     const ownershipClauses: string[] = [];
     if (walletAddresses.length > 0) {
       ownershipClauses.push(
@@ -151,12 +201,15 @@ export async function POST(request: NextRequest) {
     }
     const ownershipFilter = ownershipClauses.join(" OR ");
 
+    // Build user context summary for the AI
+    const userContext = `
+The user has ${walletAddresses.length} wallet(s)${walletAddresses.length > 0 ? ` on chains including ${[...new Set(userWithWallets?.wallets.map(w => w.provider))].join(", ")}` : ""} and ${exchangeNames.length} exchange(s)${exchangeNames.length > 0 ? ` (${exchangeNames.join(", ")})` : ""}.
+`;
+
     const anthropic = new Anthropic({ apiKey });
 
-    // Build conversation messages
+    // Build conversation
     const messages: Anthropic.MessageParam[] = [];
-
-    // Include conversation history (last 10 messages)
     if (history && Array.isArray(history)) {
       for (const msg of history.slice(-10)) {
         if (msg.role === "user" || msg.role === "assistant") {
@@ -164,27 +217,27 @@ export async function POST(request: NextRequest) {
         }
       }
     }
-
     messages.push({ role: "user", content: question + fileSummary });
 
-    // Step 1: Generate SQL query
+    // ── Step 1: Generate SQL ───────────────────────────────────────
     const sqlResponse = await anthropic.messages.create({
       model: "claude-opus-4-20250514",
       max_tokens: 1024,
       system: `${SCHEMA_CONTEXT}
+${userContext}
 
-You are a SQL expert for a crypto tax application. The user will ask questions about their transaction data.
-They may also attach files (CSV, etc.) — if so, their content is included in the message. Use the file data to inform your analysis or answer directly without SQL if appropriate.
+You are a SQL expert for this crypto tax application. Generate a PostgreSQL SELECT query to answer the user's question.
 
-CRITICAL SECURITY RULES:
-1. ONLY generate SELECT queries. Never generate INSERT, UPDATE, DELETE, or any mutation.
-2. ALWAYS include this ownership filter in your WHERE clause: (${ownershipFilter})
+RULES:
+1. ONLY generate SELECT queries against the "transactions" table.
+2. Do NOT add any ownership/wallet filtering — that is handled automatically by the system.
 3. LIMIT results to 100 rows max.
 4. Use ROUND() for decimal values to 2 decimal places.
 5. Cast DECIMAL fields to NUMERIC before aggregating: e.g. SUM(value_usd::numeric)
+6. If the user attached a file and the question is about that file (not the database), respond with: NO_QUERY_NEEDED
+7. If the question is general knowledge (not a data query), respond with: NO_QUERY_NEEDED
 
-Respond with ONLY the SQL query, nothing else. No markdown, no explanation, just the raw SQL.
-If the question can be answered from the attached file alone, or doesn't need a SQL query, respond with exactly: NO_QUERY_NEEDED`,
+Respond with ONLY the raw SQL query. No markdown fences, no explanation, no comments.`,
       messages,
     });
 
@@ -194,12 +247,13 @@ If the question can be answered from the attached file alone, or doesn't need a 
     let sqlUsed: string | null = null;
 
     if (sqlText !== "NO_QUERY_NEEDED") {
-      // Clean up the SQL (remove markdown fences if present)
-      let cleanSql = sqlText.replace(/^```sql?\n?/i, "").replace(/\n?```$/i, "").trim();
-      // Remove trailing semicolons
-      cleanSql = cleanSql.replace(/;$/, "");
+      let cleanSql = sqlText
+        .replace(/^```sql?\n?/i, "")
+        .replace(/\n?```$/i, "")
+        .trim()
+        .replace(/;$/, "");
 
-      // Validate safety
+      // Validate safety (no mutations)
       const validation = validateQuery(cleanSql);
       if (!validation.safe) {
         return NextResponse.json({
@@ -209,59 +263,67 @@ If the question can be answered from the attached file alone, or doesn't need a 
         });
       }
 
-      sqlUsed = cleanSql;
+      // SERVER-SIDE SECURITY: wrap query in CTE that enforces ownership
+      // The AI never sees the real table — only the pre-filtered user_transactions CTE
+      const wrappedSql = wrapWithOwnershipFilter(cleanSql, ownershipFilter);
+      sqlUsed = cleanSql; // Show the clean version to the user
 
-      // Execute query
       try {
-        queryResult = await prisma.$queryRawUnsafe(cleanSql);
-        // Serialize BigInt values
+        queryResult = await prisma.$queryRawUnsafe(wrappedSql);
         queryResult = JSON.parse(
           JSON.stringify(queryResult, (_, v) => (typeof v === "bigint" ? v.toString() : v))
         );
-        // Limit to 100 rows
         if (Array.isArray(queryResult) && queryResult.length > 100) {
           queryResult = queryResult.slice(0, 100);
         }
       } catch (dbError) {
         const errMsg = dbError instanceof Error ? dbError.message : "Query failed";
         return NextResponse.json({
-          answer: `The query failed to execute: ${errMsg}. Let me know if you'd like to rephrase your question.`,
+          answer: `The query failed to execute. This can happen with complex queries. Could you rephrase your question?\n\nError: ${errMsg}`,
           sql: cleanSql,
           error: errMsg,
         });
       }
     }
 
-    // Step 2: Generate natural language answer
+    // ── Step 2: Generate natural language answer ───────────────────
     const answerMessages: Anthropic.MessageParam[] = [...messages];
 
     if (queryResult !== null) {
       answerMessages.push({
         role: "assistant",
-        content: `I ran this SQL query:\n${sqlUsed}\n\nResults:\n${JSON.stringify(queryResult, null, 2)}`,
+        content: `I queried the database and got these results:\n${JSON.stringify(queryResult, null, 2)}`,
       });
       answerMessages.push({
         role: "user",
-        content: "Now provide a clear, concise natural language answer based on those results. Format numbers nicely (USD with $ and commas, percentages, etc). If relevant, mention the number of results. Be conversational but precise.",
+        content: "Provide a clear, concise natural language answer based on those results. Format USD with $ and commas, round to 2 decimal places. Use markdown for structure when helpful. Be conversational but precise.",
       });
     } else {
       answerMessages.push({
         role: "user",
-        content: "Answer this question about crypto transactions conversationally. You don't need a SQL query for this one.",
+        content: "Answer this question conversationally. You don't need a SQL query for this one. If the user attached a file, analyze it directly.",
       });
     }
 
     const answerResponse = await anthropic.messages.create({
       model: "claude-opus-4-20250514",
       max_tokens: 4096,
-      system: `You are a helpful crypto tax assistant. Provide clear, concise answers about the user's transaction data. Use markdown formatting for readability. Be conversational but precise with numbers.
+      system: `You are a helpful crypto tax AI assistant. You help users understand their transaction data, trading activity, gains/losses, and tax implications.
+${userContext}
 
-If the user asks for data in a downloadable format (CSV, export, file), include a CSV block at the END of your response in this exact format:
-\`\`\`csv-download:filename.csv
-header1,header2,header3
-value1,value2,value3
+Guidelines:
+- Be conversational but precise with numbers
+- Format USD with $ and commas, round to 2 decimals
+- Use markdown (bold, lists, headers) for readability
+- If you spot potential tax issues, flag them
+- If data seems incomplete (lots of NULL gain_loss_usd), mention that cost basis may need computing
+
+If the user asks for data as a downloadable file, include a CSV block at the END:
+\`\`\`csv-download:descriptive-filename.csv
+header1,header2
+value1,value2
 \`\`\`
-The filename should be descriptive. Only include this when the user explicitly asks for a download or export.`,
+Only include this when explicitly asked for a download/export.`,
       messages: answerMessages,
     });
 
