@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
-import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -161,13 +160,13 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-6 text-center text-sm">
-            <span className="text-muted-foreground">Don't have an account? </span>
-            <Link
+            <span className="text-muted-foreground">Don&apos;t have an account? </span>
+            <a
               href="/register"
               className="text-primary hover:underline font-medium"
             >
               Sign up
-            </Link>
+            </a>
           </div>
         </CardContent>
       </Card>
