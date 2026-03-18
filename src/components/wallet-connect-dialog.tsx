@@ -2,113 +2,39 @@
 
 import { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { QrCode, Loader2, Wallet } from "lucide-react";
-import type { ConnectionResult, WalletProvider, ExchangeProvider } from "@/types/wallet";
+import { QrCode, Loader2, Wallet, ArrowLeft } from "lucide-react";
+import type { ConnectionResult } from "@/types/wallet";
 import { toast } from "sonner";
 
-// All chains supported by Moralis wallet history API
 const EVM_CHAINS = [
-  // Major L1s
   { id: "eth", name: "Ethereum" },
   { id: "polygon", name: "Polygon" },
   { id: "bsc", name: "BNB Chain" },
   { id: "avalanche", name: "Avalanche" },
-  { id: "fantom", name: "Fantom" },
-  { id: "cronos", name: "Cronos" },
-  { id: "gnosis", name: "Gnosis" },
-  { id: "pulse", name: "PulseChain" },
-  // L2s / Rollups
   { id: "arbitrum", name: "Arbitrum" },
   { id: "optimism", name: "Optimism" },
   { id: "base", name: "Base" },
   { id: "linea", name: "Linea" },
-  { id: "lisk", name: "Lisk" },
-  // Other
-  { id: "moonbeam", name: "Moonbeam" },
-  { id: "moonriver", name: "Moonriver" },
-  { id: "chiliz", name: "Chiliz" },
-  { id: "ronin", name: "Ronin" },
-  { id: "flow", name: "Flow" },
-  { id: "sei", name: "Sei" },
+  { id: "fantom", name: "Fantom" },
+  { id: "cronos", name: "Cronos" },
 ];
 
-const walletProviders: WalletProvider[] = [
-  {
-    id: "evm",
-    name: "EVM Wallet",
-    icon: "/images/tokens/ethereum.png",
-    chains: ["Ethereum", "Polygon", "Arbitrum", "Optimism", "Base"],
-  },
-  {
-    id: "solana",
-    name: "Solana Wallet",
-    icon: "/images/tokens/solana.png",
-    chains: ["Solana"],
-  },
-  {
-    id: "metamask",
-    name: "MetaMask",
-    icon: "/images/tokens/ethereum.png",
-    chains: ["Ethereum", "Polygon", "Arbitrum", "Optimism"],
-  },
-  {
-    id: "phantom",
-    name: "Phantom",
-    icon: "/images/tokens/solana.png",
-    chains: ["Solana"],
-  },
-  {
-    id: "ledger",
-    name: "Ledger",
-    icon: "/images/tokens/bitcoin.png",
-    chains: ["Bitcoin", "Ethereum", "Solana", "Multiple"],
-  },
+const WALLET_OPTIONS = [
+  { id: "solana", name: "SOL Wallet", logo: "/logos/SOL.png", placeholder: "Enter Solana address...", addressPattern: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/, errorMsg: "Invalid Solana address" },
+  { id: "evm", name: "ETH Wallet", logo: "/logos/ETH.png", placeholder: "0x...", addressPattern: /^0x[a-fA-F0-9]{40}$/, errorMsg: "Invalid ETH address (must start with 0x, 42 chars)" },
+  { id: "bitcoin", name: "BTC Wallet", logo: "/logos/BTC.png", placeholder: "Enter Bitcoin address...", addressPattern: /^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,62}$/, errorMsg: "Invalid Bitcoin address" },
 ];
 
-const exchangeProviders: ExchangeProvider[] = [
-  {
-    id: "coinbase",
-    name: "Coinbase",
-    icon: "/images/tokens/coinbase.png",
-    connection: "API", // CDP API Key authentication
-  },
-  {
-    id: "binance",
-    name: "Binance",
-    icon: "/images/tokens/binance.png",
-    connection: "API",
-  },
-  {
-    id: "kraken",
-    name: "Kraken",
-    icon: "/images/tokens/ethereum.png",
-    connection: "API",
-  },
-  {
-    id: "kucoin",
-    name: "KuCoin",
-    icon: "/images/tokens/bitcoin.png",
-    connection: "API",
-  },
-  {
-    id: "gemini",
-    name: "Gemini",
-    icon: "/images/tokens/ethereum.png",
-    connection: "API",
-  },
+const EXCHANGE_OPTIONS = [
+  { id: "coinbase", name: "Coinbase", logo: "/logos/coinbase.png", connection: "OAuth" as const },
+  { id: "binance", name: "Binance", logo: "/logos/binance.jpg", connection: "API" as const },
+  { id: "kraken", name: "Kraken", logo: "/logos/kraken.svg", connection: "API" as const },
+  { id: "gemini", name: "Gemini", logo: "/logos/gemini.png", connection: "API" as const },
+  { id: "kucoin", name: "KuCoin", logo: "/logos/kucoin.png", connection: "API" as const },
 ];
 
 interface WalletConnectDialogProps {
@@ -116,140 +42,43 @@ interface WalletConnectDialogProps {
 }
 
 export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
-  const [open, setOpen] = useState(false);
   const [connecting, setConnecting] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState("");
-  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
+  const [selectedExchange, setSelectedExchange] = useState<string | null>(null);
+  const [walletName, setWalletName] = useState("");
+  const [walletAddress, setWalletAddress] = useState("");
+  const [selectedChains, setSelectedChains] = useState<string[]>(["eth", "polygon", "arbitrum", "optimism", "base"]);
+  const [syncAfterAdd, setSyncAfterAdd] = useState(true);
   const [apiKey, setApiKey] = useState("");
   const [apiSecret, setApiSecret] = useState("");
   const [apiPassphrase, setApiPassphrase] = useState("");
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  // EVM wallet specific state
-  const [walletName, setWalletName] = useState("");
-  const [walletAddress, setWalletAddress] = useState("");
-  const [selectedChains, setSelectedChains] = useState<string[]>(["eth", "polygon", "bsc", "arbitrum", "optimism", "base", "avalanche"]);
-  const [syncAfterAdd, setSyncAfterAdd] = useState(true);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
 
-  const handleConnect = async (provider: string) => {
-    setSelectedProvider(provider);
+  const resetForm = () => {
+    setSelectedWallet(null);
+    setSelectedExchange(null);
+    setWalletName("");
+    setWalletAddress("");
+    setApiKey("");
+    setApiSecret("");
+    setApiPassphrase("");
     setConnectionError(null);
-
-    // For EVM wallets, show the manual entry form
-    if (provider === "evm" || provider === "metamask") {
-      return;
-    }
-
-    // For Solana wallets, show the Solana form
-    if (provider === "solana" || provider === "phantom") {
-      return;
-    }
-
-    // For other wallet providers
-    setConnecting(true);
-    try {
-      toast.info("Please enter your wallet address manually");
-      setConnecting(false);
-    } catch (error) {
-      console.error(`[Wallet Connect] Error connecting to ${provider}:`, error);
-      setConnecting(false);
-      const errorMessage = error instanceof Error ? error.message : "Failed to connect";
-      setConnectionError(errorMessage);
-      toast.error(errorMessage);
-    }
   };
 
-  const handleAddSolanaWallet = async () => {
-    if (!walletName || !walletAddress) {
+  const handleAddWallet = async () => {
+    const option = WALLET_OPTIONS.find(w => w.id === selectedWallet);
+    if (!option || !walletName || !walletAddress) {
       toast.error("Please enter wallet name and address");
       return;
     }
 
-    // Validate Solana address format (base58, 32-44 chars)
-    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(walletAddress)) {
-      toast.error("Invalid Solana address. Must be a valid base58 address (32-44 characters).");
+    if (!option.addressPattern.test(walletAddress)) {
+      toast.error(option.errorMsg);
       return;
     }
 
-    setConnecting(true);
-    setConnectionError(null);
-
-    try {
-      const response = await fetch("/api/wallets", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: walletName,
-          address: walletAddress,
-          provider: "solana",
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to create wallet");
-      }
-
-      toast.success("Solana wallet added successfully");
-
-      if (syncAfterAdd) {
-        toast.info("Syncing Solana wallet transactions...");
-        try {
-          const syncResponse = await fetch("/api/wallets/sync", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ walletId: data.wallet.id }),
-          });
-
-          const syncData = await syncResponse.json();
-          if (syncResponse.ok) {
-            toast.success(
-              `Synced ${syncData.transactionsAdded} new, ${syncData.transactionsSkipped || 0} existing transactions. Use "Enrich Prices" button on Accounts page to look up historical prices.`
-            );
-          } else {
-            toast.error(syncData.error || "Sync completed with errors");
-          }
-        } catch (syncError) {
-          console.error("[Wallet Sync] Error:", syncError);
-          toast.error("Wallet added but sync failed. You can sync later.");
-        }
-      }
-
-      setWalletName("");
-      setWalletAddress("");
-      setSelectedProvider("");
-      setOpen(false);
-
-      if (onConnect) {
-        onConnect("solana", {
-          success: true,
-          provider: "solana",
-          address: walletAddress,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    } catch (error) {
-      console.error("[Wallet Connect] Error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to add wallet";
-      setConnectionError(errorMessage);
-      toast.error(errorMessage);
-    } finally {
-      setConnecting(false);
-    }
-  };
-
-  const handleAddEvmWallet = async () => {
-    if (!walletName || !walletAddress) {
-      toast.error("Please enter wallet name and address");
-      return;
-    }
-
-    // Validate EVM address format
-    if (!/^0x[a-fA-F0-9]{40}$/.test(walletAddress)) {
-      toast.error("Invalid EVM address. Must start with 0x and be 42 characters.");
-      return;
-    }
-
-    if (selectedChains.length === 0) {
+    if (selectedWallet === "evm" && selectedChains.length === 0) {
       toast.error("Please select at least one chain");
       return;
     }
@@ -258,128 +87,54 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
     setConnectionError(null);
 
     try {
-      // Create wallet
+      const body: Record<string, unknown> = {
+        name: walletName,
+        address: selectedWallet === "evm" ? walletAddress.toLowerCase() : walletAddress,
+        provider: selectedWallet === "evm" ? "evm" : selectedWallet,
+      };
+      if (selectedWallet === "evm") body.chains = selectedChains.join(",");
+
       const response = await fetch("/api/wallets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: walletName,
-          address: walletAddress.toLowerCase(),
-          provider: "evm",
-          chains: selectedChains.join(","),
-        }),
+        body: JSON.stringify(body),
       });
-
       const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to create wallet");
-      }
+      if (!response.ok) throw new Error(data.error || "Failed to add wallet");
 
       toast.success("Wallet added successfully");
 
-      // Optionally sync transactions immediately
       if (syncAfterAdd) {
-        toast.info("Syncing wallet transactions...");
+        toast.info("Syncing transactions...");
         try {
+          const syncBody: Record<string, unknown> = { walletId: data.wallet.id };
+          if (selectedWallet === "evm") syncBody.chains = selectedChains;
           const syncResponse = await fetch("/api/wallets/sync", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              walletId: data.wallet.id,
-              chains: selectedChains,
-            }),
+            body: JSON.stringify(syncBody),
           });
-
           const syncData = await syncResponse.json();
           if (syncResponse.ok) {
-            toast.success(`Synced ${syncData.transactionsAdded} transactions`);
+            toast.success(`Sync complete — ${syncData.transactionsAdded} transactions added`);
           } else {
-            toast.error(syncData.error || "Sync completed with errors");
+            toast.error("Wallet added but sync failed. You can sync later.");
           }
-        } catch (syncError) {
-          console.error("[Wallet Sync] Error:", syncError);
+        } catch {
           toast.error("Wallet added but sync failed. You can sync later.");
         }
       }
 
-      // Reset form
-      setWalletName("");
-      setWalletAddress("");
-      setSelectedProvider("");
-      setOpen(false);
-
+      resetForm();
       if (onConnect) {
-        onConnect("evm", {
-          success: true,
-          provider: "evm",
-          address: walletAddress,
-          timestamp: new Date().toISOString(),
-        });
+        onConnect(selectedWallet, { success: true, provider: selectedWallet, address: walletAddress, timestamp: new Date().toISOString() });
       }
     } catch (error) {
-      console.error("[Wallet Connect] Error:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to add wallet";
-      setConnectionError(errorMessage);
-      toast.error(errorMessage);
+      const msg = error instanceof Error ? error.message : "Failed to add wallet";
+      setConnectionError(msg);
+      toast.error(msg);
     } finally {
       setConnecting(false);
-    }
-  };
-
-  const toggleChain = (chainId: string) => {
-    setSelectedChains((prev) =>
-      prev.includes(chainId)
-        ? prev.filter((c) => c !== chainId)
-        : [...prev, chainId]
-    );
-  };
-
-  const handleOAuthConnect = async (provider: string) => {
-    setSelectedProvider(provider);
-    setConnecting(true);
-    setConnectionError(null);
-    
-    try {
-      console.log(`[Wallet Connect] Initiating OAuth flow for ${provider}`);
-      
-      // For Coinbase, redirect to our OAuth endpoint
-      if (provider === "coinbase") {
-        // Start the OAuth flow by redirecting to our API route
-        window.location.href = "/api/auth/coinbase";
-        return; // No need to reset connecting state as we're redirecting
-      }
-      
-      // For other OAuth providers (future implementation)
-      throw new Error(`OAuth not implemented for ${provider}`);
-    } catch (error) {
-      console.error(`[Wallet Connect] Error initiating OAuth for ${provider}:`, error);
-      setConnecting(false);
-      setConnectionError(`Failed to connect to ${provider}. Please try again.`);
-      toast.error(`Failed to connect to ${provider}`);
-    }
-  };
-
-  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setCsvFile(e.target.files[0]);
-    }
-  };
-
-  const handleCsvSubmit = () => {
-    if (!csvFile) return;
-
-    // CSV import is handled by the transactions import page
-    // This dialog just triggers the import flow
-    setConnecting(false);
-    setOpen(false);
-
-    if (onConnect) {
-      onConnect("csv", {
-        success: true,
-        provider: "csv",
-        fileName: csvFile.name,
-        timestamp: new Date().toISOString(),
-      });
     }
   };
 
@@ -388,477 +143,204 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
       toast.error("Please enter API key and secret");
       return;
     }
+    if (selectedExchange === "kucoin" && !apiPassphrase) {
+      toast.error("API Passphrase is required for KuCoin");
+      return;
+    }
 
     setConnecting(true);
     setConnectionError(null);
 
     try {
-      const body: any = {
-        exchange: selectedProvider,
-        apiKey,
-        apiSecret,
-      };
-
-      // KuCoin requires passphrase
-      if (selectedProvider === "kucoin") {
-        if (!apiPassphrase) {
-          setConnecting(false);
-          toast.error("API Passphrase is required for KuCoin");
-          return;
-        }
-        body.apiPassphrase = apiPassphrase;
-      }
+      const body: Record<string, unknown> = { exchange: selectedExchange, apiKey, apiSecret };
+      if (selectedExchange === "kucoin") body.apiPassphrase = apiPassphrase;
 
       const response = await fetch("/api/exchanges/connect", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to connect exchange");
 
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to connect exchange");
-      }
-
-      setConnecting(false);
-      setOpen(false);
-      toast.success(`Successfully connected to ${selectedProvider}`);
-      
+      toast.success(`Connected to ${selectedExchange}`);
+      resetForm();
       if (onConnect) {
-        onConnect(selectedProvider, {
-          success: true,
-          provider: selectedProvider,
-          timestamp: new Date().toISOString(),
-        });
+        onConnect(selectedExchange!, { success: true, provider: selectedExchange!, timestamp: new Date().toISOString() });
       }
     } catch (error) {
-      console.error(`[Exchange Connect] Error connecting to ${selectedProvider}:`, error);
+      const msg = error instanceof Error ? error.message : "Failed to connect";
+      setConnectionError(msg);
+      toast.error(msg);
+    } finally {
       setConnecting(false);
-      const errorMessage = error instanceof Error ? error.message : "Failed to connect";
-      setConnectionError(errorMessage);
-      toast.error(errorMessage);
     }
   };
 
-  // Helper to determine connection method based on provider ID
-  const getConnectionMethod = (providerId: string) => {
-    const provider = exchangeProviders.find(p => p.id === providerId);
-    return provider?.connection || "API";
+  const handleOAuthConnect = (provider: string) => {
+    if (provider === "coinbase") {
+      window.location.href = "/api/auth/coinbase";
+    }
   };
 
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>Connect Wallet or Exchange</Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Connect Account</DialogTitle>
-          <DialogDescription>
-            Connect your crypto wallets and exchanges to import your transactions
-          </DialogDescription>
-        </DialogHeader>
+  const walletOption = WALLET_OPTIONS.find(w => w.id === selectedWallet);
+  const exchangeOption = EXCHANGE_OPTIONS.find(e => e.id === selectedExchange);
 
-        {connecting ? (
-          <div className="flex flex-col items-center justify-center py-8">
-            <Loader2 className="h-8 w-8 animate-spin text-primary mb-4" />
-            <p>Connecting to {selectedProvider}...</p>
-            <p className="text-sm text-muted-foreground mt-2">This might take a few moments</p>
+  return (
+    <Tabs defaultValue="wallets" className="w-full">
+      <TabsList className="grid w-full grid-cols-3">
+        <TabsTrigger value="wallets">Wallets</TabsTrigger>
+        <TabsTrigger value="exchanges">Exchanges</TabsTrigger>
+        <TabsTrigger value="csv">CSV Upload</TabsTrigger>
+      </TabsList>
+
+      {/* ── Wallets Tab ── */}
+      <TabsContent value="wallets" className="mt-4 space-y-4">
+        {selectedWallet && walletOption ? (
+          <div className="space-y-4">
+            <button onClick={resetForm} className="flex items-center gap-1 text-[13px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">
+              <ArrowLeft className="h-3.5 w-3.5" /> Back
+            </button>
+            <div className="flex items-center gap-3">
+              <img src={walletOption.logo} alt={walletOption.name} className="h-8 w-8 rounded-full" />
+              <h3 className="text-[14px] font-semibold">{walletOption.name}</h3>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="wallet-name">Wallet Name</Label>
+              <Input id="wallet-name" placeholder="My Wallet" value={walletName} onChange={(e) => setWalletName(e.target.value)} />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="wallet-address">Address</Label>
+              <Input id="wallet-address" placeholder={walletOption.placeholder} value={walletAddress} onChange={(e) => setWalletAddress(e.target.value)} className="font-mono text-[13px]" />
+            </div>
+
+            {selectedWallet === "evm" && (
+              <div className="space-y-2">
+                <Label>Chains to Sync</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {EVM_CHAINS.map((chain) => (
+                    <div key={chain.id} className="flex items-center space-x-2">
+                      <Checkbox id={`chain-${chain.id}`} checked={selectedChains.includes(chain.id)} onCheckedChange={() => setSelectedChains(prev => prev.includes(chain.id) ? prev.filter(c => c !== chain.id) : [...prev, chain.id])} />
+                      <label htmlFor={`chain-${chain.id}`} className="text-sm cursor-pointer">{chain.name}</label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center space-x-2">
+              <Checkbox id="sync-after" checked={syncAfterAdd} onCheckedChange={(c) => setSyncAfterAdd(c === true)} />
+              <label htmlFor="sync-after" className="text-sm cursor-pointer">Sync transactions immediately</label>
+            </div>
+
+            {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}
+
+            <Button className="w-full" onClick={handleAddWallet} disabled={connecting || !walletName || !walletAddress}>
+              {connecting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{syncAfterAdd ? "Adding & Syncing..." : "Adding..."}</> : <><Wallet className="mr-2 h-4 w-4" />{syncAfterAdd ? "Add & Sync" : "Add Wallet"}</>}
+            </Button>
           </div>
         ) : (
-          <Tabs defaultValue="wallets" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
-              <TabsTrigger value="wallets">Wallets</TabsTrigger>
-              <TabsTrigger value="exchanges">Exchanges</TabsTrigger>
-              <TabsTrigger value="csv">CSV Upload</TabsTrigger>
-            </TabsList>
+          <div className="grid grid-cols-3 gap-3">
+            {WALLET_OPTIONS.map((option) => (
+              <button key={option.id} onClick={() => setSelectedWallet(option.id)} className="flex flex-col items-center gap-2.5 rounded-xl border border-[#E5E5E0] dark:border-[#333] p-5 hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
+                <img src={option.logo} alt={option.name} className="h-10 w-10 rounded-full" />
+                <span className="text-[13px] font-medium">{option.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </TabsContent>
 
-            <TabsContent value="wallets" className="mt-4 space-y-4">
-              {/* Show Solana wallet form when selected */}
-              {(selectedProvider === "solana" || selectedProvider === "phantom") ? (
-                <div className="space-y-4 border rounded-lg p-4">
-                  <div className="flex items-center gap-2">
-                    <Wallet className="h-5 w-5 text-primary" />
-                    <h3 className="text-sm font-medium">Add Solana Wallet</h3>
+      {/* ── Exchanges Tab ── */}
+      <TabsContent value="exchanges" className="mt-4 space-y-4">
+        {selectedExchange && exchangeOption ? (
+          <div className="space-y-4">
+            <button onClick={resetForm} className="flex items-center gap-1 text-[13px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">
+              <ArrowLeft className="h-3.5 w-3.5" /> Back
+            </button>
+            <div className="flex items-center gap-3">
+              <img src={exchangeOption.logo} alt={exchangeOption.name} className="h-8 w-8 rounded-full" />
+              <h3 className="text-[14px] font-semibold">{exchangeOption.name}</h3>
+            </div>
+
+            {exchangeOption.connection === "OAuth" ? (
+              <div className="space-y-4">
+                <p className="text-[13px] text-muted-foreground">Connect via Coinbase OAuth to securely import your transactions.</p>
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label htmlFor="api-key">API Key Name</Label>
+                    <Input id="api-key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="organizations/{org_id}/apiKeys/{key_id}" />
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Enter your Solana wallet address to import transactions via Helius.
-                  </p>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="sol-wallet-name">Wallet Name</Label>
-                    <Input
-                      id="sol-wallet-name"
-                      placeholder="My Solana Wallet"
-                      value={walletName}
-                      onChange={(e) => setWalletName(e.target.value)}
-                    />
+                  <div className="space-y-1">
+                    <Label htmlFor="api-secret">EC Private Key</Label>
+                    <textarea id="api-secret" className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} placeholder={"-----BEGIN EC PRIVATE KEY-----\n...\n-----END EC PRIVATE KEY-----"} />
                   </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="sol-wallet-address">Solana Address</Label>
-                    <Input
-                      id="sol-wallet-address"
-                      placeholder="Enter Solana address..."
-                      value={walletAddress}
-                      onChange={(e) => setWalletAddress(e.target.value)}
-                      className="font-mono"
-                    />
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="sol-sync-after-add"
-                      checked={syncAfterAdd}
-                      onCheckedChange={(checked) => setSyncAfterAdd(checked === true)}
-                    />
-                    <label htmlFor="sol-sync-after-add" className="text-sm cursor-pointer">
-                      Sync transactions immediately after adding
-                    </label>
-                  </div>
-
-                  {connectionError && (
-                    <div className="text-sm text-red-500">{connectionError}</div>
-                  )}
-
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => {
-                        setSelectedProvider("");
-                        setWalletName("");
-                        setWalletAddress("");
-                        setConnectionError(null);
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      className="flex-1"
-                      onClick={handleAddSolanaWallet}
-                      disabled={connecting || !walletName || !walletAddress}
-                    >
-                      {connecting ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          {syncAfterAdd ? "Adding & Syncing..." : "Adding..."}
-                        </>
-                      ) : (
-                        <>
-                          <Wallet className="mr-2 h-4 w-4" />
-                          {syncAfterAdd ? "Add & Sync Wallet" : "Add Wallet"}
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                  {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}
+                  <Button className="w-full" onClick={handleApiConnect} disabled={!apiKey || !apiSecret || connecting}>
+                    {connecting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Connecting...</> : "Connect"}
+                  </Button>
                 </div>
-              ) : /* Show EVM wallet form when selected */
-              (selectedProvider === "evm" || selectedProvider === "metamask") ? (
-                <div className="space-y-4 border rounded-lg p-4">
-                  <div className="flex items-center gap-2">
-                    <Wallet className="h-5 w-5 text-primary" />
-                    <h3 className="text-sm font-medium">Add EVM Wallet</h3>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Enter any Ethereum-compatible wallet address to import transactions across multiple chains.
-                  </p>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="evm-wallet-name">Wallet Name</Label>
-                    <Input
-                      id="evm-wallet-name"
-                      placeholder="My Main Wallet"
-                      value={walletName}
-                      onChange={(e) => setWalletName(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="evm-wallet-address">Wallet Address</Label>
-                    <Input
-                      id="evm-wallet-address"
-                      placeholder="0x..."
-                      value={walletAddress}
-                      onChange={(e) => setWalletAddress(e.target.value)}
-                      className="font-mono"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Chains to Sync</Label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {EVM_CHAINS.map((chain) => (
-                        <div
-                          key={chain.id}
-                          className="flex items-center space-x-2"
-                        >
-                          <Checkbox
-                            id={`chain-${chain.id}`}
-                            checked={selectedChains.includes(chain.id)}
-                            onCheckedChange={() => toggleChain(chain.id)}
-                          />
-                          <label
-                            htmlFor={`chain-${chain.id}`}
-                            className="text-sm cursor-pointer"
-                          >
-                            {chain.name}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id="sync-after-add"
-                      checked={syncAfterAdd}
-                      onCheckedChange={(checked) => setSyncAfterAdd(checked === true)}
-                    />
-                    <label htmlFor="sync-after-add" className="text-sm cursor-pointer">
-                      Sync transactions immediately after adding
-                    </label>
-                  </div>
-
-                  {connectionError && (
-                    <div className="text-sm text-red-500">{connectionError}</div>
-                  )}
-
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      className="flex-1"
-                      onClick={() => {
-                        setSelectedProvider("");
-                        setWalletName("");
-                        setWalletAddress("");
-                        setConnectionError(null);
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      className="flex-1"
-                      onClick={handleAddEvmWallet}
-                      disabled={connecting || !walletName || !walletAddress}
-                    >
-                      {connecting ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          {syncAfterAdd ? "Adding & Syncing..." : "Adding..."}
-                        </>
-                      ) : (
-                        <>
-                          <Wallet className="mr-2 h-4 w-4" />
-                          {syncAfterAdd ? "Add & Sync Wallet" : "Add Wallet"}
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-4">
-                    {walletProviders.map((provider) => (
-                      <button
-                        key={provider.id}
-                        className="flex flex-col items-center space-y-2 rounded-lg border p-4 hover:bg-accent transition-colors"
-                        onClick={() => handleConnect(provider.id)}
-                      >
-                        <img
-                          src={provider.icon}
-                          alt={provider.name}
-                          className="h-12 w-12 rounded-full"
-                        />
-                        <div className="text-center">
-                          <p className="font-medium">{provider.name}</p>
-                          <p className="text-xs text-muted-foreground">{provider.chains.join(", ")}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center justify-center space-x-2 pt-2">
-                    <div className="h-px flex-1 bg-border" />
-                    <p className="text-xs text-muted-foreground">Or enter address directly</p>
-                    <div className="h-px flex-1 bg-border" />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" className="flex-1" onClick={() => setSelectedProvider("evm")}>
-                      <Wallet className="mr-2 h-4 w-4" />
-                      Add EVM Wallet
-                    </Button>
-                    <Button variant="outline" className="flex-1" onClick={() => setSelectedProvider("solana")}>
-                      <Wallet className="mr-2 h-4 w-4" />
-                      Add Solana Wallet
-                    </Button>
-                  </div>
-                </>
-              )}
-            </TabsContent>
-
-            <TabsContent value="exchanges" className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                {exchangeProviders.map((provider) => (
-                  <button
-                    key={provider.id}
-                    className="flex flex-col items-center space-y-2 rounded-lg border p-4 hover:bg-accent transition-colors"
-                    onClick={() => {
-                      setSelectedProvider(provider.id);
-
-                      // If provider only supports CSV, switch to CSV tab
-                      if (provider.connection === "CSV") {
-                        const csvTab = document.querySelector('[data-value="csv"]') as HTMLElement;
-                        csvTab?.click();
-                        return;
-                      }
-                      
-                      // If OAuth, use the OAuth flow
-                      if (provider.connection === "OAuth") {
-                        handleOAuthConnect(provider.id);
-                        return;
-                      }
-                    }}
-                  >
-                    <img
-                      src={provider.icon}
-                      alt={provider.name}
-                      className="h-12 w-12 rounded-full"
-                    />
-                    <div className="text-center">
-                      <p className="font-medium">{provider.name}</p>
-                      <p className="text-xs text-muted-foreground">Via {provider.connection}</p>
-                    </div>
-                  </button>
-                ))}
               </div>
-
-              {connectionError && (
-                <div className="mt-2 text-sm text-red-500 text-center">
-                  {connectionError}
+            ) : (
+              <div className="space-y-3">
+                <p className="text-[13px] text-muted-foreground">Enter your API credentials from your exchange account settings.</p>
+                <div className="space-y-1">
+                  <Label htmlFor="api-key">API Key</Label>
+                  <Input id="api-key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Enter your API key" />
                 </div>
-              )}
-
-              {selectedProvider && ["binance", "kraken", "kucoin", "gemini", "coinbase"].includes(selectedProvider) && (
-                <div className="mt-4 space-y-4 border rounded-lg p-4">
-                  <h3 className="text-sm font-medium">API Connection for {selectedProvider.charAt(0).toUpperCase() + selectedProvider.slice(1)}</h3>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedProvider === "kucoin"
-                      ? "You'll need your API Key, Secret, and Passphrase from KuCoin API settings."
-                      : selectedProvider === "coinbase"
-                      ? "Enter your CDP API Key Name and Private Key from the Coinbase Developer Platform."
-                      : "Enter your API credentials from your exchange account settings."}
-                  </p>
-                  <div className="space-y-3">
-                    <div className="space-y-1">
-                      <Label htmlFor="api-key">
-                        {selectedProvider === "coinbase" ? "API Key Name" : "API Key"}
-                      </Label>
-                      <Input
-                        id="api-key"
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                        placeholder={selectedProvider === "coinbase"
-                          ? "organizations/{org_id}/apiKeys/{key_id}"
-                          : "Enter your API key"}
-                      />
-                      {selectedProvider === "coinbase" && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Format: organizations/&#123;org_id&#125;/apiKeys/&#123;key_id&#125;
-                        </p>
-                      )}
-                    </div>
-                    <div className="space-y-1">
-                      <Label htmlFor="api-secret">
-                        {selectedProvider === "coinbase" ? "EC Private Key" : "API Secret"}
-                      </Label>
-                      {selectedProvider === "coinbase" ? (
-                        <textarea
-                          id="api-secret"
-                          className="flex min-h-[120px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono"
-                          value={apiSecret}
-                          onChange={(e) => setApiSecret(e.target.value)}
-                          placeholder="-----BEGIN EC PRIVATE KEY-----&#10;...&#10;-----END EC PRIVATE KEY-----"
-                        />
-                      ) : (
-                        <Input
-                          id="api-secret"
-                          type="password"
-                          value={apiSecret}
-                          onChange={(e) => setApiSecret(e.target.value)}
-                          placeholder="Enter your API secret"
-                        />
-                      )}
-                      {selectedProvider === "coinbase" && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Paste the complete private key including BEGIN and END lines
-                        </p>
-                      )}
-                    </div>
-                    {selectedProvider === "kucoin" && (
-                      <div className="space-y-1">
-                        <Label htmlFor="api-passphrase">API Passphrase</Label>
-                        <Input
-                          id="api-passphrase"
-                          type="password"
-                          value={apiPassphrase}
-                          onChange={(e) => setApiPassphrase(e.target.value)}
-                          placeholder="Enter your API passphrase"
-                        />
-                      </div>
-                    )}
-                    <Button
-                      className="w-full"
-                      onClick={handleApiConnect}
-                      disabled={!apiKey || !apiSecret || connecting}
-                    >
-                      {connecting ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Connecting...
-                        </>
-                      ) : (
-                        "Connect"
-                      )}
-                    </Button>
-                  </div>
+                <div className="space-y-1">
+                  <Label htmlFor="api-secret">API Secret</Label>
+                  <Input id="api-secret" type="password" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} placeholder="Enter your API secret" />
                 </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="csv" className="mt-4 space-y-4">
-              <div className="rounded-lg border border-dashed border-border p-8 text-center">
-                <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                  <QrCode className="h-6 w-6 text-primary" />
-                </div>
-                <h3 className="mb-1 text-lg font-medium">Upload transaction CSV</h3>
-                <p className="mb-4 text-sm text-muted-foreground">
-                  Drag and drop your transaction CSV file or click to browse
-                </p>
-                <Input
-                  id="csv-file"
-                  type="file"
-                  accept=".csv"
-                  onChange={handleCsvUpload}
-                  className="mx-auto max-w-sm cursor-pointer"
-                />
-                {csvFile && (
-                  <div className="mt-4">
-                    <p className="text-sm font-medium">Selected file:</p>
-                    <p className="text-sm text-muted-foreground">{csvFile.name}</p>
-                    <Button
-                      className="mt-2"
-                      onClick={handleCsvSubmit}
-                    >
-                      Upload and Import
-                    </Button>
+                {selectedExchange === "kucoin" && (
+                  <div className="space-y-1">
+                    <Label htmlFor="api-pass">API Passphrase</Label>
+                    <Input id="api-pass" type="password" value={apiPassphrase} onChange={(e) => setApiPassphrase(e.target.value)} placeholder="Enter your API passphrase" />
                   </div>
                 )}
+                {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}
+                <Button className="w-full" onClick={handleApiConnect} disabled={!apiKey || !apiSecret || connecting}>
+                  {connecting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Connecting...</> : "Connect"}
+                </Button>
               </div>
-            </TabsContent>
-          </Tabs>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            {EXCHANGE_OPTIONS.map((option) => (
+              <button key={option.id} onClick={() => setSelectedExchange(option.id)} className="flex flex-col items-center gap-2.5 rounded-xl border border-[#E5E5E0] dark:border-[#333] p-5 hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
+                <img src={option.logo} alt={option.name} className="h-10 w-10 rounded-full object-cover" />
+                <span className="text-[13px] font-medium">{option.name}</span>
+              </button>
+            ))}
+          </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </TabsContent>
+
+      {/* ── CSV Tab ── */}
+      <TabsContent value="csv" className="mt-4 space-y-4">
+        <div className="rounded-lg border border-dashed border-border p-8 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+            <QrCode className="h-6 w-6 text-primary" />
+          </div>
+          <h3 className="mb-1 text-lg font-medium">Upload transaction CSV</h3>
+          <p className="mb-4 text-sm text-muted-foreground">Drag and drop your transaction CSV file or click to browse</p>
+          <Input id="csv-file" type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files?.[0] || null)} className="mx-auto max-w-sm cursor-pointer" />
+          {csvFile && (
+            <div className="mt-4">
+              <p className="text-sm font-medium">Selected: {csvFile.name}</p>
+              <Button className="mt-2" onClick={() => {
+                if (onConnect) onConnect("csv", { success: true, provider: "csv", fileName: csvFile.name, timestamp: new Date().toISOString() });
+                setCsvFile(null);
+              }}>
+                Upload and Import
+              </Button>
+            </div>
+          )}
+        </div>
+      </TabsContent>
+    </Tabs>
   );
 }
