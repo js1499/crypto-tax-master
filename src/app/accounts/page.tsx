@@ -205,35 +205,26 @@ function AccountsContent() {
       });
 
       if (response.data.status === "success") {
-        toast.success(
-          `Synced ${response.data.transactionsAdded} transaction(s) from exchange`
-        );
+        toast.success(`Exchange synced — ${response.data.transactionsAdded} transactions added`);
 
-        // Enrich historical prices for all user transactions
-        toast.info("Looking up historical prices...");
+        // Enrich historical prices silently
         try {
-          const enrichResponse = await fetch("/api/prices/enrich-historical", {
+          await fetch("/api/prices/enrich-historical", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({}),
           });
-          const enrichData = await enrichResponse.json();
-          if (enrichResponse.ok) {
-            toast.success(`Updated ${enrichData.updated} transactions with historical prices`);
-          }
         } catch (enrichError) {
           console.warn("[Price Enrich] Error:", enrichError);
         }
 
-        fetchWallets(); // Refresh to update lastSyncAt
+        fetchWallets();
       } else {
-        throw new Error(response.data.error || "Failed to sync");
+        throw new Error("Failed to sync");
       }
     } catch (error) {
       console.error("[Accounts] Error syncing exchange:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to sync exchange"
-      );
+      toast.error("Failed to sync exchange. Please try again.");
     } finally {
       setSyncing(null);
     }
@@ -252,18 +243,14 @@ function AccountsContent() {
       const syncData = await syncResponse.json();
 
       if (!syncResponse.ok) {
-        throw new Error(syncData.error || "Sync failed");
+        throw new Error("Sync failed");
       }
 
-      toast.success(
-        `Synced ${syncData.transactionsAdded} new, ${syncData.transactionsSkipped || 0} existing`
-      );
+      toast.success(`Sync complete — ${syncData.transactionsAdded} new transactions added`);
       fetchWallets();
     } catch (error) {
       console.error("[Accounts] Error syncing wallet:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to sync wallet"
-      );
+      toast.error("Failed to sync wallet. Please try again.");
     } finally {
       setSyncing(null);
     }
@@ -282,18 +269,13 @@ function AccountsContent() {
       const enrichData = await enrichResponse.json();
       console.log("[Accounts] Enrich response:", enrichData);
       if (enrichResponse.ok) {
-        toast.success(
-          `Updated ${enrichData.updated}/${enrichData.total} transactions with historical prices`
-        );
-        if (enrichData.fallbackSymbols?.length > 0) {
-          toast.info(`${enrichData.fallbackSymbols.length} symbols could not be priced`);
-        }
+        toast.success(`Prices enriched — ${enrichData.updated} transactions updated`);
       } else {
-        toast.error(`Price enrichment failed: ${enrichData.error || enrichResponse.status}`);
+        toast.error("Price enrichment failed. Please try again.");
       }
     } catch (error) {
       console.error("[Accounts] Enrich error:", error);
-      toast.error("Price enrichment request failed");
+      toast.error("Price enrichment failed. Please try again.");
     } finally {
       setEnriching(null);
     }
@@ -303,27 +285,21 @@ function AccountsContent() {
   const handleEnrichAll = async () => {
     setEnrichingAll(true);
     try {
-      toast.info("Enriching prices for all transactions — this may take several minutes...");
+      toast.info("Enriching prices for all transactions — this may take a moment...");
       const enrichResponse = await fetch("/api/prices/enrich-historical", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
       const enrichData = await enrichResponse.json();
-      console.log("[Accounts] Enrich All response:", enrichData);
       if (enrichResponse.ok) {
-        toast.success(
-          `Updated ${enrichData.updated}/${enrichData.total} transactions with historical prices`
-        );
-        if (enrichData.fallbackSymbols?.length > 0) {
-          toast.info(`${enrichData.fallbackSymbols.length} symbols could not be priced`);
-        }
+        toast.success(`Prices enriched — ${enrichData.updated} transactions updated`);
       } else {
-        toast.error(`Price enrichment failed: ${enrichData.error || enrichResponse.status}`);
+        toast.error("Price enrichment failed. Please try again.");
       }
     } catch (error) {
       console.error("[Accounts] Enrich All error:", error);
-      toast.error("Price enrichment request failed");
+      toast.error("Price enrichment failed. Please try again.");
     } finally {
       setEnrichingAll(false);
     }

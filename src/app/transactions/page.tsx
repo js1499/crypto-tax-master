@@ -569,13 +569,13 @@ function TransactionsContent() {
       const response = await fetch("/api/cost-basis/compute", { method: "POST" });
       const data = await response.json();
       if (data.status === "success") {
-        toast.success(`Cost basis computed for ${data.updatedTransactions} transactions (${data.method})`);
-        setCurrentPage(1); // Refresh transactions
+        toast.success(`Cost basis computed successfully (${data.method})`);
+        setCurrentPage(1);
       } else {
-        toast.error(data.error || "Failed to compute cost basis");
+        toast.error("Failed to compute cost basis. Please try again.");
       }
     } catch (error) {
-      toast.error("Failed to compute cost basis");
+      toast.error("Failed to compute cost basis. Please try again.");
     } finally {
       setIsComputingCostBasis(false);
     }
@@ -614,33 +614,23 @@ function TransactionsContent() {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         // Handle rate limiting with better error message
-        if (response.status === 429) {
-          const retryAfter = errorData.retryAfter || errorData.message;
-          throw new Error(errorData.message || `Rate limit exceeded. ${retryAfter}`);
-        }
-        throw new Error(errorData.error || errorData.details || errorData.message || "Failed to delete all transactions");
+        throw new Error("Failed to delete transactions");
       }
 
       const data = await response.json();
       if (data.status === "success") {
-        toast.success(`Successfully deleted ${data.deletedCount} transaction${data.deletedCount !== 1 ? "s" : ""}`);
+        toast.success("All transactions deleted successfully");
         setIsDeleteAllOpen(false);
-
-        // Reset to page 1 and refresh transactions
         setCurrentPage(1);
         setTransactions([]);
         setFilteredTransactions([]);
         setTotalCount(0);
-
-        // Trigger a refresh by updating a dependency
-        // The useEffect will automatically refetch
       } else {
-        throw new Error(data.error || "Failed to delete transactions");
+        throw new Error("Failed to delete transactions");
       }
     } catch (error) {
       console.error("Error deleting all transactions:", error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to delete all transactions";
-      toast.error(errorMessage);
+      toast.error("Failed to delete transactions. Please try again.");
     } finally {
       setIsDeletingAll(false);
     }
@@ -680,7 +670,7 @@ function TransactionsContent() {
 
       toast.success("Transactions exported successfully!");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to export transactions");
+      toast.error("Failed to export transactions");
     } finally {
       setIsExporting(false);
     }
@@ -827,7 +817,7 @@ function TransactionsContent() {
       }
     } catch (error) {
       console.error("Error updating transaction:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to update transaction");
+      toast.error("Failed to update transaction");
     }
   };
 

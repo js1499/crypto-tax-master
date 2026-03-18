@@ -86,37 +86,29 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     checkingRef.current = true;
 
     try {
-      // Check if wallet/exchange is connected (Step 1)
+      // Step 1: Check if any accounts are connected
       if (!currentState.steps[0]?.completed) {
         const [walletsRes, exchangesRes] = await Promise.all([
           fetch("/api/wallets", { credentials: "include" }).catch(() => ({ ok: false, json: async () => ({ wallets: [] }) })),
           fetch("/api/exchanges", { credentials: "include" }).catch(() => ({ ok: false, json: async () => ({ exchanges: [] }) })),
         ]);
 
-        const hasWallets =
-          walletsRes?.ok &&
-          (await walletsRes.json()).wallets?.length > 0;
-        const hasExchanges =
-          exchangesRes?.ok &&
-          (await exchangesRes.json()).exchanges?.length > 0;
+        const hasWallets = walletsRes?.ok && (await walletsRes.json()).wallets?.length > 0;
+        const hasExchanges = exchangesRes?.ok && (await exchangesRes.json()).exchanges?.length > 0;
 
         if (hasWallets || hasExchanges) {
-          const newState = completeStep("connect-wallet");
+          const newState = completeStep("connect-account");
           setState(newState);
         }
       }
 
-      // Check if transactions exist (Step 2)
+      // Step 2: Check if transactions have been synced
       if (!currentState.steps[1]?.completed) {
-        const transactionsRes = await fetch(
-          "/api/transactions?page=1&limit=1",
-          { credentials: "include" }
-        ).catch(() => null);
-
+        const transactionsRes = await fetch("/api/transactions?page=1&limit=1", { credentials: "include" }).catch(() => null);
         if (transactionsRes?.ok) {
           const data = await transactionsRes.json();
           if (data.transactions?.length > 0) {
-            const newState = completeStep("import-transactions");
+            const newState = completeStep("sync-transactions");
             setState(newState);
           }
         }

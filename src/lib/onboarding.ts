@@ -21,32 +21,39 @@ export interface OnboardingState {
 
 export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
-    id: "connect-wallet",
-    title: "Connect Your Wallet or Exchange",
-    description: "Start by connecting your crypto wallets or exchanges. This allows us to automatically import your transactions.",
+    id: "connect-account",
+    title: "Add Your Accounts",
+    description: "Connect your wallets or exchanges to automatically sync your transactions. You can also import CSV files.",
     targetPage: "/accounts",
     targetElement: "[data-onboarding='connect-wallet']",
   },
   {
-    id: "import-transactions",
-    title: "Import Transactions",
-    description: "Import your transaction history from exchanges or upload CSV files. We'll automatically categorize and organize them.",
-    targetPage: "/transactions",
-    targetElement: "[data-onboarding='import-transactions']",
+    id: "sync-transactions",
+    title: "Sync Transactions",
+    description: "Sync your accounts to pull in all your transaction history. We'll detect swaps, transfers, income, and more.",
+    targetPage: "/accounts",
+    targetElement: "[data-onboarding='sync-transactions']",
+  },
+  {
+    id: "enrich-prices",
+    title: "Enrich Prices",
+    description: "Fill in missing USD prices for your transactions. This is needed for accurate cost basis and gain/loss calculations.",
+    targetPage: "/accounts",
+    targetElement: "[data-onboarding='enrich-prices']",
   },
   {
     id: "review-transactions",
-    title: "Review & Categorize Transactions",
-    description: "Review your imported transactions and make sure they're correctly categorized. You can edit types, add notes, and mark duplicates.",
+    title: "Review Transactions",
+    description: "Head to the Transactions page to review your data. Check that everything looks right — you can edit, merge, or delete as needed.",
     targetPage: "/transactions",
     targetElement: "[data-onboarding='review-transactions']",
   },
   {
-    id: "generate-report",
-    title: "Generate Tax Report",
-    description: "Once your transactions are reviewed, generate your tax report. We'll calculate capital gains, losses, and create IRS Form 8949.",
+    id: "download-reports",
+    title: "Download Tax Reports",
+    description: "Generate your IRS forms and CSV exports. We'll produce Form 8949, Schedule D, and Schedule 1 ready for filing.",
     targetPage: "/tax-reports",
-    targetElement: "[data-onboarding='generate-report']",
+    targetElement: "[data-onboarding='download-reports']",
   },
 ];
 
