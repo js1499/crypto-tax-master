@@ -223,6 +223,64 @@ async function buildForm8949Sheet(
  * Generate a complete Form 8949 PDF (with continuation sheets when there are
  * more than 11 rows per holding period).
  */
+/**
+ * Aggregate taxable events by asset + holding period.
+ * IRS allows reporting aggregated totals with "Various" dates.
+ */
+function aggregateEvents(events: TaxableEvent[]): TaxableEvent[] {
+  const groups = new Map<string, {
+    asset: string;
+    totalAmount: number;
+    totalProceeds: number;
+    totalCostBasis: number;
+    totalGainLoss: number;
+    holdingPeriod: "short" | "long";
+    earliestDate: Date;
+    latestDate: Date;
+    count: number;
+  }>();
+
+  for (const e of events) {
+    const key = `${e.asset}:${e.holdingPeriod}`;
+    const existing = groups.get(key);
+    if (existing) {
+      existing.totalAmount += e.amount;
+      existing.totalProceeds += e.proceeds;
+      existing.totalCostBasis += e.costBasis;
+      existing.totalGainLoss += e.gainLoss;
+      if (e.date < existing.earliestDate) existing.earliestDate = e.date;
+      if (e.date > existing.latestDate) existing.latestDate = e.date;
+      existing.count++;
+    } else {
+      groups.set(key, {
+        asset: e.asset,
+        totalAmount: e.amount,
+        totalProceeds: e.proceeds,
+        totalCostBasis: e.costBasis,
+        totalGainLoss: e.gainLoss,
+        holdingPeriod: e.holdingPeriod,
+        earliestDate: e.date,
+        latestDate: e.date,
+        count: 1,
+      });
+    }
+  }
+
+  return Array.from(groups.values())
+    .sort((a, b) => Math.abs(b.totalGainLoss) - Math.abs(a.totalGainLoss))
+    .map((g) => ({
+      id: 0,
+      asset: g.asset,
+      amount: Math.round(g.totalAmount * 1e6) / 1e6,
+      proceeds: g.totalProceeds,
+      costBasis: g.totalCostBasis,
+      gainLoss: g.totalGainLoss,
+      holdingPeriod: g.holdingPeriod,
+      date: g.latestDate,
+      dateAcquired: g.count > 1 ? undefined : g.earliestDate, // "Various" if multiple
+    }));
+}
+
 async function generateForm8949(
   report: TaxReport,
   taxpayerName?: string,
@@ -232,9 +290,12 @@ async function generateForm8949(
   const templatePath = path.join(process.cwd(), "public", "forms", "f8949.pdf");
   const templateBytes = new Uint8Array(fs.readFileSync(templatePath));
 
+  // Aggregate events by asset + holding period to keep the form concise
+  const aggregated = aggregateEvents(report.taxableEvents);
+
   // Separate into short-term and long-term
-  const shortTerm = report.taxableEvents.filter((e) => e.holdingPeriod === "short");
-  const longTerm = report.taxableEvents.filter((e) => e.holdingPeriod === "long");
+  const shortTerm = aggregated.filter((e) => e.holdingPeriod === "short");
+  const longTerm = aggregated.filter((e) => e.holdingPeriod === "long");
 
   // Compute totals per holding period
   const sumTotals = (events: TaxableEvent[]) => ({
