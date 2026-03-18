@@ -421,7 +421,7 @@ Only include this when explicitly asked for a download/export.`;
   } catch (error) {
     console.error("[Tax AI API] Error:", error);
     return NextResponse.json(
-      { error: "Failed to process question", details: error instanceof Error ? error.message : "Unknown error" },
+      { error: "Failed to process question", details: process.env.NODE_ENV === "development" ? (error instanceof Error ? error.message : "Unknown error") : "An internal error occurred" },
       { status: 500 },
     );
   }

@@ -93,18 +93,11 @@ const apiLimiter = new RateLimiter({
  * Get client identifier from request (IP address)
  */
 function getIdentifier(request: NextRequest): string {
-  // Try to get IP from various headers (for proxies/load balancers)
+  // Prefer Vercel's trusted IP (set by the platform, not spoofable)
+  if (request.ip) return request.ip;
+  // Fallback for local dev
   const forwarded = request.headers.get("x-forwarded-for");
-  const realIp = request.headers.get("x-real-ip");
-  const cfConnectingIp = request.headers.get("cf-connecting-ip");
-  
-  const ip = forwarded?.split(",")[0]?.trim() || 
-             realIp || 
-             cfConnectingIp || 
-             request.ip || 
-             "unknown";
-  
-  return ip;
+  return forwarded?.split(",")[0]?.trim() || "unknown";
 }
 
 /**

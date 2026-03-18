@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             error: "Invalid API credentials. Please check your API key and secret.",
-            details: error instanceof Error ? error.message : "Unknown error",
+            details: process.env.NODE_ENV === "development" ? (error instanceof Error ? error.message : "Unknown error") : "An internal error occurred",
           },
           { status: 400 }
         );
@@ -304,7 +304,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: "Failed to connect exchange",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: process.env.NODE_ENV === "development" ? (error instanceof Error ? error.message : "Unknown error") : "An internal error occurred",
       },
       { status: 500 }
     );

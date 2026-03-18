@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: "Failed to fetch transactions",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: process.env.NODE_ENV === "development" ? (error instanceof Error ? error.message : "Unknown error") : "An internal error occurred",
       },
       { status: 500 }
     );

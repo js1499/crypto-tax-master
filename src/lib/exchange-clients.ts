@@ -1152,22 +1152,9 @@ export function decryptApiKey(encrypted: string, encryptionKey: string): string 
       throw new Error("Encrypted data and encryption key are required");
     }
 
-    // Check if this is old XOR format (no colons) - for backward compatibility
+    // Validate AES-GCM format (salt:iv:tag:encrypted)
     if (!encrypted.includes(":")) {
-      // Try to decrypt as old XOR format
-      try {
-        const keyBuffer = Buffer.from(encryptionKey.slice(0, 32), "hex");
-        const encryptedBuffer = Buffer.from(encrypted, "hex");
-        const decrypted = Buffer.alloc(encryptedBuffer.length);
-        
-        for (let i = 0; i < encryptedBuffer.length; i++) {
-          decrypted[i] = encryptedBuffer[i] ^ keyBuffer[i % keyBuffer.length];
-        }
-        
-        return decrypted.toString("utf8");
-      } catch {
-        throw new Error("Invalid encrypted format");
-      }
+      throw new Error("Invalid encrypted format: not AES-GCM");
     }
 
     // Parse the encrypted string (format: salt:iv:tag:encrypted)

@@ -66,14 +66,6 @@ export async function POST(request: NextRequest) {
     }
     // Include transactions owned by user (CSV imports with userId)
     orConditions.push({ userId: user.id });
-    // Legacy support: CSV imports without userId but with source_type
-    orConditions.push({
-      AND: [
-        { source_type: "csv_import" },
-        { wallet_address: null },
-        { userId: null },
-      ],
-    });
 
     const transactions = await prisma.transaction.findMany({
       where: {
@@ -215,7 +207,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error: "Failed to perform bulk operation",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: process.env.NODE_ENV === "development" ? (error instanceof Error ? error.message : "Unknown error") : "An internal error occurred",
       },
       { status: 500 }
     );

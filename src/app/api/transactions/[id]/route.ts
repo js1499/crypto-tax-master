@@ -201,7 +201,7 @@ export async function PATCH(
     return NextResponse.json(
       {
         error: "Failed to update transaction",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: process.env.NODE_ENV === "development" ? (error instanceof Error ? error.message : "Unknown error") : "An internal error occurred",
       },
       { status: 500 }
     );
@@ -302,7 +302,7 @@ export async function DELETE(
     return NextResponse.json(
       {
         error: "Failed to delete transaction",
-        details: error instanceof Error ? error.message : "Unknown error",
+        details: process.env.NODE_ENV === "development" ? (error instanceof Error ? error.message : "Unknown error") : "An internal error occurred",
       },
       { status: 500 }
     );

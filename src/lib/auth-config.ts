@@ -87,7 +87,7 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: "jwt", // JWT required for credentials provider
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 7 * 24 * 60 * 60, // 7 days
     updateAge: 24 * 60 * 60, // 24 hours
   },
   secret: process.env.NEXTAUTH_SECRET,

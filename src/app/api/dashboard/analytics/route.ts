@@ -328,19 +328,10 @@ export async function GET(request: NextRequest) {
       tags: { endpoint: "/api/dashboard/analytics" },
     });
 
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
-    const isDatabaseError =
-      errorMessage.includes("Can't reach database") ||
-      errorMessage.includes("P1001") ||
-      errorMessage.includes("connection");
-
     return NextResponse.json(
       {
         error: "Failed to fetch dashboard analytics",
-        details: isDatabaseError
-          ? "Database connection failed. Please check your DATABASE_URL in .env file."
-          : errorMessage,
+        details: process.env.NODE_ENV === "development" ? (error instanceof Error ? error.message : "Unknown error") : "An internal error occurred",
       },
       { status: 500 }
     );
