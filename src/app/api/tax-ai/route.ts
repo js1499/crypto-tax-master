@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
 
     // Step 1: Generate SQL query
     const sqlResponse = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-opus-4-20250514",
       max_tokens: 1024,
       system: `${SCHEMA_CONTEXT}
 
@@ -247,7 +247,7 @@ If you need to provide a text-only answer, respond with: NO_QUERY_NEEDED`,
     }
 
     const answerResponse = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-opus-4-20250514",
       max_tokens: 2048,
       system: "You are a helpful crypto tax assistant. Provide clear, concise answers about the user's transaction data. Use markdown formatting for readability. Be conversational but precise with numbers.",
       messages: answerMessages,
