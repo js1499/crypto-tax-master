@@ -264,12 +264,31 @@
   animation: aiShimmer 1.8s ease-in-out infinite;
 }
 
+@keyframes aiRingPulse {
+  0%, 60%, 100% {
+    box-shadow:
+      0 0 15px rgba(37, 99, 235, 0.12),
+      0 0 35px rgba(37, 99, 235, 0.08),
+      0 0 60px rgba(37, 99, 235, 0.05);
+  }
+  76%, 88% {
+    box-shadow:
+      0 0 0 2px rgba(99, 146, 255, 0.55),
+      0 0 20px rgba(37, 99, 235, 0.2),
+      0 0 45px rgba(37, 99, 235, 0.12),
+      0 0 70px rgba(37, 99, 235, 0.06);
+  }
+}
+
 .ai-glow-box {
   position: relative;
   border-radius: 16px;
   z-index: 0;
-  /* Outer glow — pronounced */
-  box-shadow: 0 0 15px rgba(37, 99, 235, 0.12), 0 0 35px rgba(37, 99, 235, 0.08), 0 0 60px rgba(37, 99, 235, 0.05);
+  box-shadow:
+    0 0 15px rgba(37, 99, 235, 0.12),
+    0 0 35px rgba(37, 99, 235, 0.08),
+    0 0 60px rgba(37, 99, 235, 0.05);
+  animation: aiRingPulse 8s ease-in-out infinite;
 }
 
 /* Inner border — two equal segments exactly 180° apart */
