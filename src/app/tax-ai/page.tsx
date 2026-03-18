@@ -227,7 +227,7 @@ export default function TaxAIPage() {
           /* ── LANDING ─────────────────────────────────────────── */
           <div className="flex-1 flex flex-col items-center justify-center px-4 -mt-16">
             <h1 className="text-[32px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] mb-8 text-center" style={{ letterSpacing: "-0.02em" }}>
-              Let&apos;s make taxes a tad easier.
+              Got questions? We have answers.
             </h1>
 
             <div className="ai-glow-box w-full max-w-[560px] mb-8">
