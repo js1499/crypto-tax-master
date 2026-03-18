@@ -76,9 +76,9 @@ export default function LoginPage() {
   // Show loading state while checking session or redirecting
   if (status === "loading" || status === "authenticated") {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      <div className="flex min-h-screen items-center justify-center bg-[#F5F5F0]">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#2563EB] mx-auto mb-4"></div>
           <p className="text-muted-foreground">
             {status === "authenticated" ? "Redirecting..." : "Loading..."}
           </p>
@@ -88,7 +88,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-[#F5F5F0] p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">
