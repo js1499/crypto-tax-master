@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/sidebar";
 
 const navItems = [
-  { title: "Portfolio", href: "/", icon: BarChart2 },
+  // { title: "Portfolio", href: "/", icon: BarChart2 },
   { title: "Accounts", href: "/accounts", icon: Landmark },
   { title: "Transactions", href: "/transactions", icon: Wallet },
   { title: "Tax Reports", href: "/tax-reports", icon: FileText },
