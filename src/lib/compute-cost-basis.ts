@@ -190,18 +190,23 @@ async function detectIncomeTransactions(walletAddresses: string[]): Promise<void
     // Rule 6: TRANSFER_IN where someone else paid the gas fee (airdrop detection)
     // If the fee_payer is NOT the user's wallet, the user received tokens without
     // initiating the transaction — this is an airdrop, reward, or gift.
+    // Uses a CTE with pre-filtered helius signatures to avoid slow LIKE scans.
     await prisma.$executeRawUnsafe(`
+      WITH airdrop_sigs AS (
+        SELECT signature
+        FROM helius_raw_transactions
+        WHERE wallet_address = ANY($1::text[])
+          AND fee_payer IS NOT NULL
+          AND fee_payer != ANY($1::text[])
+      )
       UPDATE transactions t SET is_income = true
       WHERE t.wallet_address = ANY($1::text[])
         AND t.type = 'TRANSFER_IN'
         AND t.is_income = false
         AND ABS(t.value_usd) > 0.01
         AND EXISTS (
-          SELECT 1 FROM helius_raw_transactions h
-          WHERE t.tx_hash LIKE h.signature || '%'
-            AND h.wallet_address = t.wallet_address
-            AND h.fee_payer IS NOT NULL
-            AND h.fee_payer != t.wallet_address
+          SELECT 1 FROM airdrop_sigs a
+          WHERE t.tx_hash LIKE a.signature || '%'
         )
     `, walletAddresses);
 
