@@ -117,10 +117,10 @@ async function detectIncomeTransactions(walletAddresses: string[]): Promise<void
       WHERE wallet_address = ANY($1::text[]) AND is_income = true
     `, walletAddresses);
 
-    // Rule 1: CLAIM_REWARDS type (staking rewards, etc.)
+    // Rule 1: CLAIM_REWARDS / HARVEST_REWARD type (staking rewards, farming, etc.)
     await prisma.$executeRawUnsafe(`
       UPDATE transactions SET is_income = true
-      WHERE wallet_address = ANY($1::text[]) AND type = 'CLAIM_REWARDS'
+      WHERE wallet_address = ANY($1::text[]) AND type IN ('CLAIM_REWARDS', 'HARVEST_REWARD')
     `, walletAddresses);
 
     // Rule 2: Streamflow vesting claims
@@ -175,6 +175,35 @@ async function detectIncomeTransactions(walletAddresses: string[]): Promise<void
             )
         )
     `, walletAddresses, JUP_AIRDROP_PROGRAM_IDS);
+
+    // Rule 5: INITIALIZE_ACCOUNT with value > $0.01
+    // When a new token account is created and funded, the user received a new asset
+    // they never held before — strong airdrop/reward signal.
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions SET is_income = true
+      WHERE wallet_address = ANY($1::text[])
+        AND type = 'INITIALIZE_ACCOUNT'
+        AND is_income = false
+        AND ABS(value_usd) > 0.01
+    `, walletAddresses);
+
+    // Rule 6: TRANSFER_IN where someone else paid the gas fee (airdrop detection)
+    // If the fee_payer is NOT the user's wallet, the user received tokens without
+    // initiating the transaction — this is an airdrop, reward, or gift.
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions t SET is_income = true
+      WHERE t.wallet_address = ANY($1::text[])
+        AND t.type = 'TRANSFER_IN'
+        AND t.is_income = false
+        AND ABS(t.value_usd) > 0.01
+        AND EXISTS (
+          SELECT 1 FROM helius_raw_transactions h
+          WHERE t.tx_hash LIKE h.signature || '%'
+            AND h.wallet_address = t.wallet_address
+            AND h.fee_payer IS NOT NULL
+            AND h.fee_payer != t.wallet_address
+        )
+    `, walletAddresses);
 
     const result = await prisma.$queryRawUnsafe(`
       SELECT COUNT(*) as cnt, COALESCE(SUM(value_usd), 0) as total
