@@ -176,21 +176,13 @@ async function detectIncomeTransactions(walletAddresses: string[]): Promise<void
         )
     `, walletAddresses, JUP_AIRDROP_PROGRAM_IDS);
 
-    // Rule 5: INITIALIZE_ACCOUNT with value > $0.01
-    // When a new token account is created and funded, the user received a new asset
-    // they never held before — strong airdrop/reward signal.
-    await prisma.$executeRawUnsafe(`
-      UPDATE transactions SET is_income = true
-      WHERE wallet_address = ANY($1::text[])
-        AND type = 'INITIALIZE_ACCOUNT'
-        AND is_income = false
-        AND ABS(value_usd) > 0.01
-    `, walletAddresses);
-
-    // Rule 6: TRANSFER_IN where someone else paid the gas fee (airdrop detection)
-    // If the fee_payer is NOT the user's wallet, the user received tokens without
-    // initiating the transaction — this is an airdrop, reward, or gift.
-    // Uses a CTE with pre-filtered helius signatures to avoid slow LIKE scans.
+    // Rule 5: TRANSFER_IN where someone else paid gas AND the token is not a
+    // common transfer token (SOL, USDC, USDT, etc.) AND value is under $10K.
+    // This catches small airdrops of obscure tokens while excluding:
+    // - CEX withdrawals (exchange pays gas for SOL/USDC sends)
+    // - Self-transfers from unconnected wallets
+    // - Large OTC trades
+    const COMMON_TOKENS = ['SOL', 'USDC', 'USDT', 'WETH', 'WBTC', 'BTC', 'ETH', 'MSOL', 'BSOL', 'JITOSOL', 'INF', 'EURC'];
     await prisma.$executeRawUnsafe(`
       WITH airdrop_sigs AS (
         SELECT signature
@@ -201,14 +193,16 @@ async function detectIncomeTransactions(walletAddresses: string[]): Promise<void
       )
       UPDATE transactions t SET is_income = true
       WHERE t.wallet_address = ANY($1::text[])
-        AND t.type = 'TRANSFER_IN'
+        AND t.type IN ('TRANSFER_IN', 'INITIALIZE_ACCOUNT')
         AND t.is_income = false
         AND ABS(t.value_usd) > 0.01
+        AND ABS(t.value_usd) < 10000
+        AND UPPER(t.asset_symbol) NOT IN (${COMMON_TOKENS.map((_, i) => `$${i + 2}`).join(', ')})
         AND EXISTS (
           SELECT 1 FROM airdrop_sigs a
           WHERE t.tx_hash LIKE a.signature || '%'
         )
-    `, walletAddresses);
+    `, walletAddresses, ...COMMON_TOKENS);
 
     const result = await prisma.$queryRawUnsafe(`
       SELECT COUNT(*) as cnt, COALESCE(SUM(value_usd), 0) as total
