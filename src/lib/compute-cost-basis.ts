@@ -82,11 +82,149 @@ export async function recomputeCostBasis(userId: string): Promise<void> {
 
     // ── Auto-detect income (airdrops, rewards, vesting claims) ──
     await detectIncomeTransactions(walletAddresses);
+    await detectGamblingTransactions(walletAddresses);
   } catch (error) {
     // Never throw — this runs as a background step after sync/import
     console.error("[Cost Basis] Auto-compute failed:", error);
   }
 }
+
+// ── Gambling detection ──────────────────────────────────────────────────
+
+/** Known gambling/casino wallet addresses on Solana */
+const GAMBLING_ADDRESSES = new Set([
+  "G9X7F4JzLzbSGMCndiBdWNi5YzZZakmtkdwq7xS3Q3FE", // Stake.com hot wallet
+  "J3ngcdbvfsofDmXphVpJdBPCATqU3uippVN8wqf7yCc2", // Flip.gg wallet
+]);
+
+/** Known gambling platform program IDs */
+const GAMBLING_PROGRAM_IDS = [
+  "fLiPgg2yTvmgfhiPkKriAHkDmmXGP6CdeFX9UF5o7Zc", // Flip.gg program
+  "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y", // ORAO VRF (casino randomness)
+  "VRFCBePmGTpZ234BhbzNNzmyg39Rgdd6VgdfhHwKypU", // ORAO VRF callback
+];
+
+/** Known gambling token mints */
+const GAMBLING_TOKEN_MINTS = new Set([
+  "RLBxxFkseAZ4RgJH3Sqn8jXxhmGoz9jWxDNJMh8pL7a", // Rollbit RLB
+  "VVWAy5U2KFd1p8AdchjUxqaJbZPBeP5vUQRZtAy8hyc", // Flip.gg FLIPGG
+  "SCSuPPNUSypLBsV4darsrYNg4ANPgaGhKhsA3GmMyjz", // SolCasino SCS
+]);
+
+/** Helius source values that indicate gambling */
+const GAMBLING_SOURCES = new Set([
+  "FOXY_COINFLIP",
+  "FOXY_RAFFLE",
+  "FOXY_AUCTION",
+]);
+
+/** Prediction market program IDs (flagged for review, not auto-classified) */
+const PREDICTION_MARKET_PROGRAM_IDS = [
+  "dRiftyHA39MWEi3m9aunc5MzRF1JYuBsbn6VPcn33UH", // Drift BET
+];
+
+/** Helius transaction types that are gambling */
+const GAMBLING_TX_TYPES = new Set([
+  "PLACE_BET", "PLACE_SOL_BET", "CREATE_BET", "CREATE_RAFFLE", "BUY_TICKETS",
+]);
+
+/**
+ * Detect and flag gambling transactions.
+ * Sets the transaction type to a gambling-prefixed type and adds a note.
+ */
+async function detectGamblingTransactions(walletAddresses: string[]): Promise<void> {
+  try {
+    if (walletAddresses.length === 0) return;
+
+    // Rule 1: Helius transaction types (already classified by Helius)
+    const r1 = await prisma.$executeRawUnsafe(`
+      UPDATE transactions SET notes = COALESCE(notes, '') || CASE WHEN notes IS NULL OR notes = '' THEN '[Gambling]' ELSE ' [Gambling]' END
+      WHERE wallet_address = ANY($1::text[])
+        AND type IN ('PLACE_BET', 'PLACE_SOL_BET', 'CREATE_BET', 'CREATE_RAFFLE', 'BUY_TICKETS')
+        AND (notes IS NULL OR notes NOT LIKE '%[Gambling]%')
+    `, walletAddresses);
+
+    // Rule 2: Transfers to/from known gambling addresses
+    const gamblingAddrs = Array.from(GAMBLING_ADDRESSES);
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions SET notes = COALESCE(notes, '') || CASE WHEN notes IS NULL OR notes = '' THEN '[Gambling]' ELSE ' [Gambling]' END
+      WHERE wallet_address = ANY($1::text[])
+        AND counterparty_address = ANY($2::text[])
+        AND (notes IS NULL OR notes NOT LIKE '%[Gambling]%')
+    `, walletAddresses, gamblingAddrs);
+
+    // Rule 3: Transactions involving gambling token mints
+    const gamblingMints = Array.from(GAMBLING_TOKEN_MINTS);
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions SET notes = COALESCE(notes, '') || CASE WHEN notes IS NULL OR notes = '' THEN '[Gambling]' ELSE ' [Gambling]' END
+      WHERE wallet_address = ANY($1::text[])
+        AND (asset_address = ANY($2::text[]) OR incoming_asset_address = ANY($2::text[]))
+        AND (notes IS NULL OR notes NOT LIKE '%[Gambling]%')
+    `, walletAddresses, gamblingMints);
+
+    // Rule 4: Helius source indicates gambling platform
+    const gamblingSources = Array.from(GAMBLING_SOURCES);
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions t SET notes = COALESCE(t.notes, '') || CASE WHEN t.notes IS NULL OR t.notes = '' THEN '[Gambling]' ELSE ' [Gambling]' END
+      WHERE t.wallet_address = ANY($1::text[])
+        AND (t.notes IS NULL OR t.notes NOT LIKE '%[Gambling]%')
+        AND EXISTS (
+          SELECT 1 FROM helius_raw_transactions h
+          WHERE t.tx_hash LIKE h.signature || '%'
+            AND h.wallet_address = t.wallet_address
+            AND h.helius_source = ANY($2::text[])
+        )
+    `, walletAddresses, gamblingSources);
+
+    // Rule 5: Helius raw data contains known gambling program IDs
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions t SET notes = COALESCE(t.notes, '') || CASE WHEN t.notes IS NULL OR t.notes = '' THEN '[Gambling]' ELSE ' [Gambling]' END
+      WHERE t.wallet_address = ANY($1::text[])
+        AND (t.notes IS NULL OR t.notes NOT LIKE '%[Gambling]%')
+        AND EXISTS (
+          SELECT 1 FROM helius_raw_transactions h
+          WHERE t.tx_hash LIKE h.signature || '%'
+            AND h.wallet_address = t.wallet_address
+            AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements(h.raw_payload->'instructions') instr
+              WHERE instr->>'programId' = ANY($2::text[])
+            )
+        )
+    `, walletAddresses, GAMBLING_PROGRAM_IDS);
+
+    // Rule 6: Flag prediction markets for review (not auto-classified as gambling)
+    await prisma.$executeRawUnsafe(`
+      UPDATE transactions t SET notes = COALESCE(t.notes, '') || CASE WHEN t.notes IS NULL OR t.notes = '' THEN '[Prediction Market - Review]' ELSE ' [Prediction Market - Review]' END
+      WHERE t.wallet_address = ANY($1::text[])
+        AND (t.notes IS NULL OR t.notes NOT LIKE '%[Prediction Market%')
+        AND EXISTS (
+          SELECT 1 FROM helius_raw_transactions h
+          WHERE t.tx_hash LIKE h.signature || '%'
+            AND h.wallet_address = t.wallet_address
+            AND EXISTS (
+              SELECT 1 FROM jsonb_array_elements(h.raw_payload->'instructions') instr
+              WHERE instr->>'programId' = ANY($2::text[])
+            )
+        )
+    `, walletAddresses, PREDICTION_MARKET_PROGRAM_IDS);
+
+    const result = await prisma.$queryRawUnsafe(`
+      SELECT COUNT(*) as cnt FROM transactions
+      WHERE wallet_address = ANY($1::text[]) AND notes LIKE '%[Gambling]%'
+    `, walletAddresses) as Array<{ cnt: bigint }>;
+
+    const predResult = await prisma.$queryRawUnsafe(`
+      SELECT COUNT(*) as cnt FROM transactions
+      WHERE wallet_address = ANY($1::text[]) AND notes LIKE '%[Prediction Market%'
+    `, walletAddresses) as Array<{ cnt: bigint }>;
+
+    console.log(`[Gambling Detect] Flagged ${result[0].cnt} gambling transactions, ${predResult[0].cnt} prediction market transactions`);
+  } catch (error) {
+    console.error("[Gambling Detect] Failed:", error);
+  }
+}
+
+// ── Airdrop / income detection ─────────────────────────────────────────
 
 /**
  * Known airdrop / merkle distributor program IDs.

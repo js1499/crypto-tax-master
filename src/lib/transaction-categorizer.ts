@@ -5,7 +5,7 @@
  * Coinbase (lowercase), exchange clients, CSV parsers, AND legacy app
  * types (Title Case) maps to exactly one of 9 categories.
  *
- * Categories: buy, sell, transfer, swap, staking, defi, nft, income, other
+ * Categories: buy, sell, transfer, swap, staking, defi, nft, income, gambling, other
  */
 const CATEGORY_MAP: Record<string, string> = {
   // ================================================================
@@ -157,13 +157,12 @@ const CATEGORY_MAP: Record<string, string> = {
   "FULFILL": "defi",
 
   // -- Gambling / Betting --
-  "PLACE_BET": "buy",
-  "PLACE_SOL_BET": "buy",
-  "CREATE_BET": "buy",
-  "CREATE_RAFFLE": "buy",
-  "UPDATE_RAFFLE": "buy",
-  "BUY_TICKETS": "buy",
-  "BUY_SUBSCRIPTION": "buy",
+  "PLACE_BET": "gambling",
+  "PLACE_SOL_BET": "gambling",
+  "CREATE_BET": "gambling",
+  "CREATE_RAFFLE": "gambling",
+  "UPDATE_RAFFLE": "gambling",
+  "BUY_TICKETS": "gambling",
 
   // -- Escrow --
   "CREATE_ESCROW": "defi",
@@ -446,7 +445,6 @@ const ASSET_INCOMING_RAW_TYPES = new Set([
   "TRANSFER_IN", "Receive", "receive", "token receive", "nft receive",
   // Buys (you receive the asset, pay cash)
   "BUY", "buy", "Buy", "BUY_ITEM", "DCA", "Margin Buy", "Margin",
-  "PLACE_BET", "PLACE_SOL_BET", "CREATE_BET", "BUY_TICKETS", "BUY_SUBSCRIPTION",
   // Unstaking (asset returns to you)
   "UNSTAKE", "UNSTAKE_SOL", "UNSTAKE_TOKEN", "Unstake",
   // Withdrawals (you get tokens back from DeFi)
@@ -564,6 +562,8 @@ export function getCategoryBadgeColor(rawType: string): string {
       return "bg-pill-purple-bg text-pill-purple-text dark:bg-[rgba(147,51,234,0.12)] dark:text-[#A855F7]";
     case "income":
       return "bg-pill-yellow-bg text-pill-yellow-text dark:bg-[rgba(202,138,4,0.12)] dark:text-[#EAB308]";
+    case "gambling":
+      return "bg-pill-orange-bg text-pill-orange-text dark:bg-[rgba(234,88,12,0.12)] dark:text-[#F97316]";
     case "other":
     default:
       return "bg-pill-gray-bg text-pill-gray-text dark:bg-[rgba(75,85,99,0.12)] dark:text-[#9CA3AF]";

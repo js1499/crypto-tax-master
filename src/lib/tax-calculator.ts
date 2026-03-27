@@ -1914,6 +1914,25 @@ function processTransactionsForTax(
         costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: rewardValue, gainLossUsd: null });
       }
     }
+    // Gambling: bets/wagers — track separately from capital gains.
+    // The wager is not a capital loss; winnings are not capital gains.
+    // For now, record cost basis (wager amount) so gambling P&L can be computed,
+    // but set gainLossUsd = null to exclude from capital gains reporting.
+    else if ([
+      "place_bet", "place_sol_bet", "create_bet", "create_raffle", "buy_tickets",
+    ].includes(txType)) {
+      // Wager: creates a cost basis lot (money spent on the bet)
+      if (valueUsd > 0) {
+        costBasisLots[asset].push({
+          id: tx.id, date, amount,
+          costBasis: Math.abs(valueUsd),
+          pricePerUnit,
+        });
+      }
+      if (costBasisResults) {
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: Math.abs(valueUsd), gainLossUsd: null });
+      }
+    }
     // Acquisition-like types: create cost basis lot at FMV
     // These represent receiving assets (mints, account closures returning rent,
     // withdrawals from DeFi, etc.) that should establish a cost basis for future disposals.
