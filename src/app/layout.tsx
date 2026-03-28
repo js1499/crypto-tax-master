@@ -23,7 +23,7 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Crypto Tax Calculator",
-  description: "The first crypto tax calculator that actually gets your numbers right. Trust me, we checked.",
+  description: "The first crypto tax calculator that actually gets your numbers right. We checked.",
 };
 
 export default function RootLayout({
