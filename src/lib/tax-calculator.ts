@@ -1933,53 +1933,6 @@ function processTransactionsForTax(
         costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: Math.abs(valueUsd), gainLossUsd: null });
       }
     }
-    // Acquisition-like types: create cost basis lot at FMV
-    // These represent receiving assets (mints, account closures returning rent,
-    // withdrawals from DeFi, etc.) that should establish a cost basis for future disposals.
-    // Without this, selling these assets later produces inflated gains at $0 cost basis.
-    else if ([
-      "token_mint", "nft_mint", "sft_mint", "compressed_nft_mint",
-      "initialize_account", "close_account",
-      "execute_instruction", "receive_message",
-      "withdraw", "withdraw_gem", "withdraw_unstaked_deposits",
-      "claim_position_fee", "settle", "refresh_obligation",
-      "init_order", "register_order", "close_item",
-      "nft_bid", "nft_bid_cancelled", "nft_global_bid", "nft_global_bid_cancelled",
-      "sync_native", "deposit",
-    ].includes(txType)) {
-      // Create cost basis lot at FMV (if value is known)
-      if (valueUsd > 0) {
-        costBasisLots[asset].push({
-          id: tx.id,
-          date,
-          amount,
-          costBasis: Math.abs(valueUsd),
-          pricePerUnit,
-        });
-      }
-      if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: Math.abs(valueUsd), gainLossUsd: null });
-      }
-    }
-    // Neutral types: no cost basis, no taxable event
-    else if ([
-      "nft_listing", "nft_cancel_listing", "nft_rent_activate",
-      "burn_nft", "compressed_nft_burn", "compressed_nft_update_metadata",
-      "compressed_nft_verify_creator", "delegate_merkle_tree",
-      "attach_metadata", "migrate_to_pnft", "candy_machine_route",
-      "place_orders", "cancel_all_orders", "consume_events", "settle_pnl",
-      "deposit_gem", "init_farmer", "refresh_farmer", "init_vault",
-      "init_lending_account", "foreclose_loan", "take_loan", "repay_loan",
-      "create", "create_appraisal", "create_bet", "fuse",
-      "stake", "stake_token", "unstake_token",
-      "add_item", "add_liquidity",
-      "loan", "close_position", "revoke",
-      "nft_mint_rejected", "fulfill",
-    ].includes(txType)) {
-      if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
-      }
-    }
     // Catch-all: log unhandled transaction types
     else {
       if (processedCount < 50) {
