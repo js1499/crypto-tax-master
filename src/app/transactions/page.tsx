@@ -156,14 +156,10 @@ interface EditableFields {
 // Transactions will be loaded from API - no need for mock data
 
 function extractSignature(txHash: string): string {
-  // Helius tx_hash format: "signature-native-walletPrefix-suffix" or "signature-token-..."
-  const nativeIdx = txHash.indexOf('-native-');
-  const tokenIdx = txHash.indexOf('-token-');
-  const splitIdx = Math.min(
-    nativeIdx >= 0 ? nativeIdx : Infinity,
-    tokenIdx >= 0 ? tokenIdx : Infinity
-  );
-  return splitIdx < Infinity ? txHash.substring(0, splitIdx) : txHash;
+  // tx_hash suffixes: -native-, -token-, -swap, -main, -nftsale, -nftsale-seller, etc.
+  // Solana signatures are base58 (no dashes), so the signature is everything before the first dash.
+  const dashIdx = txHash.indexOf('-');
+  return dashIdx >= 0 ? txHash.substring(0, dashIdx) : txHash;
 }
 
 function getExplorerUrl(chain: string | undefined, txHash: string): string {
@@ -205,6 +201,7 @@ function TransactionsContent() {
   const [sortOption, setSortOption] = useState("date-desc");
   const [showOnlyUnlabelled, setShowOnlyUnlabelled] = useState(false);
   const [hideZeroTransactions, setHideZeroTransactions] = useState(false);
+  const [advancedView, setAdvancedView] = useState(false);
   const [hideSpamTransactions, setHideSpamTransactions] = useState(false);
   const [onlyWithGainLoss, setOnlyWithGainLoss] = useState(false);
   const [isAddTransactionOpen, setIsAddTransactionOpen] = useState(false);
@@ -1339,6 +1336,19 @@ function TransactionsContent() {
           <div className="flex items-start gap-2">
             {isBulkMode && selectedTransactionIds.size > 0 && (
               <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Pencil className="mr-2 h-4 w-4" />
+                      Reclassify ({selectedTransactionIds.size})
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    {["Buy", "Sell", "Receive", "Send", "Swap", "Stake", "Bridge", "DCA", "NFT Purchase", "Transfer", "Add Liquidity", "Income", "Zero Transaction", "Spam"].map(t => (
+                      <DropdownMenuItem key={t} onClick={() => handleBulkUpdate({ type: t })}>{t}</DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button variant="outline" size="sm" onClick={() => handleBulkUpdate({ identified: true })}>
                   <Check className="mr-2 h-4 w-4" />
                   Mark Identified ({selectedTransactionIds.size})
@@ -1492,6 +1502,17 @@ function TransactionsContent() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <button
+              onClick={() => setAdvancedView(!advancedView)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors",
+                advancedView
+                  ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)]"
+                  : "border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF] hover:text-[#6B7280]"
+              )}
+            >
+              {advancedView ? "Simple View" : "Advanced View"}
+            </button>
           </div>
         </div>
 
@@ -2076,6 +2097,19 @@ function TransactionsContent() {
                   <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("gainloss")}>
                     <span className="inline-flex items-center gap-0.5">Gain/Loss{getSortIndicator("gainloss")}</span>
                   </TableHead>
+                  {advancedView && (
+                    <>
+                      <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                        Price
+                      </TableHead>
+                      <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                        Cost Basis
+                      </TableHead>
+                      <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                        Proceeds
+                      </TableHead>
+                    </>
+                  )}
                   <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A] cursor-pointer select-none hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] transition-colors" onClick={() => handleColumnSort("date")}>
                     <span className="inline-flex items-center gap-0.5">Date{getSortIndicator("date")}</span>
                   </TableHead>
@@ -2098,7 +2132,7 @@ function TransactionsContent() {
                           className="cursor-pointer bg-[#FAFAF8] dark:bg-[#161616] hover:bg-[#F5F5F0] dark:hover:bg-[#1A1A1A] border-b border-[#E5E5E0] dark:border-[#333333]"
                           onClick={() => toggleGroup(group.key)}
                         >
-                          <TableCell colSpan={10} className="py-2.5">
+                          <TableCell colSpan={advancedView ? 13 : 10} className="py-2.5">
                             <div className="flex items-center gap-3">
                               <ChevronDown className={cn("h-4 w-4 text-[#6B7280] transition-transform duration-200", collapsedGroups.has(group.key) && "-rotate-90")} />
                               <span className="text-[14px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">{group.label}</span>
@@ -2159,41 +2193,29 @@ function TransactionsContent() {
                             </Button>
                           </div>
                         ) : (
-                          <div
-                            className="relative group"
-                            onMouseEnter={() => handleMouseEnter('type')}
-                            onMouseLeave={() => handleMouseLeave('type')}
-                          >
-                            <span className={`inline-flex items-center rounded-md px-3 py-[5px] text-[13px] font-medium whitespace-nowrap ${getCategoryBadgeColor(transaction.type)}`}>
-                              {formatTypeForDisplay(transaction.type)}
-                            </span>
-                            {editableFields.type && (
-                              <div className="absolute right-0 top-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                                      <ChevronDown className="h-3 w-3" />
-                                    </Button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent side="right" align="start">
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Buy')}>Buy</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Sell')}>Sell</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Receive')}>Receive</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Send')}>Send</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Swap')}>Swap</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Stake')}>Stake</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Bridge')}>Bridge</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'DCA')}>DCA</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'NFT Purchase')}>NFT Purchase</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Transfer')}>Transfer</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Add Liquidity')}>Add Liquidity</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Zero Transaction')}>Zero Transaction</DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Spam')}>Spam</DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                            )}
-                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button className={`inline-flex items-center gap-1 rounded-md px-3 py-[5px] text-[13px] font-medium whitespace-nowrap cursor-pointer hover:opacity-80 transition-opacity ${getCategoryBadgeColor(transaction.type)}`}>
+                                {formatTypeForDisplay(transaction.type)}
+                                <ChevronDown className="h-3 w-3 opacity-50" />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent side="bottom" align="start">
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Buy')}>Buy</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Sell')}>Sell</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Receive')}>Receive</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Send')}>Send</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Swap')}>Swap</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Stake')}>Stake</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Bridge')}>Bridge</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'DCA')}>DCA</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'NFT Purchase')}>NFT Purchase</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Transfer')}>Transfer</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Add Liquidity')}>Add Liquidity</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Zero Transaction')}>Zero Transaction</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Spam')}>Spam</DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         )}
                       </TableCell>
 
@@ -2257,6 +2279,33 @@ function TransactionsContent() {
                           <span className="inline-flex items-center rounded-md px-2.5 py-[4px] text-[13px] bg-pill-gray-bg text-pill-gray-text dark:bg-[rgba(75,85,99,0.12)] dark:text-[#9CA3AF]">N/A</span>
                         )}
                       </TableCell>
+
+                      {/* Advanced columns */}
+                      {advancedView && (
+                        <>
+                          <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                            <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                              {transaction.outPricePerUnit != null
+                                ? `$${transaction.outPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`
+                                : transaction.price && transaction.price !== "$0.00" ? transaction.price : "—"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                            <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                              {transaction.costBasisUsd != null && transaction.costBasisUsd > 0
+                                ? `$${transaction.costBasisUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                : "—"}
+                            </span>
+                          </TableCell>
+                          <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                            <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                              {transaction.valueUsd != null && transaction.valueUsd !== 0
+                                ? `$${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                : "—"}
+                            </span>
+                          </TableCell>
+                        </>
+                      )}
 
                       {/* Date */}
                       <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
