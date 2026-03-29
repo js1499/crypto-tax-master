@@ -21,6 +21,10 @@ import { getCategory, getTypesForCategory, isOutflow, formatTypeForDisplay, getP
  *   - wallet: Filter by wallet address
  *   - dateFrom: Start date filter (yyyy-MM-dd, inclusive)
  *   - dateTo: End date filter (yyyy-MM-dd, inclusive)
+ *   - chain: Filter by blockchain (e.g., "solana", "ethereum")
+ *   - source: Filter by transaction source (e.g., "JUPITER", "RAYDIUM", "Coinbase")
+ *   - valueMin: Minimum value_usd filter
+ *   - valueMax: Maximum value_usd filter
  */
 export async function GET(request: NextRequest) {
   try {
@@ -73,6 +77,10 @@ export async function GET(request: NextRequest) {
     const walletFilter = searchParams.get("wallet") || "";
     const dateFrom = searchParams.get("dateFrom") || "";
     const dateTo = searchParams.get("dateTo") || "";
+    const chainParam = searchParams.get("chain") || "";
+    const sourceParam = searchParams.get("source") || "";
+    const valueMin = searchParams.get("valueMin") || "";
+    const valueMax = searchParams.get("valueMax") || "";
 
     // Calculate offset
     const skip = (page - 1) * limit;
@@ -179,6 +187,24 @@ export async function GET(request: NextRequest) {
       const endDate = new Date(dateTo);
       endDate.setDate(endDate.getDate() + 1); // include full end date
       whereConditions.push({ tx_timestamp: { lt: endDate } });
+    }
+
+    // Apply chain filter
+    if (chainParam) {
+      whereConditions.push({ chain: chainParam });
+    }
+
+    // Apply source filter
+    if (sourceParam) {
+      whereConditions.push({ source: sourceParam });
+    }
+
+    // Apply value range filters
+    if (valueMin) {
+      whereConditions.push({ value_usd: { gte: parseFloat(valueMin) } });
+    }
+    if (valueMax) {
+      whereConditions.push({ value_usd: { lte: parseFloat(valueMax) } });
     }
 
     // Apply gain/loss filter
@@ -496,6 +522,22 @@ export async function GET(request: NextRequest) {
       netGainLoss: Number(w.net_gl || 0),
     }));
 
+    // Distinct chains and sources for frontend dropdown filters
+    const [distinctChains, distinctSources] = await Promise.all([
+      prisma.transaction.findMany({
+        where: statsWhere,
+        select: { chain: true },
+        distinct: ['chain'],
+      }),
+      prisma.transaction.findMany({
+        where: statsWhere,
+        select: { source: true },
+        distinct: ['source'],
+      }),
+    ]);
+    const chains = distinctChains.map(r => r.chain).filter(Boolean).sort() as string[];
+    const sources = distinctSources.map(r => r.source).filter(Boolean).sort() as string[];
+
     const otherCount = totalCount - buyCount - sellCount - transferInCount - transferOutCount - swapCount;
     const unlabelledCount = totalCount - identifiedTypeCount;
     const identifiedPercentage = totalCount > 0 ? Math.round((identifiedTypeCount / totalCount) * 100) : 0;
@@ -544,6 +586,8 @@ export async function GET(request: NextRequest) {
           byAsset: incomeByAsset,
         },
         weeklyActivity,
+        chains,
+        sources,
       },
     });
   } catch (error) {

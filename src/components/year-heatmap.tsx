@@ -12,11 +12,12 @@ interface WeekData {
 interface YearHeatmapProps {
   weeklyActivity: WeekData[];
   year?: number;
+  onCellClick?: (weekStart: string) => void;
 }
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
+export function YearHeatmap({ weeklyActivity, year, onCellClick }: YearHeatmapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(600);
@@ -100,13 +101,16 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
         .attr("x", x).attr("y", 0)
         .attr("width", cellW).attr("height", cellH)
         .attr("rx", r).attr("fill", volFill).attr("opacity", volOp)
-        .attr("cursor", "pointer")
+        .style("cursor", onCellClick ? "pointer" : "default")
         .on("mouseenter", (event: MouseEvent) => {
           const dateStr = bucket.startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(totalDays > 400 ? { year: "numeric" } : {}) });
           setTooltip({ x: event.clientX, y: event.clientY, text: `${dateStr}: ${bucket.count} txns` });
         })
         .on("mousemove", (event: MouseEvent) => setTooltip(prev => prev ? { ...prev, x: event.clientX, y: event.clientY } : null))
-        .on("mouseleave", () => setTooltip(null));
+        .on("mouseleave", () => setTooltip(null))
+        .on("click", () => {
+          if (onCellClick) onCellClick(bucket.startDate.toISOString());
+        });
 
       // P&L row
       const pnlY = cellH + rowGap;
@@ -125,14 +129,17 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
         .attr("x", x).attr("y", pnlY)
         .attr("width", cellW).attr("height", cellH)
         .attr("rx", r).attr("fill", pnlFill).attr("opacity", pnlOp)
-        .attr("cursor", "pointer")
+        .style("cursor", onCellClick ? "pointer" : "default")
         .on("mouseenter", (event: MouseEvent) => {
           const dateStr = bucket.startDate.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(totalDays > 400 ? { year: "numeric" } : {}) });
           const glText = bucket.netGL !== 0 ? `${bucket.netGL >= 0 ? "+" : "-"}$${Math.abs(bucket.netGL).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "$0";
           setTooltip({ x: event.clientX, y: event.clientY, text: `${dateStr}: ${glText}` });
         })
         .on("mousemove", (event: MouseEvent) => setTooltip(prev => prev ? { ...prev, x: event.clientX, y: event.clientY } : null))
-        .on("mouseleave", () => setTooltip(null));
+        .on("mouseleave", () => setTooltip(null))
+        .on("click", () => {
+          if (onCellClick) onCellClick(bucket.startDate.toISOString());
+        });
     });
 
     // Month labels — every other month to avoid overlap
@@ -167,7 +174,7 @@ export function YearHeatmap({ weeklyActivity, year }: YearHeatmapProps) {
       .attr("font-size", "10px").attr("font-weight", "600").attr("fill", "#6B7280")
       .text("P&L");
 
-  }, [weeklyActivity, width, year]);
+  }, [weeklyActivity, width, year, onCellClick]);
 
   const svgHeight = 18 * 2 + 8 + 16; // two rows + gap + labels
 

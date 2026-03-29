@@ -155,6 +155,43 @@ interface EditableFields {
 
 // Transactions will be loaded from API - no need for mock data
 
+function extractSignature(txHash: string): string {
+  // Helius tx_hash format: "signature-native-walletPrefix-suffix" or "signature-token-..."
+  const nativeIdx = txHash.indexOf('-native-');
+  const tokenIdx = txHash.indexOf('-token-');
+  const splitIdx = Math.min(
+    nativeIdx >= 0 ? nativeIdx : Infinity,
+    tokenIdx >= 0 ? tokenIdx : Infinity
+  );
+  return splitIdx < Infinity ? txHash.substring(0, splitIdx) : txHash;
+}
+
+function getExplorerUrl(chain: string | undefined, txHash: string): string {
+  const sig = extractSignature(txHash);
+
+  switch (chain?.toLowerCase()) {
+    case "solana":
+      return `https://solscan.io/tx/${sig}`;
+    case "ethereum":
+    case "eth":
+      return `https://etherscan.io/tx/${sig}`;
+    case "polygon":
+      return `https://polygonscan.com/tx/${sig}`;
+    case "arbitrum":
+      return `https://arbiscan.io/tx/${sig}`;
+    case "optimism":
+      return `https://optimistic.etherscan.io/tx/${sig}`;
+    case "base":
+      return `https://basescan.org/tx/${sig}`;
+    case "bsc":
+      return `https://bscscan.com/tx/${sig}`;
+    case "avalanche":
+      return `https://snowtrace.io/tx/${sig}`;
+    default:
+      return `https://solscan.io/tx/${sig}`;
+  }
+}
+
 // Define transaction type from ImportedData
 function TransactionsContent() {
   const { data: session, status } = useSession();
@@ -223,6 +260,14 @@ function TransactionsContent() {
   // Date range filter state
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
   const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
+
+  // Chain, source, and value range filter state
+  const [chainFilter, setChainFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [valueMin, setValueMin] = useState("");
+  const [valueMax, setValueMax] = useState("");
+  const [availableChains, setAvailableChains] = useState<string[]>([]);
+  const [availableSources, setAvailableSources] = useState<string[]>([]);
 
   // Stats state from API
   const [stats, setStats] = useState<{
@@ -315,6 +360,10 @@ function TransactionsContent() {
           ...(walletFilter && { wallet: walletFilter }),
           ...(dateFrom && { dateFrom: format(dateFrom, "yyyy-MM-dd") }),
           ...(dateTo && { dateTo: format(dateTo, "yyyy-MM-dd") }),
+          ...(chainFilter && { chain: chainFilter }),
+          ...(sourceFilter && { source: sourceFilter }),
+          ...(valueMin && { valueMin }),
+          ...(valueMax && { valueMax }),
         });
 
         const response = await fetch(`/api/transactions?${params.toString()}`);
@@ -373,6 +422,8 @@ function TransactionsContent() {
           setTotalPages(data.pagination.totalPages);
           if (data.stats) {
             setStats(data.stats);
+            if (data.stats.chains) setAvailableChains(data.stats.chains);
+            if (data.stats.sources) setAvailableSources(data.stats.sources);
           }
 
           // Reset to page 1 if current page is beyond total pages
@@ -413,6 +464,10 @@ function TransactionsContent() {
     walletFilter,
     dateFrom,
     dateTo,
+    chainFilter,
+    sourceFilter,
+    valueMin,
+    valueMax,
     router,
   ]);
 
@@ -549,6 +604,10 @@ function TransactionsContent() {
     hideSpamTransactions,
     onlyWithGainLoss,
     sortOption !== "date-desc",
+    chainFilter !== "",
+    sourceFilter !== "",
+    valueMin !== "",
+    valueMax !== "",
   ].filter(Boolean).length;
 
   // Change page handler
@@ -650,6 +709,10 @@ function TransactionsContent() {
         ...(walletFilter && { wallet: walletFilter }),
         ...(dateFrom && { dateFrom: format(dateFrom, "yyyy-MM-dd") }),
         ...(dateTo && { dateTo: format(dateTo, "yyyy-MM-dd") }),
+        ...(chainFilter && { chain: chainFilter }),
+        ...(sourceFilter && { source: sourceFilter }),
+        ...(valueMin && { valueMin }),
+        ...(valueMax && { valueMax }),
       });
 
       const response = await fetch(`/api/transactions/export?${params.toString()}`);
@@ -1534,6 +1597,13 @@ function TransactionsContent() {
                 <YearHeatmap
                   weeklyActivity={stats.weeklyActivity}
                   year={yearValue !== "all" ? parseInt(yearValue) : undefined}
+                  onCellClick={(weekStart) => {
+                    const start = new Date(weekStart);
+                    const end = new Date(start);
+                    end.setDate(end.getDate() + 6);
+                    setDateFrom(start);
+                    setDateTo(end);
+                  }}
                 />
               </div>
             )}
@@ -1682,6 +1752,69 @@ function TransactionsContent() {
                     </Select>
                   </div>
                 )}
+
+                {/* Chain filter */}
+                {availableChains.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Chain</Label>
+                    <Select value={chainFilter || "all"} onValueChange={(value) => { setChainFilter(value === "all" ? "" : value); setCurrentPage(1); }}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="All Chains" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Chains</SelectItem>
+                        {availableChains.map((c) => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Source filter */}
+                {availableSources.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Source</Label>
+                    <Select value={sourceFilter || "all"} onValueChange={(value) => { setSourceFilter(value === "all" ? "" : value); setCurrentPage(1); }}>
+                      <SelectTrigger className="h-9">
+                        <SelectValue placeholder="All Sources" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Sources</SelectItem>
+                        {availableSources.map((s) => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* Value range filter */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Value Range (USD)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      placeholder="Min"
+                      className="h-9"
+                      value={valueMin}
+                      onChange={(e) => { setValueMin(e.target.value); setCurrentPage(1); }}
+                    />
+                    <span className="text-xs text-[#9CA3AF]">–</span>
+                    <Input
+                      type="number"
+                      placeholder="Max"
+                      className="h-9"
+                      value={valueMax}
+                      onChange={(e) => { setValueMax(e.target.value); setCurrentPage(1); }}
+                    />
+                    {(valueMin || valueMax) && (
+                      <Button variant="ghost" size="sm" className="h-9 px-2" onClick={() => { setValueMin(""); setValueMax(""); setCurrentPage(1); }}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
 
                 {/* Toggle filters */}
                 <div className="space-y-3">
@@ -1845,7 +1978,7 @@ function TransactionsContent() {
         </div>
 
         {/* ── Active Filter Chips ── */}
-        {(filter !== "all" || walletFilter || showOnlyUnlabelled || hideZeroTransactions || hideSpamTransactions || onlyWithGainLoss || (dateFrom || dateTo) || groupBy !== "none") && (
+        {(filter !== "all" || walletFilter || showOnlyUnlabelled || hideZeroTransactions || hideSpamTransactions || onlyWithGainLoss || (dateFrom || dateTo) || groupBy !== "none" || chainFilter || sourceFilter || valueMin || valueMax) && (
           <div className="flex flex-wrap items-center gap-1.5">
             {filter !== "all" && (
               <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
@@ -1895,6 +2028,24 @@ function TransactionsContent() {
                 <button onClick={() => { setGroupBy("none"); setCollapsedGroups(new Set()); }} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
               </span>
             )}
+            {chainFilter && (
+              <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
+                Chain: {chainFilter}
+                <button onClick={() => { setChainFilter(""); setCurrentPage(1); }} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
+              </span>
+            )}
+            {sourceFilter && (
+              <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
+                Source: {sourceFilter}
+                <button onClick={() => { setSourceFilter(""); setCurrentPage(1); }} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
+              </span>
+            )}
+            {(valueMin || valueMax) && (
+              <span className="inline-flex items-center gap-1 bg-pill-gray-bg dark:bg-[rgba(75,85,99,0.12)] text-pill-gray-text dark:text-[#9CA3AF] rounded-md px-2 py-0.5 text-[12px] font-medium">
+                Value: {valueMin ? `$${valueMin}` : "..."} – {valueMax ? `$${valueMax}` : "..."}
+                <button onClick={() => { setValueMin(""); setValueMax(""); setCurrentPage(1); }} className="ml-0.5 hover:text-[#1A1A1A] dark:hover:text-white"><X className="h-3 w-3" /></button>
+              </span>
+            )}
           </div>
         )}
 
@@ -1935,6 +2086,7 @@ function TransactionsContent() {
                     Status
                   </TableHead>
                   <TableHead className="w-10" />
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
                 <TableBody>
@@ -1946,7 +2098,7 @@ function TransactionsContent() {
                           className="cursor-pointer bg-[#FAFAF8] dark:bg-[#161616] hover:bg-[#F5F5F0] dark:hover:bg-[#1A1A1A] border-b border-[#E5E5E0] dark:border-[#333333]"
                           onClick={() => toggleGroup(group.key)}
                         >
-                          <TableCell colSpan={8} className="py-2.5">
+                          <TableCell colSpan={10} className="py-2.5">
                             <div className="flex items-center gap-3">
                               <ChevronDown className={cn("h-4 w-4 text-[#6B7280] transition-transform duration-200", collapsedGroups.has(group.key) && "-rotate-90")} />
                               <span className="text-[14px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">{group.label}</span>
@@ -2212,6 +2364,21 @@ function TransactionsContent() {
                             <Trash2 className="h-3.5 w-3.5 text-[#9CA3AF] hover:text-[#DC2626]" />
                           </button>
                         </div>
+                      </TableCell>
+
+                      {/* Block explorer link */}
+                      <TableCell className="w-10">
+                        {transaction.txHash && (
+                          <a
+                            href={getExplorerUrl(transaction.chain, transaction.txHash)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        )}
                       </TableCell>
 
                     </TableRow>
