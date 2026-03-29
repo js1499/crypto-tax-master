@@ -76,7 +76,7 @@ export interface TransactionCostBasisResult {
 // Stablecoins: use face value ($1/unit) as cost basis for disposals.
 // Lot tracking for stablecoins creates artifacts when tokens cycle through
 // DeFi protocols (deposits/withdrawals deplete lots, causing phantom gains).
-const STABLECOINS = new Set(["USDC", "USDT", "PYUSD", "DAI", "BUSD", "TUSD", "USDP", "FRAX", "USD1"]);
+const STABLECOINS = new Set(["USDC", "USDT", "PYUSD", "DAI", "BUSD", "TUSD", "USDP", "FRAX", "USD1", "EURC", "USDH", "DOLLARCOIN"]);
 
 // Known staking/governance contract addresses that should be treated as
 // self-transfers (non-taxable). Tokens sent to these addresses are locked,
@@ -299,14 +299,18 @@ function processDisposal(
       console.warn(`[Tax Calculator] ${tx.type} transaction ${tx.id}: No cost basis lots available. Asset: ${asset}`);
     }
 
-    // Stablecoin override: force gain/loss to $0.
-    // Stablecoins: suppress negligible gains/losses (< $0.02/unit) from
-    // rounding and lot depletion. Real gains/losses from de-peg events or
-    // buying below $1 are preserved.
+    // Stablecoin override: stablecoins always have ~$1 cost basis per unit.
+    // When lots are depleted or missing (zero cost basis), force cost basis = proceeds
+    // to prevent phantom gains. Also suppress negligible rounding artifacts.
     if (STABLECOINS.has(asset)) {
-      const gainPerUnit = sellAmount > 0 ? Math.abs(netProceeds - totalCostBasis) / sellAmount : 0;
-      if (gainPerUnit < 0.02) {
-        totalCostBasis = netProceeds; // negligible: force break-even
+      if (totalCostBasis === 0 && netProceeds > 0) {
+        // No lots available — stablecoin cost basis = face value (proceeds ≈ $1/unit)
+        totalCostBasis = netProceeds;
+      } else {
+        const gainPerUnit = sellAmount > 0 ? Math.abs(netProceeds - totalCostBasis) / sellAmount : 0;
+        if (gainPerUnit < 0.02) {
+          totalCostBasis = netProceeds; // negligible: force break-even
+        }
       }
     }
 
