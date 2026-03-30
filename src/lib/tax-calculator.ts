@@ -307,24 +307,18 @@ function processDisposal(
     }
 
     // Stablecoin override: stablecoins always have ~$1 cost basis per unit.
-    // When lots are depleted or missing (zero cost basis), force cost basis = proceeds
-    // to prevent phantom gains. Also suppress negligible rounding artifacts.
-    if (STABLECOINS.has(asset)) {
-      if (totalCostBasis === 0 && netProceeds > 0) {
-        // No lots available — stablecoin cost basis = face value (proceeds ≈ $1/unit)
-        totalCostBasis = netProceeds;
-      } else {
-        const gainPerUnit = sellAmount > 0 ? Math.abs(netProceeds - totalCostBasis) / sellAmount : 0;
-        if (gainPerUnit < 0.02) {
-          totalCostBasis = netProceeds; // negligible: force break-even
-        }
-      }
+    // Force cost basis = proceeds to prevent phantom gains from lot depletion.
+    // Extract bare asset name from composite key (e.g., "walletAddr:USDC" → "USDC")
+    const bareAsset = asset.includes(":") ? asset.split(":").pop()! : asset;
+    if (STABLECOINS.has(bareAsset)) {
+      // Always force break-even for stablecoins — they don't have real capital gains
+      totalCostBasis = netProceeds;
     }
 
     gainLoss = Math.round((netProceeds - totalCostBasis) * 100) / 100;
 
     if (processedCount < 10) {
-      debugLog(`[Tax Calculator] ${tx.type} transaction ${tx.id} (from lots): proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, lotsUsed=${selectedLots.length}${STABLECOINS.has(asset) ? ' [stablecoin override]' : ''}`);
+      debugLog(`[Tax Calculator] ${tx.type} transaction ${tx.id} (from lots): proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, lotsUsed=${selectedLots.length}${STABLECOINS.has(bareAsset) ? ' [stablecoin override]' : ''}`);
     }
 
     return {
@@ -1533,9 +1527,9 @@ function processTransactionsForTax(
             });
           }
 
-          // Stablecoin: suppress negligible gains/losses (< $0.02/unit)
-          const stablecoinGainPerUnit = amount > 0 ? Math.abs(disposal.netProceeds - disposal.totalCostBasis) / amount : 0;
-          const finalCostBasis = (STABLECOINS.has(asset) && stablecoinGainPerUnit < 0.02) ? disposal.netProceeds : disposal.totalCostBasis;
+          // Stablecoin: always force break-even (extract bare asset from composite key)
+          const swapBareAsset = asset.includes(":") ? asset.split(":").pop()! : asset;
+          const finalCostBasis = STABLECOINS.has(swapBareAsset) ? disposal.netProceeds : disposal.totalCostBasis;
           const finalGainLoss = disposal.netProceeds - finalCostBasis;
 
           if (costBasisResults) {
