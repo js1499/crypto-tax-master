@@ -115,8 +115,8 @@ async function buildForm8949Sheet(
   if (taxpayerName) setTextField(form, "f1_01[0]", taxpayerName);
   if (ssn) setTextField(form, "f1_02[0]", ssn);
 
-  // Check the correct box based on source type
-  checkCheckbox(form, shortCheckbox || "c1_1[2]");
+  // Check the correct box based on source type (default: Box I = DeFi/blockchain)
+  checkCheckbox(form, shortCheckbox || "c1_1[5]");
 
   // Fill short-term rows
   for (let i = 0; i < shortTermRows.length && i < ROWS_PER_PAGE; i++) {
@@ -173,8 +173,8 @@ async function buildForm8949Sheet(
   if (taxpayerName) setTextField(form, "f2_01[0]", taxpayerName);
   if (ssn) setTextField(form, "f2_02[0]", ssn);
 
-  // Check the correct box based on source type
-  checkCheckbox(form, longCheckbox || "c2_1[2]");
+  // Check the correct box based on source type (default: Box L = DeFi/blockchain)
+  checkCheckbox(form, longCheckbox || "c2_1[5]");
 
   // Fill long-term rows
   for (let i = 0; i < longTermRows.length && i < ROWS_PER_PAGE; i++) {
@@ -238,20 +238,21 @@ function isExchangeSource(source?: string): boolean {
 
 /**
  * Check the correct Form 8949 box based on holding period and source.
- * Short-term + exchange = Box B (c1_1[1]): basis not reported to IRS
- * Short-term + DeFi/blockchain = Box C (c1_1[2]): no 1099-B received
- * Long-term + exchange = Box E (c2_1[1]): basis not reported to IRS
- * Long-term + DeFi/blockchain = Box F (c2_1[2]): no 1099-B received
+ * Page 1 (Short-term): A=c1_1[0], B=c1_1[1], C=c1_1[2], G=c1_1[3], H=c1_1[4], I=c1_1[5]
+ * Page 2 (Long-term):  D=c2_1[0], E=c2_1[1], F=c2_1[2], J=c2_1[3], K=c2_1[4], L=c2_1[5]
+ *
+ * Short-term + exchange = Box H (c1_1[4])
+ * Short-term + DeFi/blockchain = Box I (c1_1[5])
+ * Long-term + exchange = Box K (c2_1[4])
+ * Long-term + DeFi/blockchain = Box L (c2_1[5])
  */
 function getCheckboxForEvents(events: TaxableEvent[]): { shortBox: string; longBox: string } {
   const hasExchangeST = events.some(e => e.holdingPeriod === "short" && isExchangeSource(e.source));
   const hasExchangeLT = events.some(e => e.holdingPeriod === "long" && isExchangeSource(e.source));
 
-  // Default to Box C/F (no 1099-B) for DeFi/blockchain.
-  // If any exchange events exist, use Box B/E (basis not reported).
   return {
-    shortBox: hasExchangeST ? "c1_1[1]" : "c1_1[2]",
-    longBox: hasExchangeLT ? "c2_1[1]" : "c2_1[2]",
+    shortBox: hasExchangeST ? "c1_1[4]" : "c1_1[5]", // H (exchange) or I (DeFi)
+    longBox: hasExchangeLT ? "c2_1[4]" : "c2_1[5]",   // K (exchange) or L (DeFi)
   };
 }
 
