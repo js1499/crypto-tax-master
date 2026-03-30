@@ -104,18 +104,19 @@ async function buildForm8949Sheet(
   ssn?: string,
   shortTermTotals?: { proceeds: number; costBasis: number; gainLoss: number },
   longTermTotals?: { proceeds: number; costBasis: number; gainLoss: number },
+  shortCheckbox?: string,
+  longCheckbox?: string,
 ): Promise<PDFDocument> {
   const doc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
   const form = doc.getForm();
 
   // ---- Page 1: Part I (Short-term) ----
 
-  // Name and SSN
   if (taxpayerName) setTextField(form, "f1_01[0]", taxpayerName);
   if (ssn) setTextField(form, "f1_02[0]", ssn);
 
-  // Check box A (short-term, basis reported to IRS)
-  checkCheckbox(form, "c1_1[0]");
+  // Check the correct box based on source type
+  checkCheckbox(form, shortCheckbox || "c1_1[2]");
 
   // Fill short-term rows
   for (let i = 0; i < shortTermRows.length && i < ROWS_PER_PAGE; i++) {
@@ -172,8 +173,8 @@ async function buildForm8949Sheet(
   if (taxpayerName) setTextField(form, "f2_01[0]", taxpayerName);
   if (ssn) setTextField(form, "f2_02[0]", ssn);
 
-  // Check box D (long-term, basis reported to IRS)
-  checkCheckbox(form, "c2_1[0]");
+  // Check the correct box based on source type
+  checkCheckbox(form, longCheckbox || "c2_1[2]");
 
   // Fill long-term rows
   for (let i = 0; i < longTermRows.length && i < ROWS_PER_PAGE; i++) {
@@ -223,62 +224,35 @@ async function buildForm8949Sheet(
  * Generate a complete Form 8949 PDF (with continuation sheets when there are
  * more than 11 rows per holding period).
  */
+/** Known centralized exchange sources */
+const EXCHANGE_SOURCES = new Set([
+  "coinbase", "binance", "kraken", "gemini", "kucoin", "bybit", "okx",
+  "robinhood", "crypto.com", "ftx", "bitfinex", "bitstamp", "huobi",
+]);
+
+/** Determine if a taxable event is from a centralized exchange */
+function isExchangeSource(source?: string): boolean {
+  if (!source) return false;
+  return EXCHANGE_SOURCES.has(source.toLowerCase());
+}
+
 /**
- * Aggregate taxable events by asset + holding period.
- * IRS allows reporting aggregated totals with "Various" dates.
+ * Check the correct Form 8949 box based on holding period and source.
+ * Short-term + exchange = Box B (c1_1[1]): basis not reported to IRS
+ * Short-term + DeFi/blockchain = Box C (c1_1[2]): no 1099-B received
+ * Long-term + exchange = Box E (c2_1[1]): basis not reported to IRS
+ * Long-term + DeFi/blockchain = Box F (c2_1[2]): no 1099-B received
  */
-function aggregateEvents(events: TaxableEvent[]): TaxableEvent[] {
-  const groups = new Map<string, {
-    asset: string;
-    totalAmount: number;
-    totalProceeds: number;
-    totalCostBasis: number;
-    totalGainLoss: number;
-    holdingPeriod: "short" | "long";
-    earliestDate: Date;
-    latestDate: Date;
-    count: number;
-  }>();
+function getCheckboxForEvents(events: TaxableEvent[]): { shortBox: string; longBox: string } {
+  const hasExchangeST = events.some(e => e.holdingPeriod === "short" && isExchangeSource(e.source));
+  const hasExchangeLT = events.some(e => e.holdingPeriod === "long" && isExchangeSource(e.source));
 
-  for (const e of events) {
-    const key = `${e.asset}:${e.holdingPeriod}`;
-    const existing = groups.get(key);
-    if (existing) {
-      existing.totalAmount += e.amount;
-      existing.totalProceeds += e.proceeds;
-      existing.totalCostBasis += e.costBasis;
-      existing.totalGainLoss += e.gainLoss;
-      if (e.date < existing.earliestDate) existing.earliestDate = e.date;
-      if (e.date > existing.latestDate) existing.latestDate = e.date;
-      existing.count++;
-    } else {
-      groups.set(key, {
-        asset: e.asset,
-        totalAmount: e.amount,
-        totalProceeds: e.proceeds,
-        totalCostBasis: e.costBasis,
-        totalGainLoss: e.gainLoss,
-        holdingPeriod: e.holdingPeriod,
-        earliestDate: e.date,
-        latestDate: e.date,
-        count: 1,
-      });
-    }
-  }
-
-  return Array.from(groups.values())
-    .sort((a, b) => Math.abs(b.totalGainLoss) - Math.abs(a.totalGainLoss))
-    .map((g) => ({
-      id: 0,
-      asset: g.asset,
-      amount: Math.round(g.totalAmount * 1e6) / 1e6,
-      proceeds: g.totalProceeds,
-      costBasis: g.totalCostBasis,
-      gainLoss: g.totalGainLoss,
-      holdingPeriod: g.holdingPeriod,
-      date: g.latestDate,
-      dateAcquired: g.count > 1 ? undefined : g.earliestDate, // "Various" if multiple
-    }));
+  // Default to Box C/F (no 1099-B) for DeFi/blockchain.
+  // If any exchange events exist, use Box B/E (basis not reported).
+  return {
+    shortBox: hasExchangeST ? "c1_1[1]" : "c1_1[2]",
+    longBox: hasExchangeLT ? "c2_1[1]" : "c2_1[2]",
+  };
 }
 
 async function generateForm8949(
@@ -286,16 +260,15 @@ async function generateForm8949(
   taxpayerName?: string,
   ssn?: string,
 ): Promise<Uint8Array> {
-  // Read the fillable template
   const templatePath = path.join(process.cwd(), "public", "forms", "f8949.pdf");
   const templateBytes = new Uint8Array(fs.readFileSync(templatePath));
 
-  // Aggregate events by asset + holding period to keep the form concise
-  const aggregated = aggregateEvents(report.taxableEvents);
+  // Use detailed (non-aggregated) events sorted by date
+  const allEvents = [...report.taxableEvents].sort((a, b) => a.date.getTime() - b.date.getTime());
 
   // Separate into short-term and long-term
-  const shortTerm = aggregated.filter((e) => e.holdingPeriod === "short");
-  const longTerm = aggregated.filter((e) => e.holdingPeriod === "long");
+  const shortTerm = allEvents.filter((e) => e.holdingPeriod === "short");
+  const longTerm = allEvents.filter((e) => e.holdingPeriod === "long");
 
   // Compute totals per holding period
   const sumTotals = (events: TaxableEvent[]) => ({
@@ -306,6 +279,9 @@ async function generateForm8949(
 
   const shortTermTotals = sumTotals(shortTerm);
   const longTermTotals = sumTotals(longTerm);
+
+  // Determine correct checkboxes based on source
+  const { shortBox, longBox } = getCheckboxForEvents(allEvents);
 
   // Split into pages of ROWS_PER_PAGE
   const shortTermPages: TaxableEvent[][] = [];
@@ -341,6 +317,8 @@ async function generateForm8949(
       ssn,
       isLastST ? shortTermTotals : undefined,
       isLastLT ? longTermTotals : undefined,
+      shortBox,
+      longBox,
     );
     sheets.push(sheet);
   }

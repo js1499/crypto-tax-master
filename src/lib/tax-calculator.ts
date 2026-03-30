@@ -21,6 +21,7 @@ export interface TaxableEvent {
   holdingPeriod: "short" | "long"; // Short-term: ≤ 1 year, Long-term: > 1 year (IRS: must be held MORE than 1 year)
   chain?: string;
   txHash?: string;
+  source?: string; // Transaction source (JUPITER, Coinbase, etc.) for Form 8949 box selection
   washSale?: boolean; // True if this is a wash sale (loss disallowed)
   washSaleAdjustment?: number; // Amount of disallowed loss added to replacement shares
 }
@@ -355,6 +356,7 @@ function createDisposalTaxEvents(
       holdingPeriod: disposal.holdingPeriod,
       chain: tx.chain || undefined,
       txHash: tx.tx_hash || undefined,
+      source: tx.source || undefined,
       washSale: false,
       washSaleAdjustment: undefined,
     }];
@@ -380,6 +382,7 @@ function createDisposalTaxEvents(
       holdingPeriod: actualHoldingPeriod,
       chain: tx.chain || undefined,
       txHash: tx.tx_hash || undefined,
+      source: tx.source || undefined,
       washSale: false,
       washSaleAdjustment: undefined,
     }];
@@ -407,6 +410,7 @@ function createDisposalTaxEvents(
       holdingPeriod: hp,
       chain: tx.chain || undefined,
       txHash: tx.tx_hash || undefined,
+      source: tx.source || undefined,
       washSale: false,
       washSaleAdjustment: undefined,
     });
