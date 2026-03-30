@@ -97,6 +97,12 @@ interface CostBasisLot {
   washSaleAdjustment?: number; // Wash sale loss adjustment added to this lot
 }
 
+/** Compute the lot key: per-wallet mode uses "wallet:asset", universal uses just "asset" */
+function lotKey(asset: string, walletAddress: string | null, perWallet: boolean): string {
+  if (!perWallet) return asset;
+  return `${walletAddress || "__global__"}:${asset}`;
+}
+
 // Track loss sales for wash sale detection
 interface LossSale {
   id: number;
@@ -624,13 +630,15 @@ export async function calculateTaxReport(
   // are shared across chains. allTransactions is already sorted chronologically.
   debugLog(`[Tax Calculator] Processing ${allTransactions.length} transactions (unified across all chains)`);
 
+  const perWallet = year >= 2025;
   const unifiedReport = processTransactionsForTax(
     allTransactions,
     year,
     method,
     walletAddresses,
     undefined, // costBasisResults
-    timezone
+    timezone,
+    perWallet
   );
 
   const combinedTaxableEvents = unifiedReport.taxableEvents;
@@ -855,7 +863,8 @@ export function computeCostBasisForTransactions(
     ? Math.max(...transactions.map(tx => tx.tx_timestamp.getFullYear()))
     : 9999;
 
-  processTransactionsForTax(transactions, maxYear, method, walletAddresses, resultMap);
+  const perWallet = maxYear >= 2025;
+  processTransactionsForTax(transactions, maxYear, method, walletAddresses, resultMap, "America/New_York", perWallet);
 
   return Array.from(resultMap.values());
 }
@@ -869,7 +878,8 @@ function processTransactionsForTax(
   method: "FIFO" | "LIFO" | "HIFO",
   walletAddresses: string[] = [], // For detecting self-transfers
   costBasisResults?: Map<number, TransactionCostBasisResult>, // Per-transaction cost basis collector
-  timezone: string = "America/New_York" // User's timezone for year boundary determination
+  timezone: string = "America/New_York", // User's timezone for year boundary determination
+  perWallet: boolean = false
 ): {
   taxableEvents: TaxableEvent[];
   incomeEvents: IncomeEvent[];
@@ -924,6 +934,8 @@ function processTransactionsForTax(
     // Normalize asset symbol: trim whitespace and convert to uppercase for consistent matching
     // This ensures "BTC", "btc", "BTC " all match the same asset
     const asset = (tx.asset_symbol || "").trim().toUpperCase();
+    const txWallet = tx.wallet_address || null;
+    const lk = lotKey(asset, txWallet, perWallet);
     // H-5 fix: Guard negative amounts — some CSV imports encode sells as negative
     // amounts. Cost basis lot tracking requires positive quantities.
     const amount = Math.abs(Number(tx.amount_value));
@@ -1001,7 +1013,7 @@ function processTransactionsForTax(
     // If is_income flag is set (from income detection), route to income handler
     // regardless of raw type. This handles INITIALIZE_ACCOUNT airdrops, etc.
     if (tx.is_income && getCategory(tx.type || "") !== "income") {
-      if (!costBasisLots[asset]) costBasisLots[asset] = [];
+      if (!costBasisLots[lk]) costBasisLots[lk] = [];
 
       if (txYear === taxYear && valueUsd > 0) {
         incomeEventCount++;
@@ -1018,7 +1030,7 @@ function processTransactionsForTax(
       }
 
       if (valueUsd > 0) {
-        costBasisLots[asset].push({
+        costBasisLots[lk].push({
           id: tx.id,
           date,
           amount,
@@ -1039,8 +1051,8 @@ function processTransactionsForTax(
     }
 
     // Initialize asset lots if needed
-    if (!costBasisLots[asset]) {
-      costBasisLots[asset] = [];
+    if (!costBasisLots[lk]) {
+      costBasisLots[lk] = [];
     }
 
     // Handle buys - add to cost basis (including fees per IRS rules)
@@ -1053,18 +1065,18 @@ function processTransactionsForTax(
       let totalCostBasis = Math.abs(valueUsd) + feeUsd;
       
       // Check for wash sale: if this buy is within 30 days of a previous loss sale, apply wash sale rules
-      const washSaleAdjustment = checkWashSale(asset, date, amount, lossSales);
+      const washSaleAdjustment = checkWashSale(lk, date, amount, lossSales);
       if (washSaleAdjustment > 0) {
         // Add disallowed loss to cost basis of replacement shares
         totalCostBasis += washSaleAdjustment;
         debugLog(`[Wash Sale] Buy transaction ${tx.id}: Added $${washSaleAdjustment.toFixed(2)} wash sale adjustment to cost basis. New cost basis: $${totalCostBasis.toFixed(2)}`);
       }
-      
+
       // Log if this is a CSV import buy to verify it's being processed
       if (tx.source_type === "csv_import" && processedCount < 20) {
         debugLog(`[processTransactionsForTax] Processing CSV buy ${tx.id}: asset=${asset}, value_usd=${valueUsd}, totalCostBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, year=${txYear}`);
       }
-      costBasisLots[asset].push({
+      costBasisLots[lk].push({
         id: tx.id,
         date,
         amount,
@@ -1075,19 +1087,19 @@ function processTransactionsForTax(
         fees: feeUsd, // Track fees separately for reference
         washSaleAdjustment: washSaleAdjustment > 0 ? washSaleAdjustment : undefined,
       });
-      
+
       // Track buy transaction for wash sale detection (buys before loss sales)
       buyTransactions.push({
         id: tx.id,
         date,
-        asset,
+        asset: lk,
         amount,
         costBasis: totalCostBasis,
         lotId: tx.id,
       });
-      
-      if (processedCount < 10 || costBasisLots[asset].length <= 3) {
-        debugLog(`[processTransactionsForTax] Added buy transaction ${tx.id} to cost basis: asset=${asset} (original: "${tx.asset_symbol}"), amount=${amount}, costBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, lotsForAsset=${costBasisLots[asset].length}`);
+
+      if (processedCount < 10 || costBasisLots[lk].length <= 3) {
+        debugLog(`[processTransactionsForTax] Added buy transaction ${tx.id} to cost basis: asset=${asset} (original: "${tx.asset_symbol}"), amount=${amount}, costBasis=${totalCostBasis}, date=${date.toISOString().split('T')[0]}, lotsForAsset=${costBasisLots[lk].length}`);
       }
 
       if (costBasisResults) {
@@ -1100,7 +1112,7 @@ function processTransactionsForTax(
       // Use the processDisposal helper to calculate disposal details
       const disposal = processDisposal(
         tx,
-        asset,
+        lk,
         amount,
         valueUsd,
         feeUsd,
@@ -1116,7 +1128,7 @@ function processTransactionsForTax(
         lossSales.push({
           id: tx.id,
           date,
-          asset,
+          asset: lk,
           amount,
           lossAmount: Math.abs(disposal.gainLoss),
           costBasis: disposal.totalCostBasis,
@@ -1136,7 +1148,7 @@ function processTransactionsForTax(
         const hasCostBasisInNotes = tx.notes?.includes("Cost Basis:") || false;
         const availableAssets = Object.keys(costBasisLots).filter(k => costBasisLots[k].length > 0);
 
-        if (disposal.totalCostBasis === 0 && !hasCostBasisInNotes && costBasisLots[asset]?.length === 0) {
+        if (disposal.totalCostBasis === 0 && !hasCostBasisInNotes && costBasisLots[lk]?.length === 0) {
           // Check if this might be from income/airdrops (expected zero cost basis scenario)
           const hasIncomeForAsset = incomeEvents.some(e =>
             e.asset.toUpperCase() === asset.toUpperCase() &&
@@ -1196,8 +1208,9 @@ function processTransactionsForTax(
       }
 
       // Initialize incoming asset lots if needed
-      if (incomingAsset && !costBasisLots[incomingAsset]) {
-        costBasisLots[incomingAsset] = [];
+      const inLk = incomingAsset ? lotKey(incomingAsset, txWallet, perWallet) : null;
+      if (inLk && !costBasisLots[inLk]) {
+        costBasisLots[inLk] = [];
       }
 
       // For swaps, both sides are equal in value. If the outgoing asset is unpriced
@@ -1210,7 +1223,7 @@ function processTransactionsForTax(
       // This ensures: fee deduction, rounding, lotDisposals tracking, mixed holding period split
       const disposal = processDisposal(
         tx,
-        outgoingAsset,
+        lk,
         outgoingAmount,
         swapProceeds,
         feeUsd,
@@ -1226,7 +1239,7 @@ function processTransactionsForTax(
         lossSales.push({
           id: tx.id,
           date,
-          asset: outgoingAsset,
+          asset: lk,
           amount: outgoingAmount,
           lossAmount: Math.abs(disposal.gainLoss),
           costBasis: disposal.totalCostBasis,
@@ -1253,10 +1266,10 @@ function processTransactionsForTax(
       // IRS: Incoming cost basis = FMV of acquired asset. Fees are already deducted
       // from proceeds on the disposal side (netProceeds above), so they are NOT added
       // here to avoid double-counting.
-      if (incomingAsset && incomingAmount && incomingValueUsd) {
+      if (incomingAsset && inLk && incomingAmount && incomingValueUsd) {
         const incomingCostBasis = Math.abs(incomingValueUsd);
         const incomingPricePerUnit = incomingCostBasis / incomingAmount;
-        costBasisLots[incomingAsset].push({
+        costBasisLots[inLk].push({
           id: tx.id,
           date,
           amount: incomingAmount,
@@ -1265,14 +1278,14 @@ function processTransactionsForTax(
         });
         // H-3 fix: Track swap incoming as a buy for wash sale detection
         buyTransactions.push({
-          id: tx.id, date, asset: incomingAsset,
+          id: tx.id, date, asset: inLk,
           amount: incomingAmount, costBasis: incomingCostBasis, lotId: tx.id,
         });
-      } else if (incomingAsset && incomingAmount) {
+      } else if (incomingAsset && inLk && incomingAmount) {
         // Fallback: use value_usd if incoming value not parsed
         const incomingCostBasis = Math.abs(valueUsd);
         const incomingPricePerUnit = incomingCostBasis / incomingAmount;
-        costBasisLots[incomingAsset].push({
+        costBasisLots[inLk].push({
           id: tx.id,
           date,
           amount: incomingAmount,
@@ -1281,7 +1294,7 @@ function processTransactionsForTax(
         });
         // H-3 fix: Track swap incoming as a buy for wash sale detection
         buyTransactions.push({
-          id: tx.id, date, asset: incomingAsset,
+          id: tx.id, date, asset: inLk,
           amount: incomingAmount, costBasis: incomingCostBasis, lotId: tx.id,
         });
       } else {
@@ -1291,12 +1304,12 @@ function processTransactionsForTax(
         // In a fair swap, outgoing FMV ≈ incoming FMV.
         const estimatedCostBasis = Math.abs(valueUsd);
         debugLog(`[Tax Calculator] Swap ${tx.id}: No incoming asset data. Using outgoing FMV ($${estimatedCostBasis.toFixed(2)}) as estimated cost basis for received token.`);
-        if (!incomingAsset) {
+        if (!incomingAsset || !inLk) {
           debugLog(`[Tax Calculator] ⚠️  Swap ${tx.id}: Cannot determine incoming asset symbol. User should review and manually assign cost basis.`);
         } else {
           // We have the asset symbol but no amount — estimate amount from outgoing
           const estimatedAmount = incomingAmount || amount; // Best guess: same quantity
-          costBasisLots[incomingAsset].push({
+          costBasisLots[inLk].push({
             id: tx.id,
             date,
             amount: estimatedAmount,
@@ -1357,7 +1370,7 @@ function processTransactionsForTax(
 
       // IRS: Income received becomes part of cost basis for future sales
       if (valueUsd > 0) {
-        costBasisLots[asset].push({
+        costBasisLots[lk].push({
           id: tx.id,
           date,
           amount,
@@ -1394,9 +1407,9 @@ function processTransactionsForTax(
 
         if (pendingBasis && pendingBasis.lots.length > 0) {
           // Re-create cost basis lots from the original send's consumed lots
-          // (legacy path: send consumed lots before H-2 fix)
+          // into the destination wallet's pool
           for (const lot of pendingBasis.lots) {
-            costBasisLots[asset].push({
+            costBasisLots[lk].push({
               id: tx.id,
               date: lot.date, // Original acquisition date preserved
               amount: lot.amount,
@@ -1406,6 +1419,19 @@ function processTransactionsForTax(
           }
           // Clean up
           if (transferKey) pendingTransferBasis.delete(`${transferKey}:${asset}`);
+        } else if (perWallet) {
+          // Per-wallet mode: no pending basis found — create FMV fallback lot
+          // in the destination wallet's pool
+          if (valueUsd > 0) {
+            costBasisLots[lk].push({
+              id: tx.id,
+              date,
+              amount,
+              costBasis: Math.abs(valueUsd),
+              pricePerUnit,
+            });
+          }
+          debugLog(`[Tax Calculator] Receive ${tx.id}: Self-transfer (per-wallet) — created FMV fallback lot in destination wallet.`);
         } else {
           // H-2 fix: If send handler preserved lots (self-transfer), this receive
           // is a no-op — the lots are already in place. Only create a new lot if
@@ -1416,7 +1442,7 @@ function processTransactionsForTax(
         // Not a self-transfer: create cost basis lot at FMV but NO income event.
         // The user may later reclassify this as income if appropriate.
         if (valueUsd > 0) {
-          costBasisLots[asset].push({
+          costBasisLots[lk].push({
             id: tx.id,
             date,
             amount,
@@ -1444,9 +1470,41 @@ function processTransactionsForTax(
       );
 
       if (isSelfTransfer) {
-        // Self-transfer: cost basis lots remain untouched — the user still owns
-        // the tokens on a different wallet. The receive side should be a no-op.
-        debugLog(`[Tax Calculator] Send ${tx.id}: Self-transfer of ${amount} ${asset} — cost basis preserved.`);
+        if (perWallet) {
+          // Per-wallet mode: extract lots from source wallet's pool and store
+          // them in pendingTransferBasis for the receive side to pick up.
+          const selectedLots = selectLots(costBasisLots[lk] || [], amount, method);
+          const transferLots: Array<{ date: Date; amount: number; costBasis: number }> = [];
+          let remainingToMove = amount;
+          for (const lot of selectedLots) {
+            if (remainingToMove <= 0) break;
+            const amountFromLot = Math.min(remainingToMove, lot.amount);
+            const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
+            const costBasisFromLot = costBasisPerUnit * amountFromLot;
+            transferLots.push({ date: lot.date, amount: amountFromLot, costBasis: costBasisFromLot });
+            lot.amount -= amountFromLot;
+            lot.costBasis -= costBasisFromLot;
+            remainingToMove -= amountFromLot;
+          }
+          // Remove empty lots from source pool
+          if (costBasisLots[lk]) {
+            costBasisLots[lk] = costBasisLots[lk].filter((lot) => lot.amount > 0);
+          }
+          // Store for the receive side (keyed by bare asset for cross-wallet matching)
+          const transferKey = tx.tx_hash || tx.counterparty_address;
+          if (transferKey) {
+            const totalCostBasis = transferLots.reduce((s, l) => s + l.costBasis, 0);
+            pendingTransferBasis.set(`${transferKey}:${asset}`, {
+              costBasis: totalCostBasis,
+              lots: transferLots,
+            });
+          }
+          debugLog(`[Tax Calculator] Send ${tx.id}: Self-transfer (per-wallet) of ${amount} ${asset} — extracted ${transferLots.length} lots from source wallet.`);
+        } else {
+          // Universal mode: cost basis lots remain untouched — the user still owns
+          // the tokens on a different wallet. The receive side should be a no-op.
+          debugLog(`[Tax Calculator] Send ${tx.id}: Self-transfer of ${amount} ${asset} — cost basis preserved.`);
+        }
         if (costBasisResults) {
           costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
         }
@@ -1462,7 +1520,7 @@ function processTransactionsForTax(
           // Use processDisposal for proper lot consumption, holding period, and lot splitting
           const feeUsd = tx.fee_usd ? Math.abs(Number(tx.fee_usd)) : 0;
           const disposal = processDisposal(
-            tx, asset, amount, Math.abs(valueUsd), feeUsd, date,
+            tx, lk, amount, Math.abs(valueUsd), feeUsd, date,
             costBasisLots, method, processedCount, taxableEventCount
           );
 
@@ -1532,14 +1590,14 @@ function processTransactionsForTax(
       } else {
         // Different-token bridge (e.g., ETH → WETH): treated as a swap/disposal
         const disposal = processDisposal(
-          tx, asset, amount, valueUsd, feeUsd, date,
+          tx, lk, amount, valueUsd, feeUsd, date,
           costBasisLots, method, processedCount, taxableEventCount
         );
 
         // Track loss sales for wash sale detection
         if (disposal.shouldTrackAsLossSale) {
           lossSales.push({
-            id: tx.id, date, asset, amount,
+            id: tx.id, date, asset: lk, amount,
             lossAmount: Math.abs(disposal.gainLoss),
             costBasis: disposal.totalCostBasis,
             proceeds: disposal.netProceeds,
@@ -1561,9 +1619,10 @@ function processTransactionsForTax(
         }
 
         // Create cost basis lot for the incoming asset at FMV
-        if (!costBasisLots[incomingAsset]) costBasisLots[incomingAsset] = [];
+        const bridgeInLk = lotKey(incomingAsset, txWallet, perWallet);
+        if (!costBasisLots[bridgeInLk]) costBasisLots[bridgeInLk] = [];
         const bridgeProceeds = disposal.netProceeds;
-        costBasisLots[incomingAsset].push({
+        costBasisLots[bridgeInLk].push({
           id: tx.id, date, amount,
           costBasis: bridgeProceeds,
           pricePerUnit: amount > 0 ? bridgeProceeds / amount : 0,
@@ -1579,7 +1638,7 @@ function processTransactionsForTax(
       const totalValueProvided = Math.abs(valueUsd); // Total value of assets added to pool
       const lpTokenPrice = lpTokenAmount > 0 ? totalValueProvided / lpTokenAmount : 0;
 
-      costBasisLots[asset].push({
+      costBasisLots[lk].push({
         id: tx.id,
         date,
         amount: lpTokenAmount,
@@ -1601,14 +1660,14 @@ function processTransactionsForTax(
       // C-1/C-2/H-7 fix: Use processDisposal for consistent lot consumption,
       // rounding, holding period splitting, and loss tracking.
       const disposal = processDisposal(
-        tx, asset, amount, valueUsd, feeUsd, date,
+        tx, lk, amount, valueUsd, feeUsd, date,
         costBasisLots, method, processedCount, taxableEventCount
       );
 
       // Track loss sales for wash sale detection (impermanent loss)
       if (disposal.shouldTrackAsLossSale) {
         lossSales.push({
-          id: tx.id, date, asset, amount,
+          id: tx.id, date, asset: lk, amount,
           lossAmount: Math.abs(disposal.gainLoss),
           costBasis: disposal.totalCostBasis,
           proceeds: disposal.netProceeds,
@@ -1636,13 +1695,13 @@ function processTransactionsForTax(
       let totalCostBasis = Math.abs(valueUsd) + feeUsd;
       
       // Check for wash sale
-      const washSaleAdjustment = checkWashSale(asset, date, amount, lossSales);
+      const washSaleAdjustment = checkWashSale(lk, date, amount, lossSales);
       if (washSaleAdjustment > 0) {
         totalCostBasis += washSaleAdjustment;
         debugLog(`[Wash Sale] Margin buy transaction ${tx.id}: Added $${washSaleAdjustment.toFixed(2)} wash sale adjustment to cost basis.`);
       }
       
-      costBasisLots[asset].push({
+      costBasisLots[lk].push({
         id: tx.id,
         date,
         amount,
@@ -1659,7 +1718,7 @@ function processTransactionsForTax(
       // Margin sell is treated as a regular sell (taxable disposal)
       const disposal = processDisposal(
         tx,
-        asset,
+        lk,
         amount,
         valueUsd,
         feeUsd,
@@ -1675,7 +1734,7 @@ function processTransactionsForTax(
         lossSales.push({
           id: tx.id,
           date,
-          asset,
+          asset: lk,
           amount,
           lossAmount: Math.abs(disposal.gainLoss),
           costBasis: disposal.totalCostBasis,
@@ -1703,7 +1762,7 @@ function processTransactionsForTax(
       // Liquidation is treated as a sell (forced disposal)
       const disposal = processDisposal(
         tx,
-        asset,
+        lk,
         amount,
         valueUsd,
         feeUsd,
@@ -1719,7 +1778,7 @@ function processTransactionsForTax(
         lossSales.push({
           id: tx.id,
           date,
-          asset,
+          asset: lk,
           amount,
           lossAmount: Math.abs(disposal.gainLoss),
           costBasis: disposal.totalCostBasis,
@@ -1810,14 +1869,14 @@ function processTransactionsForTax(
       }
       // Pass valueUsd=0 since burn proceeds are always $0
       const disposal = processDisposal(
-        tx, asset, amount, 0, feeUsd, date,
+        tx, lk, amount, 0, feeUsd, date,
         costBasisLots, method, processedCount, taxableEventCount
       );
 
       // Track loss sales for wash sale detection
       if (disposal.shouldTrackAsLossSale) {
         lossSales.push({
-          id: tx.id, date, asset, amount,
+          id: tx.id, date, asset: lk, amount,
           lossAmount: Math.abs(disposal.gainLoss),
           costBasis: disposal.totalCostBasis,
           proceeds: disposal.netProceeds,
@@ -1847,15 +1906,16 @@ function processTransactionsForTax(
 
       if (incomingAsset && incomingAsset !== asset) {
         // Move cost basis lots from outgoing asset to incoming asset
-        if (!costBasisLots[incomingAsset]) costBasisLots[incomingAsset] = [];
-        const selectedLots = selectLots(costBasisLots[asset], amount, method);
+        const wrapInLk = lotKey(incomingAsset, txWallet, perWallet);
+        if (!costBasisLots[wrapInLk]) costBasisLots[wrapInLk] = [];
+        const selectedLots = selectLots(costBasisLots[lk] || [], amount, method);
         let remainingToMove = amount;
         for (const lot of selectedLots) {
           if (remainingToMove <= 0) break;
           const amountFromLot = Math.min(remainingToMove, lot.amount);
           const costBasisPerUnit = lot.amount > 0 ? lot.costBasis / lot.amount : 0;
           const costBasisFromLot = costBasisPerUnit * amountFromLot;
-          costBasisLots[incomingAsset].push({
+          costBasisLots[wrapInLk].push({
             id: tx.id, date: lot.date, amount: amountFromLot,
             costBasis: costBasisFromLot,
             pricePerUnit: costBasisPerUnit,
@@ -1864,7 +1924,9 @@ function processTransactionsForTax(
           lot.costBasis -= costBasisFromLot;
           remainingToMove -= amountFromLot;
         }
-        costBasisLots[asset] = costBasisLots[asset].filter((lot) => lot.amount > 0);
+        if (costBasisLots[lk]) {
+          costBasisLots[lk] = costBasisLots[lk].filter((lot) => lot.amount > 0);
+        }
         debugLog(`[Tax Calculator] ${txType} ${tx.id}: Transferred cost basis from ${asset} to ${incomingAsset} — non-taxable.`);
       }
       // If no incoming asset data, it's a no-op (cost basis stays on same symbol)
@@ -1908,7 +1970,7 @@ function processTransactionsForTax(
 
       // Rewards also add to cost basis for future sales
       if (rewardValue > 0) {
-        costBasisLots[asset].push({
+        costBasisLots[lk].push({
           id: tx.id,
           date,
           amount,
@@ -1931,7 +1993,7 @@ function processTransactionsForTax(
     ].includes(txType)) {
       // Wager: creates a cost basis lot (money spent on the bet)
       if (valueUsd > 0) {
-        costBasisLots[asset].push({
+        costBasisLots[lk].push({
           id: tx.id, date, amount,
           costBasis: Math.abs(valueUsd),
           pricePerUnit,
