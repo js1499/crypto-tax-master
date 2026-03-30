@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PlusCircle, Wallet, Building, ExternalLink, AlertCircle, CheckCircle, RefreshCw, RotateCw, Trash2, Link2, DollarSign, Pencil, Copy } from "lucide-react";
+import { PlusCircle, Plus, Wallet, Building, ExternalLink, AlertCircle, CheckCircle, RefreshCw, RotateCw, Trash2, Link2, DollarSign, Pencil, Copy } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -547,6 +547,24 @@ function AccountsContent() {
             {/* Standard actions in header */}
             {!loading && !error && allAccounts.length > 0 && selectedIds.size === 0 && (
               <>
+                <div className="flex items-center gap-1.5 mr-1">
+                  <button
+                    onClick={() => setExclusiveWallets(!exclusiveWallets)}
+                    className={cn(
+                      "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                      exclusiveWallets ? "bg-[#2563EB]" : "bg-[#E5E5E0] dark:bg-[#333]"
+                    )}
+                    title="When enabled, prevents adding wallets already connected by another user"
+                  >
+                    <span className={cn(
+                      "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                      exclusiveWallets ? "translate-x-[18px]" : "translate-x-[3px]"
+                    )} />
+                  </button>
+                  <span className="text-[11px] text-[#9CA3AF]" title="Prevents adding wallets already connected by another user.">
+                    Exclusive
+                  </span>
+                </div>
                 <Button
                   variant="outline"
                   onClick={async () => {
@@ -584,24 +602,6 @@ function AccountsContent() {
                 </Button>
               </>
             )}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setExclusiveWallets(!exclusiveWallets)}
-                className={cn(
-                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-                  exclusiveWallets ? "bg-[#2563EB]" : "bg-[#E5E5E0] dark:bg-[#333]"
-                )}
-                title="When enabled, prevents adding wallets already connected by another user"
-              >
-                <span className={cn(
-                  "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
-                  exclusiveWallets ? "translate-x-[18px]" : "translate-x-[3px]"
-                )} />
-              </button>
-              <span className="text-[12px] text-[#9CA3AF]" title="Prevents adding wallets already connected by another user. Useful for shared households.">
-                Exclusive wallets
-              </span>
-            </div>
             <Button onClick={() => setIsAddDialogOpen(true)} data-onboarding="connect-wallet">
               <PlusCircle className="mr-2 h-4 w-4" />
               Add Account
@@ -710,6 +710,7 @@ function AccountsContent() {
                   <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Transactions</TableHead>
                   <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Status</TableHead>
                   <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Last Synced</TableHead>
+                  <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Last Enriched</TableHead>
                   <TableHead className="text-[14px] font-semibold text-[#4B5563]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -717,7 +718,7 @@ function AccountsContent() {
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i} className="border-b border-[#F0F0EB] dark:border-[#2A2A2A]">
-                      <TableCell colSpan={8}>
+                      <TableCell colSpan={9}>
                         <div className="flex items-center gap-4 h-10">
                           <div className="h-5 w-5 skeleton-pulse rounded" />
                           <div className="h-4 w-32 skeleton-pulse rounded" />
@@ -851,6 +852,13 @@ function AccountsContent() {
                           </span>
                         </TableCell>
 
+                        {/* Last Enriched */}
+                        <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                          <span className="text-[14px] text-[#6B7280]">
+                            {(account as any).lastEnrichedAt ? new Date((account as any).lastEnrichedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "Never"}
+                          </span>
+                        </TableCell>
+
                         {/* Actions — always visible, subtle bordered */}
                         <TableCell>
                           <div className="flex items-center gap-1.5">
@@ -900,39 +908,77 @@ function AccountsContent() {
 
         {/* ── Suggested Wallets ── */}
         {walletSuggestions.length > 0 && (
-          <div className="mt-6 border border-[#E5E5E0] dark:border-[#333] rounded-xl bg-white dark:bg-[#1A1A1A]">
-            <div className="px-6 pt-5 pb-3">
-              <h2 className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Suggested Wallets</h2>
-              <p className="text-[12px] text-[#9CA3AF] mt-0.5">These addresses frequently interact with your wallets. Are any of them yours?</p>
+          <div className="border border-[#E5E5E0] dark:border-[#333] rounded-xl overflow-hidden bg-white dark:bg-[#1A1A1A]">
+            <div className="flex items-center justify-between px-6 pt-5 pb-3">
+              <div>
+                <h2 className="text-[16px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Suggested Wallets</h2>
+                <p className="text-[12px] text-[#9CA3AF] mt-0.5">Frequently interacting addresses that may belong to you</p>
+              </div>
+              <span className="inline-flex items-center rounded-full bg-[#EFF6FF] dark:bg-[rgba(37,99,235,0.12)] text-[#2563EB] px-2.5 py-0.5 text-[11px] font-medium">
+                {walletSuggestions.length} found
+              </span>
             </div>
-            <div className="px-6 pb-5 space-y-2">
-              {walletSuggestions.map((s) => (
-                <div key={s.address} className="flex items-center justify-between py-3 border-t border-[#F0F0EB] dark:border-[#2A2A2A] first:border-t-0">
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-[#F5F5F0] dark:bg-[#222]">
-                      <img src={`/logos/${s.chain === 'solana' ? 'SOL' : s.chain === 'ethereum' ? 'ETH' : 'SOL'}.png`} className="h-4 w-4 rounded-full" alt="" />
-                    </div>
-                    <div>
-                      <p className="text-[13px] font-mono text-[#1A1A1A] dark:text-[#F5F5F5]">
-                        {s.address.substring(0, 6)}...{s.address.substring(s.address.length - 4)}
-                      </p>
-                      <p className="text-[11px] text-[#9CA3AF]">
-                        {s.txnCount} transactions · ${s.totalValue.toLocaleString()} volume · {s.inCount} in / {s.outCount} out
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(s.address);
-                      toast.success("Address copied — add it as a new wallet");
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#2563EB] text-[#2563EB] px-3 py-1.5 text-[12px] font-medium hover:bg-[#EFF6FF] transition-colors"
-                  >
-                    Add Wallet
-                  </button>
-                </div>
-              ))}
-            </div>
+            <Table className="transaction-table">
+              <TableHeader>
+                <TableRow className="border-b border-[#F0F0EB] dark:border-[#2A2A2A]">
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Chain</TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Address</TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Transactions</TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Volume</TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">Direction</TableHead>
+                  <TableHead className="text-[13px] font-semibold text-[#4B5563]">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {walletSuggestions.map((s) => (
+                  <TableRow key={s.address} className="border-b border-[#F0F0EB] dark:border-[#2A2A2A] hover:bg-[#FAFAF7] dark:hover:bg-[rgba(255,255,255,0.03)] transition-colors">
+                    <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                      <div className="flex items-center gap-2">
+                        <img src={`/logos/${s.chain === 'solana' ? 'SOL' : s.chain === 'ethereum' ? 'ETH' : 'SOL'}.png`} className="h-5 w-5 rounded-full" alt="" />
+                        <span className="text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5] capitalize">{s.chain || 'solana'}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                      <span className="text-[13px] font-mono text-[#1A1A1A] dark:text-[#F5F5F5]">
+                        {s.address.substring(0, 8)}...{s.address.substring(s.address.length - 6)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                      <span className="text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                        {s.txnCount.toLocaleString()}
+                      </span>
+                    </TableCell>
+                    <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                      <span className="text-[13px] text-[#1A1A1A] dark:text-[#F5F5F5]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                        ${s.totalValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </span>
+                    </TableCell>
+                    <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                      <div className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center rounded-md bg-pill-teal-bg text-pill-teal-text px-1.5 py-[1px] text-[11px] font-medium">
+                          {s.inCount} in
+                        </span>
+                        <span className="inline-flex items-center rounded-md bg-pill-indigo-bg text-pill-indigo-text px-1.5 py-[1px] text-[11px] font-medium">
+                          {s.outCount} out
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(s.address);
+                          toast.success("Address copied — add it as a new wallet");
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-[#2563EB] text-[#2563EB] text-[12px] font-medium hover:bg-[#EFF6FF] transition-colors"
+                      >
+                        <Plus className="h-3 w-3" />
+                        Add
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
         )}
 
