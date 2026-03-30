@@ -1432,29 +1432,35 @@ function TransactionsContent() {
               </>
             )}
 
-            <button
-              onClick={() => setPerWalletTracking(!perWalletTracking)}
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg border h-9 px-3 text-[12px] font-medium transition-colors",
-                perWalletTracking
-                  ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)]"
-                  : "border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF] hover:text-[#6B7280]"
-              )}
-              title={perWalletTracking
-                ? "Per-wallet: each wallet tracks its own cost basis (IRS 2025+ requirement)"
-                : "Universal: cost basis lots shared across all wallets (pre-2025 method)"}
-            >
-              {perWalletTracking ? "Per-Wallet" : "Universal"}
-            </button>
-
-            <Button variant="outline" onClick={handleComputeCostBasis} disabled={isComputingCostBasis}>
-              {isComputingCostBasis ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <CreditCard className="mr-2 h-4 w-4" />
-              )}
-              <span>{isComputingCostBasis ? "Computing..." : "Cost Basis"}</span>
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" disabled={isComputingCostBasis}>
+                  {isComputingCostBasis ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <CreditCard className="mr-2 h-4 w-4" />
+                  )}
+                  <span>{isComputingCostBasis ? "Computing..." : "Cost Basis"}</span>
+                  <ChevronDown className="ml-1 h-3 w-3 opacity-50" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-[260px]">
+                <div className="px-2 py-1.5 text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider">2025+ (IRS Required)</div>
+                <DropdownMenuItem onClick={() => { setPerWalletTracking(true); handleComputeCostBasis(); }}>
+                  <div>
+                    <div className="text-[13px] font-medium">Per-Wallet FIFO</div>
+                    <div className="text-[11px] text-[#9CA3AF]">Each wallet tracks its own lots (IRS 2025+)</div>
+                  </div>
+                </DropdownMenuItem>
+                <div className="px-2 py-1.5 text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider mt-1">Pre-2025 / Legacy</div>
+                <DropdownMenuItem onClick={() => { setPerWalletTracking(false); handleComputeCostBasis(); }}>
+                  <div>
+                    <div className="text-[13px] font-medium">Universal FIFO</div>
+                    <div className="text-[11px] text-[#9CA3AF]">Lots shared across all wallets</div>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Sheet open={isImportOpen} onOpenChange={setIsImportOpen}>
               <SheetTrigger asChild>
@@ -1582,17 +1588,15 @@ function TransactionsContent() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            <button
+            <Button
+              variant="outline"
               onClick={() => setAdvancedView(!advancedView)}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors",
-                advancedView
-                  ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)]"
-                  : "border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF] hover:text-[#6B7280]"
+                advancedView && "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)] hover:bg-[#EFF6FF] hover:text-[#2563EB]"
               )}
             >
               {advancedView ? "Simple View" : "Advanced View"}
-            </button>
+            </Button>
           </div>
         </div>
 
