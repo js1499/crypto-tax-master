@@ -1205,43 +1205,18 @@ function TransactionsContent() {
     }
   };
 
-  // Transaction type options (comprehensive list)
-  const transactionTypes = [
-    { value: "Buy", label: "Buy" },
-    { value: "Sell", label: "Sell" },
-    { value: "Swap", label: "Swap" },
-    { value: "Send", label: "Send" },
-    { value: "Receive", label: "Receive" },
-    { value: "Transfer", label: "Transfer" },
-    { value: "Stake", label: "Stake" },
-    { value: "Unstake", label: "Unstake" },
-    { value: "Staking Reward", label: "Staking Reward" },
-    { value: "Mining Reward", label: "Mining Reward" },
-    { value: "Airdrop", label: "Airdrop" },
-    { value: "Interest", label: "Interest" },
-    { value: "Payment", label: "Payment" },
-    { value: "DCA", label: "DCA" },
-    { value: "Bridge", label: "Bridge" },
-    { value: "Add Liquidity", label: "Add Liquidity" },
-    { value: "Remove Liquidity", label: "Remove Liquidity" },
-    { value: "NFT Purchase", label: "NFT Purchase" },
-    { value: "NFT Sale", label: "NFT Sale" },
-    { value: "Margin Buy", label: "Margin Buy" },
-    { value: "Margin Sell", label: "Margin Sell" },
-    { value: "Liquidation", label: "Liquidation" },
-    { value: "Zero Transaction", label: "Zero Transaction" },
-    { value: "Spam", label: "Spam" },
-    { value: "Deposit", label: "Deposit" },
-    { value: "Withdraw", label: "Withdraw" },
-    { value: "Burn", label: "Burn" },
-    { value: "Mint", label: "Mint" },
-    { value: "Wrap", label: "Wrap" },
-    { value: "Unwrap", label: "Unwrap" },
-    { value: "Approve", label: "Approve" },
-    { value: "Self", label: "Self" },
-    { value: "NFT Activity", label: "NFT Activity" },
-    { value: "DeFi Setup", label: "DeFi Setup" },
+  // Transaction type options organized by category
+  const typeCategories = [
+    { label: "Trading", types: ["Buy", "Sell", "Swap", "DCA"] },
+    { label: "Transfers", types: ["Send", "Receive", "Transfer", "Bridge", "Deposit", "Withdraw"] },
+    { label: "NFTs", types: ["NFT Purchase", "NFT Sale", "NFT Activity", "Mint", "Burn"] },
+    { label: "DeFi", types: ["Add Liquidity", "Remove Liquidity", "Wrap", "Unwrap", "DeFi Setup", "Margin Buy", "Margin Sell", "Liquidation"] },
+    { label: "Income", types: ["Staking Reward", "Mining Reward", "Airdrop", "Interest", "Payment"] },
+    { label: "Staking", types: ["Stake", "Unstake"] },
+    { label: "Other", types: ["Zero Transaction", "Spam", "Self", "Approve"] },
   ];
+  // Flat list for Select components (detail sheet, etc.)
+  const transactionTypes = typeCategories.flatMap(c => c.types.map(t => ({ value: t, label: t })));
 
   // Helper: format amount for display
   const formatAmount = (amount: number | null) => {
@@ -1422,13 +1397,22 @@ function TransactionsContent() {
                       Reclassify ({selectedTransactionIds.size})
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent className="max-h-[300px] overflow-y-auto">
-                    {transactionTypes.map((t) => (
-                      <DropdownMenuItem key={t.value} onClick={() => handleBulkUpdate({ type: t.value })}>
-                        <span className={`inline-flex items-center rounded-md px-2 py-[2px] text-[11px] font-medium mr-2 ${getCategoryBadgeColor(t.value)}`}>
-                          {t.label}
-                        </span>
-                      </DropdownMenuItem>
+                  <DropdownMenuContent className="w-[280px] max-h-[350px] overflow-y-auto p-2">
+                    {typeCategories.map((cat) => (
+                      <div key={cat.label} className="mb-2 last:mb-0">
+                        <div className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider px-2 py-1">{cat.label}</div>
+                        <div className="flex flex-wrap gap-1 px-1">
+                          {cat.types.map((t) => (
+                            <button
+                              key={t}
+                              onClick={() => handleBulkUpdate({ type: t })}
+                              className={`inline-flex items-center rounded-md px-2 py-[3px] text-[11px] font-medium cursor-pointer hover:opacity-70 transition-opacity ${getCategoryBadgeColor(t)}`}
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -2283,13 +2267,22 @@ function TransactionsContent() {
                                 <ChevronDown className="h-3 w-3 opacity-50" />
                               </button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent side="bottom" align="start" className="max-h-[300px] overflow-y-auto">
-                              {transactionTypes.map((t) => (
-                                <DropdownMenuItem key={t.value} onClick={() => handleChangeDropdownValue(transaction.id, 'type', t.value)}>
-                                  <span className={`inline-flex items-center rounded-md px-2 py-[2px] text-[11px] font-medium mr-2 ${getCategoryBadgeColor(t.value)}`}>
-                                    {t.label}
-                                  </span>
-                                </DropdownMenuItem>
+                            <DropdownMenuContent side="bottom" align="start" className="w-[280px] max-h-[350px] overflow-y-auto p-2">
+                              {typeCategories.map((cat) => (
+                                <div key={cat.label} className="mb-2 last:mb-0">
+                                  <div className="text-[10px] font-semibold text-[#9CA3AF] uppercase tracking-wider px-2 py-1">{cat.label}</div>
+                                  <div className="flex flex-wrap gap-1 px-1">
+                                    {cat.types.map((t) => (
+                                      <button
+                                        key={t}
+                                        onClick={() => { handleChangeDropdownValue(transaction.id, 'type', t); }}
+                                        className={`inline-flex items-center rounded-md px-2 py-[3px] text-[11px] font-medium cursor-pointer hover:opacity-70 transition-opacity ${getCategoryBadgeColor(t)}`}
+                                      >
+                                        {t}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
                               ))}
                             </DropdownMenuContent>
                           </DropdownMenu>
