@@ -7,7 +7,7 @@ import { computeCostBasisForTransactions } from "@/lib/tax-calculator";
  * Called automatically after sync/import, and manually via /api/cost-basis/compute.
  * Fire-and-forget safe — errors are logged but never thrown.
  */
-export async function recomputeCostBasis(userId: string): Promise<void> {
+export async function recomputeCostBasis(userId: string, perWallet?: boolean): Promise<void> {
   try {
     const userWithWallets = await prisma.user.findUnique({
       where: { id: userId },
@@ -54,7 +54,8 @@ export async function recomputeCostBasis(userId: string): Promise<void> {
     const results = computeCostBasisForTransactions(
       allTransactions,
       costBasisMethod,
-      walletAddresses
+      walletAddresses,
+      perWallet,
     );
 
     // Bulk update via single raw SQL using VALUES list

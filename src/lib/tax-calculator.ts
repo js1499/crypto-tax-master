@@ -848,7 +848,8 @@ export async function calculateTaxReport(
 export function computeCostBasisForTransactions(
   transactions: Transaction[],
   method: "FIFO" | "LIFO" | "HIFO",
-  walletAddresses: string[] = []
+  walletAddresses: string[] = [],
+  perWalletOverride?: boolean,
 ): TransactionCostBasisResult[] {
   const resultMap = new Map<number, TransactionCostBasisResult>();
 
@@ -857,7 +858,7 @@ export function computeCostBasisForTransactions(
     ? Math.max(...transactions.map(tx => tx.tx_timestamp.getFullYear()))
     : 9999;
 
-  const perWallet = maxYear >= 2025;
+  const perWallet = perWalletOverride !== undefined ? perWalletOverride : maxYear >= 2025;
   processTransactionsForTax(transactions, maxYear, method, walletAddresses, resultMap, "America/New_York", perWallet);
 
   return Array.from(resultMap.values());

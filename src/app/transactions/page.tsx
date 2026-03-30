@@ -203,6 +203,7 @@ function TransactionsContent() {
   const [showOnlyUnlabelled, setShowOnlyUnlabelled] = useState(false);
   const [hideZeroTransactions, setHideZeroTransactions] = useState(false);
   const [advancedView, setAdvancedView] = useState(false);
+  const [perWalletTracking, setPerWalletTracking] = useState(true);
   const [hideSpamTransactions, setHideSpamTransactions] = useState(false);
   const [onlyWithGainLoss, setOnlyWithGainLoss] = useState(false);
   const [isAddTransactionOpen, setIsAddTransactionOpen] = useState(false);
@@ -634,7 +635,11 @@ function TransactionsContent() {
   const handleComputeCostBasis = async () => {
     setIsComputingCostBasis(true);
     try {
-      const response = await fetch("/api/cost-basis/compute", { method: "POST" });
+      const response = await fetch("/api/cost-basis/compute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ perWallet: perWalletTracking }),
+      });
       const data = await response.json();
       if (data.status === "success") {
         toast.success(`Cost basis computed successfully (${data.method})`);
@@ -1427,6 +1432,26 @@ function TransactionsContent() {
               </>
             )}
 
+            <div className="flex items-center gap-1.5 mr-1">
+              <button
+                onClick={() => setPerWalletTracking(!perWalletTracking)}
+                className={cn(
+                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+                  perWalletTracking ? "bg-[#2563EB]" : "bg-[#E5E5E0] dark:bg-[#333]"
+                )}
+                title={perWalletTracking
+                  ? "Per-wallet tracking: each wallet maintains its own cost basis lots (IRS 2025+ requirement)"
+                  : "Universal tracking: cost basis lots shared across all wallets (pre-2025 method)"}
+              >
+                <span className={cn(
+                  "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
+                  perWalletTracking ? "translate-x-[18px]" : "translate-x-[3px]"
+                )} />
+              </button>
+              <span className="text-[11px] text-[#9CA3AF]" title="Per-wallet: each wallet tracks its own cost basis (IRS 2025+). Universal: lots shared across wallets (pre-2025).">
+                {perWalletTracking ? "Per-Wallet" : "Universal"}
+              </span>
+            </div>
             <Button variant="outline" onClick={handleExport} disabled={isExporting}>
               {isExporting ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

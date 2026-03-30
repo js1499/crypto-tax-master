@@ -26,11 +26,21 @@ export async function POST(request: NextRequest) {
       return createRateLimitResponse(userRateLimit.remaining, userRateLimit.reset);
     }
 
-    await recomputeCostBasis(user.id);
+    // Parse perWallet preference from request body
+    let perWallet = true; // default: per-wallet (IRS 2025+)
+    try {
+      const body = await request.json();
+      if (body.perWallet === false) perWallet = false;
+    } catch {
+      // No body or invalid JSON — use default
+    }
+
+    await recomputeCostBasis(user.id, perWallet);
 
     return NextResponse.json({
       status: "success",
-      message: "Cost basis computed successfully",
+      message: `Cost basis computed successfully (${perWallet ? "per-wallet" : "universal"})`,
+      method: perWallet ? "per-wallet" : "universal",
     });
   } catch (error) {
     console.error("[Cost Basis Compute] Error:", error);
