@@ -1343,9 +1343,13 @@ function TransactionsContent() {
                       Reclassify ({selectedTransactionIds.size})
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    {["Buy", "Sell", "Receive", "Send", "Swap", "Stake", "Bridge", "DCA", "NFT Purchase", "Transfer", "Add Liquidity", "Income", "Zero Transaction", "Spam"].map(t => (
-                      <DropdownMenuItem key={t} onClick={() => handleBulkUpdate({ type: t })}>{t}</DropdownMenuItem>
+                  <DropdownMenuContent className="max-h-[300px] overflow-y-auto">
+                    {transactionTypes.map((t) => (
+                      <DropdownMenuItem key={t.value} onClick={() => handleBulkUpdate({ type: t.value })}>
+                        <span className={`inline-flex items-center rounded-md px-2 py-[2px] text-[11px] font-medium mr-2 ${getCategoryBadgeColor(t.value)}`}>
+                          {t.label}
+                        </span>
+                      </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -2200,20 +2204,14 @@ function TransactionsContent() {
                                 <ChevronDown className="h-3 w-3 opacity-50" />
                               </button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent side="bottom" align="start">
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Buy')}>Buy</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Sell')}>Sell</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Receive')}>Receive</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Send')}>Send</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Swap')}>Swap</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Stake')}>Stake</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Bridge')}>Bridge</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'DCA')}>DCA</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'NFT Purchase')}>NFT Purchase</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Transfer')}>Transfer</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Add Liquidity')}>Add Liquidity</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Zero Transaction')}>Zero Transaction</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleChangeDropdownValue(transaction.id, 'type', 'Spam')}>Spam</DropdownMenuItem>
+                            <DropdownMenuContent side="bottom" align="start" className="max-h-[300px] overflow-y-auto">
+                              {transactionTypes.map((t) => (
+                                <DropdownMenuItem key={t.value} onClick={() => handleChangeDropdownValue(transaction.id, 'type', t.value)}>
+                                  <span className={`inline-flex items-center rounded-md px-2 py-[2px] text-[11px] font-medium mr-2 ${getCategoryBadgeColor(t.value)}`}>
+                                    {t.label}
+                                  </span>
+                                </DropdownMenuItem>
+                              ))}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         )}
