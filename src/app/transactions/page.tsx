@@ -1482,86 +1482,6 @@ function TransactionsContent() {
               </SheetContent>
             </Sheet>
 
-            {/* Add Transaction Dialog (triggered from menu) */}
-            <Dialog open={isAddTransactionOpen} onOpenChange={setIsAddTransactionOpen}>
-              <DialogContent className="sm:max-w-[600px]">
-                <DialogHeader>
-                  <DialogTitle>Add New Transaction</DialogTitle>
-                  <DialogDescription>
-                    Enter the details of your transaction below.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="type" className="text-right col-span-1">Type</Label>
-                    <Select
-                      name="type"
-                      value={newTransaction.type}
-                      onValueChange={(value) => handleFormChange({ target: { name: "type", value } } as React.ChangeEvent<HTMLSelectElement>)}
-                    >
-                      <SelectTrigger className="col-span-4">
-                        <SelectValue placeholder="Select transaction type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Buy">Buy</SelectItem>
-                        <SelectItem value="Sell">Sell</SelectItem>
-                        <SelectItem value="Send">Send</SelectItem>
-                        <SelectItem value="Receive">Receive</SelectItem>
-                        <SelectItem value="Swap">Swap</SelectItem>
-                        <SelectItem value="Stake">Stake</SelectItem>
-                        <SelectItem value="Unstake">Unstake</SelectItem>
-                        <SelectItem value="DCA">DCA</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="exchange" className="text-right col-span-1">Exchange/Wallet</Label>
-                    <Input id="exchange" name="exchange" placeholder="Coinbase, Binance, etc." value={newTransaction.exchange} onChange={handleFormChange} className="col-span-4" />
-                  </div>
-                  <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="asset" className="text-right col-span-1">Asset</Label>
-                    <Input id="asset" name="asset" placeholder="BTC, ETH, etc." value={newTransaction.asset} onChange={handleFormChange} className="col-span-4" />
-                  </div>
-                  <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="amount" className="text-right col-span-1">Amount</Label>
-                    <Input id="amount" name="amount" placeholder="1.5" type="number" step="0.000001" value={newTransaction.amount} onChange={handleFormChange} className="col-span-4" />
-                  </div>
-                  <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="price" className="text-right col-span-1">Price</Label>
-                    <div className="relative col-span-4">
-                      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                        <span className="text-gray-500">$</span>
-                      </div>
-                      <Input id="price" name="price" placeholder="30000.00" type="number" step="0.01" value={newTransaction.price} onChange={handleFormChange} className="pl-8" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="date" className="text-right col-span-1">Date & Time</Label>
-                    <div className="col-span-4 flex gap-2">
-                      <div className="relative flex-1">
-                        <Calendar className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
-                        <Input id="date" name="date" type="date" value={newTransaction.date} onChange={handleFormChange} className="pl-8" />
-                      </div>
-                      <Input id="time" name="time" type="time" value={newTransaction.time} onChange={handleFormChange} className="w-32" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-5 items-center gap-4">
-                    <Label htmlFor="value" className="text-right col-span-1">Value</Label>
-                    <div className="relative col-span-4">
-                      <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                        <span className="text-gray-500">$</span>
-                      </div>
-                      <Input id="value" name="value" placeholder="1500.00" type="number" step="0.01" value={newTransaction.value} onChange={handleFormChange} className="pl-8" />
-                    </div>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button type="button" variant="outline" onClick={() => setIsAddTransactionOpen(false)}>Cancel</Button>
-                  <Button type="button" onClick={handleAddTransaction}>Add Transaction</Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-
             {/* Overflow menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -1599,6 +1519,86 @@ function TransactionsContent() {
             </Button>
           </div>
         </div>
+
+        {/* Add Transaction Dialog (rendered at page level to avoid focus trap conflicts) */}
+        <Dialog open={isAddTransactionOpen} onOpenChange={setIsAddTransactionOpen}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>Add New Transaction</DialogTitle>
+              <DialogDescription>
+                Enter the details of your transaction below.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-5 items-center gap-4">
+                <Label htmlFor="type" className="text-right col-span-1">Type</Label>
+                <Select
+                  name="type"
+                  value={newTransaction.type}
+                  onValueChange={(value) => handleFormChange({ target: { name: "type", value } } as React.ChangeEvent<HTMLSelectElement>)}
+                >
+                  <SelectTrigger className="col-span-4">
+                    <SelectValue placeholder="Select transaction type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Buy">Buy</SelectItem>
+                    <SelectItem value="Sell">Sell</SelectItem>
+                    <SelectItem value="Send">Send</SelectItem>
+                    <SelectItem value="Receive">Receive</SelectItem>
+                    <SelectItem value="Swap">Swap</SelectItem>
+                    <SelectItem value="Stake">Stake</SelectItem>
+                    <SelectItem value="Unstake">Unstake</SelectItem>
+                    <SelectItem value="DCA">DCA</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-5 items-center gap-4">
+                <Label htmlFor="exchange" className="text-right col-span-1">Exchange/Wallet</Label>
+                <Input id="exchange" name="exchange" placeholder="Coinbase, Binance, etc." value={newTransaction.exchange} onChange={handleFormChange} className="col-span-4" />
+              </div>
+              <div className="grid grid-cols-5 items-center gap-4">
+                <Label htmlFor="asset" className="text-right col-span-1">Asset</Label>
+                <Input id="asset" name="asset" placeholder="BTC, ETH, etc." value={newTransaction.asset} onChange={handleFormChange} className="col-span-4" />
+              </div>
+              <div className="grid grid-cols-5 items-center gap-4">
+                <Label htmlFor="amount" className="text-right col-span-1">Amount</Label>
+                <Input id="amount" name="amount" placeholder="1.5" type="number" step="0.000001" value={newTransaction.amount} onChange={handleFormChange} className="col-span-4" />
+              </div>
+              <div className="grid grid-cols-5 items-center gap-4">
+                <Label htmlFor="price" className="text-right col-span-1">Price</Label>
+                <div className="relative col-span-4">
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <span className="text-gray-500">$</span>
+                  </div>
+                  <Input id="price" name="price" placeholder="30000.00" type="number" step="0.01" value={newTransaction.price} onChange={handleFormChange} className="pl-8" />
+                </div>
+              </div>
+              <div className="grid grid-cols-5 items-center gap-4">
+                <Label htmlFor="date" className="text-right col-span-1">Date & Time</Label>
+                <div className="col-span-4 flex gap-2">
+                  <div className="relative flex-1">
+                    <Calendar className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    <Input id="date" name="date" type="date" value={newTransaction.date} onChange={handleFormChange} className="pl-8" />
+                  </div>
+                  <Input id="time" name="time" type="time" value={newTransaction.time} onChange={handleFormChange} className="w-32" />
+                </div>
+              </div>
+              <div className="grid grid-cols-5 items-center gap-4">
+                <Label htmlFor="value" className="text-right col-span-1">Value</Label>
+                <div className="relative col-span-4">
+                  <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <span className="text-gray-500">$</span>
+                  </div>
+                  <Input id="value" name="value" placeholder="1500.00" type="number" step="0.01" value={newTransaction.value} onChange={handleFormChange} className="pl-8" />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsAddTransactionOpen(false)}>Cancel</Button>
+              <Button type="button" onClick={handleAddTransaction}>Add Transaction</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Delete All Dialog */}
         <Dialog open={isDeleteAllOpen} onOpenChange={setIsDeleteAllOpen}>
