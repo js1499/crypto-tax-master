@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { name, address, provider, chains } = body;
+    const { name, address, provider, chains, exclusive } = body;
 
     // Validate required fields
     if (!name || !address || !provider) {
@@ -145,15 +145,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Check if wallet already belongs to a different user
-    const existing = await prisma.wallet.findUnique({
-      where: { address_provider: { address, provider } },
-    });
-    if (existing && existing.userId !== user.id) {
-      return NextResponse.json(
-        { error: "This wallet is already connected to another account" },
-        { status: 409 }
-      );
+    // Only enforce exclusivity if requested
+    if (exclusive) {
+      const existing = await prisma.wallet.findUnique({
+        where: { address_provider: { address, provider } },
+      });
+      if (existing && existing.userId !== user.id) {
+        return NextResponse.json(
+          { error: "This wallet is already connected to another account" },
+          { status: 409 }
+        );
+      }
     }
 
     // Create or update wallet (upsert to avoid duplicates)

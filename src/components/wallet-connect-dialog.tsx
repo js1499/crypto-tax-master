@@ -39,9 +39,10 @@ const EXCHANGE_OPTIONS = [
 
 interface WalletConnectDialogProps {
   onConnect?: (provider: string, data: ConnectionResult) => void;
+  exclusive?: boolean;
 }
 
-export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
+export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialogProps) {
   const [connecting, setConnecting] = useState(false);
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
   const [selectedExchange, setSelectedExchange] = useState<string | null>(null);
@@ -91,6 +92,7 @@ export function WalletConnectDialog({ onConnect }: WalletConnectDialogProps) {
         name: walletName,
         address: selectedWallet === "evm" ? walletAddress.toLowerCase() : walletAddress,
         provider: selectedWallet === "evm" ? "evm" : selectedWallet,
+        exclusive,
       };
       if (selectedWallet === "evm") body.chains = selectedChains.join(",");
 
