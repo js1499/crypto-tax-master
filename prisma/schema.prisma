@@ -131,6 +131,7 @@ model Transaction {
   gain_loss_usd          Decimal? @db.Decimal(30, 15)
   is_income              Boolean  @default(false)
   helius_raw_id          Int?
+  edit_version           Int      @default(0)
   userId                 String?  @map("user_id")
 
   heliusRaw              HeliusRawTransaction? @relation(fields: [helius_raw_id], references: [id])
@@ -196,4 +197,20 @@ model OhlcvMintCache {
   checked_at   DateTime @default(now()) @db.Timestamptz(6)
 
   @@map("ohlcv_mint_cache")
+}
+
+model TransactionEditHistory {
+  id            Int      @id @default(autoincrement())
+  transactionId Int      @map("transaction_id")
+  version       Int
+  fieldName     String   @map("field_name") @db.VarChar(50)
+  oldValue      String?  @map("old_value")
+  newValue      String?  @map("new_value")
+  editedAt      DateTime @default(now()) @map("edited_at") @db.Timestamptz(6)
+  editedBy      String?  @map("edited_by")
+  isRevert      Boolean  @default(false) @map("is_revert")
+
+  @@index([transactionId])
+  @@index([transactionId, version])
+  @@map("transaction_edit_history")
 }

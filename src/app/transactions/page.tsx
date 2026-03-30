@@ -137,6 +137,7 @@ interface Transaction {
   incomingAsset?: string | null;
   incomingAmount?: number | null;
   incomingValueUsd?: number | null;
+  editVersion?: number;
   [key: string]: any;
 }
 
@@ -232,6 +233,16 @@ function TransactionsContent() {
   // Bulk selection state
   const [selectedTransactionIds, setSelectedTransactionIds] = useState<Set<number>>(new Set());
   const [isBulkMode, setIsBulkMode] = useState(false);
+
+  // Edit history state
+  const [editHistory, setEditHistory] = useState<Array<{
+    version: number;
+    editedAt: string;
+    isRevert: boolean;
+    changes: Array<{ fieldName: string; oldValue: string | null; newValue: string | null }>;
+  }>>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
   // Duplicate detection state
   const [duplicates, setDuplicates] = useState<Array<{ ids: number[]; reason: string; similarity: number }>>([]);
@@ -411,6 +422,7 @@ function TransactionsContent() {
             incomingAsset: tx.incomingAsset ?? null,
             incomingAmount: tx.incomingAmount ?? null,
             incomingValueUsd: tx.incomingValueUsd ?? null,
+            editVersion: tx.editVersion ?? tx.edit_version ?? 0,
           }));
 
           setTransactions(apiTransactions);
@@ -953,6 +965,8 @@ function TransactionsContent() {
   const handleOpenDetail = (transaction: Transaction) => {
     setSelectedTransaction(transaction);
     setNotesValue(transaction.notes || "");
+    setEditHistory([]);
+    setShowHistory(false);
     setIsDetailSheetOpen(true);
   };
 
@@ -985,6 +999,71 @@ function TransactionsContent() {
     } catch (error) {
       console.error("Error saving notes:", error);
       toast.error("Failed to save notes");
+    }
+  };
+
+  // Fetch edit history for a transaction
+  const fetchEditHistory = async (transactionId: number) => {
+    setIsHistoryLoading(true);
+    try {
+      const response = await fetch(`/api/transactions/${transactionId}/history`);
+      if (response.ok) {
+        const data = await response.json();
+        setEditHistory(data.history || []);
+      }
+    } catch (error) {
+      console.error("Error fetching history:", error);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  // Undo last edit
+  const handleUndoLastEdit = async (transactionId: number) => {
+    try {
+      const response = await fetch(`/api/transactions/${transactionId}/revert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ undo: true }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        toast.success("Edit reverted successfully");
+        // Refresh the transaction in the list
+        setCurrentPage(currentPage);
+        if (selectedTransaction?.id === transactionId) {
+          setSelectedTransaction(data.transaction);
+        }
+      } else {
+        const err = await response.json();
+        toast.error(err.error || "Failed to revert");
+      }
+    } catch {
+      toast.error("Failed to revert edit");
+    }
+  };
+
+  // Revert to a specific version
+  const handleRevertToVersion = async (transactionId: number, version: number) => {
+    try {
+      const response = await fetch(`/api/transactions/${transactionId}/revert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetVersion: version }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        toast.success(`Reverted to version ${version}`);
+        setCurrentPage(currentPage);
+        if (selectedTransaction?.id === transactionId) {
+          setSelectedTransaction(data.transaction);
+          fetchEditHistory(transactionId);
+        }
+      } else {
+        toast.error("Failed to revert");
+      }
+    } catch {
+      toast.error("Failed to revert");
     }
   };
 
@@ -2784,6 +2863,77 @@ function TransactionsContent() {
                       </div>
                     </div>
                   )}
+
+                  {/* Edit History */}
+                  <div className="border-t pt-4 mt-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <button
+                        onClick={() => {
+                          setShowHistory(!showHistory);
+                          if (!showHistory && editHistory.length === 0) {
+                            fetchEditHistory(selectedTransaction.id);
+                          }
+                        }}
+                        className="text-[13px] font-medium text-[#6B7280] hover:text-[#1A1A1A] transition-colors flex items-center gap-1"
+                      >
+                        <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showHistory && "rotate-180")} />
+                        Edit History
+                      </button>
+                      {(selectedTransaction.editVersion ?? 0) > 0 && (
+                        <button
+                          onClick={() => handleUndoLastEdit(selectedTransaction.id)}
+                          className="text-[12px] text-[#2563EB] hover:underline"
+                        >
+                          Undo last edit
+                        </button>
+                      )}
+                    </div>
+                    {showHistory && (
+                      <div className="space-y-3">
+                        {isHistoryLoading ? (
+                          <div className="text-[12px] text-[#9CA3AF]">Loading history...</div>
+                        ) : editHistory.length === 0 ? (
+                          <div className="text-[12px] text-[#9CA3AF]">No edit history</div>
+                        ) : (
+                          editHistory.map((entry) => (
+                            <div key={entry.version} className="border rounded-lg p-3 text-[12px]">
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[#9CA3AF]">
+                                    {new Date(entry.editedAt).toLocaleDateString()} {new Date(entry.editedAt).toLocaleTimeString()}
+                                  </span>
+                                  {entry.isRevert && (
+                                    <span className="inline-flex items-center rounded-full bg-[#FFF7ED] text-[#EA580C] px-2 py-0.5 text-[10px] font-medium">
+                                      Revert
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => handleRevertToVersion(selectedTransaction.id, entry.version - 1)}
+                                  className="text-[11px] text-[#9CA3AF] hover:text-[#2563EB] transition-colors"
+                                >
+                                  Revert to before this
+                                </button>
+                              </div>
+                              <div className="space-y-1">
+                                {entry.changes.map((change, i) => (
+                                  <div key={i} className="text-[#6B7280]">
+                                    <span className="font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">
+                                      {change.fieldName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                    </span>
+                                    {': '}
+                                    <span className="text-[#DC2626] line-through">{change.oldValue ?? 'null'}</span>
+                                    {' → '}
+                                    <span className="text-[#16A34A]">{change.newValue ?? 'null'}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                   {/* Actions */}
                   <div className="flex gap-2 pt-4 border-t">

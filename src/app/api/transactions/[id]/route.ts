@@ -7,6 +7,7 @@ import * as Sentry from "@sentry/nextjs";
 import { Decimal } from "@prisma/client/runtime/library";
 import { isOutflow } from "@/lib/transaction-categorizer";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
+import { diffChanges, recordEditHistory } from "@/lib/transaction-history";
 
 /**
  * PATCH /api/transactions/:id
@@ -125,6 +126,14 @@ export async function PATCH(
       updateData.tx_timestamp = new Date(body.tx_timestamp);
     }
 
+    // Record edit history
+    const changes = diffChanges(transaction, updateData);
+    const newVersion = (transaction.edit_version ?? 0) + 1;
+    if (changes.length > 0) {
+      await recordEditHistory(transaction.id, newVersion, changes, user.id);
+      updateData.edit_version = newVersion;
+    }
+
     // Update transaction
     const updatedTransaction = await prisma.transaction.update({
       where: { id: transactionId },
@@ -146,6 +155,7 @@ export async function PATCH(
         incoming_asset_symbol: true,
         incoming_amount_value: true,
         incoming_value_usd: true,
+        edit_version: true,
       },
     });
 
@@ -186,6 +196,7 @@ export async function PATCH(
         incomingAsset: updatedTransaction.incoming_asset_symbol || null,
         incomingAmount: updatedTransaction.incoming_amount_value ? Number(updatedTransaction.incoming_amount_value) : null,
         incomingValueUsd: updatedTransaction.incoming_value_usd ? Number(updatedTransaction.incoming_value_usd) : null,
+        editVersion: updatedTransaction.edit_version,
       },
     });
   } catch (error) {
