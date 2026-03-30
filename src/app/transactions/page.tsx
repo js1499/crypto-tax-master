@@ -1432,34 +1432,20 @@ function TransactionsContent() {
               </>
             )}
 
-            <div className="flex items-center gap-1.5 mr-1">
-              <button
-                onClick={() => setPerWalletTracking(!perWalletTracking)}
-                className={cn(
-                  "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-                  perWalletTracking ? "bg-[#2563EB]" : "bg-[#E5E5E0] dark:bg-[#333]"
-                )}
-                title={perWalletTracking
-                  ? "Per-wallet tracking: each wallet maintains its own cost basis lots (IRS 2025+ requirement)"
-                  : "Universal tracking: cost basis lots shared across all wallets (pre-2025 method)"}
-              >
-                <span className={cn(
-                  "inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform",
-                  perWalletTracking ? "translate-x-[18px]" : "translate-x-[3px]"
-                )} />
-              </button>
-              <span className="text-[11px] text-[#9CA3AF]" title="Per-wallet: each wallet tracks its own cost basis (IRS 2025+). Universal: lots shared across wallets (pre-2025).">
-                {perWalletTracking ? "Per-Wallet" : "Universal"}
-              </span>
-            </div>
-            <Button variant="outline" onClick={handleExport} disabled={isExporting}>
-              {isExporting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Download className="mr-2 h-4 w-4" />
+            <button
+              onClick={() => setPerWalletTracking(!perWalletTracking)}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-lg border h-9 px-3 text-[12px] font-medium transition-colors",
+                perWalletTracking
+                  ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)]"
+                  : "border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF] hover:text-[#6B7280]"
               )}
-              <span>{isExporting ? "Exporting..." : "Export"}</span>
-            </Button>
+              title={perWalletTracking
+                ? "Per-wallet: each wallet tracks its own cost basis (IRS 2025+ requirement)"
+                : "Universal: cost basis lots shared across all wallets (pre-2025 method)"}
+            >
+              {perWalletTracking ? "Per-Wallet" : "Universal"}
+            </button>
 
             <Button variant="outline" onClick={handleComputeCostBasis} disabled={isComputingCostBasis}>
               {isComputingCostBasis ? (
@@ -1490,14 +1476,8 @@ function TransactionsContent() {
               </SheetContent>
             </Sheet>
 
-            {/* Add Transaction Dialog */}
+            {/* Add Transaction Dialog (triggered from menu) */}
             <Dialog open={isAddTransactionOpen} onOpenChange={setIsAddTransactionOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  <span>Add</span>
-                </Button>
-              </DialogTrigger>
               <DialogContent className="sm:max-w-[600px]">
                 <DialogHeader>
                   <DialogTitle>Add New Transaction</DialogTitle>
@@ -1553,7 +1533,7 @@ function TransactionsContent() {
                     <Label htmlFor="date" className="text-right col-span-1">Date & Time</Label>
                     <div className="col-span-4 flex gap-2">
                       <div className="relative flex-1">
-                        <CalendarComponent className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Calendar className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                         <Input id="date" name="date" type="date" value={newTransaction.date} onChange={handleFormChange} className="pl-8" />
                       </div>
                       <Input id="time" name="time" type="time" value={newTransaction.time} onChange={handleFormChange} className="w-32" />
@@ -1584,6 +1564,14 @@ function TransactionsContent() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setIsAddTransactionOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Transaction
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExport} disabled={isExporting}>
+                  <Download className="mr-2 h-4 w-4" />
+                  {isExporting ? "Exporting..." : "Export CSV"}
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => { setIsBulkMode(!isBulkMode); setSelectedTransactionIds(new Set()); }}>
                   {isBulkMode ? <CheckSquare className="mr-2 h-4 w-4" /> : <Square className="mr-2 h-4 w-4" />}
                   {isBulkMode ? "Exit Bulk Mode" : "Bulk Select"}
