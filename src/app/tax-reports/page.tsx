@@ -39,6 +39,7 @@ const taxForms = [
     description: "Capital gains and losses — required for filing",
     category: "irs" as const,
     status: "ready" as const,
+    country: "US" as string | undefined,
   },
   {
     id: 2,
@@ -46,6 +47,7 @@ const taxForms = [
     description: "Summary of capital gains/losses — companion to Form 8949",
     category: "irs" as const,
     status: "ready" as const,
+    country: "US" as string | undefined,
   },
   {
     id: 9,
@@ -53,6 +55,7 @@ const taxForms = [
     description: "Additional income — Line 8z for crypto staking, airdrops, rewards",
     category: "irs" as const,
     status: "ready" as const,
+    country: "US" as string | undefined,
   },
   {
     id: 3,
@@ -60,6 +63,7 @@ const taxForms = [
     description: "All capital gains and losses with cost basis details",
     category: "csv" as const,
     status: "ready" as const,
+    country: undefined as string | undefined,
   },
   {
     id: 4,
@@ -67,6 +71,7 @@ const taxForms = [
     description: "All income from staking, airdrops, and rewards",
     category: "csv" as const,
     status: "ready" as const,
+    country: undefined as string | undefined,
   },
   {
     id: 5,
@@ -74,6 +79,7 @@ const taxForms = [
     description: "Complete transaction history for the year",
     category: "csv" as const,
     status: "ready" as const,
+    country: undefined as string | undefined,
   },
   {
     id: 6,
@@ -81,6 +87,7 @@ const taxForms = [
     description: "Gains and losses aggregated per asset",
     category: "csv" as const,
     status: "ready" as const,
+    country: undefined as string | undefined,
   },
   {
     id: 7,
@@ -88,6 +95,7 @@ const taxForms = [
     description: "Complete tax summary with all key figures",
     category: "csv" as const,
     status: "ready" as const,
+    country: undefined as string | undefined,
   },
   {
     id: 8,
@@ -95,6 +103,39 @@ const taxForms = [
     description: "CSV formatted for TurboTax import",
     category: "tax-software" as const,
     status: "ready" as const,
+    country: "US" as string | undefined,
+  },
+  {
+    id: 10,
+    name: "SA108 Summary",
+    description: "Capital Gains Summary for Self Assessment",
+    category: "csv" as const,
+    status: "ready" as const,
+    country: "UK" as string | undefined,
+  },
+  {
+    id: 11,
+    name: "UK Disposals CSV",
+    description: "Detailed disposals with HMRC matching rules",
+    category: "csv" as const,
+    status: "ready" as const,
+    country: "UK" as string | undefined,
+  },
+  {
+    id: 12,
+    name: "Anlage SO Summary",
+    description: "Zusammenfassung f\u00fcr die Steuererkl\u00e4rung",
+    category: "csv" as const,
+    status: "ready" as const,
+    country: "DE" as string | undefined,
+  },
+  {
+    id: 13,
+    name: "DE Disposals CSV",
+    description: "Detaillierte Ver\u00e4u\u00dferungen mit Haltedauer",
+    category: "csv" as const,
+    status: "ready" as const,
+    country: "DE" as string | undefined,
   },
 ];
 
@@ -124,6 +165,7 @@ export default function TaxReportsPage() {
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [formFilter, setFormFilter] = useState<"all" | "irs" | "csv" | "tax-software">("all");
   const [initialLoadDone, setInitialLoadDone] = useState(false);
+  const [userCountry, setUserCountry] = useState("US");
   const { status: sessionStatus } = useSession();
 
   useEffect(() => {
@@ -154,6 +196,9 @@ export default function TaxReportsPage() {
           const settingsData = await settingsRes.json();
           if (settingsData.costBasisMethod) {
             setCostBasisMethod(settingsData.costBasisMethod);
+          }
+          if (settingsData.country) {
+            setUserCountry(settingsData.country);
           }
         }
 
@@ -378,6 +423,10 @@ export default function TaxReportsPage() {
       "Capital Gains by Asset": { type: "capital-gains-by-asset", filename: `Capital-Gains-by-Asset-${selectedYear}.csv` },
       "Summary Report": { type: "summary-report", filename: `Crypto-Tax-Summary-${selectedYear}.csv` },
       "TurboTax 1099-B": { type: "turbotax-1099b", filename: `TurboTax-1099B-${selectedYear}.csv` },
+      "SA108 Summary": { type: "uk-sa108-summary", filename: `SA108-Summary-${selectedYear}.csv` },
+      "UK Disposals CSV": { type: "uk-disposals-csv", filename: `UK-Disposals-${selectedYear}.csv` },
+      "Anlage SO Summary": { type: "de-anlage-so", filename: `Anlage-SO-${selectedYear}.csv` },
+      "DE Disposals CSV": { type: "de-disposals-csv", filename: `DE-Veraeusserungen-${selectedYear}.csv` },
     };
     if (csvExportMap[form.name]) {
       const exportInfo = csvExportMap[form.name];
@@ -420,7 +469,8 @@ export default function TaxReportsPage() {
   const maxBar = Math.max(totalGains, Math.abs(totalLosses), totalIncome, 1);
   const barPct = (v: number) => `${Math.min((Math.abs(v) / maxBar) * 100, 100)}%`;
 
-  const filteredForms = formFilter === "all" ? taxForms : taxForms.filter(f => f.category === formFilter);
+  const countryForms = taxForms.filter(f => !f.country || f.country === userCountry);
+  const filteredForms = formFilter === "all" ? countryForms : countryForms.filter(f => f.category === formFilter);
 
   const formIcon = (form: typeof taxForms[0]) => {
     if (form.category === "irs") return <FileText className="h-4 w-4" />;

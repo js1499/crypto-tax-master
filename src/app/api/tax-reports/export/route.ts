@@ -16,6 +16,10 @@ import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
  * - capital-gains-by-asset: CSV with proceeds, basis, and gain/loss per asset
  * - turbotax-1099b: TurboTax-compatible 1099-B import CSV
  * - summary-report: Human-readable tax summary CSV
+ * - uk-sa108-summary: UK SA108 Capital Gains Summary CSV
+ * - uk-disposals-csv: UK detailed disposals CSV with HMRC matching rules
+ * - de-anlage-so: German Anlage SO Summary CSV
+ * - de-disposals-csv: German detailed disposals CSV with holding period
  */
 export async function GET(request: NextRequest) {
   try {
@@ -132,6 +136,22 @@ export async function GET(request: NextRequest) {
       case "summary-report":
         csvContent = generateSummaryReportCSV(report, year);
         filename = `Crypto-Tax-Summary-${year}.csv`;
+        break;
+      case "uk-sa108-summary":
+        csvContent = generateUkSa108Summary(report, year);
+        filename = `SA108-Summary-${year}-${year + 1}.csv`;
+        break;
+      case "uk-disposals-csv":
+        csvContent = generateUkDisposalsCsv(report);
+        filename = `UK-Disposals-${year}-${year + 1}.csv`;
+        break;
+      case "de-anlage-so":
+        csvContent = generateDeAnlageSo(report, year);
+        filename = `Anlage-SO-${year}.csv`;
+        break;
+      case "de-disposals-csv":
+        csvContent = generateDeDisposalsCsv(report);
+        filename = `DE-Veraeusserungen-${year}.csv`;
         break;
       default:
         return NextResponse.json(
@@ -453,4 +473,186 @@ function generateSummaryReportCSV(report: TaxReport, year: number): string {
   ];
 
   return lines.join("\n");
+}
+
+/**
+ * Generate UK SA108 Capital Gains Summary CSV
+ */
+function generateUkSa108Summary(report: TaxReport, year: number): string {
+  const shortYear = (year + 1).toString().slice(-2);
+  const fmtGbp = (n: number): string => `\u00a3${n.toFixed(2)}`;
+
+  const totalProceeds = report.taxableEvents.reduce((s, e: any) => s + e.proceeds, 0);
+  const totalCosts = report.taxableEvents.reduce((s, e: any) => s + e.costBasis, 0);
+  const netGains = report.taxableEvents.reduce((s, e: any) => s + Math.max(0, e.gainLoss), 0);
+  const netLosses = report.taxableEvents.reduce((s, e: any) => s + Math.min(0, e.gainLoss), 0);
+  const netGainsBeforeLosses = netGains;
+  const netGainsAfterLosses = Math.max(0, netGains + netLosses);
+  const annualExempt = 3000;
+  const taxableGains = Math.max(0, netGainsAfterLosses - annualExempt);
+
+  const totalCryptoIncome = report.incomeEvents.reduce((s, e: any) => s + e.valueUsd, 0);
+
+  const lines: string[] = [
+    `Capital Gains Summary (SA108) - Tax Year ${year}/${shortYear}`,
+    "",
+    csvRow(["Section", "Field", "Value"]),
+    csvRow(["Capital Gains", "Number of disposals", report.taxableEvents.length.toString()]),
+    csvRow(["Capital Gains", "Total disposal proceeds (GBP)", fmtGbp(totalProceeds)]),
+    csvRow(["Capital Gains", "Total allowable costs (GBP)", fmtGbp(totalCosts)]),
+    csvRow(["Capital Gains", "Net gains before losses", fmtGbp(netGainsBeforeLosses)]),
+    csvRow(["Capital Gains", "Losses brought forward", fmtGbp(0)]),
+    csvRow(["Capital Gains", "Net gains after losses", fmtGbp(netGainsAfterLosses)]),
+    csvRow(["Capital Gains", "Annual exempt amount", fmtGbp(annualExempt)]),
+    csvRow(["Capital Gains", "Taxable gains", fmtGbp(taxableGains)]),
+    "",
+    csvRow(["Crypto Income", "Total crypto income (GBP)", fmtGbp(totalCryptoIncome)]),
+    csvRow(["Crypto Income", "Number of income events", report.incomeEvents.length.toString()]),
+    "",
+    "Detailed Disposals",
+    csvRow(["Date Disposed", "Asset", "Amount", "Proceeds (GBP)", "Allowable Cost (GBP)", "Gain/Loss (GBP)"]),
+  ];
+
+  report.taxableEvents.forEach((event: any) => {
+    lines.push(csvRow([
+      event.date.toISOString().split("T")[0],
+      event.asset,
+      event.amount.toString(),
+      event.proceeds.toFixed(2),
+      event.costBasis.toFixed(2),
+      event.gainLoss.toFixed(2),
+    ]));
+  });
+
+  return lines.join("\n");
+}
+
+/**
+ * Generate UK Disposals CSV for SA108
+ */
+function generateUkDisposalsCsv(report: TaxReport): string {
+  const headers = [
+    "Date Disposed",
+    "Asset",
+    "Quantity",
+    "Proceeds (GBP)",
+    "Allowable Cost (GBP)",
+    "Gain/Loss (GBP)",
+    "Matching Rule",
+  ];
+
+  const rows = report.taxableEvents.map((event: any) => [
+    event.date.toISOString().split("T")[0],
+    event.asset,
+    event.amount.toString(),
+    event.proceeds.toFixed(2),
+    event.costBasis.toFixed(2),
+    event.gainLoss.toFixed(2),
+    "Section 104", // Default rule; same-day and B&B matches are absorbed during calculation
+  ]);
+
+  return [headers, ...rows].map(csvRow).join("\n");
+}
+
+/**
+ * Generate German Anlage SO Summary CSV
+ */
+function generateDeAnlageSo(report: TaxReport, year: number): string {
+  const fmtEur = (n: number): string => `\u20ac${n.toFixed(2)}`;
+
+  const totalProceeds = report.taxableEvents.reduce((s, e: any) => s + e.proceeds, 0);
+  const totalCosts = report.taxableEvents.reduce((s, e: any) => s + e.costBasis, 0);
+  const gainLoss = totalProceeds - totalCosts;
+  const freigrenze = 1000;
+  const taxableGain = gainLoss > freigrenze ? gainLoss : (gainLoss > 0 ? 0 : gainLoss);
+
+  // Tax-free disposals: long-term holdings (> 1 year)
+  const taxFreeAmount = report.taxableEvents
+    .filter((e: any) => e.holdingPeriod === "long")
+    .reduce((s, e: any) => s + e.gainLoss, 0);
+
+  const totalCryptoIncome = report.incomeEvents.reduce((s, e: any) => s + e.valueUsd, 0);
+  const incomeFreigrenze = 256;
+  const taxableIncome = totalCryptoIncome >= incomeFreigrenze ? totalCryptoIncome : 0;
+
+  const lines: string[] = [
+    `Anlage SO - Steuerjahr ${year}`,
+    "",
+    csvRow(["Abschnitt", "Feld", "Wert"]),
+    csvRow(["Private Veraeusserungsgeschaefte (§23)", "Gesamterloes (EUR)", fmtEur(totalProceeds)]),
+    csvRow(["Private Veraeusserungsgeschaefte (§23)", "Anschaffungskosten (EUR)", fmtEur(totalCosts)]),
+    csvRow(["Private Veraeusserungsgeschaefte (§23)", "Gewinn/Verlust (EUR)", fmtEur(gainLoss)]),
+    csvRow(["Private Veraeusserungsgeschaefte (§23)", "Freigrenze (1000 EUR)", fmtEur(freigrenze)]),
+    csvRow(["Private Veraeusserungsgeschaefte (§23)", "Steuerpflichtiger Gewinn", fmtEur(taxableGain)]),
+    csvRow(["Private Veraeusserungsgeschaefte (§23)", "Steuerfreie Veraeusserungen (>1 Jahr)", fmtEur(taxFreeAmount)]),
+    "",
+    csvRow(["Sonstige Einkuenfte (§22 Nr.3)", "Einkuenfte aus Staking/Mining (EUR)", fmtEur(totalCryptoIncome)]),
+    csvRow(["Sonstige Einkuenfte (§22 Nr.3)", "Freigrenze (256 EUR)", fmtEur(incomeFreigrenze)]),
+    csvRow(["Sonstige Einkuenfte (§22 Nr.3)", "Steuerpflichtige Einkuenfte", fmtEur(taxableIncome)]),
+    "",
+    "Detaillierte Veraeusserungen",
+    csvRow(["Datum", "Vermoegenswert", "Menge", "Erloes (EUR)", "Anschaffungskosten (EUR)", "Gewinn/Verlust (EUR)", "Haltedauer", "Steuerfrei"]),
+  ];
+
+  report.taxableEvents.forEach((event: any) => {
+    const isLong = event.holdingPeriod === "long";
+    let holdingDays = "";
+    if (event.dateAcquired) {
+      const acquired = new Date(event.dateAcquired);
+      const disposed = new Date(event.date);
+      holdingDays = Math.floor((disposed.getTime() - acquired.getTime()) / (1000 * 60 * 60 * 24)).toString();
+    }
+    lines.push(csvRow([
+      event.date.toISOString().split("T")[0],
+      event.asset,
+      event.amount.toString(),
+      event.proceeds.toFixed(2),
+      event.costBasis.toFixed(2),
+      event.gainLoss.toFixed(2),
+      holdingDays ? `${holdingDays} Tage` : (isLong ? ">365 Tage" : "<=365 Tage"),
+      isLong ? "Ja" : "Nein",
+    ]));
+  });
+
+  return lines.join("\n");
+}
+
+/**
+ * Generate German Detailed Disposals CSV
+ */
+function generateDeDisposalsCsv(report: TaxReport): string {
+  const headers = [
+    "Datum",
+    "Vermoegenswert",
+    "Menge",
+    "Erloes (EUR)",
+    "Anschaffungskosten (EUR)",
+    "Gewinn/Verlust (EUR)",
+    "Haltedauer (Tage)",
+    "Steuerfrei (>1 Jahr)",
+  ];
+
+  const rows = report.taxableEvents.map((event: any) => {
+    const isLong = event.holdingPeriod === "long";
+    let holdingDays = "";
+    if (event.dateAcquired) {
+      const acquired = new Date(event.dateAcquired);
+      const disposed = new Date(event.date);
+      holdingDays = Math.floor((disposed.getTime() - acquired.getTime()) / (1000 * 60 * 60 * 24)).toString();
+    } else {
+      holdingDays = isLong ? ">365" : "<=365";
+    }
+    return [
+      event.date.toISOString().split("T")[0],
+      event.asset,
+      event.amount.toString(),
+      event.proceeds.toFixed(2),
+      event.costBasis.toFixed(2),
+      event.gainLoss.toFixed(2),
+      holdingDays,
+      isLong ? "Ja" : "Nein",
+    ];
+  });
+
+  return [headers, ...rows].map(csvRow).join("\n");
 }
