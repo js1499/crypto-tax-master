@@ -661,7 +661,8 @@ export async function calculateTaxReport(
   // are shared across chains. allTransactions is already sorted chronologically.
   debugLog(`[Tax Calculator] Processing ${allTransactions.length} transactions (unified across all chains)`);
 
-  const perWallet = year >= 2025;
+  // Germany uses universal FIFO per-token. Per-wallet is US-only (IRS 2025+).
+  const perWallet = country === "DE" ? false : year >= 2025;
   const unifiedReport = country === "UK"
     ? processTransactionsForTaxUK(
         allTransactions,
@@ -993,7 +994,8 @@ export function computeCostBasisForTransactions(
     ? Math.max(...transactions.map(tx => tx.tx_timestamp.getFullYear()))
     : 9999;
 
-  const perWallet = perWalletOverride !== undefined ? perWalletOverride : maxYear >= 2025;
+  // Germany uses universal FIFO per-token (not per-wallet). Per-wallet is US-only (IRS 2025+).
+  const perWallet = country === "DE" ? false : (perWalletOverride !== undefined ? perWalletOverride : maxYear >= 2025);
   if (country === "UK") {
     processTransactionsForTaxUK(transactions, maxYear, walletAddresses, resultMap, "Europe/London");
   } else {

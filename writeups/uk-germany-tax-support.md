@@ -125,14 +125,27 @@ Tax authorities require reporting in local currency. The FX conversion uses ECB 
 ### Income Classification
 The distinction between earned and random airdrops matters for UK and German users. Our income detection rules inherently only flag earned interactions (explicit claims, known airdrop programs, vesting contracts), which is the correct treatment for all three jurisdictions. Random token receipts are not flagged as income for any country.
 
+### Transaction Fees and Gas Costs
+Fees are handled correctly for all jurisdictions. For acquisitions (buys, margin buys), the fee is added to the cost basis (increasing allowable cost). For disposals (sells, swaps, sends), the fee is deducted from proceeds (reducing the taxable gain). This matches the HMRC treatment of fees as "allowable costs" (CRYPTO22250) and the German treatment of fees as Anschaffungsnebenkosten (incidental acquisition costs) for buys and Werbungskosten (advertising costs) for income. CSV imports skip fee adjustment since the imported values are assumed to already be net of fees.
+
+### Token-to-Token Swaps
+All three engines (US FIFO, UK share pooling, German FIFO) decompose swaps into two events: a disposal of the outgoing token and an acquisition of the incoming token. For example, swapping 1 ETH for 2,000 USDC is treated as selling 1 ETH (at the swap's USD value) and buying 2,000 USDC (at the same value). The outgoing side generates a taxable gain or loss; the incoming side creates a new cost basis lot (US/DE) or adds to the Section 104 pool (UK). This is the correct treatment in all three jurisdictions.
+
+### Germany: Universal FIFO Per-Token
+The German engine uses universal FIFO per-token across all wallets, not per-wallet FIFO. This is distinct from the US 2025+ requirement. The `perWallet` flag is explicitly set to `false` for German users, ensuring lots are shared across all connected wallets. This matches the BMF guidance and standard Finanzamt expectations.
+
 ### Reporting Formats
 UK users get SA108-aligned summaries they can directly reference when filing Self Assessment online. German users get Anlage SO-aligned summaries with the exact field structure and German terminology used in ELSTER. Both include detailed per-transaction CSVs for record-keeping and accountant handoff.
 
 ### What's Not Covered (and Why)
 
+**Hard forks and chain splits** — If a hard fork creates new tokens (e.g., Bitcoin Cash from Bitcoin), the treatment in both UK and Germany is zero cost basis — the new tokens are only taxed when disposed of. Our system handles these correctly in practice: fork-created tokens arrive as TRANSFER_IN or INITIALIZE_ACCOUNT with zero or minimal value, which creates a zero/low cost basis lot. When later sold, the full proceeds are gain. However, we don't explicitly detect and label transactions as "hard fork" since Helius and Moralis don't categorize them distinctly from regular token receipts.
+
+**Gifts and donations** — UK uses market value at the time of gift for CGT (both the giver and receiver). Germany has separate gift tax rules (Schenkungssteuer) with its own thresholds. We do not currently support explicit gift classification. Gifts to others would appear as TRANSFER_OUT (disposal at market value, which is the correct CGT treatment for the giver in the UK). Gifts received would appear as TRANSFER_IN with a cost basis at FMV, which is correct for UK but the German treatment may differ depending on the relationship between giver and receiver. Users handling significant gifts should consult a tax advisor.
+
 **Electronic filing integration** — We don't submit directly to HMRC or ELSTER. Both systems have official APIs, but integrating with them requires government accreditation (HMRC's Making Tax Digital program, ELSTER's ERiC interface). This is a separate regulatory process, not a software limitation.
 
-**Full FX conversion at the transaction level** — Amounts in the transaction database remain in USD. Conversion happens at report generation time. Storing GBP/EUR per-transaction would require re-enriching all prices in the target currency, which means separate CoinGecko API calls per currency. The current approach (convert at report time using daily FX rates) produces identical results for tax purposes and avoids tripling the price data storage.
+**Full FX conversion at the transaction level** — Amounts in the transaction database remain in USD. Conversion happens at report generation time using daily ECB rates. Storing GBP/EUR per-transaction would require re-enriching all prices in the target currency, which means separate CoinGecko API calls per currency. The current approach (convert at report time using daily FX rates) produces identical results for tax purposes and avoids tripling the price data storage.
 
 **National Insurance (UK) and Solidarity Surcharge (Germany)** — These are secondary tax calculations that depend on the user's total income from all sources (employment, rental, etc.), not just crypto. Computing them would require income data we don't have. We report the taxable amounts; the user or their accountant applies the correct tax rates.
 
