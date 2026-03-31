@@ -84,7 +84,7 @@ export async function recomputeCostBasis(userId: string, perWallet?: boolean): P
     console.log(`[Cost Basis] Auto-computed for ${results.length} transactions (${costBasisMethod})`);
 
     // ── Auto-detect income (airdrops, rewards, vesting claims) ──
-    await detectIncomeTransactions(walletAddresses);
+    await detectIncomeTransactions(walletAddresses, country);
     await detectGamblingTransactions(walletAddresses);
   } catch (error) {
     // Never throw — this runs as a background step after sync/import
@@ -248,7 +248,7 @@ const JUP_AIRDROP_PROGRAM_IDS = [
  * Detect and flag income transactions (airdrops, rewards, vesting claims).
  * Idempotent — resets and re-detects every time.
  */
-async function detectIncomeTransactions(walletAddresses: string[]): Promise<void> {
+async function detectIncomeTransactions(walletAddresses: string[], country: string = "US"): Promise<void> {
   try {
     if (walletAddresses.length === 0) return;
 

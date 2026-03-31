@@ -1,6 +1,7 @@
 import { PrismaClient, Transaction, Prisma } from "@prisma/client";
 import { Decimal } from "@prisma/client/runtime/library";
 import { isTaxableBuy, isTaxableSell, isTransferSkip, getCategory } from "@/lib/transaction-categorizer";
+import { batchFetchRates } from "@/lib/fx-rates";
 
 // L-1 fix: Debug-guarded logging — only emit verbose logs in development
 const TAX_DEBUG = process.env.NODE_ENV === "development" || process.env.TAX_DEBUG === "1";
@@ -820,7 +821,7 @@ export async function calculateTaxReport(
   debugLog(`  - Total events: ${combinedTaxableEvents.length}`);
   debugLog(`  - Net gain (gains - losses): $${calculatedNetGain.toFixed(2)}`);
   debugLog(`  - Sum of all gainLoss: $${actualTotalGainLoss.toFixed(2)}`);
-  const totalIncome = Math.round(combinedIncomeEvents.reduce(
+  let totalIncome = Math.round(combinedIncomeEvents.reduce(
     (sum, e) => sum + e.valueUsd,
     0
   ) * 100) / 100;
@@ -878,6 +879,50 @@ export async function calculateTaxReport(
   shortTermLosses = roundCents(shortTermLosses);
   longTermGains = roundCents(longTermGains);
   longTermLosses = roundCents(longTermLosses);
+
+  // FX conversion for non-US countries
+  const targetCurrency = country === "UK" ? "GBP" : country === "DE" ? "EUR" : "USD";
+  if (targetCurrency !== "USD") {
+    // Batch fetch FX rates for the year
+    const yearStart = new Date(`${year}-01-01`);
+    const yearEnd = new Date(`${year}-12-31`);
+    const rates = await batchFetchRates(targetCurrency, yearStart, yearEnd);
+
+    // Helper to get rate for a date (with fallback to previous days)
+    const getRate = (date: Date): number => {
+      const dateStr = date.toISOString().split("T")[0];
+      // Try exact date, then previous days (weekends/holidays have no ECB rate)
+      for (let i = 0; i < 5; i++) {
+        const d = new Date(date);
+        d.setDate(d.getDate() - i);
+        const key = d.toISOString().split("T")[0];
+        if (rates.has(key)) return rates.get(key)!;
+      }
+      // Fallback
+      return targetCurrency === "GBP" ? 0.79 : 0.92;
+    };
+
+    // Convert taxable events
+    for (const event of combinedTaxableEvents) {
+      const rate = getRate(event.date);
+      event.proceeds = Math.round(event.proceeds * rate * 100) / 100;
+      event.costBasis = Math.round(event.costBasis * rate * 100) / 100;
+      event.gainLoss = Math.round(event.gainLoss * rate * 100) / 100;
+    }
+
+    // Convert income events
+    for (const event of combinedIncomeEvents) {
+      const rate = getRate(event.date);
+      event.valueUsd = Math.round(event.valueUsd * rate * 100) / 100;
+    }
+
+    // Recompute summary totals from converted events
+    shortTermGains = roundCents(combinedTaxableEvents.filter(e => e.holdingPeriod === "short" && e.gainLoss > 0).reduce((s, e) => s + e.gainLoss, 0));
+    shortTermLosses = roundCents(combinedTaxableEvents.filter(e => e.holdingPeriod === "short" && e.gainLoss < 0).reduce((s, e) => s + Math.abs(e.gainLoss), 0));
+    longTermGains = roundCents(combinedTaxableEvents.filter(e => e.holdingPeriod === "long" && e.gainLoss > 0).reduce((s, e) => s + e.gainLoss, 0));
+    longTermLosses = roundCents(combinedTaxableEvents.filter(e => e.holdingPeriod === "long" && e.gainLoss < 0).reduce((s, e) => s + Math.abs(e.gainLoss), 0));
+    totalIncome = roundCents(combinedIncomeEvents.reduce((s, e) => s + e.valueUsd, 0));
+  }
 
   // Calculate net gains/losses
   const netShortTermGain = roundCents(shortTermGains - shortTermLosses);
