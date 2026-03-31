@@ -21,6 +21,13 @@ export interface OnboardingState {
 
 export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
+    id: "select-country",
+    title: "Select Your Country",
+    description: "Go to Settings and select your tax jurisdiction (US, UK, or Germany). This determines how your taxes are calculated — cost basis method, holding period rules, and report formats. If you've already connected wallets, you can rerun calculations after changing this.",
+    targetPage: "/settings",
+    targetElement: "[data-onboarding='select-country']",
+  },
+  {
     id: "connect-account",
     title: "Add Your Accounts",
     description: "Connect your wallets or exchanges to automatically sync your transactions. You can also import CSV files.",
@@ -51,7 +58,7 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
     id: "download-reports",
     title: "Download Tax Reports",
-    description: "Generate your IRS forms and CSV exports. We'll produce Form 8949, Schedule D, and Schedule 1 ready for filing.",
+    description: "Generate your tax forms and CSV exports. We'll produce the right reports for your jurisdiction — IRS forms for US, SA108 for UK, or Anlage SO for Germany.",
     targetPage: "/tax-reports",
     targetElement: "[data-onboarding='download-reports']",
   },
