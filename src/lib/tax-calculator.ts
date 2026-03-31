@@ -656,16 +656,24 @@ export async function calculateTaxReport(
   debugLog(`[Tax Calculator] Processing ${allTransactions.length} transactions (unified across all chains)`);
 
   const perWallet = year >= 2025;
-  const unifiedReport = processTransactionsForTax(
-    allTransactions,
-    year,
-    method,
-    walletAddresses,
-    undefined, // costBasisResults
-    timezone,
-    perWallet,
-    country
-  );
+  const unifiedReport = country === "UK"
+    ? processTransactionsForTaxUK(
+        allTransactions,
+        year,
+        walletAddresses,
+        undefined, // costBasisResults
+        timezone,
+      )
+    : processTransactionsForTax(
+        allTransactions,
+        year,
+        method,
+        walletAddresses,
+        undefined, // costBasisResults
+        timezone,
+        perWallet,
+        country
+      );
 
   const combinedTaxableEvents = unifiedReport.taxableEvents;
   const combinedIncomeEvents = unifiedReport.incomeEvents;
@@ -912,9 +920,356 @@ export function computeCostBasisForTransactions(
     : 9999;
 
   const perWallet = perWalletOverride !== undefined ? perWalletOverride : maxYear >= 2025;
-  processTransactionsForTax(transactions, maxYear, method, walletAddresses, resultMap, "America/New_York", perWallet, country);
+  if (country === "UK") {
+    processTransactionsForTaxUK(transactions, maxYear, walletAddresses, resultMap, "Europe/London");
+  } else {
+    processTransactionsForTax(transactions, maxYear, method, walletAddresses, resultMap, "America/New_York", perWallet, country);
+  }
 
   return Array.from(resultMap.values());
+}
+
+// ---------------------------------------------------------------------------
+// UK Share Pooling — Section 104, Same-Day & 30-Day Bed & Breakfast Rules
+// ---------------------------------------------------------------------------
+
+interface Section104Pool {
+  quantity: number;
+  totalCost: number; // total allowable cost in the pool (GBP/USD — whichever the DB stores)
+}
+
+interface UKDisposal {
+  id: number;
+  date: string; // ISO date string (YYYY-MM-DD) for same-day matching
+  asset: string;
+  amount: number;
+  proceeds: number;
+  matched: number; // amount already matched to acquisitions
+  tx: Transaction;
+}
+
+interface UKAcquisition {
+  id: number;
+  date: string; // ISO date string (YYYY-MM-DD)
+  asset: string;
+  amount: number;
+  cost: number;
+  matched: number; // amount already consumed by matching
+  tx: Transaction;
+}
+
+/** Strip time from a Date, returning a YYYY-MM-DD string in the given tz. */
+function toDateKey(d: Date, timezone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+    return parts; // en-CA already gives YYYY-MM-DD
+  } catch {
+    return d.toISOString().slice(0, 10);
+  }
+}
+
+/** Check if dateB is within 30 calendar days AFTER dateA (B > A and B <= A+30). */
+function isWithin30DaysAfter(dateA: string, dateB: string): boolean {
+  const a = new Date(dateA + "T00:00:00Z");
+  const b = new Date(dateB + "T00:00:00Z");
+  const diffMs = b.getTime() - a.getTime();
+  return diffMs > 0 && diffMs <= 30 * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * UK Share Pooling tax processor.
+ *
+ * Implements the mandatory 3-tier matching system:
+ *   1. Same-Day Rule
+ *   2. 30-Day Bed & Breakfast Rule (forward-looking)
+ *   3. Section 104 Pool (weighted-average cost)
+ *
+ * The function mirrors the signature / return shape of processTransactionsForTax
+ * so callers can swap between them based on country.
+ */
+function processTransactionsForTaxUK(
+  transactions: Transaction[],
+  taxYear: number,
+  walletAddresses: string[] = [],
+  costBasisResults?: Map<number, TransactionCostBasisResult>,
+  timezone: string = "Europe/London",
+): {
+  taxableEvents: TaxableEvent[];
+  incomeEvents: IncomeEvent[];
+} {
+  const taxableEvents: TaxableEvent[] = [];
+  const incomeEvents: IncomeEvent[] = [];
+
+  // Section 104 pools keyed by asset symbol (upper-cased)
+  const pools: Record<string, Section104Pool> = {};
+  // Collected disposals & acquisitions for the two-pass matching
+  const disposals: UKDisposal[] = [];
+  const acquisitions: UKAcquisition[] = [];
+
+  const FIAT_CURRENCIES = new Set(["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "CNY", "INR", "KRW", "BRL", "MXN"]);
+
+  // ---------- Pass 1: Collect disposals / acquisitions & build Section 104 pool ----------
+  for (const tx of transactions) {
+    const asset = (tx.asset_symbol || "").trim().toUpperCase();
+    const amount = Math.abs(Number(tx.amount_value));
+    const valueUsd = Number(tx.value_usd);
+    const feeUsd = tx.fee_usd ? Math.abs(Number(tx.fee_usd)) : 0;
+    const date = tx.tx_timestamp;
+    const dateKey = toDateKey(date, timezone);
+    const txType = (tx.type || "").toLowerCase();
+
+    // Skip fiat
+    if (FIAT_CURRENCIES.has(asset)) {
+      if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      continue;
+    }
+
+    // --- Transfer / self-transfer detection (reuse existing helpers) ---
+    if (isTransferSkip(tx.type || "")) {
+      const typeUpper = (tx.type || "").toUpperCase();
+      const isSelfTransfer = typeUpper === "TRANSFER_SELF" || (
+        tx.counterparty_address && walletAddresses.some(addr =>
+          addr.toLowerCase() === tx.counterparty_address?.toLowerCase()
+        )
+      );
+      if (typeUpper === "TRANSFER_IN" && !isSelfTransfer) {
+        // fall through to acquisition logic below
+      } else if (typeUpper === "TRANSFER_OUT" && !isSelfTransfer) {
+        if (tx.subtype === "dca_deposit" || Math.abs(valueUsd) < 0.01) {
+          if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+          continue;
+        }
+        // fall through to disposal logic below
+      } else {
+        // True self-transfer — skip
+        if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        continue;
+      }
+    }
+
+    // Skip economically neutral types
+    if (["self", "approve", "nft activity", "defi setup", "zero transaction", "spam",
+         "unstake", "unstaking", "deposit", "withdraw", "borrow", "repay",
+         "wrap", "unwrap", "bridge"].includes(txType)) {
+      if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      continue;
+    }
+
+    // --- Determine if acquisition or disposal ---
+    const isIncomeTx = tx.is_income || getCategory(tx.type || "") === "income" ||
+      ["staking reward", "staking", "reward", "airdrop", "mining", "yield",
+       "interest", "claim_rewards", "harvest", "payout", "fund_reward",
+       "yield farming", "farm reward"].includes(txType);
+
+    const isBuy = isTaxableBuy(tx.type || "");
+    const isSell = isTaxableSell(tx.type || "");
+    const isSwap = getCategory(tx.type || "") === "swap" || txType === "nft_purchase" || txType === "nft_sale";
+    const isReceive = txType === "receive" || txType === "transfer_in";
+    const isSend = txType === "send" || txType === "transfer_out";
+    const isBurn = txType === "burn";
+    const isLPAdd = ["liquidity providing", "liquidity add", "add liquidity"].includes(txType);
+    const isLPRemove = ["liquidity removal", "liquidity remove", "liquidity exit", "remove liquidity"].includes(txType);
+    const isMarginBuy = txType === "margin buy";
+    const isMarginSell = txType === "margin sell";
+    const isLiquidation = txType === "liquidation";
+
+    // --- Income ---
+    if (isIncomeTx) {
+      const incValue = Math.abs(valueUsd);
+      if (!pools[asset]) pools[asset] = { quantity: 0, totalCost: 0 };
+      if (incValue > 0) {
+        pools[asset].quantity += amount;
+        pools[asset].totalCost += incValue;
+        acquisitions.push({ id: tx.id, date: dateKey, asset, amount, cost: incValue, matched: 0, tx });
+      }
+      const txYear = getTaxYear(date, timezone);
+      if (txYear === taxYear && incValue > 0) {
+        let incomeType: IncomeEvent["type"] = "other";
+        if (txType === "staking reward" || txType === "staking") incomeType = "staking";
+        else if (txType === "reward") incomeType = "reward";
+        else if (txType === "airdrop") incomeType = "airdrop";
+        else if (txType === "mining") incomeType = "mining";
+        incomeEvents.push({ id: tx.id, date, asset, amount, valueUsd: incValue, type: incomeType, chain: tx.chain || undefined, txHash: tx.tx_hash || undefined });
+      }
+      if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: incValue, gainLossUsd: null });
+      continue;
+    }
+
+    // --- Buy / Margin Buy / Receive / LP Add (Acquisition) ---
+    if (isBuy || isMarginBuy || isReceive || isLPAdd) {
+      const cost = Math.abs(valueUsd) + (isBuy || isMarginBuy ? feeUsd : 0);
+      if (!pools[asset]) pools[asset] = { quantity: 0, totalCost: 0 };
+      pools[asset].quantity += amount;
+      pools[asset].totalCost += cost;
+      acquisitions.push({ id: tx.id, date: dateKey, asset, amount, cost, matched: 0, tx });
+      if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: cost, gainLossUsd: 0 });
+      continue;
+    }
+
+    // --- Swap (disposal of outgoing + acquisition of incoming) ---
+    if (isSwap) {
+      // Outgoing side — disposal
+      let outgoingAsset = asset;
+      let outgoingAmount = amount;
+      let incomingAsset = tx.incoming_asset_symbol ? tx.incoming_asset_symbol.trim().toUpperCase() : null;
+      let incomingAmount = tx.incoming_amount_value ? Number(tx.incoming_amount_value) : null;
+      let incomingValueUsd = tx.incoming_value_usd ? Number(tx.incoming_value_usd) : null;
+
+      if (!incomingAsset || !incomingAmount) {
+        const swapInfo = parseSwapTransaction(tx);
+        outgoingAsset = swapInfo.outgoingAsset ? swapInfo.outgoingAsset.trim().toUpperCase() : asset;
+        incomingAsset = swapInfo.incomingAsset ? swapInfo.incomingAsset.trim().toUpperCase() : incomingAsset;
+        outgoingAmount = swapInfo.outgoingAmount || amount;
+        incomingAmount = swapInfo.incomingAmount || incomingAmount;
+        incomingValueUsd = swapInfo.incomingValueUsd || incomingValueUsd;
+      }
+
+      const swapProceeds = (valueUsd === 0 && incomingValueUsd && incomingValueUsd > 0)
+        ? Math.abs(incomingValueUsd)
+        : valueUsd;
+      const isCSVImport = tx.source_type === "csv_import";
+      const netProceeds = isCSVImport ? Math.abs(swapProceeds) : Math.abs(swapProceeds) - feeUsd;
+
+      disposals.push({ id: tx.id, date: dateKey, asset: outgoingAsset, amount: outgoingAmount, proceeds: Math.max(0, netProceeds), matched: 0, tx });
+
+      // Incoming side — acquisition
+      if (incomingAsset && incomingAmount) {
+        const inCost = incomingValueUsd ? Math.abs(incomingValueUsd) : Math.abs(valueUsd);
+        if (!pools[incomingAsset]) pools[incomingAsset] = { quantity: 0, totalCost: 0 };
+        pools[incomingAsset].quantity += incomingAmount;
+        pools[incomingAsset].totalCost += inCost;
+        acquisitions.push({ id: tx.id, date: dateKey, asset: incomingAsset, amount: incomingAmount, cost: inCost, matched: 0, tx });
+      }
+      // costBasisResults will be set in Pass 2 after matching
+      continue;
+    }
+
+    // --- Sell / Margin Sell / Liquidation / Send / LP Remove / Burn (Disposal) ---
+    if (isSell || isMarginSell || isLiquidation || isSend || isLPRemove || isBurn) {
+      // Self-transfer detection for send
+      if (isSend) {
+        const isSelfTransfer = (
+          tx.notes?.toLowerCase().includes("self transfer") ||
+          tx.notes?.toLowerCase().includes("internal transfer") ||
+          (tx.counterparty_address && walletAddresses.some(addr =>
+            addr.toLowerCase() === tx.counterparty_address?.toLowerCase()
+          )) ||
+          (tx.counterparty_address && STAKING_CONTRACT_ADDRESSES.has(tx.counterparty_address))
+        );
+        if (isSelfTransfer || valueUsd === 0) {
+          if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+          continue;
+        }
+      }
+
+      const grossProceeds = isBurn ? 0 : (valueUsd >= 0 ? valueUsd : Math.abs(valueUsd));
+      const isCSVImport = tx.source_type === "csv_import";
+      const netProceeds = isCSVImport ? grossProceeds : grossProceeds - feeUsd;
+
+      disposals.push({ id: tx.id, date: dateKey, asset, amount, proceeds: Math.max(0, netProceeds), matched: 0, tx });
+      continue;
+    }
+
+    // Fallback: skip
+    if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+  }
+
+  // ---------- Pass 2: Match disposals using UK 3-tier rules ----------
+  for (const disposal of disposals) {
+    const asset = disposal.asset;
+    let unmatched = disposal.amount - disposal.matched;
+    let totalCostBasis = 0;
+
+    if (!pools[asset]) pools[asset] = { quantity: 0, totalCost: 0 };
+
+    // --- Rule 1: Same-Day matching ---
+    for (const acq of acquisitions) {
+      if (unmatched <= 0) break;
+      if (acq.asset !== asset || acq.date !== disposal.date) continue;
+      const available = acq.amount - acq.matched;
+      if (available <= 0) continue;
+      const matchQty = Math.min(unmatched, available);
+      const matchCost = acq.amount > 0 ? (acq.cost * matchQty / acq.amount) : 0;
+      totalCostBasis += matchCost;
+      acq.matched += matchQty;
+      disposal.matched += matchQty;
+      unmatched -= matchQty;
+      // Remove matched amount from Section 104 pool (it was added in Pass 1)
+      pools[asset].quantity -= matchQty;
+      pools[asset].totalCost -= matchCost;
+    }
+
+    // --- Rule 2: 30-Day B&B matching (acquisitions within next 30 days, FIFO) ---
+    for (const acq of acquisitions) {
+      if (unmatched <= 0) break;
+      if (acq.asset !== asset) continue;
+      if (!isWithin30DaysAfter(disposal.date, acq.date)) continue;
+      const available = acq.amount - acq.matched;
+      if (available <= 0) continue;
+      const matchQty = Math.min(unmatched, available);
+      const matchCost = acq.amount > 0 ? (acq.cost * matchQty / acq.amount) : 0;
+      totalCostBasis += matchCost;
+      acq.matched += matchQty;
+      disposal.matched += matchQty;
+      unmatched -= matchQty;
+      // Remove matched amount from Section 104 pool
+      pools[asset].quantity -= matchQty;
+      pools[asset].totalCost -= matchCost;
+    }
+
+    // --- Rule 3: Section 104 Pool ---
+    if (unmatched > 0 && pools[asset].quantity > 0) {
+      const poolQty = Math.min(unmatched, pools[asset].quantity);
+      const avgCost = pools[asset].quantity > 0
+        ? (pools[asset].totalCost / pools[asset].quantity)
+        : 0;
+      const poolCost = avgCost * poolQty;
+      totalCostBasis += poolCost;
+      pools[asset].quantity -= poolQty;
+      pools[asset].totalCost -= poolCost;
+      disposal.matched += poolQty;
+      unmatched -= poolQty;
+    }
+
+    // Stablecoin override
+    const bareAsset = asset.includes(":") ? asset.split(":").pop()! : asset;
+    if (STABLECOINS.has(bareAsset)) {
+      totalCostBasis = disposal.proceeds;
+    }
+
+    totalCostBasis = Math.round(totalCostBasis * 100) / 100;
+    const netProceeds = Math.round(disposal.proceeds * 100) / 100;
+    const gainLoss = Math.round((netProceeds - totalCostBasis) * 100) / 100;
+
+    // Persist cost basis result for every disposal
+    if (costBasisResults) {
+      costBasisResults.set(disposal.id, { transactionId: disposal.id, costBasisUsd: totalCostBasis, gainLossUsd: gainLoss });
+    }
+
+    // Only emit taxable events for the requested tax year
+    const txYear = getTaxYear(disposal.tx.tx_timestamp, timezone);
+    if (txYear === taxYear) {
+      taxableEvents.push({
+        id: disposal.id,
+        date: disposal.tx.tx_timestamp,
+        dateAcquired: undefined, // UK pooling has no single acquisition date
+        asset,
+        amount: disposal.amount,
+        proceeds: netProceeds,
+        costBasis: totalCostBasis,
+        gainLoss,
+        holdingPeriod: "short", // UK has no short/long distinction
+        chain: disposal.tx.chain || undefined,
+        txHash: disposal.tx.tx_hash || undefined,
+        source: disposal.tx.source || undefined,
+        washSale: false,
+        washSaleAdjustment: undefined,
+      });
+    }
+  }
+
+  debugLog(`[processTransactionsForTaxUK] Complete: ${disposals.length} disposals, ${acquisitions.length} acquisitions, ${taxableEvents.length} taxable events, ${incomeEvents.length} income events`);
+  return { taxableEvents, incomeEvents };
 }
 
 /**
