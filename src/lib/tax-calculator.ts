@@ -53,6 +53,11 @@ export interface TaxReport {
   deductibleLosses: number; // Capital losses deductible this year (max $3,000)
   lossCarryover: number; // Capital losses carried forward to next year
   form8949Data: Form8949Entry[]; // Data formatted for IRS Form 8949
+  // UK/DE Tax Fields
+  annualExemption: number; // UK: £3,000 annual exempt amount deducted from gains; 0 for others
+  // Currency display
+  currency: string; // "USD", "GBP", "EUR"
+  currencySymbol: string; // "$", "£", "€"
 }
 
 // IRS Form 8949 required fields
@@ -696,6 +701,17 @@ export async function calculateTaxReport(
     }
     // If netSTGain >= 1000, everything stays taxable (no adjustment)
     // If netSTGain <= 0, losses remain for carry-forward
+
+    // Germany: €256 Freigrenze for staking/mining/lending income (Section 22 Nr. 3 EStG)
+    // If total income < 256, all exempt. If >= 256, all taxable.
+    const totalIncomeDE = combinedIncomeEvents.reduce((s, e) => s + e.valueUsd, 0);
+    if (totalIncomeDE > 0 && totalIncomeDE < 256) {
+      // Below threshold: zero out all income events
+      for (const event of combinedIncomeEvents) {
+        event.valueUsd = 0;
+      }
+      debugLog(`[Tax Calculator] Germany Income Freigrenze: Total income EUR ${totalIncomeDE.toFixed(2)} < EUR 256 — all income events zeroed out.`);
+    }
   }
 
   debugLog(`[Tax Calculator] Combined: ${combinedTaxableEvents.length} taxable events, ${combinedIncomeEvents.length} income events`);
@@ -879,6 +895,19 @@ export async function calculateTaxReport(
   // Generate Form 8949 data (required for IRS reporting)
   const form8949Data = generateForm8949Data(combinedTaxableEvents);
 
+  // UK: £3,000 annual exempt amount (Annual Exempt Amount / AEA)
+  // Unlike the German Freigrenze (all-or-nothing), the UK allowance is a straight deduction
+  // from net gains. The first £3,000 of gains are tax-free.
+  const totalTaxableGain =
+    (netShortTermGain + netLongTermGain) >= 0
+      ? (netShortTermGain + netLongTermGain)
+      : -deductibleLosses;
+  const annualExemption = country === "UK" ? Math.min(3000, Math.max(0, totalTaxableGain)) : 0;
+
+  // Currency display based on country
+  const currency = country === "UK" ? "GBP" : country === "DE" ? "EUR" : "USD";
+  const currencySymbol = country === "UK" ? "\u00a3" : country === "DE" ? "\u20ac" : "$";
+
   return {
     year,
     shortTermGains,
@@ -890,13 +919,13 @@ export async function calculateTaxReport(
     incomeEvents: combinedIncomeEvents,
     netShortTermGain,
     netLongTermGain,
-    totalTaxableGain:
-      (netShortTermGain + netLongTermGain) >= 0
-        ? (netShortTermGain + netLongTermGain)
-        : -deductibleLosses,
+    totalTaxableGain,
     deductibleLosses,
     lossCarryover,
     form8949Data,
+    annualExemption,
+    currency,
+    currencySymbol,
   };
 }
 
@@ -2538,27 +2567,44 @@ function selectLots(
  * Get tax report summary for display
  */
 export function formatTaxReport(report: TaxReport) {
+  const sym = report.currencySymbol || "$";
+  const fmtCur = (value: number) => formatCurrencyWithSymbol(value, sym, report.currency || "USD");
   return {
-    shortTermGains: formatCurrency(report.shortTermGains),
-    longTermGains: formatCurrency(report.longTermGains),
-    shortTermLosses: formatCurrency(report.shortTermLosses),
-    longTermLosses: formatCurrency(report.longTermLosses),
-    totalIncome: formatCurrency(report.totalIncome),
-    netShortTermGain: formatCurrency(report.netShortTermGain),
-    netLongTermGain: formatCurrency(report.netLongTermGain),
-    totalTaxableGain: formatCurrency(report.totalTaxableGain),
+    shortTermGains: fmtCur(report.shortTermGains),
+    longTermGains: fmtCur(report.longTermGains),
+    shortTermLosses: fmtCur(report.shortTermLosses),
+    longTermLosses: fmtCur(report.longTermLosses),
+    totalIncome: fmtCur(report.totalIncome),
+    netShortTermGain: fmtCur(report.netShortTermGain),
+    netLongTermGain: fmtCur(report.netLongTermGain),
+    totalTaxableGain: fmtCur(report.totalTaxableGain),
     taxableEvents: report.taxableEvents.length,
     incomeEvents: report.incomeEvents.length,
+    annualExemption: fmtCur(report.annualExemption),
+    currency: report.currency,
+    currencySymbol: report.currencySymbol,
   };
 }
 
+function formatCurrencyWithSymbol(value: number, symbol: string, currencyCode: string): string {
+  const locale = currencyCode === "GBP" ? "en-GB" : currencyCode === "EUR" ? "de-DE" : "en-US";
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: currencyCode,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    // Fallback: manual formatting
+    const abs = Math.abs(value);
+    const formatted = abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return value < 0 ? `-${symbol}${formatted}` : `${symbol}${formatted}`;
+  }
+}
+
 function formatCurrency(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
+  return formatCurrencyWithSymbol(value, "$", "USD");
 }
 
 /**

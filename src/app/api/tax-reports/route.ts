@@ -48,11 +48,22 @@ export async function GET(request: NextRequest) {
     });
 
     if (cached) {
+      // Ensure currency info is present (old cache entries may lack it)
+      const cachedReport = cached.reportData as any;
+      if (!cachedReport.currency) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { country: true },
+        });
+        const c = dbUser?.country || "US";
+        cachedReport.currency = c === "UK" ? "GBP" : c === "DE" ? "EUR" : "USD";
+        cachedReport.currencySymbol = c === "UK" ? "\u00a3" : c === "DE" ? "\u20ac" : "$";
+      }
       return NextResponse.json({
         status: "success",
         year,
         cached: true,
-        report: cached.reportData,
+        report: cachedReport,
       });
     }
 
@@ -65,6 +76,10 @@ export async function GET(request: NextRequest) {
     if (!userWithWallets) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
+    const userCountry = (userWithWallets as any).country || "US";
+    const currencySymbol = userCountry === "UK" ? "\u00a3" : userCountry === "DE" ? "\u20ac" : "$";
+    const currencyCode = userCountry === "UK" ? "GBP" : userCountry === "DE" ? "EUR" : "USD";
 
     const walletAddresses = userWithWallets.wallets.map((w) => w.address);
 
@@ -134,26 +149,30 @@ export async function GET(request: NextRequest) {
 
     const netGainLoss = totalGains + totalLosses;
 
-    // Format currency helper
+    // Format currency helper using user's currency symbol
+    const sym = currencySymbol;
     const fmt = (n: number) =>
-      `$${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      `${sym}${Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const fmtSigned = (n: number) =>
       n < 0 ? `-${fmt(n)}` : fmt(n);
+    const zero = `${sym}0.00`;
 
     const reportPayload = {
       // The transactions page doesn't distinguish ST/LT — show totals
       // ST/LT breakdown is only available via the tax calculator (used in PDF generation)
       shortTermGains: fmtSigned(totalGains),
       shortTermLosses: fmtSigned(totalLosses),
-      longTermGains: "$0.00",
-      longTermLosses: "$0.00",
+      longTermGains: zero,
+      longTermLosses: zero,
       totalIncome: fmt(totalIncome),
       netShortTermGain: fmtSigned(netGainLoss),
-      netLongTermGain: "$0.00",
+      netLongTermGain: zero,
       totalTaxableGain: fmtSigned(netGainLoss),
       taxableEvents: taxableEventCount,
       incomeEvents: incomeEventCount,
       totalTransactions: transactions.length,
+      currency: currencyCode,
+      currencySymbol: sym,
     };
 
     // Persist to cache

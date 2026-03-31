@@ -109,6 +109,8 @@ interface TaxReportData {
   totalTaxableGain: string;
   taxableEvents: number;
   incomeEvents: number;
+  currency?: string; // "USD", "GBP", "EUR"
+  currencySymbol?: string; // "$", "£", "€"
 }
 
 export default function TaxReportsPage() {
@@ -399,7 +401,11 @@ export default function TaxReportsPage() {
     incomeEvents: 0,
   };
 
-  const parseCurrency = (value: string): number => parseFloat(value.replace(/[$,]/g, "")) || 0;
+  const parseCurrency = (value: string): number => parseFloat(value.replace(/[$\u00a3\u20ac,]/g, "")) || 0;
+
+  const currencySymbol = displayData.currencySymbol || "$";
+  const currencyCode = displayData.currency || "USD";
+  const isNonUsd = currencyCode !== "USD";
 
   const totalGains = parseCurrency(displayData.shortTermGains); // API puts total gains here
   const totalLosses = parseCurrency(displayData.shortTermLosses); // API puts total losses here (negative)
@@ -407,7 +413,7 @@ export default function TaxReportsPage() {
   const netTaxable = parseCurrency(displayData.totalTaxableGain);
   const estimatedTax = Math.max(0, netTaxable) * 0.24; // simplified estimate
 
-  const fmtUsd = (n: number) => `$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fmtUsd = (n: number) => `${currencySymbol}${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtSign = (n: number) => n >= 0 ? `+${fmtUsd(n)}` : `-${fmtUsd(n)}`;
 
   // Bar widths for breakdown
@@ -497,6 +503,7 @@ export default function TaxReportsPage() {
               <h2 className="text-[16px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] mb-1">Tax Summary</h2>
               <p className="text-[12px] text-[#9CA3AF] mb-5">
                 {costBasisMethod} method &middot; {displayData.taxableEvents} taxable events &middot; {displayData.incomeEvents} income events
+                {isNonUsd && <span className="ml-1">&middot; amounts in USD</span>}
               </p>
 
               {/* Hero: Net Taxable */}
