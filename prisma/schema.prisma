@@ -19,6 +19,7 @@ model User {
   updatedAt       DateTime   @updatedAt
   costBasisMethod String     @default("FIFO")
   timezone        String     @default("America/New_York")
+  country         String     @default("US")
   accounts        Account[]
   exchanges       Exchange[]
   sessions        Session[]

@@ -100,7 +100,8 @@ export async function GET(request: NextRequest) {
       costBasisMethod,
       user.id,
       filingStatus,
-      userWithWallets.timezone || "America/New_York"
+      userWithWallets.timezone || "America/New_York",
+      userWithWallets.country || "US"
     );
 
     // Generate CSV based on export type

@@ -553,6 +553,8 @@ export async function GET(request: NextRequest) {
     // ---- Calculate tax report ----
     console.log(`[Tax PDF API] Generating ${formParam} for year ${year}, user ${user.id}`);
 
+    const userCountry = userWithWallets.country || "US";
+
     const report = await calculateTaxReport(
       prisma,
       walletAddresses,
@@ -561,6 +563,7 @@ export async function GET(request: NextRequest) {
       user.id,
       filingStatus,
       userTimezone,
+      userCountry,
     );
 
     // Optional taxpayer identity fields (name from user profile, SSN from query)

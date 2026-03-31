@@ -18,6 +18,7 @@ export async function recomputeCostBasis(userId: string, perWallet?: boolean): P
 
     const walletAddresses = userWithWallets.wallets.map(w => w.address);
     const costBasisMethod = (userWithWallets.costBasisMethod || "FIFO") as "FIFO" | "LIFO" | "HIFO";
+    const country = (userWithWallets as any).country || "US";
 
     // Build query conditions (same logic as cost-basis/compute endpoint)
     const orConditions: Prisma.TransactionWhereInput[] = [];
@@ -56,6 +57,7 @@ export async function recomputeCostBasis(userId: string, perWallet?: boolean): P
       costBasisMethod,
       walletAddresses,
       perWallet,
+      country,
     );
 
     // Bulk update via single raw SQL using VALUES list

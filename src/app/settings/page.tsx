@@ -33,6 +33,7 @@ export default function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [timezone, setTimezone] = useState("America/New_York");
   const [costBasisMethod, setCostBasisMethod] = useState("FIFO");
+  const [country, setCountry] = useState("US");
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -44,6 +45,7 @@ export default function SettingsPage() {
         if (data.status === "success") {
           if (data.timezone) setTimezone(data.timezone);
           if (data.costBasisMethod) setCostBasisMethod(data.costBasisMethod);
+          if (data.country) setCountry(data.country);
         }
       })
       .catch(() => {});
@@ -55,7 +57,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ timezone, costBasisMethod }),
+        body: JSON.stringify({ timezone, costBasisMethod, country }),
       });
       const data = await res.json();
       if (data.status === "success") {
@@ -248,6 +250,20 @@ export default function SettingsPage() {
                 <div className="space-y-4">
                   <h3 className="text-lg font-medium">Tax Calculation</h3>
                   <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="tax-jurisdiction">Tax Jurisdiction</Label>
+                      <p className="text-xs text-muted-foreground">Determines which country-specific tax rules are applied</p>
+                      <Select value={country} onValueChange={setCountry}>
+                        <SelectTrigger id="tax-jurisdiction">
+                          <SelectValue placeholder="Select jurisdiction" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="US">United States (US)</SelectItem>
+                          <SelectItem value="UK">United Kingdom (UK)</SelectItem>
+                          <SelectItem value="DE">Germany (DE)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="space-y-2">
                       <Label htmlFor="calculation-method">Cost Basis Method</Label>
                       <Select value={costBasisMethod} onValueChange={setCostBasisMethod}>

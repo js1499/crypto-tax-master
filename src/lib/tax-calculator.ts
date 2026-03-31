@@ -145,6 +145,25 @@ function getTaxYear(date: Date, timezone: string): number {
 }
 
 /**
+ * Get the tax year start/end dates for a given year and country.
+ * UK uses Apr 6 – Apr 5 fiscal year; US and DE use calendar year.
+ */
+function getTaxYearBounds(year: number, country: string): { start: Date; end: Date } {
+  if (country === "UK") {
+    // UK fiscal year: Apr 6 to Apr 5
+    return {
+      start: new Date(`${year}-04-06T00:00:00Z`),
+      end: new Date(`${year + 1}-04-05T23:59:59.999Z`),
+    };
+  }
+  // US and DE: calendar year
+  return {
+    start: new Date(`${year}-01-01T00:00:00Z`),
+    end: new Date(`${year}-12-31T23:59:59.999Z`),
+  };
+}
+
+/**
  * Determine if holding period is long-term using date-based calculation
  * IRS Rule: Long-term if held MORE than one year from acquisition date
  * This is date-based, not day-count based (e.g., Jan 1, 2024 to Jan 1, 2025 = exactly 1 year = short-term)
@@ -186,7 +205,8 @@ function processDisposal(
   costBasisLots: Record<string, CostBasisLot[]>,
   method: "FIFO" | "LIFO" | "HIFO",
   processedCount: number,
-  taxableEventCount: number
+  taxableEventCount: number,
+  country: string = "US"
 ): DisposalResult {
   // IRS Rule: Fees are subtracted from proceeds for sales
   const grossProceeds = valueUsd >= 0 ? valueUsd : Math.abs(valueUsd);
@@ -241,6 +261,11 @@ function processDisposal(
     }
 
     gainLoss = Math.round((netProceeds - totalCostBasis) * 100) / 100;
+
+    // Germany: gains AND losses are tax-free after 1-year holding period (Section 23 EStG)
+    if (country === "DE" && holdingPeriod === "long") {
+      gainLoss = 0;
+    }
 
     if (processedCount < 10 || taxableEventCount < 5) {
       debugLog(`[Tax Calculator] ${tx.type} transaction ${tx.id}: proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, holdingPeriod=${holdingPeriod}`);
@@ -316,6 +341,11 @@ function processDisposal(
     }
 
     gainLoss = Math.round((netProceeds - totalCostBasis) * 100) / 100;
+
+    // Germany: gains AND losses are tax-free after 1-year holding period (Section 23 EStG)
+    if (country === "DE" && holdingPeriod === "long") {
+      gainLoss = 0;
+    }
 
     if (processedCount < 10) {
       debugLog(`[Tax Calculator] ${tx.type} transaction ${tx.id} (from lots): proceeds=${netProceeds}, costBasis=${totalCostBasis}, gainLoss=${gainLoss}, lotsUsed=${selectedLots.length}${STABLECOINS.has(bareAsset) ? ' [stablecoin override]' : ''}`);
@@ -428,7 +458,8 @@ export async function calculateTaxReport(
   method: "FIFO" | "LIFO" | "HIFO" = "FIFO",
   userId?: string, // Optional user ID to include CSV-imported transactions
   filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household" = "single",
-  timezone: string = "America/New_York"
+  timezone: string = "America/New_York",
+  country: string = "US"
 ): Promise<TaxReport> {
   const startDate = new Date(`${year}-01-01T00:00:00Z`);
   const endDate = new Date(`${year}-12-31T23:59:59Z`);
@@ -632,11 +663,32 @@ export async function calculateTaxReport(
     walletAddresses,
     undefined, // costBasisResults
     timezone,
-    perWallet
+    perWallet,
+    country
   );
 
   const combinedTaxableEvents = unifiedReport.taxableEvents;
   const combinedIncomeEvents = unifiedReport.incomeEvents;
+
+  // Germany: Freigrenze (Section 23 EStG) — if net short-term gains < EUR 1,000,
+  // all short-term gains AND losses are exempt. If >= EUR 1,000, everything is taxable.
+  // Long-term disposals are already zeroed out in processDisposal.
+  if (country === "DE") {
+    const netSTGain = combinedTaxableEvents
+      .filter(e => e.holdingPeriod === "short")
+      .reduce((s, e) => s + e.gainLoss, 0);
+    if (netSTGain > 0 && netSTGain < 1000) {
+      // Below Freigrenze: zero out all short-term gains AND losses
+      for (const event of combinedTaxableEvents) {
+        if (event.holdingPeriod === "short") {
+          event.gainLoss = 0;
+        }
+      }
+      debugLog(`[Tax Calculator] Germany Freigrenze: Net short-term gain EUR ${netSTGain.toFixed(2)} < EUR 1,000 — all short-term gains/losses zeroed out.`);
+    }
+    // If netSTGain >= 1000, everything stays taxable (no adjustment)
+    // If netSTGain <= 0, losses remain for carry-forward
+  }
 
   debugLog(`[Tax Calculator] Combined: ${combinedTaxableEvents.length} taxable events, ${combinedIncomeEvents.length} income events`);
 
@@ -850,6 +902,7 @@ export function computeCostBasisForTransactions(
   method: "FIFO" | "LIFO" | "HIFO",
   walletAddresses: string[] = [],
   perWalletOverride?: boolean,
+  country: string = "US",
 ): TransactionCostBasisResult[] {
   const resultMap = new Map<number, TransactionCostBasisResult>();
 
@@ -859,7 +912,7 @@ export function computeCostBasisForTransactions(
     : 9999;
 
   const perWallet = perWalletOverride !== undefined ? perWalletOverride : maxYear >= 2025;
-  processTransactionsForTax(transactions, maxYear, method, walletAddresses, resultMap, "America/New_York", perWallet);
+  processTransactionsForTax(transactions, maxYear, method, walletAddresses, resultMap, "America/New_York", perWallet, country);
 
   return Array.from(resultMap.values());
 }
@@ -874,7 +927,8 @@ function processTransactionsForTax(
   walletAddresses: string[] = [], // For detecting self-transfers
   costBasisResults?: Map<number, TransactionCostBasisResult>, // Per-transaction cost basis collector
   timezone: string = "America/New_York", // User's timezone for year boundary determination
-  perWallet: boolean = false
+  perWallet: boolean = false,
+  country: string = "US"
 ): {
   taxableEvents: TaxableEvent[];
   incomeEvents: IncomeEvent[];
@@ -1115,7 +1169,8 @@ function processTransactionsForTax(
         costBasisLots,
         method,
         processedCount,
-        taxableEventCount
+        taxableEventCount,
+        country
       );
 
       // Track loss sales for wash sale detection (before checking tax year)
@@ -1226,7 +1281,8 @@ function processTransactionsForTax(
         costBasisLots,
         method,
         processedCount,
-        taxableEventCount
+        taxableEventCount,
+        country
       );
 
       // Track loss sales for wash sale detection
@@ -1516,7 +1572,8 @@ function processTransactionsForTax(
           const feeUsd = tx.fee_usd ? Math.abs(Number(tx.fee_usd)) : 0;
           const disposal = processDisposal(
             tx, lk, amount, Math.abs(valueUsd), feeUsd, date,
-            costBasisLots, method, processedCount, taxableEventCount
+            costBasisLots, method, processedCount, taxableEventCount,
+            country
           );
 
           // C-1 fix: Store consumed cost basis so receives can carry it forward if needed
@@ -1586,7 +1643,8 @@ function processTransactionsForTax(
         // Different-token bridge (e.g., ETH → WETH): treated as a swap/disposal
         const disposal = processDisposal(
           tx, lk, amount, valueUsd, feeUsd, date,
-          costBasisLots, method, processedCount, taxableEventCount
+          costBasisLots, method, processedCount, taxableEventCount,
+          country
         );
 
         // Track loss sales for wash sale detection
@@ -1656,7 +1714,8 @@ function processTransactionsForTax(
       // rounding, holding period splitting, and loss tracking.
       const disposal = processDisposal(
         tx, lk, amount, valueUsd, feeUsd, date,
-        costBasisLots, method, processedCount, taxableEventCount
+        costBasisLots, method, processedCount, taxableEventCount,
+        country
       );
 
       // Track loss sales for wash sale detection (impermanent loss)
@@ -1721,7 +1780,8 @@ function processTransactionsForTax(
         costBasisLots,
         method,
         processedCount,
-        taxableEventCount
+        taxableEventCount,
+        country
       );
 
       // Track loss sales for wash sale detection
@@ -1765,7 +1825,8 @@ function processTransactionsForTax(
         costBasisLots,
         method,
         processedCount,
-        taxableEventCount
+        taxableEventCount,
+        country
       );
 
       // Track loss sales for wash sale detection
@@ -1865,7 +1926,8 @@ function processTransactionsForTax(
       // Pass valueUsd=0 since burn proceeds are always $0
       const disposal = processDisposal(
         tx, lk, amount, 0, feeUsd, date,
-        costBasisLots, method, processedCount, taxableEventCount
+        costBasisLots, method, processedCount, taxableEventCount,
+        country
       );
 
       // Track loss sales for wash sale detection

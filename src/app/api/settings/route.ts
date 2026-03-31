@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 
 const VALID_METHODS = ["FIFO", "LIFO", "HIFO"] as const;
+const VALID_COUNTRIES = ["US", "UK", "DE"] as const;
 
 /**
  * GET /api/settings
@@ -29,7 +30,7 @@ export async function GET(request: NextRequest) {
 
     const dbUser = await prisma.user.findUnique({
       where: { id: user.id },
-      select: { costBasisMethod: true, timezone: true },
+      select: { costBasisMethod: true, timezone: true, country: true },
     });
 
     if (!dbUser) {
@@ -43,6 +44,7 @@ export async function GET(request: NextRequest) {
       status: "success",
       costBasisMethod: dbUser.costBasisMethod,
       timezone: dbUser.timezone,
+      country: dbUser.country,
     });
   } catch (error) {
     console.error("[Settings API] GET error:", error);
@@ -76,7 +78,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { costBasisMethod, timezone } = body;
+    const { costBasisMethod, timezone, country } = body;
 
     const updateData: Record<string, string> = {};
 
@@ -103,6 +105,16 @@ export async function PUT(request: NextRequest) {
       }
     }
 
+    if (country) {
+      if (!VALID_COUNTRIES.includes(country)) {
+        return NextResponse.json(
+          { error: "Invalid country. Must be US, UK, or DE." },
+          { status: 400 }
+        );
+      }
+      updateData.country = country;
+    }
+
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json(
         { error: "No valid fields to update." },
@@ -113,13 +125,14 @@ export async function PUT(request: NextRequest) {
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: updateData,
-      select: { costBasisMethod: true, timezone: true },
+      select: { costBasisMethod: true, timezone: true, country: true },
     });
 
     return NextResponse.json({
       status: "success",
       costBasisMethod: updatedUser.costBasisMethod,
       timezone: updatedUser.timezone,
+      country: updatedUser.country,
     });
   } catch (error) {
     console.error("[Settings API] PUT error:", error);
