@@ -6,11 +6,16 @@ import {
   computeSecuritiesLots,
   type SecuritiesTransaction,
 } from "@/lib/securities-lot-engine";
+import {
+  detectWashSales,
+  applyWashSaleAdjustments,
+} from "@/lib/securities-wash-sale-engine";
+import { processDividends } from "@/lib/securities-dividends";
 import { Decimal } from "@prisma/client/runtime/library";
 
 /**
  * POST /api/securities/compute
- * Full recompute of securities tax lots, taxable events, and dividends.
+ * Full recompute of securities tax lots, taxable events, wash sales, and dividends.
  *
  * Body (optional):
  *   { year?: number, method?: string }
@@ -18,9 +23,11 @@ import { Decimal } from "@prisma/client/runtime/library";
  * - Fetches all securities_transactions for the user (ordered by date)
  * - Fetches user's securities_tax_settings for the relevant year
  * - Calls computeSecuritiesLots
- * - Deletes existing lots + taxable events + dividends for user (full recompute)
- * - Inserts new lots, taxable events, and dividends
- * - Returns { status, lotsCreated, eventsCreated, dividendsCreated }
+ * - Detects wash sales and applies basis adjustments
+ * - Processes dividends with return-of-capital lot adjustments
+ * - Deletes existing computed data for user (full recompute)
+ * - Inserts lots, taxable events, wash sales, and dividends
+ * - Returns { status, lotsCreated, eventsCreated, washSalesCreated, dividendsCreated }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -82,6 +89,7 @@ export async function POST(request: NextRequest) {
         status: "success",
         lotsCreated: 0,
         eventsCreated: 0,
+        washSalesCreated: 0,
         dividendsCreated: 0,
         message: "No transactions to compute.",
       });
@@ -118,14 +126,66 @@ export async function POST(request: NextRequest) {
       accountType,
     );
 
+    // -----------------------------------------------------------------------
+    // Wash sale detection
+    // -----------------------------------------------------------------------
+    const taxStatus = taxSettings?.taxStatus || "INVESTOR";
+    const substantiallyIdenticalMethod =
+      taxSettings?.substantiallyIdenticalMethod || "METHOD_1";
+
+    // Fetch user's equivalence groups
+    const equivalenceGroups = await prisma.securitiesEquivalenceGroup.findMany({
+      where: { userId: user.id },
+      select: { symbols: true },
+    });
+
+    const washSales = detectWashSales(
+      taxableEvents,
+      lots,
+      transactions,
+      { substantiallyIdenticalMethod },
+      equivalenceGroups,
+      taxStatus,
+    );
+
+    // Apply wash sale basis adjustments to lots and taxable events
+    applyWashSaleAdjustments(washSales, lots, taxableEvents);
+
+    // -----------------------------------------------------------------------
+    // Advanced dividends processing (return-of-capital lot adjustments)
+    // -----------------------------------------------------------------------
+    const openLots = lots.filter((l) => l.status === "OPEN");
+    const {
+      dividends: advancedDividends,
+      lotAdjustments,
+    } = processDividends(transactions, openLots);
+
+    // Apply return-of-capital basis adjustments to lots
+    if (lotAdjustments.length > 0) {
+      const lotById = new Map(lots.map((l) => [l.id, l]));
+      for (const adj of lotAdjustments) {
+        const lot = lotById.get(adj.lotId);
+        if (lot) {
+          lot.totalCostBasis = Math.max(0, lot.totalCostBasis - adj.basisReduction);
+          lot.costBasisPerShare =
+            lot.quantity > 0 ? lot.totalCostBasis / lot.quantity : 0;
+        }
+      }
+    }
+
+    // -----------------------------------------------------------------------
     // Delete existing computed data for full recompute
+    // -----------------------------------------------------------------------
     await prisma.$transaction([
+      prisma.securitiesWashSale.deleteMany({ where: { userId: user.id } }),
       prisma.securitiesDividend.deleteMany({ where: { userId: user.id } }),
       prisma.securitiesTaxableEvent.deleteMany({ where: { userId: user.id } }),
       prisma.securitiesLot.deleteMany({ where: { userId: user.id } }),
     ]);
 
-    // Insert new lots
+    // -----------------------------------------------------------------------
+    // Insert new lots (with wash sale adjustments applied)
+    // -----------------------------------------------------------------------
     let lotsCreated = 0;
     if (lots.length > 0) {
       const lotRecords = lots.map((lot) => ({
@@ -154,7 +214,9 @@ export async function POST(request: NextRequest) {
       lotsCreated = result.count;
     }
 
-    // Insert new taxable events
+    // -----------------------------------------------------------------------
+    // Insert new taxable events (with wash sale codes applied)
+    // -----------------------------------------------------------------------
     let eventsCreated = 0;
     if (taxableEvents.length > 0) {
       const eventRecords = taxableEvents.map((ev) => ({
@@ -184,15 +246,50 @@ export async function POST(request: NextRequest) {
       eventsCreated = result.count;
     }
 
-    // Insert dividends
+    // -----------------------------------------------------------------------
+    // Insert wash sales
+    // -----------------------------------------------------------------------
+    let washSalesCreated = 0;
+    if (washSales.length > 0) {
+      const washSaleRecords = washSales.map((ws) => ({
+        userId: user.id,
+        lossTransactionId: ws.lossTransactionId,
+        replacementTransactionId: ws.replacementTransactionId,
+        lossLotId: ws.lossLotId ?? null,
+        replacementLotId: ws.replacementLotId ?? null,
+        disallowedAmount: new Decimal(ws.disallowedAmount),
+        isPermanent: ws.isPermanent,
+        basisAdjustment: new Decimal(ws.basisAdjustment),
+        holdingPeriodTackDays: ws.holdingPeriodTackDays,
+        year: ws.year,
+        carryForward: ws.carryForward,
+      }));
+
+      const result = await prisma.securitiesWashSale.createMany({
+        data: washSaleRecords,
+      });
+      washSalesCreated = result.count;
+    }
+
+    // -----------------------------------------------------------------------
+    // Insert dividends (merge basic engine dividends + advanced dividends)
+    // -----------------------------------------------------------------------
     let dividendsCreated = 0;
-    if (dividends.length > 0) {
-      const dividendRecords = dividends.map((d) => ({
+
+    // Use advanced dividends if available (they include payer and foreign tax)
+    const dividendSource = advancedDividends.length > 0 ? advancedDividends : dividends;
+
+    if (dividendSource.length > 0) {
+      const dividendRecords = dividendSource.map((d) => ({
         userId: user.id,
         transactionId: d.transactionId,
         symbol: d.symbol,
+        payer: "payer" in d ? (d as { payer: string }).payer : null,
         amount: new Decimal(d.amount),
         dividendType: d.dividendType,
+        foreignTaxPaid: "foreignTaxPaid" in d
+          ? new Decimal((d as { foreignTaxPaid: number }).foreignTaxPaid)
+          : new Decimal(0),
         year: d.year,
       }));
 
@@ -206,6 +303,7 @@ export async function POST(request: NextRequest) {
       status: "success",
       lotsCreated,
       eventsCreated,
+      washSalesCreated,
       dividendsCreated,
       costBasisMethod,
     });
