@@ -253,7 +253,7 @@ export default function TaxAIPage() {
             <div className="grid grid-cols-3 gap-3 max-w-[560px] w-full">
               {PRESET_CARDS.map((card) => (
                 <button key={card.title} onClick={() => {
-                  if (card.title === "Analyze my data") fileInputRef.current?.click();
+                  if (card.title === "Analyze or reformat CSV") fileInputRef.current?.click();
                   else if (card.title === "Breakdown my P&L") sendMessage("Give me a detailed breakdown of my P&L (gains, losses, net) and income by year. Include totals for each year and an overall summary.");
                   else if (card.title === "Check for spam") sendMessage("Check my transactions for spam tokens, dust attacks, or suspicious low-value assets. Flag anything that looks like spam.");
                 }} className="text-left p-5 rounded-xl border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] hover:border-[#C0C0B8] dark:hover:border-[#444] transition-colors">
