@@ -317,24 +317,86 @@ export function computeSecuritiesLots(
       // Disposal types: consume lots and generate taxable events
       // ------------------------------------------------------------------
       // ------------------------------------------------------------------
-      // Short sale: SELL_SHORT opens a short position (no taxable event)
+      // Short sale: SELL_SHORT consumes long lots first (flip/close), then
+      // opens a short position for any remaining quantity.
+      // e.g., Own 100, SELL_SHORT 150 → close 100 long (taxable), open 50 short
       // ------------------------------------------------------------------
       case "SELL_SHORT": {
-        const proceeds = totalOverride ?? qty * price - fees;
-        if (!openShorts[sym]) openShorts[sym] = [];
-        openShorts[sym].push({
-          id: lotIdCounter++,
-          transactionId: tx.id,
-          symbol: sym,
-          assetClass: tx.assetClass,
-          quantity: qty,
-          proceeds,
-          proceedsPerShare: qty > 0 ? proceeds / qty : 0,
-          dateOpened: txDate,
-          isCovered: tx.isCovered,
-          isSection1256: tx.isSection1256,
-          brokerageId: tx.brokerageId ?? undefined,
-        });
+        const proceedsPerShare = price;
+        const totalProceeds = totalOverride ?? qty * price - fees;
+        let remainingQty = qty;
+
+        // First: consume any existing long lots for this symbol
+        const symLots = openLots[sym] || [];
+        if (symLots.length > 0) {
+          const selected = selectLots(symLots, Math.min(remainingQty, symLots.reduce((s, l) => s + l.quantity, 0)), method);
+          for (const lot of selected) {
+            if (remainingQty <= 1e-10) break;
+            const consumed = Math.min(lot.quantity, remainingQty);
+            const portionProceeds = totalProceeds * (consumed / qty);
+            const costBasis = lot.costBasisPerShare * consumed;
+            const gainLoss = Math.round((portionProceeds - costBasis) * 100) / 100;
+            const holdPeriod = isLongTerm(lot.dateAcquired, txDate) ? "LONG_TERM" as const : "SHORT_TERM" as const;
+
+            if (!isTaxDeferred) {
+              taxableEvents.push({
+                transactionId: tx.id,
+                lotId: lot.id,
+                symbol: sym,
+                assetClass: tx.assetClass,
+                quantity: consumed,
+                dateAcquired: lot.dateAcquired,
+                dateSold: txDate,
+                proceeds: Math.round(portionProceeds * 100) / 100,
+                costBasis: Math.round(costBasis * 100) / 100,
+                gainLoss,
+                holdingPeriod: holdPeriod,
+                gainType: tx.isSection1256 ? "SECTION_1256" : "CAPITAL",
+                form8949Box: determineForm8949Box(holdPeriod, lot.isCovered),
+                formDestination: tx.isSection1256 ? "6781" : "8949",
+                washSaleAdjustment: 0,
+                year,
+              });
+            }
+
+            lot.quantity -= consumed;
+            lot.totalCostBasis -= costBasis;
+            remainingQty -= consumed;
+
+            const allLotEntry = allLots.find((l) => l.id === lot.id);
+            if (allLotEntry) {
+              if (lot.quantity <= 1e-10) {
+                allLotEntry.status = "CLOSED";
+                allLotEntry.dateSold = txDate;
+                allLotEntry.holdingPeriod = holdPeriod;
+                allLotEntry.quantity = 0;
+              } else {
+                allLotEntry.quantity = lot.quantity;
+                allLotEntry.totalCostBasis = lot.totalCostBasis;
+              }
+            }
+          }
+          openLots[sym] = symLots.filter((l) => l.quantity > 1e-10);
+        }
+
+        // Then: any remaining quantity opens a new short position
+        if (remainingQty > 1e-10) {
+          const shortProceeds = totalProceeds * (remainingQty / qty);
+          if (!openShorts[sym]) openShorts[sym] = [];
+          openShorts[sym].push({
+            id: lotIdCounter++,
+            transactionId: tx.id,
+            symbol: sym,
+            assetClass: tx.assetClass,
+            quantity: remainingQty,
+            proceeds: shortProceeds,
+            proceedsPerShare: remainingQty > 0 ? shortProceeds / remainingQty : 0,
+            dateOpened: txDate,
+            isCovered: tx.isCovered,
+            isSection1256: tx.isSection1256,
+            brokerageId: tx.brokerageId ?? undefined,
+          });
+        }
         break;
       }
 
