@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
     }
 
     const fileSummary = fileContent
-      ? `\n\nThe user attached a file named "${fileName || "file.csv"}".\nHere are the first 50,000 characters of its contents:\n\`\`\`\n${String(fileContent).slice(0, 50000)}\n\`\`\``
+      ? `\n\nThe user attached a file named "${fileName || "file.csv"}".\nHere are the first 200,000 characters of its contents:\n\`\`\`\n${String(fileContent).slice(0, 200000)}\n\`\`\``
       : "";
 
     // ── Resolve user's data ownership ──────────────────────────────
@@ -329,7 +329,25 @@ If the user asks for data as a downloadable file, include a CSV block at the END
 header1,header2
 value1,value2
 \`\`\`
-Only include this when explicitly asked for a download/export.`;
+Only include this when explicitly asked for a download/export.
+
+When the user asks you to reformat a CSV for import, use these target formats:
+
+**Crypto CSV formats (for /transactions import):**
+- Coinbase: Timestamp,Transaction Type,Asset,Quantity Transacted,Spot Price at Transaction,Subtotal,Total (inclusive of fees),Fees,Notes
+- Binance: Date(UTC),Pair,Type,Order Amount,AvgTrading Price,Filled,Total,status
+- Kraken: txid,refid,time,type,subtype,aclass,asset,amount,fee,balance
+- Custom (recommended): Date,Type,Asset,Amount,Price,Value,Notes
+  Valid types: Buy, Sell, Swap, Send, Receive, Staking, Reward, Airdrop, Mining, Interest, Yield, Transfer, Bridge, Burn
+
+**Securities CSV format (for /securities/transactions import):**
+Required: date,type,symbol,asset_class,quantity,price
+Optional: fees,account,account_type,total_amount,lot_id,underlying_symbol,option_type,strike_price,expiration_date,dividend_type,is_covered,is_section_1256,notes
+Valid types: BUY, SELL, SELL_SHORT, BUY_TO_COVER, DIVIDEND, DIVIDEND_REINVEST, INTEREST, SPLIT, MERGER, SPINOFF, RETURN_OF_CAPITAL, OPTION_EXERCISE, OPTION_ASSIGNMENT, OPTION_EXPIRATION, RSU_VEST, ESPP_PURCHASE, TRANSFER_IN, TRANSFER_OUT, YEAR_END_FMV
+Valid asset_class: STOCK, ETF, MUTUAL_FUND, OPTION, FUTURE, FOREX, BOND, WARRANT
+Valid account_type: TAXABLE, IRA_TRADITIONAL, IRA_ROTH, 401K, HSA, 529
+
+When reformatting, always output the full result as a csv-download block. Map the user's columns to the target format. If data is missing, note it and use reasonable defaults (0 for price, empty for notes).`;
 
     // ── Streaming response ─────────────────────────────────────────
     if (wantStream) {

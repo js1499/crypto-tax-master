@@ -12,7 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Download, Upload, FileText, Check, Link2, RefreshCw, CheckCircle2, Loader2 } from "lucide-react";
+import { Download, Upload, FileText, Check, Link2, RefreshCw, CheckCircle2, Loader2, ChevronDown, Sparkles } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { ImportedData } from "@/types/wallet"; // Updated import
 import axios from "axios";
@@ -27,6 +28,88 @@ const exchangeTemplates = [
   { id: "gemini", name: "Gemini" },
   { id: "custom", name: "Custom Format" },
 ];
+
+// CSV template content per exchange for download
+const EXCHANGE_CSV_TEMPLATES: Record<string, { filename: string; content: string }> = {
+  coinbase: {
+    filename: "coinbase-template.csv",
+    content: `Timestamp,Transaction Type,Asset,Quantity Transacted,Spot Price at Transaction,Subtotal,Total (inclusive of fees),Fees,Notes
+2024-01-15T10:30:00Z,Buy,BTC,0.5,42000.00,21000.00,21050.00,50.00,Purchased Bitcoin
+2024-02-01T09:00:00Z,Sell,BTC,0.25,45000.00,11250.00,11225.00,25.00,Sold Bitcoin
+2024-03-01T11:00:00Z,Swap,ETH,2.0,2800.00,5600.00,5600.00,0.00,Swapped 2 ETH for 5600 USDC`,
+  },
+  binance: {
+    filename: "binance-template.csv",
+    content: `Date(UTC),Pair,Type,Order Amount,AvgTrading Price,Filled,Total,status
+2024-01-15 10:30:00,BTC/USDT,BUY,0.5,42000.00,0.5,21000.00,Filled
+2024-02-01 09:00:00,ETH/USDT,BUY,5.0,2500.00,5.0,12500.00,Filled
+2024-03-01 11:00:00,SOL/USDT,SELL,50.0,120.00,50.0,6000.00,Filled`,
+  },
+  kraken: {
+    filename: "kraken-template.csv",
+    content: `txid,refid,time,type,subtype,aclass,asset,amount,fee,balance
+TXID001,REF001,2024-01-15 10:30:00,buy,,currency,XXBT,0.50000000,0.00100000,0.50000000
+TXID002,REF002,2024-02-01 09:00:00,sell,,currency,XETH,2.00000000,0.00300000,3.00000000
+TXID003,REF003,2024-03-15 08:30:00,deposit,,currency,XXBT,0.10000000,0.00000000,0.60000000`,
+  },
+  kucoin: {
+    filename: "kucoin-template.csv",
+    content: `Time,Symbol,Side,Price,Amount,Volume,Fee,Fee Coin
+2024-01-15 10:30:00,BTC-USDT,buy,42000.00,0.5,21000.00,21.00,USDT
+2024-02-01 09:00:00,ETH-USDT,buy,2500.00,5.0,12500.00,12.50,USDT
+2024-03-01 11:00:00,SOL-USDT,sell,120.00,50.0,6000.00,6.00,USDT`,
+  },
+  gemini: {
+    filename: "gemini-template.csv",
+    content: `Date,Time,Type,Symbol,Quantity,Price,USD Amount,USD Fee,Notes
+2024-01-15,10:30:00,Buy,BTCUSD,0.5,42000.00,21000.00,50.00,Purchased Bitcoin
+2024-02-01,09:00:00,Sell,BTCUSD,0.25,45000.00,11250.00,25.00,Sold Bitcoin
+2024-03-01,11:00:00,Buy,ETHUSD,5.0,2500.00,12500.00,25.00,Purchased Ethereum`,
+  },
+  custom: {
+    filename: "crypto-custom-template.csv",
+    content: `Date,Type,Asset,Amount,Price,Value,Notes
+01/15/2024,Buy,BTC,0.5,42000,21000,Monthly DCA
+02/01/2024,Sell,BTC,0.25,45000,11250,Taking profits
+03/01/2024,Swap,ETH,2,2800,5600,Swapped 2 ETH for 5600 USDC
+03/15/2024,Receive,BTC,0.1,48000,4800,Mining reward
+04/01/2024,Staking,ETH,0.05,2900,145,Staking yield`,
+  },
+};
+
+// Format info shown in expandable section per exchange
+const EXCHANGE_FORMAT_INFO: Record<string, { required: string[]; optional: string[]; notes: string }> = {
+  coinbase: {
+    required: ["Timestamp", "Transaction Type", "Asset", "Quantity Transacted", "Spot Price at Transaction", "Total (inclusive of fees)"],
+    optional: ["Subtotal", "Fees", "Notes"],
+    notes: "Export from Coinbase: Settings → Taxes → Generate Report → Download.",
+  },
+  binance: {
+    required: ["Date(UTC)", "Pair", "Type", "Order Amount", "AvgTrading Price", "Total"],
+    optional: ["Filled", "status"],
+    notes: "Export from Binance: Orders → Trade History → Export.",
+  },
+  kraken: {
+    required: ["time", "type", "asset", "amount"],
+    optional: ["txid", "refid", "subtype", "aclass", "fee", "balance"],
+    notes: "Export from Kraken: History → Export.",
+  },
+  kucoin: {
+    required: ["Time", "Side or Type", "Amount", "Price"],
+    optional: ["Symbol", "Volume", "Fee", "Fee Coin", "Remark"],
+    notes: "Export from KuCoin: Orders → Trade History → Export.",
+  },
+  gemini: {
+    required: ["Date", "Type", "Symbol", "Quantity"],
+    optional: ["Time", "USD Amount", "Price", "USD Fee", "Notes"],
+    notes: "Export from Gemini: Account → Balances → Transaction History → Download.",
+  },
+  custom: {
+    required: ["Date", "Type", "Asset", "Amount"],
+    optional: ["Price", "Value", "Notes"],
+    notes: "Flexible format — most date formats accepted. Types: Buy, Sell, Swap, Send, Receive, Staking, Reward, Airdrop.",
+  },
+};
 
 // All chains supported by Moralis wallet history API
 const EVM_CHAINS = [
@@ -842,8 +925,23 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
     }
   };
 
+  const [showFormatInfo, setShowFormatInfo] = useState(false);
+
   const handleDownloadTemplate = () => {
-    toast.info(`Template for ${selectedExchange} downloaded`);
+    const template = EXCHANGE_CSV_TEMPLATES[selectedExchange];
+    if (!template) {
+      toast.info("No template available for this source.");
+      return;
+    }
+    const blob = new Blob([template.content], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = template.filename;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   };
 
   const handleImport = async () => {
@@ -2018,18 +2116,51 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="csv-file">Transaction File (CSV)</Label>
-            {selectedExchange && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 gap-1 text-xs"
-                onClick={handleDownloadTemplate}
-              >
-                <Download className="h-3 w-3" />
-                <span>Template</span>
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {selectedExchange && EXCHANGE_CSV_TEMPLATES[selectedExchange] && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1 text-xs"
+                  onClick={handleDownloadTemplate}
+                >
+                  <Download className="h-3 w-3" />
+                  <span>Template</span>
+                </Button>
+              )}
+              {selectedExchange && EXCHANGE_FORMAT_INFO[selectedExchange] && (
+                <button
+                  onClick={() => setShowFormatInfo(!showFormatInfo)}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors h-8 px-2"
+                >
+                  Format
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", showFormatInfo && "rotate-180")} />
+                </button>
+              )}
+            </div>
           </div>
+
+          {showFormatInfo && selectedExchange && EXCHANGE_FORMAT_INFO[selectedExchange] && (
+            <div className="rounded-md border border-muted bg-muted/30 p-3 text-xs space-y-1.5">
+              <div>
+                <span className="font-medium">Required: </span>
+                <span className="font-mono text-[10px]">
+                  {EXCHANGE_FORMAT_INFO[selectedExchange].required.join(", ")}
+                </span>
+              </div>
+              {EXCHANGE_FORMAT_INFO[selectedExchange].optional.length > 0 && (
+                <div>
+                  <span className="font-medium">Optional: </span>
+                  <span className="text-muted-foreground">
+                    {EXCHANGE_FORMAT_INFO[selectedExchange].optional.join(", ")}
+                  </span>
+                </div>
+              )}
+              <p className="text-muted-foreground">
+                {EXCHANGE_FORMAT_INFO[selectedExchange].notes}
+              </p>
+            </div>
+          )}
 
           <div className="flex flex-col items-center space-y-4 rounded-lg border-2 border-dashed border-muted p-6">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -2104,6 +2235,26 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
             <li>Date formats should match the exchange format</li>
             <li>Large files may take longer to process</li>
           </ul>
+        </div>
+
+        <div className="rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/50 p-3 text-xs">
+          <div className="flex items-start gap-2">
+            <Sparkles className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium text-blue-900 dark:text-blue-200">
+                Have a CSV that doesn&apos;t match any format?
+              </p>
+              <p className="mt-0.5 text-blue-700 dark:text-blue-300">
+                Tax AI can reformat your CSV automatically — even tens of thousands of rows.
+              </p>
+              <a
+                href="/tax-ai"
+                className="mt-1.5 inline-flex items-center text-blue-600 hover:text-blue-800 dark:text-blue-400 font-medium"
+              >
+                Open Tax AI &rarr;
+              </a>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>

@@ -34,8 +34,8 @@ const PRESET_CARDS = [
     icon: FileSpreadsheet,
     iconColor: "#2563EB",
     iconBg: "#EFF6FF",
-    title: "Analyze my data",
-    description: "Upload a CSV and get insights on your trading activity.",
+    title: "Analyze or reformat CSV",
+    description: "Upload a CSV to analyze, reformat for import, or get trading insights.",
   },
   {
     icon: Search,
@@ -84,7 +84,7 @@ export default function TaxAIPage() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { alert("File must be under 2MB"); return; }
+    if (file.size > 10 * 1024 * 1024) { alert("File must be under 10MB"); return; }
     setAttachedFile(file);
     const reader = new FileReader();
     reader.onload = (ev) => setAttachedFileContent(ev.target?.result as string);
