@@ -5,36 +5,17 @@ import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Upload,
-  Search,
-  Filter,
-  Loader2,
-  Calculator,
-  ChevronLeft,
-  ChevronRight,
+  Upload, Search, Loader2, Calculator, ChevronLeft, ChevronRight,
+  Building, FileText,
 } from "lucide-react";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
+  Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger,
 } from "@/components/ui/sheet";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -62,51 +43,36 @@ interface Transaction {
 }
 
 // ---------------------------------------------------------------------------
-// Type badge styling
+// Horizon pill-based type badge styling
 // ---------------------------------------------------------------------------
 
 const TYPE_COLORS: Record<string, string> = {
-  BUY: "bg-emerald-100 text-emerald-800",
-  SELL: "bg-red-100 text-red-800",
-  SELL_SHORT: "bg-red-200 text-red-900",
-  BUY_TO_COVER: "bg-emerald-200 text-emerald-900",
-  DIVIDEND: "bg-yellow-100 text-yellow-800",
-  DIVIDEND_REINVEST: "bg-yellow-200 text-yellow-900",
-  INTEREST: "bg-amber-100 text-amber-800",
-  SPLIT: "bg-blue-100 text-blue-800",
-  MERGER: "bg-indigo-100 text-indigo-800",
-  SPINOFF: "bg-violet-100 text-violet-800",
-  RETURN_OF_CAPITAL: "bg-orange-100 text-orange-800",
-  OPTION_EXERCISE: "bg-purple-100 text-purple-800",
-  OPTION_ASSIGNMENT: "bg-purple-200 text-purple-900",
-  OPTION_EXPIRATION: "bg-gray-100 text-gray-800",
-  RSU_VEST: "bg-teal-100 text-teal-800",
-  ESPP_PURCHASE: "bg-cyan-100 text-cyan-800",
-  TRANSFER_IN: "bg-sky-100 text-sky-800",
-  TRANSFER_OUT: "bg-slate-100 text-slate-800",
-  YEAR_END_FMV: "bg-zinc-100 text-zinc-800",
+  BUY: "bg-pill-green-bg text-pill-green-text dark:bg-[rgba(22,163,74,0.12)] dark:text-[#22C55E]",
+  SELL: "bg-pill-red-bg text-pill-red-text dark:bg-[rgba(220,38,38,0.12)] dark:text-[#EF4444]",
+  SELL_SHORT: "bg-pill-red-bg text-pill-red-text dark:bg-[rgba(220,38,38,0.12)] dark:text-[#EF4444]",
+  BUY_TO_COVER: "bg-pill-green-bg text-pill-green-text dark:bg-[rgba(22,163,74,0.12)] dark:text-[#22C55E]",
+  DIVIDEND: "bg-pill-yellow-bg text-pill-yellow-text dark:bg-[rgba(202,138,4,0.12)] dark:text-[#EAB308]",
+  DIVIDEND_REINVEST: "bg-pill-yellow-bg text-pill-yellow-text dark:bg-[rgba(202,138,4,0.12)] dark:text-[#EAB308]",
+  INTEREST: "bg-pill-orange-bg text-pill-orange-text dark:bg-[rgba(234,88,12,0.12)] dark:text-[#F97316]",
+  SPLIT: "bg-pill-blue-bg text-pill-blue-text dark:bg-[rgba(37,99,235,0.12)] dark:text-[#3B82F6]",
+  MERGER: "bg-pill-indigo-bg text-pill-indigo-text dark:bg-[rgba(79,70,229,0.12)] dark:text-[#818CF8]",
+  SPINOFF: "bg-pill-purple-bg text-pill-purple-text dark:bg-[rgba(147,51,234,0.12)] dark:text-[#A855F7]",
+  RETURN_OF_CAPITAL: "bg-pill-orange-bg text-pill-orange-text dark:bg-[rgba(234,88,12,0.12)] dark:text-[#F97316]",
+  OPTION_EXERCISE: "bg-pill-purple-bg text-pill-purple-text dark:bg-[rgba(147,51,234,0.12)] dark:text-[#A855F7]",
+  OPTION_ASSIGNMENT: "bg-pill-purple-bg text-pill-purple-text dark:bg-[rgba(147,51,234,0.12)] dark:text-[#A855F7]",
+  OPTION_EXPIRATION: "bg-pill-gray-bg text-pill-gray-text dark:bg-[rgba(75,85,99,0.12)] dark:text-[#9CA3AF]",
+  RSU_VEST: "bg-pill-teal-bg text-pill-teal-text dark:bg-[rgba(13,148,136,0.12)] dark:text-[#14B8A6]",
+  ESPP_PURCHASE: "bg-pill-teal-bg text-pill-teal-text dark:bg-[rgba(13,148,136,0.12)] dark:text-[#14B8A6]",
+  TRANSFER_IN: "bg-pill-blue-bg text-pill-blue-text dark:bg-[rgba(37,99,235,0.12)] dark:text-[#3B82F6]",
+  TRANSFER_OUT: "bg-pill-indigo-bg text-pill-indigo-text dark:bg-[rgba(79,70,229,0.12)] dark:text-[#818CF8]",
+  YEAR_END_FMV: "bg-pill-gray-bg text-pill-gray-text dark:bg-[rgba(75,85,99,0.12)] dark:text-[#9CA3AF]",
 };
 
 const TRANSACTION_TYPES = [
-  "BUY",
-  "SELL",
-  "SELL_SHORT",
-  "BUY_TO_COVER",
-  "DIVIDEND",
-  "DIVIDEND_REINVEST",
-  "INTEREST",
-  "SPLIT",
-  "MERGER",
-  "SPINOFF",
-  "RETURN_OF_CAPITAL",
-  "OPTION_EXERCISE",
-  "OPTION_ASSIGNMENT",
-  "OPTION_EXPIRATION",
-  "RSU_VEST",
-  "ESPP_PURCHASE",
-  "TRANSFER_IN",
-  "TRANSFER_OUT",
-  "YEAR_END_FMV",
+  "BUY", "SELL", "SELL_SHORT", "BUY_TO_COVER", "DIVIDEND", "DIVIDEND_REINVEST",
+  "INTEREST", "SPLIT", "MERGER", "SPINOFF", "RETURN_OF_CAPITAL",
+  "OPTION_EXERCISE", "OPTION_ASSIGNMENT", "OPTION_EXPIRATION",
+  "RSU_VEST", "ESPP_PURCHASE", "TRANSFER_IN", "TRANSFER_OUT", "YEAR_END_FMV",
 ];
 
 // ---------------------------------------------------------------------------
@@ -196,12 +162,9 @@ export default function SecuritiesTransactionsPage() {
   }, [page, limit, searchSymbol, typeFilter, dateFrom, dateTo, sortOrder]);
 
   useEffect(() => {
-    if (mounted) {
-      fetchTransactions();
-    }
+    if (mounted) fetchTransactions();
   }, [mounted, fetchTransactions]);
 
-  // Reset page when filters change
   useEffect(() => {
     setPage(1);
   }, [searchSymbol, typeFilter, dateFrom, dateTo, sortOrder]);
@@ -224,9 +187,7 @@ export default function SecuritiesTransactionsPage() {
       );
     } catch (error) {
       console.error("Compute error:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to compute lots.",
-      );
+      toast.error(error instanceof Error ? error.message : "Failed to compute lots.");
     } finally {
       setIsComputing(false);
     }
@@ -237,48 +198,47 @@ export default function SecuritiesTransactionsPage() {
     fetchTransactions();
   };
 
-  if (!mounted) {
-    return null;
-  }
+  if (!mounted) return null;
 
   return (
     <Layout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="space-y-6 px-0">
+        {/* ── Header ── */}
+        <div className="flex items-start justify-between">
           <div>
-            <h1 className="text-2xl font-semibold text-[#1A1A1A]">
+            <h1 className="text-[28px] font-light tracking-[-0.02em] text-[#1A1A1A] dark:text-[#F5F5F5]">
               Securities Transactions
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              View and manage your securities transactions across all brokerage
-              accounts.
-              {total > 0 && (
-                <span className="ml-1 font-medium">
-                  ({total.toLocaleString()} total)
-                </span>
-              )}
-            </p>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span
+                className="text-[36px] font-bold text-[#1A1A1A] dark:text-[#F5F5F5]"
+                style={{ fontVariantNumeric: "tabular-nums", lineHeight: 1.1 }}
+              >
+                {total.toLocaleString()}
+              </span>
+              <span className="text-[14px] text-[#6B7280]">
+                Transaction{total !== 1 ? "s" : ""}
+              </span>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               onClick={handleComputeLots}
               disabled={isComputing}
-              className="gap-2"
             >
               {isComputing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
-                <Calculator className="h-4 w-4" />
+                <Calculator className="mr-2 h-4 w-4" />
               )}
               {isComputing ? "Computing..." : "Compute Lots"}
             </Button>
 
             <Sheet open={isImportOpen} onOpenChange={setIsImportOpen}>
               <SheetTrigger asChild>
-                <Button className="gap-2">
-                  <Upload className="h-4 w-4" />
+                <Button>
+                  <Upload className="mr-2 h-4 w-4" />
                   Import CSV
                 </Button>
               </SheetTrigger>
@@ -290,30 +250,27 @@ export default function SecuritiesTransactionsPage() {
                   </SheetDescription>
                 </SheetHeader>
                 <div className="mt-8">
-                  <SecuritiesCSVImport
-                    onImportComplete={handleImportComplete}
-                  />
+                  <SecuritiesCSVImport onImportComplete={handleImportComplete} />
                 </div>
               </SheetContent>
             </Sheet>
           </div>
         </div>
 
-        {/* Filters */}
+        {/* ── Filters ── */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px] max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9CA3AF]" />
             <Input
               placeholder="Search symbol..."
-              className="pl-9"
+              className="pl-9 h-9 text-sm"
               value={searchSymbol}
               onChange={(e) => setSearchSymbol(e.target.value)}
             />
           </div>
 
           <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className="w-[180px]">
-              <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+            <SelectTrigger className="w-[180px] h-9 text-sm font-medium">
               <SelectValue placeholder="All Types" />
             </SelectTrigger>
             <SelectContent>
@@ -328,21 +285,19 @@ export default function SecuritiesTransactionsPage() {
 
           <Input
             type="date"
-            className="w-[160px]"
+            className="w-[150px] h-9 text-sm"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            placeholder="From date"
           />
           <Input
             type="date"
-            className="w-[160px]"
+            className="w-[150px] h-9 text-sm"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            placeholder="To date"
           />
 
           <Select value={sortOrder} onValueChange={setSortOrder}>
-            <SelectTrigger className="w-[150px]">
+            <SelectTrigger className="w-[150px] h-9 text-sm font-medium">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -352,107 +307,174 @@ export default function SecuritiesTransactionsPage() {
           </Select>
         </div>
 
-        {/* Table */}
-        <div className="rounded-lg border border-[#E5E5E0] overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="text-[#1A1A1A]">Date</TableHead>
-                <TableHead className="text-[#1A1A1A]">Type</TableHead>
-                <TableHead className="text-[#1A1A1A]">Symbol</TableHead>
-                <TableHead className="text-[#1A1A1A]">Asset Class</TableHead>
-                <TableHead className="text-[#1A1A1A] text-right">Qty</TableHead>
-                <TableHead className="text-[#1A1A1A] text-right">Price</TableHead>
-                <TableHead className="text-[#1A1A1A] text-right">
-                  Proceeds
-                </TableHead>
-                <TableHead className="text-[#1A1A1A] text-right">Fees</TableHead>
-                <TableHead className="text-[#1A1A1A]">Account</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={9}
-                    className="h-32 text-center text-muted-foreground"
-                  >
-                    <Loader2 className="h-5 w-5 animate-spin mx-auto mb-2" />
-                    Loading transactions...
-                  </TableCell>
+        {/* ── Table ── */}
+        <div className="border border-[#E5E5E0] dark:border-[#333] rounded-lg">
+          <div className="overflow-auto max-h-[calc(100vh-340px)] rounded-lg">
+            <Table className="transaction-table">
+              <TableHeader className="sticky top-0 z-10 bg-[#FAFAF8] dark:bg-[#161616]">
+                <TableRow className="border-b border-[#E5E5E0] dark:border-[#333]">
+                  <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                    Date
+                  </TableHead>
+                  <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                    Type
+                  </TableHead>
+                  <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                    Symbol
+                  </TableHead>
+                  <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                    Asset Class
+                  </TableHead>
+                  <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A] text-right">
+                    Qty
+                  </TableHead>
+                  <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A] text-right">
+                    Price
+                  </TableHead>
+                  <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A] text-right">
+                    Proceeds
+                  </TableHead>
+                  <TableHead className="text-[14px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A] text-right">
+                    Fees
+                  </TableHead>
+                  <TableHead className="text-[14px] font-semibold text-[#4B5563]">
+                    Account
+                  </TableHead>
                 </TableRow>
-              ) : transactions.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={9}
-                    className="h-32 text-center text-muted-foreground"
-                  >
-                    {total === 0
-                      ? 'No securities transactions yet. Click "Import CSV" to get started.'
-                      : "No transactions match your filters."}
-                  </TableCell>
-                </TableRow>
-              ) : (
-                transactions.map((tx) => (
-                  <TableRow key={tx.id} className="hover:bg-[#F9F9F8]">
-                    <TableCell className="whitespace-nowrap text-sm">
-                      {format(new Date(tx.date), "MMM d, yyyy")}
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium",
-                          TYPE_COLORS[tx.type] || "bg-gray-100 text-gray-800",
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  Array.from({ length: 8 }).map((_, i) => (
+                    <TableRow key={i} className="border-b border-[#F0F0EB] dark:border-[#2A2A2A]">
+                      <TableCell colSpan={9}>
+                        <div className="flex items-center gap-4 h-10">
+                          <div className="h-4 w-20 skeleton-pulse rounded" />
+                          <div className="h-5 w-16 skeleton-pulse rounded-md" />
+                          <div className="h-4 w-12 skeleton-pulse rounded" />
+                          <div className="h-4 w-16 skeleton-pulse rounded" />
+                          <div className="h-4 w-14 skeleton-pulse rounded" />
+                          <div className="h-4 w-16 skeleton-pulse rounded" />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : transactions.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={9}>
+                      <div className="py-16 text-center">
+                        <FileText className="h-12 w-12 text-[#9CA3AF] mx-auto mb-4" />
+                        <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
+                          {total === 0
+                            ? "No securities transactions yet"
+                            : "No transactions match your filters"}
+                        </p>
+                        <p className="text-sm text-[#6B7280] mt-2">
+                          {total === 0
+                            ? "Import a CSV from your brokerage to get started."
+                            : "Try adjusting your filters."}
+                        </p>
+                        {total === 0 && (
+                          <Button className="mt-4" onClick={() => setIsImportOpen(true)}>
+                            <Upload className="mr-2 h-4 w-4" />
+                            Import CSV
+                          </Button>
                         )}
-                      >
-                        {formatType(tx.type)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="font-medium text-sm">
-                      {tx.symbol}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {tx.assetClass.replace(/_/g, " ")}
-                    </TableCell>
-                    <TableCell className="text-right text-sm tabular-nums">
-                      {formatQuantity(tx.quantity)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm tabular-nums">
-                      {formatCurrency(tx.price)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm tabular-nums">
-                      {formatCurrency(tx.proceeds)}
-                    </TableCell>
-                    <TableCell className="text-right text-sm tabular-nums text-muted-foreground">
-                      {tx.fees > 0 ? formatCurrency(tx.fees) : "-"}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {tx.brokerageId ? tx.brokerageId.slice(0, 8) + "..." : "-"}
+                      </div>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  transactions.map((tx) => (
+                    <TableRow
+                      key={tx.id}
+                      className="group cursor-pointer border-b border-[#F0F0EB] dark:border-[#2A2A2A] hover:bg-[#FAFAF7] dark:hover:bg-[rgba(255,255,255,0.03)] transition-colors"
+                    >
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A] whitespace-nowrap">
+                        <span className="text-[14px] text-[#1A1A1A] dark:text-[#F5F5F5]">
+                          {format(new Date(tx.date), "MMM d, yyyy")}
+                        </span>
+                      </TableCell>
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-md px-2.5 py-0.5 text-[12px] font-medium",
+                            TYPE_COLORS[tx.type] || "bg-pill-gray-bg text-pill-gray-text",
+                          )}
+                        >
+                          {formatType(tx.type)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                        <span className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">
+                          {tx.symbol}
+                        </span>
+                      </TableCell>
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                        <span className="text-[13px] text-[#6B7280]">
+                          {tx.assetClass.replace(/_/g, " ")}
+                        </span>
+                      </TableCell>
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A] text-right">
+                        <span
+                          className="text-[14px] text-[#1A1A1A] dark:text-[#F5F5F5]"
+                          style={{ fontVariantNumeric: "tabular-nums" }}
+                        >
+                          {formatQuantity(tx.quantity)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A] text-right">
+                        <span
+                          className="text-[14px] text-[#1A1A1A] dark:text-[#F5F5F5]"
+                          style={{ fontVariantNumeric: "tabular-nums" }}
+                        >
+                          {formatCurrency(tx.price)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A] text-right">
+                        <span
+                          className="text-[14px] text-[#1A1A1A] dark:text-[#F5F5F5]"
+                          style={{ fontVariantNumeric: "tabular-nums" }}
+                        >
+                          {formatCurrency(tx.proceeds)}
+                        </span>
+                      </TableCell>
+                      <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A] text-right">
+                        <span
+                          className="text-[14px] text-[#6B7280]"
+                          style={{ fontVariantNumeric: "tabular-nums" }}
+                        >
+                          {tx.fees > 0 ? formatCurrency(tx.fees) : "—"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-[13px] text-[#6B7280]">
+                          {tx.brokerageId
+                            ? tx.brokerageId.slice(0, 8) + "..."
+                            : "—"}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </div>
 
-        {/* Pagination */}
+        {/* ── Pagination ── */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
+            <p className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: "tabular-nums" }}>
               Page {page} of {totalPages} ({total.toLocaleString()} transactions)
             </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
+            <div className="flex items-center gap-1.5">
+              <button
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[13px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors disabled:opacity-40 disabled:pointer-events-none"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page <= 1}
               >
-                <ChevronLeft className="h-4 w-4" />
+                <ChevronLeft className="h-3.5 w-3.5" />
                 Previous
-              </Button>
-              {/* Page number buttons */}
+              </button>
               {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                 let pageNum: number;
                 if (totalPages <= 5) {
@@ -465,26 +487,28 @@ export default function SecuritiesTransactionsPage() {
                   pageNum = page - 2 + i;
                 }
                 return (
-                  <Button
+                  <button
                     key={pageNum}
-                    variant={pageNum === page ? "default" : "outline"}
-                    size="sm"
+                    className={cn(
+                      "inline-flex items-center justify-center w-8 h-8 rounded-md text-[13px] font-medium transition-colors",
+                      pageNum === page
+                        ? "bg-[#1A1A1A] dark:bg-[#F5F5F5] text-white dark:text-[#1A1A1A]"
+                        : "border border-[#E5E5E0] dark:border-[#333] text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#2563EB] hover:text-[#2563EB]",
+                    )}
                     onClick={() => setPage(pageNum)}
-                    className="w-9"
                   >
                     {pageNum}
-                  </Button>
+                  </button>
                 );
               })}
-              <Button
-                variant="outline"
-                size="sm"
+              <button
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[13px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors disabled:opacity-40 disabled:pointer-events-none"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page >= totalPages}
               >
                 Next
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
         )}
