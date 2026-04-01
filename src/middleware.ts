@@ -34,5 +34,6 @@ export const config = {
     "/tax-reports/:path*",
     "/tax-ai/:path*",
     "/settings/:path*",
+    "/securities/:path*",
   ],
 };

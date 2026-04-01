@@ -215,3 +215,192 @@ model TransactionEditHistory {
   @@index([transactionId, version])
   @@map("transaction_edit_history")
 }
+
+model Brokerage {
+  id                    String   @id @default(cuid())
+  userId                String
+  name                  String
+  provider              String
+  accountNumber         String?  @map("account_number")
+  accountType           String   @default("TAXABLE") @map("account_type")
+  supportsCrypto        Boolean  @default(false) @map("supports_crypto")
+  supportsSecurities    Boolean  @default(true) @map("supports_securities")
+  apiKeyEncrypted       String?  @map("api_key_encrypted")
+  apiSecretEncrypted    String?  @map("api_secret_encrypted")
+  isConnected           Boolean  @default(false) @map("is_connected")
+  lastSyncAt            DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@map("brokerages")
+}
+
+model SecuritiesTaxSettings {
+  id                        String  @id @default(cuid())
+  userId                    String
+  year                      Int
+  taxStatus                 String  @default("INVESTOR") @map("tax_status")
+  section988Election        Boolean @default(false) @map("section_988_election")
+  substantiallyIdenticalMethod String @default("METHOD_1") @map("substantially_identical_method")
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([userId, year])
+  @@index([userId])
+  @@map("securities_tax_settings")
+}
+
+model SecuritiesTransaction {
+  id                  Int      @id @default(autoincrement())
+  userId              String   @map("user_id")
+  brokerageId         String?  @map("brokerage_id")
+  date                DateTime @db.Date
+  type                String   @db.VarChar(30)
+  symbol              String   @db.VarChar(50)
+  assetClass          String   @map("asset_class") @db.VarChar(20)
+  quantity            Decimal  @db.Decimal(20, 8)
+  price               Decimal  @db.Decimal(20, 8)
+  fees                Decimal  @default(0) @db.Decimal(20, 4)
+  totalAmount         Decimal? @map("total_amount") @db.Decimal(20, 4)
+  lotId               String?  @map("lot_id")
+  newSymbol           String?  @map("new_symbol") @db.VarChar(50)
+  ratioFrom           Decimal? @map("ratio_from")
+  ratioTo             Decimal? @map("ratio_to")
+  allocationPct       Decimal? @map("allocation_pct")
+  cashInLieu          Decimal? @map("cash_in_lieu")
+  underlyingSymbol    String?  @map("underlying_symbol") @db.VarChar(50)
+  optionType          String?  @map("option_type") @db.VarChar(10)
+  strikePrice         Decimal? @map("strike_price")
+  expirationDate      DateTime? @map("expiration_date") @db.Date
+  dividendType        String?  @map("dividend_type") @db.VarChar(30)
+  foreignTaxPaid      Decimal? @map("foreign_tax_paid")
+  fmvAtVest           Decimal? @map("fmv_at_vest")
+  offeringDate        DateTime? @map("offering_date") @db.Date
+  sharesWithheld      Decimal? @map("shares_withheld")
+  isSection1256       Boolean  @default(false) @map("is_section_1256")
+  isCovered           Boolean  @default(true) @map("is_covered")
+  notes               String?
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([symbol])
+  @@index([date])
+  @@index([brokerageId])
+  @@map("securities_transactions")
+}
+
+model SecuritiesLot {
+  id                      Int      @id @default(autoincrement())
+  userId                  String   @map("user_id")
+  brokerageId             String?  @map("brokerage_id")
+  symbol                  String   @db.VarChar(50)
+  assetClass              String   @map("asset_class") @db.VarChar(20)
+  quantity                Decimal  @db.Decimal(20, 8)
+  originalQuantity        Decimal  @map("original_quantity") @db.Decimal(20, 8)
+  costBasisPerShare       Decimal  @map("cost_basis_per_share") @db.Decimal(20, 8)
+  totalCostBasis          Decimal  @map("total_cost_basis") @db.Decimal(20, 4)
+  dateAcquired            DateTime @map("date_acquired") @db.Date
+  adjustedAcquisitionDate DateTime? @map("adjusted_acquisition_date") @db.Date
+  dateSold                DateTime? @map("date_sold") @db.Date
+  holdingPeriod           String?  @map("holding_period") @db.VarChar(15)
+  washSaleAdjustment      Decimal  @default(0) @map("wash_sale_adjustment") @db.Decimal(20, 4)
+  washSaleTackDays        Int      @default(0) @map("wash_sale_tack_days")
+  isCovered               Boolean  @default(true) @map("is_covered")
+  source                  String   @default("PURCHASE") @db.VarChar(30)
+  isSection1256           Boolean  @default(false) @map("is_section_1256")
+  isSegregatedInvestment  Boolean  @default(false) @map("is_segregated_investment")
+  section988              Boolean  @default(false) @map("section_988")
+  status                  String   @default("OPEN") @db.VarChar(20)
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([symbol])
+  @@index([status])
+  @@map("securities_lots")
+}
+
+model SecuritiesTaxableEvent {
+  id                          Int      @id @default(autoincrement())
+  userId                      String   @map("user_id")
+  lotId                       Int?     @map("lot_id")
+  transactionId               Int?     @map("transaction_id")
+  year                        Int
+  symbol                      String   @db.VarChar(50)
+  assetClass                  String   @map("asset_class") @db.VarChar(20)
+  quantity                    Decimal  @db.Decimal(20, 8)
+  dateAcquired                DateTime @map("date_acquired") @db.Date
+  dateSold                    DateTime @map("date_sold") @db.Date
+  proceeds                    Decimal  @db.Decimal(20, 4)
+  costBasis                   Decimal  @map("cost_basis") @db.Decimal(20, 4)
+  gainLoss                    Decimal  @map("gain_loss") @db.Decimal(20, 4)
+  holdingPeriod               String   @map("holding_period") @db.VarChar(15)
+  gainType                    String   @default("CAPITAL") @map("gain_type") @db.VarChar(20)
+  washSaleCode                String?  @map("wash_sale_code") @db.VarChar(5)
+  washSaleAdjustment          Decimal  @default(0) @map("wash_sale_adjustment") @db.Decimal(20, 4)
+  washSalePermanentlyDisallowed Boolean @default(false) @map("wash_sale_permanently_disallowed")
+  form8949Box                 String?  @map("form_8949_box") @db.VarChar(5)
+  formDestination             String   @default("8949") @map("form_destination") @db.VarChar(20)
+  isDeemedSale                Boolean  @default(false) @map("is_deemed_sale")
+  createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([year])
+  @@index([symbol])
+  @@map("securities_taxable_events")
+}
+
+model SecuritiesWashSale {
+  id                        Int      @id @default(autoincrement())
+  userId                    String   @map("user_id")
+  lossTransactionId         Int      @map("loss_transaction_id")
+  replacementTransactionId  Int      @map("replacement_transaction_id")
+  lossLotId                 Int?     @map("loss_lot_id")
+  replacementLotId          Int?     @map("replacement_lot_id")
+  disallowedAmount          Decimal  @map("disallowed_amount") @db.Decimal(20, 4)
+  isPermanent               Boolean  @default(false) @map("is_permanent")
+  basisAdjustment           Decimal  @map("basis_adjustment") @db.Decimal(20, 4)
+  holdingPeriodTackDays     Int      @default(0) @map("holding_period_tack_days")
+  year                      Int
+  carryForward              Boolean  @default(false) @map("carry_forward")
+  createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([year])
+  @@map("securities_wash_sales")
+}
+
+model SecuritiesDividend {
+  id              Int      @id @default(autoincrement())
+  userId          String   @map("user_id")
+  transactionId   Int?     @map("transaction_id")
+  symbol          String   @db.VarChar(50)
+  payer           String?  @db.VarChar(100)
+  amount          Decimal  @db.Decimal(20, 4)
+  dividendType    String   @map("dividend_type") @db.VarChar(30)
+  foreignTaxPaid  Decimal  @default(0) @map("foreign_tax_paid") @db.Decimal(20, 4)
+  year            Int
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@index([year])
+  @@map("securities_dividends")
+}
+
+model SecuritiesEquivalenceGroup {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  groupName String   @map("group_name")
+  symbols   String[]
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([userId])
+  @@map("securities_equivalence_groups")
+}
+
+model SecuritiesSection1256Symbol {
+  id          Int     @id @default(autoincrement())
+  symbol      String  @unique @db.VarChar(20)
+  description String?
+  isDefault   Boolean @default(true) @map("is_default")
+
+  @@map("securities_section_1256_symbols")
+}

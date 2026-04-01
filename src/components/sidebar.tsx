@@ -1,14 +1,19 @@
 "use client";
 
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import {
   BarChart2,
+  ChevronDown,
+  ChevronRight,
   FileText,
   Landmark,
   Settings,
   Sparkles,
   Wallet,
   HelpCircle,
+  Building,
+  ArrowRightLeft,
 } from "lucide-react";
 import {
   Sidebar as ShadcnSidebar,
@@ -23,10 +28,35 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar";
 
-const navItems = [
-  // { title: "Portfolio", href: "/", icon: BarChart2 },
-  { title: "Accounts", href: "/accounts", icon: Landmark },
-  { title: "Transactions", href: "/transactions", icon: Wallet },
+interface NavItem {
+  title: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+interface NavGroup {
+  title: string;
+  items: NavItem[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    title: "Crypto",
+    items: [
+      { title: "Accounts", href: "/accounts", icon: Landmark },
+      { title: "Transactions", href: "/transactions", icon: Wallet },
+    ],
+  },
+  {
+    title: "Securities",
+    items: [
+      { title: "Accounts", href: "/securities/accounts", icon: Building },
+      { title: "Transactions", href: "/securities/transactions", icon: ArrowRightLeft },
+    ],
+  },
+];
+
+const standaloneItems: NavItem[] = [
   { title: "Tax Reports", href: "/tax-reports", icon: FileText },
   { title: "Tax AI", href: "/tax-ai", icon: Sparkles },
 ];
@@ -38,6 +68,10 @@ const footerItems = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    Crypto: true,
+    Securities: true,
+  });
 
   const handleNavigation = (path: string) => {
     const pathWithTrailingSlash = path.endsWith('/') ? path : `${path}/`;
@@ -47,6 +81,10 @@ export function AppSidebar() {
   const isActivePath = (itemPath: string, currentPath: string) => {
     if (itemPath === "/") return currentPath === "/";
     return currentPath.startsWith(itemPath);
+  };
+
+  const toggleGroup = (title: string) => {
+    setOpenGroups((prev) => ({ ...prev, [title]: !prev[title] }));
   };
 
   return (
@@ -70,7 +108,46 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
+              {navGroups.map((group) => {
+                const isOpen = openGroups[group.title] ?? true;
+                return (
+                  <div key={group.title}>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        onClick={() => toggleGroup(group.title)}
+                        className="h-9"
+                      >
+                        {isOpen ? (
+                          <ChevronDown className="h-[14px] w-[14px]" />
+                        ) : (
+                          <ChevronRight className="h-[14px] w-[14px]" />
+                        )}
+                        <span className="text-[13px] font-medium uppercase tracking-wide text-muted-foreground">
+                          {group.title}
+                        </span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    {isOpen &&
+                      group.items.map((item) => {
+                        const isActive = isActivePath(item.href, pathname);
+                        return (
+                          <SidebarMenuItem key={item.href}>
+                            <SidebarMenuButton
+                              isActive={isActive}
+                              onClick={() => handleNavigation(item.href)}
+                              className="h-9 pl-7"
+                            >
+                              <item.icon className="h-[18px] w-[18px]" />
+                              <span className="text-[14px]">{item.title}</span>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        );
+                      })}
+                  </div>
+                );
+              })}
+
+              {standaloneItems.map((item) => {
                 const isActive = isActivePath(item.href, pathname);
                 return (
                   <SidebarMenuItem key={item.title}>
