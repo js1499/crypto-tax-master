@@ -11,6 +11,12 @@ import {
   applyWashSaleAdjustments,
 } from "@/lib/securities-wash-sale-engine";
 import { processDividends } from "@/lib/securities-dividends";
+import {
+  computeSection1256,
+  getQualifyingSymbols,
+} from "@/lib/securities-section-1256";
+import { computeSection475 } from "@/lib/securities-section-475";
+import { computeSection988 } from "@/lib/securities-section-988";
 import { Decimal } from "@prisma/client/runtime/library";
 
 /**
@@ -174,6 +180,112 @@ export async function POST(request: NextRequest) {
     }
 
     // -----------------------------------------------------------------------
+    // Section 1256: tag qualifying events and compute summary
+    // -----------------------------------------------------------------------
+    const qualifyingSymbols = new Set(
+      (await getQualifyingSymbols()).map((s) => s.toUpperCase()),
+    );
+
+    // Tag taxable events whose symbols qualify as Section 1256
+    for (const ev of taxableEvents) {
+      if (
+        qualifyingSymbols.has(ev.symbol.toUpperCase()) &&
+        ev.gainType !== "SECTION_1256"
+      ) {
+        ev.gainType = "SECTION_1256";
+        ev.formDestination = "6781";
+      }
+    }
+
+    const section1256Result = await computeSection1256(
+      user.id,
+      taxYear,
+      taxableEvents,
+    );
+
+    // -----------------------------------------------------------------------
+    // Section 475 MTM: for TRADER_MTM status only
+    // -----------------------------------------------------------------------
+    let section475Result = null;
+    if (taxStatus === "TRADER_MTM") {
+      // Build year-end FMV map from YEAR_END_FMV transactions
+      const yearEndFmvMap = new Map<string, number>();
+      for (const tx of transactions) {
+        if (
+          tx.type === "YEAR_END_FMV" &&
+          new Date(tx.date).getFullYear() === taxYear
+        ) {
+          yearEndFmvMap.set(
+            tx.symbol.toUpperCase(),
+            Number(tx.price),
+          );
+        }
+      }
+
+      // Detect transition year: check if prior year had a different tax status
+      // by looking at prior year settings. If no prior settings exist, treat
+      // this as a transition year.
+      let isTransitionYear = false;
+      try {
+        const priorSettings = await prisma.securitiesTaxSettings.findUnique({
+          where: {
+            userId_year: { userId: user.id, year: taxYear - 1 },
+          },
+        });
+        isTransitionYear =
+          !priorSettings || priorSettings.taxStatus !== "TRADER_MTM";
+      } catch {
+        isTransitionYear = true;
+      }
+
+      section475Result = computeSection475(
+        taxableEvents,
+        openLots,
+        taxYear,
+        isTransitionYear,
+        yearEndFmvMap,
+      );
+
+      // Convert non-segregated events to ordinary gain type and Form 4797
+      for (const ev of taxableEvents) {
+        if (ev.year !== taxYear) continue;
+        // Skip segregated investment events (they retain capital treatment)
+        const isSegregated = section475Result.segregatedInvestmentEvents.some(
+          (se) =>
+            se.transactionId === ev.transactionId && se.lotId === ev.lotId,
+        );
+        if (isSegregated) continue;
+        // Skip Section 1256 events — they have their own treatment
+        if (ev.gainType === "SECTION_1256") continue;
+
+        ev.gainType = "ORDINARY";
+        ev.formDestination = "4797";
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Section 988 Forex: check for forex transactions
+    // -----------------------------------------------------------------------
+    const section988Election = taxSettings?.section988Election ?? false;
+    const hasForex = taxableEvents.some((ev) => ev.assetClass === "FOREX");
+
+    let section988Result = null;
+    if (hasForex) {
+      section988Result = computeSection988(taxableEvents, section988Election);
+
+      // If NOT opted out (default 988 treatment), mark forex events as ordinary
+      if (!section988Election) {
+        for (const ev of taxableEvents) {
+          if (ev.assetClass !== "FOREX") continue;
+          // Skip regulated futures (already Section 1256)
+          if (ev.gainType === "SECTION_1256") continue;
+          ev.gainType = "ORDINARY";
+          ev.formDestination = "4797";
+        }
+      }
+    }
+
+    // -----------------------------------------------------------------------
     // Delete existing computed data for full recompute
     // -----------------------------------------------------------------------
     await prisma.$transaction([
@@ -306,6 +418,33 @@ export async function POST(request: NextRequest) {
       washSalesCreated,
       dividendsCreated,
       costBasisMethod,
+      section1256: {
+        shortTermGain: section1256Result.shortTermGain,
+        longTermGain: section1256Result.longTermGain,
+        totalGain: section1256Result.totalGain,
+        mtmEventsCount: section1256Result.mtmEvents.length,
+        closedPositionsCount: section1256Result.closedPositions.length,
+      },
+      ...(section475Result
+        ? {
+            section475: {
+              ordinaryGainLoss: section475Result.ordinaryGainLoss,
+              deemedSaleEventsCount: section475Result.deemedSaleEvents.length,
+              hasSection481Adjustment: !!section475Result.section481Adjustment,
+              segregatedEventsCount:
+                section475Result.segregatedInvestmentEvents.length,
+            },
+          }
+        : {}),
+      ...(section988Result
+        ? {
+            section988: {
+              ordinaryGainLoss: section988Result.ordinaryGainLoss,
+              eventsCount: section988Result.events.length,
+              optedOut: section988Result.optedOut,
+            },
+          }
+        : {}),
     });
   } catch (error) {
     console.error("[Securities Compute API] POST error:", error);
