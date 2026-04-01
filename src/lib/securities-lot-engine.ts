@@ -35,6 +35,10 @@ export interface SecuritiesTransaction {
   strikePrice?: number | Decimal | null;
   expirationDate?: Date | null;
   dividendType?: string | null;
+  ratioFrom?: number | Decimal | null;
+  ratioTo?: number | Decimal | null;
+  allocationPct?: number | Decimal | null;
+  cashInLieu?: number | Decimal | null;
   isCovered: boolean;
   isSection1256: boolean;
   notes?: string | null;
@@ -116,6 +120,11 @@ interface MutableLot {
 function toNum(v: number | Decimal | null | undefined): number {
   if (v === null || v === undefined) return 0;
   return typeof v === "number" ? v : Number(v);
+}
+
+/** Round to 2 decimal places for financial values */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 /** Returns true if >1 year between two dates */
@@ -281,7 +290,6 @@ export function computeSecuritiesLots(
       // Acquisition types: create new lots
       // ------------------------------------------------------------------
       case "BUY":
-      case "DIVIDEND_REINVEST":
       case "TRANSFER_IN":
       case "RSU_VEST":
       case "ESPP_PURCHASE": {
@@ -310,6 +318,44 @@ export function computeSecuritiesLots(
           ...lot,
           status: "OPEN",
         });
+        break;
+      }
+
+      // ------------------------------------------------------------------
+      // Dividend reinvestment: record dividend income AND create lot
+      // ------------------------------------------------------------------
+      case "DIVIDEND_REINVEST": {
+        const costBasis = totalOverride ?? qty * price + fees;
+        const costPerShare = qty > 0 ? costBasis / qty : 0;
+
+        // Record the dividend income (the reinvested amount is taxable as a dividend)
+        dividends.push({
+          transactionId: tx.id,
+          symbol: sym,
+          amount: round2(costBasis),
+          dividendType: tx.dividendType ?? "QUALIFIED",
+          year,
+        });
+
+        // Create the lot for the reinvested shares
+        const lot: MutableLot = {
+          id: lotIdCounter++,
+          symbol: sym,
+          assetClass: tx.assetClass,
+          quantity: qty,
+          originalQuantity: qty,
+          costBasisPerShare: costPerShare,
+          totalCostBasis: costBasis,
+          dateAcquired: txDate,
+          source: "DRIP",
+          isCovered: tx.isCovered,
+          isSection1256: tx.isSection1256,
+          brokerageId: tx.brokerageId ?? undefined,
+          washSaleAdjustment: 0,
+        };
+
+        openLots[sym].push(lot);
+        allLots.push({ ...lot, status: "OPEN" });
         break;
       }
 
@@ -479,7 +525,7 @@ export function computeSecuritiesLots(
 
         const symLots = openLots[sym];
         if (!symLots || symLots.length === 0) {
-          // No lots — generate event with zero cost basis
+          // No lots — generate event with zero cost basis (UNKNOWN acquisition)
           if (!isTaxDeferred) {
             const holdPeriod: "SHORT_TERM" | "LONG_TERM" = "SHORT_TERM";
             taxableEvents.push({
@@ -487,11 +533,11 @@ export function computeSecuritiesLots(
               symbol: sym,
               assetClass: tx.assetClass,
               quantity: qty,
-              dateAcquired: txDate,
+              dateAcquired: new Date(0), // Unknown — flagged as epoch
               dateSold: txDate,
-              proceeds,
+              proceeds: round2(proceeds),
               costBasis: 0,
-              gainLoss: proceeds,
+              gainLoss: round2(proceeds),
               holdingPeriod: holdPeriod,
               gainType: tx.isSection1256 ? "SECTION_1256" : "CAPITAL",
               form8949Box: determineForm8949Box(holdPeriod, tx.isCovered),
@@ -514,8 +560,8 @@ export function computeSecuritiesLots(
           for (const lot of selected) {
             if (remainingQty <= 1e-10) break;
             const consumed = Math.min(lot.quantity, remainingQty);
-            const costBasis = consumed * avgCostPerShare;
-            const portionProceeds = qty > 0 ? proceeds * (consumed / qty) : 0;
+            const costBasis = round2(consumed * avgCostPerShare);
+            const portionProceeds = round2(qty > 0 ? proceeds * (consumed / qty) : 0);
 
             const holdPeriod = isLongTerm(lot.dateAcquired, txDate)
               ? "LONG_TERM" as const
@@ -532,7 +578,7 @@ export function computeSecuritiesLots(
                 dateSold: txDate,
                 proceeds: portionProceeds,
                 costBasis,
-                gainLoss: portionProceeds - costBasis,
+                gainLoss: round2(portionProceeds - costBasis),
                 holdingPeriod: holdPeriod,
                 gainType: tx.isSection1256 ? "SECTION_1256" : "CAPITAL",
                 form8949Box: determineForm8949Box(holdPeriod, lot.isCovered),
@@ -572,8 +618,8 @@ export function computeSecuritiesLots(
         for (const lot of selected) {
           if (remainingQty <= 1e-10) break;
           const consumed = Math.min(lot.quantity, remainingQty);
-          const costBasis = consumed * lot.costBasisPerShare;
-          const portionProceeds = qty > 0 ? proceeds * (consumed / qty) : 0;
+          const costBasis = round2(consumed * lot.costBasisPerShare);
+          const portionProceeds = round2(qty > 0 ? proceeds * (consumed / qty) : 0);
 
           const holdPeriod = isLongTerm(
             lot.adjustedAcquisitionDate ?? lot.dateAcquired,
@@ -593,7 +639,7 @@ export function computeSecuritiesLots(
               dateSold: txDate,
               proceeds: portionProceeds,
               costBasis,
-              gainLoss: portionProceeds - costBasis,
+              gainLoss: round2(portionProceeds - costBasis),
               holdingPeriod: holdPeriod,
               gainType: tx.isSection1256 ? "SECTION_1256" : "CAPITAL",
               form8949Box: determineForm8949Box(holdPeriod, lot.isCovered),
@@ -647,9 +693,11 @@ export function computeSecuritiesLots(
       // Stock split: adjust all open lots for the symbol
       // ------------------------------------------------------------------
       case "SPLIT": {
-        // quantity field represents the split ratio (e.g. 2 for 2:1 split)
-        // price field can be used for reverse splits (ratio < 1)
-        const splitRatio = qty; // e.g. 4 for a 4:1 split
+        // Use ratioTo/ratioFrom if provided (e.g., 4:1 = ratioTo=4, ratioFrom=1)
+        // Otherwise fall back to quantity as the ratio
+        const ratioTo = tx.ratioTo ? toNum(tx.ratioTo) : null;
+        const ratioFrom = tx.ratioFrom ? toNum(tx.ratioFrom) : null;
+        const splitRatio = (ratioTo && ratioFrom && ratioFrom > 0) ? ratioTo / ratioFrom : qty;
         if (splitRatio <= 0) break;
 
         const symLots = openLots[sym];

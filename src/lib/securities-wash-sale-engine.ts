@@ -463,12 +463,13 @@ function buildLotMap(lots: SecuritiesLotData[]): Map<number, MutableLotRef> {
 
 function isCarryForward(saleDate: Date, replacementDate: Date): boolean {
   const saleYear = saleDate.getFullYear();
-  const saleMonth = saleDate.getMonth(); // 0-indexed: 10=Nov, 11=Dec
   const replYear = replacementDate.getFullYear();
-  const replMonth = replacementDate.getMonth();
 
-  // Loss in Nov/Dec of year X, replacement in Jan of year X+1
-  if ((saleMonth === 10 || saleMonth === 11) && replYear === saleYear + 1 && replMonth === 0) {
+  // Cross-year if the loss is in year X and the replacement is in year X+1
+  // This covers: Dec loss + Jan replacement, Nov loss + Jan replacement, etc.
+  // Also covers: Dec loss + Dec replacement where the adjusted lot carries into next year
+  // (but that case is handled by the lot being open at year-end, not here)
+  if (replYear > saleYear) {
     return true;
   }
   return false;

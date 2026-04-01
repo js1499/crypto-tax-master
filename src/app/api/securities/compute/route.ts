@@ -145,6 +145,16 @@ export async function POST(request: NextRequest) {
       select: { symbols: true },
     });
 
+    // Build brokerage account type map for IRA/retirement wash sale detection
+    const brokerages = await prisma.brokerage.findMany({
+      where: { userId: user.id },
+      select: { id: true, accountType: true },
+    });
+    const brokerageAccountTypes = new Map<string, string>();
+    for (const b of brokerages) {
+      brokerageAccountTypes.set(b.id, b.accountType);
+    }
+
     const washSales = detectWashSales(
       taxableEvents,
       lots,
@@ -152,6 +162,7 @@ export async function POST(request: NextRequest) {
       { substantiallyIdenticalMethod },
       equivalenceGroups,
       taxStatus,
+      brokerageAccountTypes,
     );
 
     // Apply wash sale basis adjustments to lots and taxable events
