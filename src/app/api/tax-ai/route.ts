@@ -4,6 +4,9 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 
+// Allow long-running streaming for large CSV reformats
+export const maxDuration = 300;
+
 // ─── Rich schema + domain context ──────────────────────────────────────────
 
 const SCHEMA_CONTEXT = `
@@ -329,7 +332,13 @@ When returning CSV data, ALWAYS include it as a downloadable file block at the E
 header1,header2
 value1,value2
 \`\`\`
-Use this format whenever: (1) the user asks for data as a download/export, (2) you are reformatting a CSV, (3) you are returning query results with more than 5 rows, or (4) the user uploaded a file and expects transformed output. Do NOT print CSV rows as plain text — always use the csv-download block so the user gets a downloadable file.
+Use this format whenever: (1) the user asks for data as a download/export, (2) you are reformatting a CSV, (3) you are returning query results with more than 5 rows, or (4) the user uploaded a file and expects transformed output.
+
+CRITICAL CSV RULES:
+- NEVER print CSV rows as plain text in your message. Always use the csv-download block.
+- NEVER describe or list individual rows. Just say what you did ("Reformatted 1,234 rows into Custom format") and include the csv-download block.
+- For large files, output ALL rows in the csv-download block — do not truncate or summarize.
+- Keep your text explanation to 2-3 sentences MAX before the csv-download block.
 
 When the user asks you to reformat a CSV for import, use these target formats:
 
@@ -361,9 +370,13 @@ When reformatting, always output the full result as a csv-download block. Map th
             ));
 
             // Stream the answer
+            // Use higher token limit when file is attached (CSV reformat needs room)
+            const hasFile = answerMessages.some((m: any) =>
+              typeof m.content === "string" && m.content.includes("attached a file")
+            );
             const streamResponse = anthropic.messages.stream({
               model: "claude-opus-4-20250514",
-              max_tokens: 4096,
+              max_tokens: hasFile ? 32768 : 4096,
               system: answerSystemPrompt,
               messages: answerMessages,
             });
@@ -412,9 +425,12 @@ When reformatting, always output the full result as a csv-download block. Map th
     }
 
     // ── Non-streaming fallback ─────────────────────────────────────
+    const hasFileNonStream = answerMessages.some((m: any) =>
+      typeof m.content === "string" && m.content.includes("attached a file")
+    );
     const answerResponse = await anthropic.messages.create({
       model: "claude-opus-4-20250514",
-      max_tokens: 4096,
+      max_tokens: hasFileNonStream ? 32768 : 4096,
       system: answerSystemPrompt,
       messages: answerMessages,
     });
