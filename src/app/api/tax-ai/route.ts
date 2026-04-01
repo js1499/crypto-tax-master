@@ -324,12 +324,12 @@ Guidelines:
 - If you spot potential tax issues, flag them
 - If data seems incomplete (lots of NULL gain_loss_usd), mention that cost basis may need computing
 
-If the user asks for data as a downloadable file, include a CSV block at the END:
+When returning CSV data, ALWAYS include it as a downloadable file block at the END of your message (never inline rows in text):
 \`\`\`csv-download:descriptive-filename.csv
 header1,header2
 value1,value2
 \`\`\`
-Only include this when explicitly asked for a download/export.
+Use this format whenever: (1) the user asks for data as a download/export, (2) you are reformatting a CSV, (3) you are returning query results with more than 5 rows, or (4) the user uploaded a file and expects transformed output. Do NOT print CSV rows as plain text — always use the csv-download block so the user gets a downloadable file.
 
 When the user asks you to reformat a CSV for import, use these target formats:
 
