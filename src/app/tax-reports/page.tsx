@@ -33,6 +33,7 @@ import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 
 const taxForms = [
+  // Crypto forms
   {
     id: 1,
     name: "IRS Form 8949",
@@ -40,6 +41,7 @@ const taxForms = [
     category: "irs" as const,
     status: "ready" as const,
     country: "US" as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 2,
@@ -48,6 +50,7 @@ const taxForms = [
     category: "irs" as const,
     status: "ready" as const,
     country: "US" as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 9,
@@ -56,6 +59,7 @@ const taxForms = [
     category: "irs" as const,
     status: "ready" as const,
     country: "US" as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 3,
@@ -64,6 +68,7 @@ const taxForms = [
     category: "csv" as const,
     status: "ready" as const,
     country: undefined as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 4,
@@ -72,6 +77,7 @@ const taxForms = [
     category: "csv" as const,
     status: "ready" as const,
     country: undefined as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 5,
@@ -80,6 +86,7 @@ const taxForms = [
     category: "csv" as const,
     status: "ready" as const,
     country: undefined as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 6,
@@ -88,6 +95,7 @@ const taxForms = [
     category: "csv" as const,
     status: "ready" as const,
     country: undefined as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 7,
@@ -96,6 +104,7 @@ const taxForms = [
     category: "csv" as const,
     status: "ready" as const,
     country: undefined as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 8,
@@ -104,6 +113,7 @@ const taxForms = [
     category: "tax-software" as const,
     status: "ready" as const,
     country: "US" as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 10,
@@ -112,6 +122,7 @@ const taxForms = [
     category: "csv" as const,
     status: "ready" as const,
     country: "UK" as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 11,
@@ -120,6 +131,7 @@ const taxForms = [
     category: "csv" as const,
     status: "ready" as const,
     country: "UK" as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 12,
@@ -128,6 +140,7 @@ const taxForms = [
     category: "csv" as const,
     status: "ready" as const,
     country: "DE" as string | undefined,
+    engine: "crypto" as const,
   },
   {
     id: 13,
@@ -136,6 +149,90 @@ const taxForms = [
     category: "csv" as const,
     status: "ready" as const,
     country: "DE" as string | undefined,
+    engine: "crypto" as const,
+  },
+  // Securities forms
+  {
+    id: 20,
+    name: "Securities Form 8949",
+    description: "Capital gains and losses from stocks, options, and other securities",
+    category: "irs" as const,
+    status: "ready" as const,
+    country: "US" as string | undefined,
+    engine: "securities" as const,
+  },
+  {
+    id: 21,
+    name: "Realized Gains/Losses",
+    description: "All closed positions with lot detail",
+    category: "csv" as const,
+    status: "ready" as const,
+    country: undefined as string | undefined,
+    engine: "securities" as const,
+  },
+  {
+    id: 22,
+    name: "Wash Sale Detail",
+    description: "Every wash sale with disallowed amounts and adjustments",
+    category: "csv" as const,
+    status: "ready" as const,
+    country: undefined as string | undefined,
+    engine: "securities" as const,
+  },
+  {
+    id: 23,
+    name: "Wash Sale Carry-Forward",
+    description: "Cross-year wash sales carrying into next year",
+    category: "csv" as const,
+    status: "ready" as const,
+    country: undefined as string | undefined,
+    engine: "securities" as const,
+  },
+  {
+    id: 24,
+    name: "Permanently Disallowed",
+    description: "IRA/retirement wash sale losses that cannot be recovered",
+    category: "csv" as const,
+    status: "ready" as const,
+    country: undefined as string | undefined,
+    engine: "securities" as const,
+  },
+  {
+    id: 25,
+    name: "Dividend Summary",
+    description: "Dividends by payer and type for Schedule B",
+    category: "csv" as const,
+    status: "ready" as const,
+    country: undefined as string | undefined,
+    engine: "securities" as const,
+  },
+  {
+    id: 26,
+    name: "Section 1256 Summary",
+    description: "Section 1256 contract gains with 60/40 breakdown",
+    category: "csv" as const,
+    status: "ready" as const,
+    country: undefined as string | undefined,
+    engine: "securities" as const,
+  },
+  {
+    id: 27,
+    name: "Securities TurboTax",
+    description: "TurboTax-compatible securities import",
+    category: "tax-software" as const,
+    status: "ready" as const,
+    country: "US" as string | undefined,
+    engine: "securities" as const,
+  },
+  // Combined forms
+  {
+    id: 30,
+    name: "Combined Schedule D",
+    description: "Capital gains summary — crypto + securities combined",
+    category: "irs" as const,
+    status: "ready" as const,
+    country: "US" as string | undefined,
+    engine: "combined" as const,
   },
 ];
 
@@ -164,6 +261,7 @@ export default function TaxReportsPage() {
   const [costBasisMethod, setCostBasisMethod] = useState<"FIFO" | "LIFO" | "HIFO">("FIFO");
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [formFilter, setFormFilter] = useState<"all" | "irs" | "csv" | "tax-software">("all");
+  const [engineFilter, setEngineFilter] = useState<"all" | "crypto" | "securities" | "combined">("all");
   const [initialLoadDone, setInitialLoadDone] = useState(false);
   const [userCountry, setUserCountry] = useState("US");
   const { status: sessionStatus } = useSession();
@@ -397,13 +495,123 @@ export default function TaxReportsPage() {
     }
   };
 
+  const handleDownloadSecuritiesExport = async (reportType: string, filename: string) => {
+    if (sessionStatus === "unauthenticated") {
+      toast.error("Please log in to export securities reports");
+      return;
+    }
+    if (sessionStatus === "loading") {
+      toast.info("Checking authentication...");
+      return;
+    }
+    try {
+      setIsGeneratingReport(true);
+      const response = await fetch(`/api/securities/reports?year=${selectedYear}&type=${reportType}`, {
+        method: "GET",
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          toast.error("Session expired. Please log in again.");
+          return;
+        }
+        throw new Error(errorData.error || errorData.details || "Failed to generate export");
+      }
+      const blob = await response.blob();
+      if (blob.size === 0) throw new Error("Received empty file");
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success(`${filename} downloaded successfully!`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : `Failed to download ${filename}`;
+      toast.error(errorMessage);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  const handleDownloadCombined = async (formParam: string, filename: string) => {
+    if (sessionStatus === "unauthenticated") {
+      toast.error("Please log in to generate combined reports");
+      return;
+    }
+    if (sessionStatus === "loading") {
+      toast.info("Checking authentication...");
+      return;
+    }
+    try {
+      setIsGeneratingReport(true);
+      const response = await fetch(`/api/tax-reports/combined?year=${selectedYear}&form=${formParam}`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          toast.error("Session expired. Please log in again.");
+          return;
+        }
+        throw new Error(errorData.error || errorData.details || "Failed to generate combined report");
+      }
+      const blob = await response.blob();
+      if (blob.size === 0) throw new Error("Received empty file");
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      toast.success(`${filename} downloaded successfully!`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : `Failed to download ${filename}`;
+      toast.error(errorMessage);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
   const handleFormDownload = async (form: typeof taxForms[0]) => {
     if (form.status === "needs-pdf") {
       toast.info(`${form.name} requires fillable PDF support — coming soon.`);
       return;
     }
 
-    // IRS PDF forms
+    // Securities CSV exports
+    const securitiesExportMap: Record<string, { type: string; filename: string }> = {
+      "Securities Form 8949": { type: "realized-gains", filename: `Securities-Form8949-${selectedYear}.csv` },
+      "Realized Gains/Losses": { type: "realized-gains", filename: `Securities-Realized-Gains-${selectedYear}.csv` },
+      "Wash Sale Detail": { type: "wash-sale-detail", filename: `Securities-Wash-Sale-Detail-${selectedYear}.csv` },
+      "Wash Sale Carry-Forward": { type: "carry-forward", filename: `Securities-Wash-Sale-Carry-Forward-${selectedYear}.csv` },
+      "Permanently Disallowed": { type: "permanently-disallowed", filename: `Securities-Permanently-Disallowed-${selectedYear}.csv` },
+      "Dividend Summary": { type: "dividend-summary", filename: `Securities-Dividend-Summary-${selectedYear}.csv` },
+      "Section 1256 Summary": { type: "section-1256", filename: `Securities-Section-1256-${selectedYear}.csv` },
+      "Securities TurboTax": { type: "turbotax", filename: `Securities-TurboTax-${selectedYear}.csv` },
+    };
+    if (securitiesExportMap[form.name]) {
+      const info = securitiesExportMap[form.name];
+      await handleDownloadSecuritiesExport(info.type, info.filename);
+      return;
+    }
+
+    // Combined forms
+    const combinedFormMap: Record<string, { param: string; filename: string }> = {
+      "Combined Schedule D": { param: "schedule-d", filename: `Combined-ScheduleD-${selectedYear}.json` },
+    };
+    if (combinedFormMap[form.name]) {
+      const info = combinedFormMap[form.name];
+      await handleDownloadCombined(info.param, info.filename);
+      return;
+    }
+
+    // IRS PDF forms (crypto)
     const pdfFormMap: Record<string, { param: string; filename: string }> = {
       "IRS Form 8949": { param: "8949", filename: `Form8949-${selectedYear}.pdf` },
       "IRS Schedule D": { param: "scheduled", filename: `ScheduleD-${selectedYear}.pdf` },
@@ -415,7 +623,7 @@ export default function TaxReportsPage() {
       return;
     }
 
-    // CSV exports
+    // CSV exports (crypto)
     const csvExportMap: Record<string, { type: string; filename: string }> = {
       "Capital Gains CSV": { type: "capital-gains-csv", filename: `Capital-Gains-${selectedYear}.csv` },
       "Transaction History": { type: "transaction-history", filename: `Transaction-History-${selectedYear}.csv` },
@@ -470,7 +678,8 @@ export default function TaxReportsPage() {
   const barPct = (v: number) => `${Math.min((Math.abs(v) / maxBar) * 100, 100)}%`;
 
   const countryForms = taxForms.filter(f => !f.country || f.country === userCountry);
-  const filteredForms = formFilter === "all" ? countryForms : countryForms.filter(f => f.category === formFilter);
+  const engineForms = engineFilter === "all" ? countryForms : countryForms.filter(f => f.engine === engineFilter);
+  const filteredForms = formFilter === "all" ? engineForms : engineForms.filter(f => f.category === formFilter);
 
   const formIcon = (form: typeof taxForms[0]) => {
     if (form.category === "irs") return <FileText className="h-4 w-4" />;
@@ -642,7 +851,30 @@ export default function TaxReportsPage() {
 
         {/* Row 2: Available Reports */}
         <div className="border border-[#E5E5E0] dark:border-[#333] rounded-xl bg-white dark:bg-[#1A1A1A]">
-          <div className="flex items-center justify-between px-6 pt-6 pb-4">
+          {/* Engine filter tabs */}
+          <div className="flex items-center gap-2 px-6 pt-6 pb-3">
+            {([
+              { key: "all", label: "All" },
+              { key: "crypto", label: "Crypto" },
+              { key: "securities", label: "Securities" },
+              { key: "combined", label: "Combined" },
+            ] as const).map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setEngineFilter(tab.key)}
+                className={cn(
+                  "px-4 py-2 rounded-lg text-[13px] font-semibold transition-colors",
+                  engineFilter === tab.key
+                    ? "bg-[#1A1A1A] dark:bg-[#F5F5F5] text-white dark:text-[#1A1A1A]"
+                    : "text-[#6B7280] hover:text-[#1A1A1A] dark:hover:text-[#F5F5F5] hover:bg-[#F5F5F0] dark:hover:bg-[#222] border border-[#E5E5E0] dark:border-[#333]"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between px-6 pb-4">
             <h2 className="text-[16px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Available Reports</h2>
             <div className="flex items-center gap-1">
               {([
@@ -681,7 +913,14 @@ export default function TaxReportsPage() {
                       {formIcon(form)}
                     </div>
                     <div>
-                      <h3 className="text-[13px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">{form.name}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-[13px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">{form.name}</h3>
+                        {form.engine === "combined" && (
+                          <span className="inline-flex items-center rounded-full bg-[#EFF6FF] dark:bg-[#1A1A3A] px-2 py-0.5 text-[10px] font-medium text-[#2563EB]">
+                            Crypto + Securities
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[12px] text-[#9CA3AF]">{form.description}</p>
                     </div>
                   </div>
