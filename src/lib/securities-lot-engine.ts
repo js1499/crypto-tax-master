@@ -240,8 +240,23 @@ export function computeSecuritiesLots(
     return dateDiff !== 0 ? dateDiff : a.id - b.id;
   });
 
-  // Open lots keyed by symbol
+  // Open lots keyed by symbol (long positions)
   const openLots: Record<string, MutableLot[]> = {};
+  // Open short positions keyed by symbol
+  interface ShortPosition {
+    id: number;
+    transactionId: number;
+    symbol: string;
+    assetClass: string;
+    quantity: number;
+    proceeds: number;
+    proceedsPerShare: number;
+    dateOpened: Date;
+    isCovered: boolean;
+    isSection1256: boolean;
+    brokerageId?: string;
+  }
+  const openShorts: Record<string, ShortPosition[]> = {};
   // All lots (open + closed) for output
   const allLots: SecuritiesLotData[] = [];
   const taxableEvents: SecuritiesTaxEvent[] = [];
@@ -269,11 +284,7 @@ export function computeSecuritiesLots(
       case "DIVIDEND_REINVEST":
       case "TRANSFER_IN":
       case "RSU_VEST":
-      case "ESPP_PURCHASE":
-      case "BUY_TO_COVER": {
-        // For BUY_TO_COVER (closing short positions), we still create a lot
-        // that represents the cover cost. In a full short-selling engine this
-        // would match against the short lot — for now we track it as an acquisition.
+      case "ESPP_PURCHASE": {
         const costBasis = totalOverride ?? qty * price + fees;
         const costPerShare = qty > 0 ? costBasis / qty : 0;
 
@@ -305,15 +316,108 @@ export function computeSecuritiesLots(
       // ------------------------------------------------------------------
       // Disposal types: consume lots and generate taxable events
       // ------------------------------------------------------------------
-      case "SELL":
+      // ------------------------------------------------------------------
+      // Short sale: SELL_SHORT opens a short position (no taxable event)
+      // ------------------------------------------------------------------
       case "SELL_SHORT": {
+        const proceeds = totalOverride ?? qty * price - fees;
+        if (!openShorts[sym]) openShorts[sym] = [];
+        openShorts[sym].push({
+          id: lotIdCounter++,
+          transactionId: tx.id,
+          symbol: sym,
+          assetClass: tx.assetClass,
+          quantity: qty,
+          proceeds,
+          proceedsPerShare: qty > 0 ? proceeds / qty : 0,
+          dateOpened: txDate,
+          isCovered: tx.isCovered,
+          isSection1256: tx.isSection1256,
+          brokerageId: tx.brokerageId ?? undefined,
+        });
+        break;
+      }
+
+      // ------------------------------------------------------------------
+      // BUY_TO_COVER: closes a short position (taxable event)
+      // ------------------------------------------------------------------
+      case "BUY_TO_COVER": {
+        const coverCost = totalOverride ?? qty * price + fees;
+        let remainingQty = qty;
+        const symShorts = openShorts[sym] || [];
+
+        // Match against open short positions (FIFO)
+        while (remainingQty > 0 && symShorts.length > 0) {
+          const shortPos = symShorts[0];
+          const coverQty = Math.min(remainingQty, shortPos.quantity);
+          const coverPortion = coverQty / qty;
+          const coverCostPortion = coverCost * coverPortion;
+          const proceedsPortion = shortPos.proceedsPerShare * coverQty;
+          const gainLoss = Math.round((proceedsPortion - coverCostPortion) * 100) / 100;
+
+          // Short sales are generally short-term unless specific conditions met
+          const holdPeriod: "SHORT_TERM" | "LONG_TERM" = "SHORT_TERM";
+
+          if (!isTaxDeferred) {
+            taxableEvents.push({
+              transactionId: tx.id,
+              symbol: sym,
+              assetClass: tx.assetClass,
+              quantity: coverQty,
+              dateAcquired: shortPos.dateOpened,
+              dateSold: txDate,
+              proceeds: Math.round(proceedsPortion * 100) / 100,
+              costBasis: Math.round(coverCostPortion * 100) / 100,
+              gainLoss,
+              holdingPeriod: holdPeriod,
+              gainType: shortPos.isSection1256 ? "SECTION_1256" : "CAPITAL",
+              form8949Box: determineForm8949Box(holdPeriod, shortPos.isCovered),
+              formDestination: shortPos.isSection1256 ? "6781" : "8949",
+              washSaleAdjustment: 0,
+              year,
+            });
+          }
+
+          shortPos.quantity -= coverQty;
+          if (shortPos.quantity <= 0) symShorts.shift();
+          remainingQty -= coverQty;
+        }
+
+        // If no matching short positions, treat as a regular buy (create lot)
+        if (remainingQty > 0) {
+          const remainCost = coverCost * (remainingQty / qty);
+          const costPerShare = remainingQty > 0 ? remainCost / remainingQty : 0;
+          const lot: MutableLot = {
+            id: lotIdCounter++,
+            symbol: sym,
+            assetClass: tx.assetClass,
+            quantity: remainingQty,
+            originalQuantity: remainingQty,
+            costBasisPerShare: costPerShare,
+            totalCostBasis: remainCost,
+            dateAcquired: txDate,
+            source: "BUY_TO_COVER",
+            isCovered: tx.isCovered,
+            isSection1256: tx.isSection1256,
+            brokerageId: tx.brokerageId ?? undefined,
+            washSaleAdjustment: 0,
+          };
+          openLots[sym].push(lot);
+          allLots.push({ ...lot, status: "OPEN" });
+        }
+        break;
+      }
+
+      // ------------------------------------------------------------------
+      // Regular sell: consume long lots
+      // ------------------------------------------------------------------
+      case "SELL": {
         const proceeds = totalOverride ?? qty * price - fees;
         let remainingQty = qty;
 
         const symLots = openLots[sym];
         if (!symLots || symLots.length === 0) {
-          // No lots to sell against — may be a short sale or missing data
-          // Generate event with zero cost basis
+          // No lots — generate event with zero cost basis
           if (!isTaxDeferred) {
             const holdPeriod: "SHORT_TERM" | "LONG_TERM" = "SHORT_TERM";
             taxableEvents.push({
