@@ -382,25 +382,75 @@ When reformatting, always output the full result as a csv-download block. Map th
             });
 
             let fullText = "";
+            let inCsvBlock = false;
+            let csvBuffer = "";
+            let displayText = "";
+
             for await (const event of streamResponse) {
               if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
                 fullText += event.delta.text;
-                controller.enqueue(encoder.encode(
-                  `data: ${JSON.stringify({ type: "text", content: event.delta.text })}\n\n`
-                ));
+
+                // Detect csv-download block boundaries and suppress from stream
+                if (!inCsvBlock) {
+                  // Check if we're entering a csv block
+                  const pending = displayText + event.delta.text;
+                  const blockStart = pending.indexOf("```csv-download:");
+                  if (blockStart !== -1) {
+                    // Send any text before the block
+                    const before = event.delta.text.substring(0, blockStart - displayText.length);
+                    if (before) {
+                      displayText += before;
+                      controller.enqueue(encoder.encode(
+                        `data: ${JSON.stringify({ type: "text", content: before })}\n\n`
+                      ));
+                    }
+                    // Start buffering the csv block (don't stream it)
+                    inCsvBlock = true;
+                    csvBuffer = pending.substring(blockStart);
+                  } else {
+                    displayText += event.delta.text;
+                    controller.enqueue(encoder.encode(
+                      `data: ${JSON.stringify({ type: "text", content: event.delta.text })}\n\n`
+                    ));
+                  }
+                } else {
+                  // Inside csv block — buffer silently
+                  csvBuffer += event.delta.text;
+                  // Check if block has ended
+                  const endIdx = csvBuffer.indexOf("\n```", 4);
+                  if (endIdx !== -1) {
+                    // Block complete — anything after closing ``` goes to display
+                    const afterClose = csvBuffer.substring(endIdx + 4);
+                    if (afterClose.trim()) {
+                      displayText += afterClose;
+                      controller.enqueue(encoder.encode(
+                        `data: ${JSON.stringify({ type: "text", content: afterClose })}\n\n`
+                      ));
+                    }
+                    inCsvBlock = false;
+                  }
+                }
               }
             }
 
-            // Extract file download from complete text
-            let answer = fullText;
+            // Extract file from full text
+            let answer = displayText.trim();
             let fileDownload: { name: string; content: string } | null = null;
             const csvMatch = fullText.match(/```csv-download:(.+?)\n([\s\S]*?)```/);
             if (csvMatch) {
               fileDownload = { name: csvMatch[1].trim(), content: csvMatch[2].trim() };
+              // Clean any remaining csv block traces from answer
               answer = fullText.replace(/```csv-download:.+?\n[\s\S]*?```/, "").trim();
             }
 
-            // Send final event with clean answer
+            // Send file event immediately so download button appears
+            if (fileDownload) {
+              controller.enqueue(encoder.encode(
+                `data: ${JSON.stringify({ type: "file", fileDownload })}\n\n`
+              ));
+            }
+
+            // Send final event with clean answer (no CSV content)
             controller.enqueue(encoder.encode(
               `data: ${JSON.stringify({ type: "done", answer, fileDownload })}\n\n`
             ));
