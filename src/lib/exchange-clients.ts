@@ -100,13 +100,118 @@ export class BinanceClient {
       }
   }
 
+  /**
+   * Common quote currencies used to construct trading pairs.
+   * Ordered by likelihood so we find the right pair faster.
+   */
+  private static QUOTE_CURRENCIES = ["USDT", "USDC", "BUSD", "FDUSD", "BTC", "ETH", "BNB"];
+  private static USD_QUOTES = new Set(["USDT", "USDC", "BUSD", "FDUSD"]);
+
+  /**
+   * Discover which trading pairs the user has traded by checking account
+   * balances for non-zero assets and constructing candidate pairs.
+   */
+  private async discoverTradedPairs(): Promise<string[]> {
+    try {
+      const info = await this.getAccountInfo();
+      const balances = info.balances || [];
+
+      // Collect assets the user has ever held (free or locked > 0)
+      const assets = new Set<string>();
+      for (const bal of balances) {
+        const free = parseFloat(bal.free || "0");
+        const locked = parseFloat(bal.locked || "0");
+        if (free > 0 || locked > 0) {
+          assets.add(bal.asset);
+        }
+      }
+
+      // Build candidate pairs: each asset × each quote currency
+      const pairs: string[] = [];
+      for (const asset of assets) {
+        // Skip quote currencies as base (e.g., don't look for USDTUSDT)
+        if (BinanceClient.QUOTE_CURRENCIES.includes(asset)) continue;
+        for (const quote of BinanceClient.QUOTE_CURRENCIES) {
+          pairs.push(`${asset}${quote}`);
+        }
+      }
+
+      log.log(`[Binance] Discovered ${assets.size} assets, ${pairs.length} candidate pairs`);
+      return pairs;
+    } catch (error) {
+      log.error("[Binance] Error discovering trading pairs:", error);
+      return [];
+    }
+  }
+
   async getAllTrades(startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
     const trades: ExchangeTransaction[] = [];
 
     try {
-      // Get deposit/withdrawal history (these don't require symbols)
+      // ---------------------------------------------------------------
+      // 1. Fetch spot trades for all discovered trading pairs
+      // ---------------------------------------------------------------
+      try {
+        const candidatePairs = await this.discoverTradedPairs();
+        let pairsWithTrades = 0;
 
-      // Also get deposit/withdrawal history
+        for (const pair of candidatePairs) {
+          try {
+            const rawTrades = await this.getTrades(pair, startTime, endTime);
+            if (!rawTrades || rawTrades.length === 0) continue;
+
+            pairsWithTrades++;
+            // Determine base/quote from the pair symbol
+            // We know the quote because we constructed the pair
+            const quote = BinanceClient.QUOTE_CURRENCIES.find(q => pair.endsWith(q)) || "USDT";
+            const base = pair.slice(0, -quote.length);
+            const isUsdQuote = BinanceClient.USD_QUOTES.has(quote);
+
+            for (const trade of rawTrades) {
+              const qty = parseFloat(trade.qty);
+              const price = parseFloat(trade.price);
+              const quoteQty = parseFloat(trade.quoteQty || (qty * price).toString());
+              const commission = parseFloat(trade.commission || "0");
+              const isBuyer = trade.isBuyer;
+
+              // For USD-quoted pairs, quoteQty is already in USD
+              // For non-USD pairs, set value_usd = 0 and let enrichment handle it
+              const valueUsd = isUsdQuote ? quoteQty : 0;
+              const priceUsd = isUsdQuote ? price : null;
+
+              // Fee: commission is in commissionAsset (could be BNB, base, or quote)
+              const commissionAsset = trade.commissionAsset || "";
+              const isUsdFee = BinanceClient.USD_QUOTES.has(commissionAsset);
+              const feeUsd = isUsdFee ? commission : null;
+
+              trades.push({
+                id: trade.id?.toString() || `${pair}-${trade.time}`,
+                type: isBuyer ? "buy" : "sell",
+                asset_symbol: base,
+                amount_value: new Decimal(Math.abs(qty)),
+                price_per_unit: priceUsd !== null ? new Decimal(priceUsd) : null,
+                value_usd: new Decimal(Math.abs(valueUsd)),
+                fee_usd: feeUsd !== null ? new Decimal(feeUsd) : null,
+                tx_timestamp: new Date(trade.time),
+                source: "Binance",
+                source_type: "exchange_api",
+                tx_hash: `binance-trade-${trade.id}`,
+                notes: `${pair} @ ${price}${!isUsdQuote ? ` (value in ${quote})` : ""}${feeUsd === null && commission > 0 ? ` | fee: ${commission} ${commissionAsset}` : ""}`,
+              });
+            }
+          } catch {
+            // Pair doesn't exist or no permission — skip silently
+          }
+        }
+
+        log.log(`[Binance] Fetched trades from ${pairsWithTrades} pairs`);
+      } catch (error) {
+        log.error("[Binance] Error fetching spot trades:", error);
+      }
+
+      // ---------------------------------------------------------------
+      // 2. Fetch deposit/withdrawal history
+      // ---------------------------------------------------------------
       try {
         const deposits = await this.makeRequest("/sapi/v1/capital/deposit/hisrec", {
           ...(startTime && { startTime }),
@@ -120,7 +225,6 @@ export class BinanceClient {
           limit: 1000,
         });
 
-        // Convert to transactions
         for (const deposit of deposits || []) {
           trades.push({
             id: deposit.txId || deposit.id?.toString() || `deposit-${deposit.insertTime}`,
@@ -128,7 +232,7 @@ export class BinanceClient {
             asset_symbol: deposit.coin,
             amount_value: new Decimal(deposit.amount),
             price_per_unit: null,
-            value_usd: new Decimal(0), // Will be updated with price data
+            value_usd: new Decimal(0),
             fee_usd: null,
             tx_timestamp: new Date(deposit.insertTime),
             source: "Binance",
@@ -161,6 +265,7 @@ export class BinanceClient {
       log.error("[Binance] Error fetching trades:", error);
     }
 
+    log.log(`[Binance] Total transactions: ${trades.length}`);
     return trades;
   }
 }
@@ -340,25 +445,24 @@ export class KrakenClient {
           const cost = parseFloat(trade.cost);
           const fee = parseFloat(trade.fee || "0");
 
-          // Calculate USD value
-          // If quote is USD-equivalent, cost is already in USD
-          // Otherwise, we'd need conversion (for now, store as-is with note)
+          // If quote is USD-equivalent, cost/price are already in USD.
+          // For non-USD pairs (e.g. ETH/BTC), set value_usd = 0 and
+          // price_per_unit = null so price enrichment fills correct USD values.
           const isUsdQuote = this.isUsdEquivalent(quote);
-          const valueUsd = isUsdQuote ? cost : cost; // TODO: Add conversion for non-USD pairs
 
           allTrades.push({
             id: txid,
             type: isBuy ? "buy" : "sell",
             asset_symbol: base,
             amount_value: new Decimal(Math.abs(vol)),
-            price_per_unit: new Decimal(price),
-            value_usd: new Decimal(Math.abs(valueUsd)),
+            price_per_unit: isUsdQuote ? new Decimal(price) : null,
+            value_usd: isUsdQuote ? new Decimal(Math.abs(cost)) : new Decimal(0),
             fee_usd: isUsdQuote && fee > 0 ? new Decimal(fee) : null,
             tx_timestamp: new Date(parseFloat(trade.time) * 1000),
             source: "Kraken",
             source_type: "exchange_api",
             tx_hash: txid,
-            notes: `${trade.pair} @ ${price}${!isUsdQuote ? ` (value in ${quote})` : ""}`,
+            notes: `${trade.pair} @ ${price}${!isUsdQuote ? ` (price in ${quote}, cost: ${cost} ${quote}${fee > 0 ? `, fee: ${fee} ${quote}` : ""})` : ""}`,
           });
         }
 
@@ -651,24 +755,24 @@ export class KuCoinClient {
           const funds = parseFloat(trade.funds);
           const fee = parseFloat(trade.fee || "0");
 
-          // Calculate USD value - if quote is USDT/USD, use funds directly
-          // Otherwise, this is an approximation (would need price conversion)
+          // If quote is USD-equivalent, funds/price are already in USD.
+          // For non-USD pairs (e.g. ETH-BTC), set value_usd = 0 and
+          // price_per_unit = null so price enrichment fills correct USD values.
           const isUsdQuote = ["USDT", "USD", "USDC", "DAI", "BUSD"].includes(quote.toUpperCase());
-          const valueUsd = isUsdQuote ? funds : funds; // TODO: Add price conversion for non-USD pairs
 
           allTrades.push({
             id: trade.tradeId || trade.id,
             type: isBuy ? "buy" : "sell",
             asset_symbol: base,
             amount_value: new Decimal(Math.abs(size)),
-            price_per_unit: new Decimal(price),
-            value_usd: new Decimal(Math.abs(valueUsd)),
+            price_per_unit: isUsdQuote ? new Decimal(price) : null,
+            value_usd: isUsdQuote ? new Decimal(Math.abs(funds)) : new Decimal(0),
             fee_usd: isUsdQuote && fee > 0 ? new Decimal(fee) : null,
             tx_timestamp: new Date(trade.createdAt),
             source: "KuCoin",
             source_type: "exchange_api",
             tx_hash: trade.tradeId || trade.id,
-            notes: `${trade.symbol} @ ${price}`,
+            notes: `${trade.symbol} @ ${price}${!isUsdQuote ? ` (price in ${quote}, cost: ${funds} ${quote}${fee > 0 ? `, fee: ${fee} ${quote}` : ""})` : ""}`,
           });
         }
 
@@ -967,27 +1071,29 @@ export class GeminiClient {
           const amount = parseFloat(trade.amount);
           const price = parseFloat(trade.price);
 
-          // Calculate USD value - if quote is USD, use directly; otherwise need conversion
-          let valueUsd = Math.abs(amount * price);
-          if (quote !== "USD" && quote !== "USDT") {
-            // For non-USD pairs, we'd need price conversion
-            // For now, store the quote currency value (will need enhancement)
-            console.log(`[Gemini] Non-USD pair ${trade.symbol}, value in ${quote}: ${valueUsd}`);
-          }
+          // If quote is USD-equivalent, price/value are already in USD.
+          // For non-USD pairs, set value_usd = 0 and price_per_unit = null
+          // so price enrichment fills correct USD values.
+          const isUsdQuote = quote === "USD" || quote === "USDT" || quote === "USDC" || quote === "DAI";
+          const valueUsd = isUsdQuote ? Math.abs(amount * price) : 0;
+          const feeAmount = trade.fee_amount ? parseFloat(trade.fee_amount) : 0;
+          // Gemini fees are in the fee_currency; only treat as USD if the fee currency is USD-equivalent
+          const feeCurrency = (trade.fee_currency || quote).toUpperCase();
+          const isUsdFee = feeCurrency === "USD" || feeCurrency === "USDT" || feeCurrency === "USDC";
 
           allTrades.push({
             id: trade.tid?.toString() || trade.timestampms.toString(),
             type: isBuy ? "buy" : "sell",
             asset_symbol: base,
             amount_value: new Decimal(Math.abs(amount)),
-            price_per_unit: new Decimal(price),
+            price_per_unit: isUsdQuote ? new Decimal(price) : null,
             value_usd: new Decimal(valueUsd),
-            fee_usd: trade.fee_amount ? new Decimal(parseFloat(trade.fee_amount)) : null,
+            fee_usd: isUsdFee && feeAmount > 0 ? new Decimal(feeAmount) : null,
             tx_timestamp: new Date(trade.timestampms),
             source: "Gemini",
             source_type: "exchange_api",
             tx_hash: trade.tid?.toString(),
-            notes: `${trade.symbol} @ ${price}`,
+            notes: `${trade.symbol} @ ${price}${!isUsdQuote ? ` (price in ${quote}${feeAmount > 0 ? `, fee: ${feeAmount} ${feeCurrency}` : ""})` : ""}`,
           });
         }
       }

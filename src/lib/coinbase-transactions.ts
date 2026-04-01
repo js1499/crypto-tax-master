@@ -132,6 +132,16 @@ export async function getCoinbaseTransactionsWithApiKey(
 
     const transactions: ExchangeTransaction[] = [];
     const seenTransactionIds = new Set<string>(); // Track seen transaction IDs to prevent duplicates
+    // Collect both sides of exchange/trade transactions for merging
+    const exchangePairs = new Map<string, Array<{
+      id: string;
+      currency: string;
+      amount: number;
+      nativeAmount: number;
+      timestamp: Date;
+      description?: string;
+      feeUsd: Decimal | null;
+    }>>();
     let skippedDuplicates = 0;
     let skippedTimeFilter = 0;
     let skippedFiat = 0;
@@ -234,9 +244,10 @@ export async function getCoinbaseTransactionsWithApiKey(
 
         for (const tx of accountTxs) {
           // Skip if we've already seen this transaction (prevents duplicates across accounts)
-          // This can happen when the same transaction appears in multiple accounts
-          // (e.g., a swap appears in both the source and destination asset accounts)
-          if (seenTransactionIds.has(tx.id)) {
+          // Exception: "exchange"/"trade" type transactions appear in both accounts —
+          // we collect both sides and merge them below.
+          const isExchangeType = tx.type === "exchange" || tx.type === "trade";
+          if (seenTransactionIds.has(tx.id) && !isExchangeType) {
             skippedDuplicates++;
             continue;
           }
@@ -260,8 +271,6 @@ export async function getCoinbaseTransactionsWithApiKey(
             : 0;
 
           // Skip fiat currency transactions (bank transfers)
-          // These are not crypto transactions and should not be included in tax calculations
-          // Common fiat currencies: USD, EUR, GBP, CAD, AUD, JPY, etc.
           const fiatCurrencies = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "CNY", "INR", "KRW", "BRL", "MXN"];
           if (fiatCurrencies.includes(currency.toUpperCase())) {
             skippedFiat++;
@@ -269,18 +278,43 @@ export async function getCoinbaseTransactionsWithApiKey(
           }
 
           // Skip fiat_deposit and fiat_withdrawal transactions entirely
-          // These represent bank transfers, not crypto activity
           if (tx.type === "fiat_deposit" || tx.type === "fiat_withdrawal") {
             skippedFiat++;
             continue;
           }
 
-          // Store raw Coinbase type directly (e.g., "buy", "sell", "send", "receive", "exchange", "trade")
+          // Extract fees from buy/sell sub-objects when available
+          // Coinbase v2 API includes fee in the buy/sell detail object
+          let feeUsd: Decimal | null = null;
+          if (tx.type === "buy" && tx.buy?.fee) {
+            const feeAmount = parseFloat(tx.buy.fee.amount || "0");
+            if (feeAmount > 0) feeUsd = new Decimal(feeAmount);
+          } else if (tx.type === "sell" && tx.sell?.fee) {
+            const feeAmount = parseFloat(tx.sell.fee.amount || "0");
+            if (feeAmount > 0) feeUsd = new Decimal(feeAmount);
+          }
+
           const type = tx.type || "transfer";
 
-          // For sends, the value should be stored as the outgoing value
-          // Sends reduce holdings but don't create taxable events (treated as gifts/transfers)
-          // The value_usd represents the fair market value at time of send
+          // For exchange/trade types, collect both sides for merging below
+          if (isExchangeType) {
+            // Use the trade reference ID to pair both sides
+            const tradeRef = tx.trade?.id || tx.id;
+            if (!exchangePairs.has(tradeRef)) {
+              exchangePairs.set(tradeRef, []);
+            }
+            exchangePairs.get(tradeRef)!.push({
+              id: tx.id,
+              currency,
+              amount, // negative = outgoing, positive = incoming
+              nativeAmount,
+              timestamp: new Date(tx.created_at),
+              description: tx.description || undefined,
+              feeUsd,
+            });
+            continue; // Don't add yet — merge after all accounts processed
+          }
+
           transactions.push({
             id: tx.id,
             type,
@@ -290,7 +324,7 @@ export async function getCoinbaseTransactionsWithApiKey(
               ? new Decimal(Math.abs(nativeAmount / amount))
               : null,
             value_usd: new Decimal(Math.abs(nativeAmount)),
-            fee_usd: null,
+            fee_usd: feeUsd,
             tx_timestamp: new Date(tx.created_at),
             source: "Coinbase",
             source_type: "exchange_api",
@@ -306,6 +340,66 @@ export async function getCoinbaseTransactionsWithApiKey(
         // Continue with other accounts
       }
     }
+
+    // ---------------------------------------------------------------
+    // Merge exchange/trade pairs into single swap transactions
+    // ---------------------------------------------------------------
+    let exchangeMerged = 0;
+    let exchangeUnpaired = 0;
+    for (const [tradeRef, sides] of exchangePairs) {
+      if (sides.length >= 2) {
+        // Pair the sides: negative amount = outgoing, positive = incoming
+        const outgoing = sides.find(s => s.amount < 0) || sides[0];
+        const incoming = sides.find(s => s.amount > 0 && s.currency !== outgoing.currency) || sides.find(s => s !== outgoing) || sides[1];
+
+        if (outgoing && incoming && outgoing.currency !== incoming.currency) {
+          transactions.push({
+            id: outgoing.id,
+            type: "exchange",
+            asset_symbol: outgoing.currency,
+            amount_value: new Decimal(Math.abs(outgoing.amount)),
+            price_per_unit: outgoing.nativeAmount && outgoing.amount
+              ? new Decimal(Math.abs(outgoing.nativeAmount / outgoing.amount))
+              : null,
+            value_usd: new Decimal(Math.abs(outgoing.nativeAmount)),
+            fee_usd: outgoing.feeUsd || incoming.feeUsd,
+            tx_timestamp: outgoing.timestamp,
+            source: "Coinbase",
+            source_type: "exchange_api",
+            tx_hash: outgoing.id,
+            notes: outgoing.description || undefined,
+            // Swap fields — the key fix: populate incoming side
+            incoming_asset_symbol: incoming.currency,
+            incoming_amount_value: new Decimal(Math.abs(incoming.amount)),
+            incoming_value_usd: new Decimal(Math.abs(incoming.nativeAmount)),
+          });
+          exchangeMerged++;
+          continue;
+        }
+      }
+
+      // Unpaired exchange transaction (only one side found) — store as-is
+      for (const side of sides) {
+        transactions.push({
+          id: side.id,
+          type: "exchange",
+          asset_symbol: side.currency,
+          amount_value: new Decimal(Math.abs(side.amount)),
+          price_per_unit: side.nativeAmount && side.amount
+            ? new Decimal(Math.abs(side.nativeAmount / side.amount))
+            : null,
+          value_usd: new Decimal(Math.abs(side.nativeAmount)),
+          fee_usd: side.feeUsd,
+          tx_timestamp: side.timestamp,
+          source: "Coinbase",
+          source_type: "exchange_api",
+          tx_hash: side.id,
+          notes: side.description || undefined,
+        });
+        exchangeUnpaired++;
+      }
+    }
+    console.log(`[Coinbase Transactions] Exchange pairs: ${exchangeMerged} merged, ${exchangeUnpaired} unpaired`);
 
     console.log(`[Coinbase Transactions] COMPLETE: ${accountsProcessed} accounts, ${accountsWithTx} with txs, ${totalRawTxCount} raw -> ${transactions.length} final (skipped: ${skippedDuplicates} dups, ${skippedTimeFilter} time, ${skippedFiat} fiat)`);
     return transactions;
@@ -387,7 +481,16 @@ export async function getCoinbaseTransactions(
     }
 
     const transactions: ExchangeTransaction[] = [];
-    const seenTransactionIds = new Set<string>(); // Track seen transaction IDs to prevent duplicates
+    const seenTransactionIds = new Set<string>();
+    const exchangePairs = new Map<string, Array<{
+      id: string;
+      currency: string;
+      amount: number;
+      nativeAmount: number;
+      timestamp: Date;
+      description?: string;
+      feeUsd: Decimal | null;
+    }>>();
 
     // Get ALL accounts with pagination (default limit is 25, we need all)
     let allAccounts: any[] = [];
@@ -476,8 +579,8 @@ export async function getCoinbaseTransactions(
         console.log(`[Coinbase Transactions] Found ${accountTxs.length} total transactions for account ${account.name}`);
 
         for (const tx of accountTxs) {
-          // Skip if we've already seen this transaction (prevents duplicates across accounts)
-          if (seenTransactionIds.has(tx.id)) {
+          const isExchangeType = tx.type === "exchange" || tx.type === "trade";
+          if (seenTransactionIds.has(tx.id) && !isExchangeType) {
             continue;
           }
           seenTransactionIds.add(tx.id);
@@ -488,23 +591,44 @@ export async function getCoinbaseTransactions(
             ? parseFloat(tx.native_amount.amount)
             : 0;
 
-          // Skip fiat currency transactions (bank transfers)
-          // These are not crypto transactions and should not be included in tax calculations
           const fiatCurrencies = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "CNY", "INR", "KRW", "BRL", "MXN"];
           if (fiatCurrencies.includes(currency.toUpperCase())) {
-            console.log(`[Coinbase Transactions] Skipping fiat transaction: ${tx.type} ${amount} ${currency}`);
             continue;
           }
 
-          // Skip fiat_deposit and fiat_withdrawal transactions entirely
-          // These represent bank transfers, not crypto activity
           if (tx.type === "fiat_deposit" || tx.type === "fiat_withdrawal") {
-            console.log(`[Coinbase Transactions] Skipping bank transfer: ${tx.type} ${amount} ${currency}`);
             continue;
           }
 
-          // Store raw Coinbase type directly (e.g., "buy", "sell", "send", "receive", "exchange")
+          // Extract fees from buy/sell sub-objects when available
+          let feeUsd: Decimal | null = null;
+          if (tx.type === "buy" && tx.buy?.fee) {
+            const feeAmount = parseFloat(tx.buy.fee.amount || "0");
+            if (feeAmount > 0) feeUsd = new Decimal(feeAmount);
+          } else if (tx.type === "sell" && tx.sell?.fee) {
+            const feeAmount = parseFloat(tx.sell.fee.amount || "0");
+            if (feeAmount > 0) feeUsd = new Decimal(feeAmount);
+          }
+
           const type = tx.type || "transfer";
+
+          // Collect exchange/trade pairs for merging
+          if (isExchangeType) {
+            const tradeRef = tx.trade?.id || tx.id;
+            if (!exchangePairs.has(tradeRef)) {
+              exchangePairs.set(tradeRef, []);
+            }
+            exchangePairs.get(tradeRef)!.push({
+              id: tx.id,
+              currency,
+              amount,
+              nativeAmount,
+              timestamp: new Date(tx.created_at),
+              description: tx.description || undefined,
+              feeUsd,
+            });
+            continue;
+          }
 
           transactions.push({
             id: tx.id,
@@ -515,7 +639,7 @@ export async function getCoinbaseTransactions(
               ? new Decimal(Math.abs(nativeAmount / amount))
               : null,
             value_usd: new Decimal(Math.abs(nativeAmount)),
-            fee_usd: null, // Coinbase API doesn't always provide fees in this endpoint
+            fee_usd: feeUsd,
             tx_timestamp: new Date(tx.created_at),
             source: "Coinbase",
             source_type: "exchange_api",
@@ -529,6 +653,56 @@ export async function getCoinbaseTransactions(
           error
         );
         // Continue with other accounts
+      }
+    }
+
+    // Merge exchange/trade pairs into single swap transactions
+    for (const [tradeRef, sides] of exchangePairs) {
+      if (sides.length >= 2) {
+        const outgoing = sides.find(s => s.amount < 0) || sides[0];
+        const incoming = sides.find(s => s.amount > 0 && s.currency !== outgoing.currency) || sides.find(s => s !== outgoing) || sides[1];
+
+        if (outgoing && incoming && outgoing.currency !== incoming.currency) {
+          transactions.push({
+            id: outgoing.id,
+            type: "exchange",
+            asset_symbol: outgoing.currency,
+            amount_value: new Decimal(Math.abs(outgoing.amount)),
+            price_per_unit: outgoing.nativeAmount && outgoing.amount
+              ? new Decimal(Math.abs(outgoing.nativeAmount / outgoing.amount))
+              : null,
+            value_usd: new Decimal(Math.abs(outgoing.nativeAmount)),
+            fee_usd: outgoing.feeUsd || incoming.feeUsd,
+            tx_timestamp: outgoing.timestamp,
+            source: "Coinbase",
+            source_type: "exchange_api",
+            tx_hash: outgoing.id,
+            notes: outgoing.description || undefined,
+            incoming_asset_symbol: incoming.currency,
+            incoming_amount_value: new Decimal(Math.abs(incoming.amount)),
+            incoming_value_usd: new Decimal(Math.abs(incoming.nativeAmount)),
+          });
+          continue;
+        }
+      }
+      // Unpaired — store as-is
+      for (const side of sides) {
+        transactions.push({
+          id: side.id,
+          type: "exchange",
+          asset_symbol: side.currency,
+          amount_value: new Decimal(Math.abs(side.amount)),
+          price_per_unit: side.nativeAmount && side.amount
+            ? new Decimal(Math.abs(side.nativeAmount / side.amount))
+            : null,
+          value_usd: new Decimal(Math.abs(side.nativeAmount)),
+          fee_usd: side.feeUsd,
+          tx_timestamp: side.timestamp,
+          source: "Coinbase",
+          source_type: "exchange_api",
+          tx_hash: side.id,
+          notes: side.description || undefined,
+        });
       }
     }
 
