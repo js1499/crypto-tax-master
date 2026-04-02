@@ -458,7 +458,7 @@ export async function GET(request: NextRequest) {
       ...getTypesForCategory("transfer"), ...getTypesForCategory("swap"),
       ...getTypesForCategory("staking"), ...getTypesForCategory("defi"),
       ...getTypesForCategory("nft"), ...getTypesForCategory("income"),
-      ...getTypesForCategory("other"),
+      ...getTypesForCategory("gambling"), ...getTypesForCategory("other"),
     ];
     // Stats use statsWhere (includes search/filter/wallet/date but excludes cosmetic hideZero/hideSpam)
     const [buyCount, sellCount, transferInCount, transferOutCount, swapCount, identifiedTypeCount, valueIdentifiedCount, disposalAgg, incomeAgg] = await Promise.all([
