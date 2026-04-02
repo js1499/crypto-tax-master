@@ -500,7 +500,8 @@ export async function GET(request: NextRequest) {
     //       totalProceeds = totalCostBasis + netGain
 
     // Split by holding_period for Schedule D
-    const [stAgg, ltAgg, dbIncomeAgg] = await Promise.all([
+    // NULL holding_period = not yet recomputed with new schema — treat as short-term
+    const [stAgg, ltAgg, nullAgg, dbIncomeAgg] = await Promise.all([
       prisma.transaction.aggregate({
         where: { ...yearFilter, gain_loss_usd: { not: null }, holding_period: "short" },
         _sum: { cost_basis_usd: true, gain_loss_usd: true },
@@ -510,14 +511,19 @@ export async function GET(request: NextRequest) {
         _sum: { cost_basis_usd: true, gain_loss_usd: true },
       }),
       prisma.transaction.aggregate({
+        where: { ...yearFilter, gain_loss_usd: { not: null }, holding_period: null },
+        _sum: { cost_basis_usd: true, gain_loss_usd: true },
+      }),
+      prisma.transaction.aggregate({
         where: { ...yearFilter, is_income: true },
         _sum: { value_usd: true },
       }),
     ]);
 
     // Exact same math as transactions page
-    const stCostBasis = Math.abs(Number(stAgg._sum.cost_basis_usd || 0));
-    const stNetGain = Number(stAgg._sum.gain_loss_usd || 0);
+    // Transactions with NULL holding_period default to short-term
+    const stCostBasis = Math.abs(Number(stAgg._sum.cost_basis_usd || 0)) + Math.abs(Number(nullAgg._sum.cost_basis_usd || 0));
+    const stNetGain = Number(stAgg._sum.gain_loss_usd || 0) + Number(nullAgg._sum.gain_loss_usd || 0);
     const stProceeds = stCostBasis + stNetGain;
 
     const ltCostBasis = Math.abs(Number(ltAgg._sum.cost_basis_usd || 0));
