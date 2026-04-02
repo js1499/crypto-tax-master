@@ -164,6 +164,13 @@ const CATEGORY_MAP: Record<string, string> = {
   "UPDATE_RAFFLE": "gambling",
   "BUY_TICKETS": "gambling",
 
+  // -- Gambling / Betting (Title Case legacy) --
+  "Place Bet": "gambling",
+  "Place Sol Bet": "gambling",
+  "Create Bet": "gambling",
+  "Create Raffle": "gambling",
+  "Buy Tickets": "gambling",
+
   // -- Escrow --
   "CREATE_ESCROW": "defi",
   "CANCEL_ESCROW": "defi",

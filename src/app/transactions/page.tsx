@@ -1218,6 +1218,7 @@ function TransactionsContent() {
     { label: "DeFi", types: ["Add Liquidity", "Remove Liquidity", "Wrap", "Unwrap", "DeFi Setup", "Margin Buy", "Margin Sell", "Liquidation"] },
     { label: "Income", types: ["Staking Reward", "Mining Reward", "Airdrop", "Interest", "Payment"] },
     { label: "Staking", types: ["Stake", "Unstake"] },
+    { label: "Gambling", types: ["Place Bet", "Place Sol Bet", "Create Bet", "Create Raffle", "Buy Tickets"] },
     { label: "Other", types: ["Zero Transaction", "Spam", "Self", "Approve"] },
   ];
   // Flat list for Select components (detail sheet, etc.)
@@ -1797,6 +1798,7 @@ function TransactionsContent() {
               <SelectItem value="defi">DeFi</SelectItem>
               <SelectItem value="nft">NFT</SelectItem>
               <SelectItem value="income">Income</SelectItem>
+              <SelectItem value="gambling">Gambling</SelectItem>
               <SelectItem value="other">Other</SelectItem>
             </SelectContent>
           </Select>
