@@ -186,6 +186,16 @@ function getCheckboxForEvents(events: TaxableEvent[]): { shortBox: string; longB
   };
 }
 
+/**
+ * Generate Form 8949.
+ *
+ * For small datasets (≤ 11 ST + 11 LT rows): fills individual rows on the form.
+ * For large datasets: fills ONE summary page with totals and "See attached statement"
+ * in the first row — standard IRS practice. The per-row detail is available via
+ * the CSV export endpoint (TurboTax 1099-B format or Form 8949 CSV).
+ *
+ * This avoids the O(N) PDF template loads that made large forms take minutes.
+ */
 async function generateForm8949(
   report: TaxReport,
   taxpayerName?: string,
@@ -208,66 +218,69 @@ async function generateForm8949(
   const shortTermTotals = sumTotals(shortTerm);
   const longTermTotals = sumTotals(longTerm);
 
-  // Determine correct checkboxes based on source
   const { shortBox, longBox } = getCheckboxForEvents(allEvents);
 
-  // Split into pages of ROWS_PER_PAGE
-  const shortTermPages: TaxableEvent[][] = [];
-  for (let i = 0; i < shortTerm.length; i += ROWS_PER_PAGE) {
-    shortTermPages.push(shortTerm.slice(i, i + ROWS_PER_PAGE));
-  }
-  if (shortTermPages.length === 0) shortTermPages.push([]);
-
-  const longTermPages: TaxableEvent[][] = [];
-  for (let i = 0; i < longTerm.length; i += ROWS_PER_PAGE) {
-    longTermPages.push(longTerm.slice(i, i + ROWS_PER_PAGE));
-  }
-  if (longTermPages.length === 0) longTermPages.push([]);
-
-  // Determine total number of sheets we need (max of the two)
-  const sheetCount = Math.max(shortTermPages.length, longTermPages.length);
-
-  // Build all sheets
-  const sheets: PDFDocument[] = [];
-  for (let s = 0; s < sheetCount; s++) {
-    const stRows = shortTermPages[s] || [];
-    const ltRows = longTermPages[s] || [];
-
-    // Only put totals on the last sheet that has rows for that category
-    const isLastST = s === shortTermPages.length - 1;
-    const isLastLT = s === longTermPages.length - 1;
-
+  // For small datasets, fill individual rows on a single sheet
+  if (shortTerm.length <= ROWS_PER_PAGE && longTerm.length <= ROWS_PER_PAGE) {
     const sheet = await buildForm8949Sheet(
       templateBytes,
-      stRows,
-      ltRows,
+      shortTerm,
+      longTerm,
       taxpayerName,
       ssn,
-      isLastST ? shortTermTotals : undefined,
-      isLastLT ? longTermTotals : undefined,
+      shortTermTotals,
+      longTermTotals,
       shortBox,
       longBox,
     );
-    sheets.push(sheet);
+    return sheet.save();
   }
 
-  // If only one sheet, return it directly
-  if (sheets.length === 1) {
-    return sheets[0].save();
+  // For large datasets: summary-only page with "See attached statement"
+  // This is standard IRS practice — detail rows go in the CSV export
+  const doc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
+  const form = doc.getForm();
+
+  // Page 1: Short-term
+  if (taxpayerName) setTextField(form, "f1_01[0]", taxpayerName);
+  if (ssn) setTextField(form, "f1_02[0]", ssn);
+  checkCheckbox(form, shortBox);
+
+  if (shortTerm.length > 0) {
+    // First row: "See attached statement — N transactions"
+    setTextField(form, "f1_03[0]", `See attached statement (${shortTerm.length} transactions)`);
+    setTextField(form, "f1_04[0]", "Various");
+    setTextField(form, "f1_05[0]", "Various");
+    setTextField(form, "f1_06[0]", formatCurrency(shortTermTotals.proceeds));
+    setTextField(form, "f1_07[0]", formatCurrency(shortTermTotals.costBasis));
+    setTextField(form, "f1_10[0]", formatCurrency(shortTermTotals.gainLoss));
   }
 
-  // Merge all sheets into one PDF
-  const merged = await PDFDocument.create();
-  for (const sheet of sheets) {
-    const sheetBytes = await sheet.save();
-    const donor = await PDFDocument.load(sheetBytes);
-    const pages = await merged.copyPages(donor, donor.getPageIndices());
-    for (const page of pages) {
-      merged.addPage(page);
-    }
+  // Totals
+  setTextField(form, "f1_91[0]", formatCurrency(shortTermTotals.proceeds));
+  setTextField(form, "f1_92[0]", formatCurrency(shortTermTotals.costBasis));
+  setTextField(form, "f1_94[0]", formatCurrency(shortTermTotals.gainLoss));
+
+  // Page 2: Long-term
+  if (taxpayerName) setTextField(form, "f2_01[0]", taxpayerName);
+  if (ssn) setTextField(form, "f2_02[0]", ssn);
+  checkCheckbox(form, longBox);
+
+  if (longTerm.length > 0) {
+    setTextField(form, "f2_03[0]", `See attached statement (${longTerm.length} transactions)`);
+    setTextField(form, "f2_04[0]", "Various");
+    setTextField(form, "f2_05[0]", "Various");
+    setTextField(form, "f2_06[0]", formatCurrency(longTermTotals.proceeds));
+    setTextField(form, "f2_07[0]", formatCurrency(longTermTotals.costBasis));
+    setTextField(form, "f2_10[0]", formatCurrency(longTermTotals.gainLoss));
   }
 
-  return merged.save();
+  setTextField(form, "f2_91[0]", formatCurrency(longTermTotals.proceeds));
+  setTextField(form, "f2_92[0]", formatCurrency(longTermTotals.costBasis));
+  setTextField(form, "f2_94[0]", formatCurrency(longTermTotals.gainLoss));
+
+  form.flatten();
+  return doc.save();
 }
 
 // ---------------------------------------------------------------------------
