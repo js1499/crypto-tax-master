@@ -78,6 +78,8 @@ export interface TransactionCostBasisResult {
   transactionId: number;
   costBasisUsd: number | null;  // null = not applicable (transfers, etc.)
   gainLossUsd: number | null;   // null = not a disposal event
+  holdingPeriod: "short" | "long" | null;  // null = not a disposal
+  dateAcquired: Date | null;    // earliest lot date consumed
 }
 
 // Stablecoins: use face value ($1/unit) as cost basis for disposals.
@@ -1096,7 +1098,7 @@ function processTransactionsForTaxUK(
 
     // Skip fiat
     if (FIAT_CURRENCIES.has(asset)) {
-      if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
       continue;
     }
 
@@ -1112,13 +1114,13 @@ function processTransactionsForTaxUK(
         // fall through to acquisition logic below
       } else if (typeUpper === "TRANSFER_OUT" && !isSelfTransfer) {
         if (tx.subtype === "dca_deposit" || Math.abs(valueUsd) < 0.01) {
-          if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+          if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
           continue;
         }
         // fall through to disposal logic below
       } else {
         // True self-transfer — skip
-        if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
         continue;
       }
     }
@@ -1127,7 +1129,7 @@ function processTransactionsForTaxUK(
     if (["self", "approve", "nft activity", "defi setup", "zero transaction", "spam",
          "unstake", "unstaking", "deposit", "withdraw", "borrow", "repay",
          "wrap", "unwrap", "bridge"].includes(txType)) {
-      if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+      if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
       continue;
     }
 
@@ -1178,7 +1180,7 @@ function processTransactionsForTaxUK(
       pools[asset].quantity += amount;
       pools[asset].totalCost += cost;
       acquisitions.push({ id: tx.id, date: dateKey, asset, amount, cost, matched: 0, tx });
-      if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: cost, gainLossUsd: 0 });
+      if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: cost, gainLossUsd: 0, holdingPeriod: null, dateAcquired: null });
       continue;
     }
 
@@ -1233,7 +1235,7 @@ function processTransactionsForTaxUK(
           (tx.counterparty_address && STAKING_CONTRACT_ADDRESSES.has(tx.counterparty_address))
         );
         if (isSelfTransfer || valueUsd === 0) {
-          if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+          if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
           continue;
         }
       }
@@ -1247,7 +1249,7 @@ function processTransactionsForTaxUK(
     }
 
     // Fallback: skip
-    if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+    if (costBasisResults) costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
   }
 
   // ---------- Pass 2: Match disposals using UK 3-tier rules ----------
@@ -1319,7 +1321,7 @@ function processTransactionsForTaxUK(
 
     // Persist cost basis result for every disposal
     if (costBasisResults) {
-      costBasisResults.set(disposal.id, { transactionId: disposal.id, costBasisUsd: totalCostBasis, gainLossUsd: gainLoss });
+      costBasisResults.set(disposal.id, { transactionId: disposal.id, costBasisUsd: totalCostBasis, gainLossUsd: gainLoss, holdingPeriod: null, dateAcquired: null });
     }
 
     // Only emit taxable events for the requested tax year
@@ -1438,7 +1440,7 @@ function processTransactionsForTax(
         debugLog(`[Tax Calculator] Skipping fiat currency transaction: ${tx.type} ${amount} ${asset}`);
       }
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
       }
       continue;
     }
@@ -1464,7 +1466,7 @@ function processTransactionsForTax(
         // These TRANSFER_OUTs just move tokens into the Jupiter DCA vault, not a sale.
         if (tx.subtype === "dca_deposit") {
           if (costBasisResults) {
-            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
           }
           continue;
         }
@@ -1473,7 +1475,7 @@ function processTransactionsForTax(
         // Better to skip and let the lots be consumed by priced events.
         if (Math.abs(valueUsd) < 0.01) {
           if (costBasisResults) {
-            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
           }
           continue;
         }
@@ -1484,7 +1486,7 @@ function processTransactionsForTax(
       } else {
         // True self-transfer or generic transfer — skip
         if (costBasisResults) {
-          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
         }
         continue;
       }
@@ -1583,7 +1585,7 @@ function processTransactionsForTax(
       }
 
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: totalCostBasis, gainLossUsd: 0 });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: totalCostBasis, gainLossUsd: 0, holdingPeriod: null, dateAcquired: null });
       }
     }
     // Handle sells - calculate capital gains/losses
@@ -1620,7 +1622,7 @@ function processTransactionsForTax(
       }
 
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss, holdingPeriod: disposal.holdingPeriod, dateAcquired: disposal.earliestLotDate });
       }
 
       // Only include in tax year if the sale occurred in that year
@@ -1732,7 +1734,7 @@ function processTransactionsForTax(
       }
 
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss, holdingPeriod: disposal.holdingPeriod, dateAcquired: disposal.earliestLotDate });
       }
 
       // Create taxable events with proper holding period splitting
@@ -1988,7 +1990,7 @@ function processTransactionsForTax(
           debugLog(`[Tax Calculator] Send ${tx.id}: Self-transfer of ${amount} ${asset} — cost basis preserved.`);
         }
         if (costBasisResults) {
-          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
         }
       } else {
         // Non-self send: taxable disposal (spending crypto = taxable event per IRS)
@@ -1996,7 +1998,7 @@ function processTransactionsForTax(
         if (valueUsd === 0) {
           debugLog(`[Tax Calculator] Send ${tx.id}: Skipping unpriced send of ${amount} ${asset} ($0 value).`);
           if (costBasisResults) {
-            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
           }
         } else {
           // Use processDisposal for proper lot consumption, holding period, and lot splitting
@@ -2022,7 +2024,7 @@ function processTransactionsForTax(
           const finalGainLoss = disposal.netProceeds - finalCostBasis;
 
           if (costBasisResults) {
-            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: finalCostBasis, gainLossUsd: finalGainLoss });
+            costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: finalCostBasis, gainLossUsd: finalGainLoss, holdingPeriod: disposal.holdingPeriod, dateAcquired: disposal.earliestLotDate });
           }
 
           // Create taxable events for this disposal (sends = taxable per IRS)
@@ -2049,7 +2051,7 @@ function processTransactionsForTax(
       // and still owned by the user with their original acquisition cost basis.
       debugLog(`[Tax Calculator] Unstake ${tx.id}: ${amount} ${asset} — cost basis preserved (non-taxable).`);
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
       }
     }
     // C-4 fix: Handle bridge as non-taxable transfer for same-token bridges.
@@ -2068,7 +2070,7 @@ function processTransactionsForTax(
         // The tokens are the same asset on a different chain.
         debugLog(`[Tax Calculator] Bridge ${tx.id}: Same-token bridge for ${asset} — non-taxable transfer, cost basis preserved.`);
         if (costBasisResults) {
-          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
         }
       } else {
         // Different-token bridge (e.g., ETH → WETH): treated as a swap/disposal
@@ -2099,7 +2101,7 @@ function processTransactionsForTax(
         }
 
         if (costBasisResults) {
-          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss, holdingPeriod: disposal.holdingPeriod, dateAcquired: disposal.earliestLotDate });
         }
 
         // Create cost basis lot for the incoming asset at FMV
@@ -2130,7 +2132,7 @@ function processTransactionsForTax(
         pricePerUnit: lpTokenPrice,
       });
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: totalValueProvided, gainLossUsd: 0 });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: totalValueProvided, gainLossUsd: 0, holdingPeriod: null, dateAcquired: null });
       }
     }
     // Handle liquidity removal - LP token disposal
@@ -2162,7 +2164,7 @@ function processTransactionsForTax(
       }
 
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss, holdingPeriod: disposal.holdingPeriod, dateAcquired: disposal.earliestLotDate });
       }
 
       if (txYear === taxYear) {
@@ -2196,7 +2198,7 @@ function processTransactionsForTax(
         washSaleAdjustment: washSaleAdjustment > 0 ? washSaleAdjustment : undefined,
       });
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: totalCostBasis, gainLossUsd: 0 });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: totalCostBasis, gainLossUsd: 0, holdingPeriod: null, dateAcquired: null });
       }
     }
     else if (txType === "margin sell") {
@@ -2231,7 +2233,7 @@ function processTransactionsForTax(
       }
 
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss, holdingPeriod: disposal.holdingPeriod, dateAcquired: disposal.earliestLotDate });
       }
 
       if (txYear === taxYear) {
@@ -2276,7 +2278,7 @@ function processTransactionsForTax(
       }
 
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss, holdingPeriod: disposal.holdingPeriod, dateAcquired: disposal.earliestLotDate });
       }
 
       if (txYear === taxYear) {
@@ -2308,7 +2310,7 @@ function processTransactionsForTax(
       // - Ensure repayments reduce borrowed pool, not owned pool
       debugLog(`[Tax Calculator] Borrow transaction ${tx.id}: Borrowing is not currently tracked. Ensure you don't mix borrowed and owned crypto.`);
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
       }
     }
     // Handle repay - not taxable but affects holdings tracking
@@ -2318,7 +2320,7 @@ function processTransactionsForTax(
       // See borrow handler above for full explanation of limitations
       debugLog(`[Tax Calculator] Repay transaction ${tx.id}: Repayment is not currently tracked. Ensure you don't mix borrowed and owned crypto.`);
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
       }
     }
     // Handle deposit — treat as acquisition (same as buy: creates cost basis lot)
@@ -2329,14 +2331,14 @@ function processTransactionsForTax(
       // No-op: tokens moved to exchange. Cost basis lots are already tracked.
       debugLog(`[Tax Calculator] Deposit ${tx.id}: ${amount} ${asset} to exchange — non-taxable transfer.`);
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
       }
     }
     else if (txType === "withdraw") {
       // No-op: tokens moved from exchange. Cost basis lots are already tracked.
       debugLog(`[Tax Calculator] Withdraw ${tx.id}: ${amount} ${asset} from exchange — non-taxable transfer.`);
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
       }
     }
     // Handle burn — disposal at $0 proceeds (capital loss = full cost basis)
@@ -2350,7 +2352,7 @@ function processTransactionsForTax(
       if (asset === "SOL" && tx.asset_address && tx.asset_address !== SOL_NATIVE_MINT) {
         debugLog(`[Tax Calculator] Burn ${tx.id}: Skipping misclassified token burn (asset_address=${tx.asset_address} ≠ SOL)`);
         if (costBasisResults) {
-          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+          costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
         }
         continue;
       }
@@ -2374,7 +2376,7 @@ function processTransactionsForTax(
       }
 
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: disposal.totalCostBasis, gainLossUsd: disposal.gainLoss, holdingPeriod: disposal.holdingPeriod, dateAcquired: disposal.earliestLotDate });
       }
 
       if (txYear === taxYear) {
@@ -2419,7 +2421,7 @@ function processTransactionsForTax(
       }
       // If no incoming asset data, it's a no-op (cost basis stays on same symbol)
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
       }
     }
     // Skip economically neutral types — no taxable event, no cost basis change
@@ -2433,7 +2435,7 @@ function processTransactionsForTax(
     ) {
       // These types are economically neutral and require no tax processing
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
       }
     }
     // Handle yield farming rewards - income recognition
@@ -2497,7 +2499,7 @@ function processTransactionsForTax(
         console.warn(`[Tax Calculator] Unhandled transaction type: "${tx.type}" (id=${tx.id}, asset=${asset}, value=$${valueUsd.toFixed(2)}). No tax treatment applied.`);
       }
       if (costBasisResults) {
-        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null });
+        costBasisResults.set(tx.id, { transactionId: tx.id, costBasisUsd: null, gainLossUsd: null, holdingPeriod: null, dateAcquired: null });
       }
     }
   }

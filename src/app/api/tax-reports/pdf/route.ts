@@ -3,7 +3,7 @@ import { PDFDocument } from "pdf-lib";
 import * as fs from "fs";
 import * as path from "path";
 import prisma from "@/lib/prisma";
-import { calculateTaxReport, TaxReport, TaxableEvent, IncomeEvent } from "@/lib/tax-calculator";
+import { TaxReport, TaxableEvent, IncomeEvent } from "@/lib/tax-calculator";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
@@ -190,53 +190,23 @@ async function generateForm8949(
   report: TaxReport,
   taxpayerName?: string,
   ssn?: string,
-  dbTotals?: { gains: number; losses: number; net: number } | null,
 ): Promise<Uint8Array> {
   const templatePath = path.join(process.cwd(), "public", "forms", "f8949.pdf");
   const templateBytes = new Uint8Array(fs.readFileSync(templatePath));
 
-  // Use detailed (non-aggregated) events sorted by date
   const allEvents = [...report.taxableEvents].sort((a, b) => a.date.getTime() - b.date.getTime());
 
-  // Separate into short-term and long-term
   const shortTerm = allEvents.filter((e) => e.holdingPeriod === "short");
   const longTerm = allEvents.filter((e) => e.holdingPeriod === "long");
 
-  // Compute totals per holding period
   const sumTotals = (events: TaxableEvent[]) => ({
     proceeds: events.reduce((s, e) => s + e.proceeds, 0),
     costBasis: events.reduce((s, e) => s + e.costBasis, 0),
     gainLoss: events.reduce((s, e) => s + e.gainLoss, 0),
   });
 
-  let shortTermTotals = sumTotals(shortTerm);
-  let longTermTotals = sumTotals(longTerm);
-
-  // Scale totals to match DB if available (same fix as Schedule D)
-  if (dbTotals) {
-    const calcTotal = shortTermTotals.gainLoss + longTermTotals.gainLoss;
-    if (Math.abs(calcTotal) > 0.01) {
-      const stRatio = shortTermTotals.gainLoss / calcTotal;
-      const scaledStGain = Math.round(dbTotals.net * stRatio * 100) / 100;
-      const scaledLtGain = Math.round((dbTotals.net - scaledStGain) * 100) / 100;
-      // Scale proceeds and cost basis proportionally
-      const calcTotalProceeds = shortTermTotals.proceeds + longTermTotals.proceeds;
-      if (calcTotalProceeds > 0) {
-        const stProcRatio = shortTermTotals.proceeds / calcTotalProceeds;
-        const dbTotalProceeds = dbTotals.gains + Math.abs(dbTotals.losses);
-        shortTermTotals = {
-          proceeds: Math.round(dbTotalProceeds * stProcRatio * 100) / 100,
-          costBasis: Math.round((dbTotalProceeds * stProcRatio - scaledStGain) * 100) / 100,
-          gainLoss: scaledStGain,
-        };
-        longTermTotals = {
-          proceeds: Math.round(dbTotalProceeds * (1 - stProcRatio) * 100) / 100,
-          costBasis: Math.round((dbTotalProceeds * (1 - stProcRatio) - scaledLtGain) * 100) / 100,
-          gainLoss: scaledLtGain,
-        };
-      }
-    }
-  }
+  const shortTermTotals = sumTotals(shortTerm);
+  const longTermTotals = sumTotals(longTerm);
 
   // Determine correct checkboxes based on source
   const { shortBox, longBox } = getCheckboxForEvents(allEvents);
@@ -308,7 +278,6 @@ async function generateSchedule1(
   report: TaxReport,
   taxpayerName?: string,
   ssn?: string,
-  dbIncome?: number | null,
 ): Promise<Uint8Array> {
   const templatePath = path.join(process.cwd(), "public", "forms", "f1040s1.pdf");
   const templateBytes = new Uint8Array(fs.readFileSync(templatePath));
@@ -316,12 +285,10 @@ async function generateSchedule1(
   const doc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
   const form = doc.getForm();
 
-  // Name and SSN (if the form has these fields)
   if (taxpayerName) setTextField(form, "f1_01[0]", taxpayerName);
   if (ssn) setTextField(form, "f1_02[0]", ssn);
 
-  // Use DB income total when available (matches transactions page)
-  const totalIncome = dbIncome != null ? dbIncome : report.totalIncome;
+  const totalIncome = report.totalIncome;
 
   // Line 8z description
   setTextField(form, "f1_35[0]", "Cryptocurrency income");
@@ -344,19 +311,13 @@ async function generateSchedule1(
 // ---------------------------------------------------------------------------
 
 /**
- * Generate Schedule D using BOTH sources:
- * - DB gain_loss_usd for accurate totals (matches transactions page)
- * - Tax calculator for ST/LT split proportions
- *
- * This ensures the Schedule D totals match what the user sees on the
- * transactions page and tax reports page, while still providing the
- * ST/LT breakdown that Schedule D requires.
+ * Generate Schedule D from DB data.
+ * All numbers come from the transactions table (single source of truth).
  */
 async function generateScheduleD(
   report: TaxReport,
   taxpayerName?: string,
   ssn?: string,
-  dbTotals?: { gains: number; losses: number; net: number } | null,
 ): Promise<Uint8Array> {
   const templatePath = path.join(process.cwd(), "public", "forms", "f1040sd.pdf");
   const templateBytes = new Uint8Array(fs.readFileSync(templatePath));
@@ -371,47 +332,16 @@ async function generateScheduleD(
   // Checkbox: "Did you dispose of any investments?" — Yes
   checkCheckbox(form, "c1_1[0]");
 
-  // Use DB totals as the source of truth when available
-  // Tax calculator's ST/LT split ratio is applied to the DB totals
+  // All data comes from the DB — no scaling needed
   const stEvents = report.taxableEvents.filter((e) => e.holdingPeriod === "short");
   const ltEvents = report.taxableEvents.filter((e) => e.holdingPeriod === "long");
-  const calcStGain = stEvents.reduce((s, e) => s + e.gainLoss, 0);
-  const calcLtGain = ltEvents.reduce((s, e) => s + e.gainLoss, 0);
-  const calcTotal = calcStGain + calcLtGain;
 
-  let stGainLoss: number;
-  let ltGainLoss: number;
-  let stProceeds: number;
-  let stCostBasis: number;
-  let ltProceeds: number;
-  let ltCostBasis: number;
-
-  if (dbTotals && Math.abs(calcTotal) > 0.01) {
-    // Scale the calculator's ST/LT split to match DB totals
-    const stRatio = calcStGain / calcTotal;
-    const ltRatio = calcLtGain / calcTotal;
-    stGainLoss = Math.round(dbTotals.net * stRatio * 100) / 100;
-    ltGainLoss = Math.round((dbTotals.net - stGainLoss) * 100) / 100; // Remainder to avoid rounding drift
-
-    // Scale proceeds/cost basis proportionally too
-    const calcStProceeds = stEvents.reduce((s, e) => s + e.proceeds, 0);
-    const calcLtProceeds = ltEvents.reduce((s, e) => s + e.proceeds, 0);
-    const calcTotalProceeds = calcStProceeds + calcLtProceeds;
-    const proceedsRatio = calcTotalProceeds > 0 ? calcStProceeds / calcTotalProceeds : 1;
-    const totalProceeds = dbTotals.gains + Math.abs(dbTotals.losses); // Rough approximation
-    stProceeds = Math.round(totalProceeds * proceedsRatio * 100) / 100;
-    ltProceeds = Math.round((totalProceeds - stProceeds) * 100) / 100;
-    stCostBasis = Math.round((stProceeds - stGainLoss) * 100) / 100;
-    ltCostBasis = Math.round((ltProceeds - ltGainLoss) * 100) / 100;
-  } else {
-    // Fallback: use calculator values directly (no DB totals or zero total)
-    stProceeds = stEvents.reduce((s, e) => s + e.proceeds, 0);
-    stCostBasis = stEvents.reduce((s, e) => s + e.costBasis, 0);
-    stGainLoss = calcStGain;
-    ltProceeds = ltEvents.reduce((s, e) => s + e.proceeds, 0);
-    ltCostBasis = ltEvents.reduce((s, e) => s + e.costBasis, 0);
-    ltGainLoss = calcLtGain;
-  }
+  const stProceeds = stEvents.reduce((s, e) => s + e.proceeds, 0);
+  const stCostBasis = stEvents.reduce((s, e) => s + e.costBasis, 0);
+  const stGainLoss = stEvents.reduce((s, e) => s + e.gainLoss, 0);
+  const ltProceeds = ltEvents.reduce((s, e) => s + e.proceeds, 0);
+  const ltCostBasis = ltEvents.reduce((s, e) => s + e.costBasis, 0);
+  const ltGainLoss = ltEvents.reduce((s, e) => s + e.gainLoss, 0);
 
   // ---- Part I: Short-Term ----
   setTextField(form, "f1_3[0]", formatCurrency(stProceeds));
@@ -533,40 +463,12 @@ export async function GET(request: NextRequest) {
 
     const walletAddresses = userWithWallets.wallets.map((w) => w.address);
 
-    const filingStatus = (searchParams.get("filingStatus") || "single") as
-      | "single"
-      | "married_joint"
-      | "married_separate"
-      | "head_of_household";
-
-    const costBasisMethod = (userWithWallets.costBasisMethod || "FIFO") as
-      | "FIFO"
-      | "LIFO"
-      | "HIFO";
-
-    const userTimezone = userWithWallets.timezone || "America/New_York";
-
-    // ---- Calculate tax report ----
+    // ---- Query ALL data from DB (single source of truth) ----
     console.log(`[Tax PDF API] Generating ${formParam} for year ${year}, user ${user.id}`);
 
-    const userCountry = userWithWallets.country || "US";
-
-    const report = await calculateTaxReport(
-      prisma,
-      walletAddresses,
-      year,
-      costBasisMethod,
-      user.id,
-      filingStatus,
-      userTimezone,
-      userCountry,
-    );
-
-    // Optional taxpayer identity fields (name from user profile, SSN from query)
     const taxpayerName = searchParams.get("name") || user.name || undefined;
     const ssn = searchParams.get("ssn") || undefined;
 
-    // ---- Query DB totals (same source as transactions page) ----
     const yearStart = new Date(`${year}-01-01T00:00:00Z`);
     const yearEnd = new Date(`${year}-12-31T23:59:59.999Z`);
     const orConditions: any[] = [];
@@ -583,49 +485,93 @@ export async function GET(request: NextRequest) {
         AND: [{ source_type: "exchange_api" }, { source: { in: userExchanges.map(e => e.name) } }],
       });
     }
-    const yearFilter = {
+    const yearFilter: any = {
       OR: orConditions,
       tx_timestamp: { gte: yearStart, lte: yearEnd },
     };
 
-    const [dbAgg, dbGains, dbLosses, dbIncomeAgg] = await Promise.all([
-      prisma.transaction.aggregate({
-        where: { ...yearFilter, gain_loss_usd: { not: null } },
-        _sum: { gain_loss_usd: true },
-      }),
-      prisma.transaction.aggregate({
-        where: { ...yearFilter, gain_loss_usd: { gt: 0 } },
-        _sum: { gain_loss_usd: true },
-      }),
-      prisma.transaction.aggregate({
-        where: { ...yearFilter, gain_loss_usd: { lt: 0 } },
-        _sum: { gain_loss_usd: true },
-      }),
-      prisma.transaction.aggregate({
-        where: { ...yearFilter, is_income: true },
-        _sum: { value_usd: true },
-      }),
-    ]);
+    // Fetch disposal transactions with computed cost basis (for Form 8949 detail rows)
+    const disposalTxns = await prisma.transaction.findMany({
+      where: {
+        ...yearFilter,
+        gain_loss_usd: { not: null },
+      },
+      select: {
+        id: true,
+        asset_symbol: true,
+        amount_value: true,
+        value_usd: true,
+        cost_basis_usd: true,
+        gain_loss_usd: true,
+        holding_period: true,
+        date_acquired: true,
+        tx_timestamp: true,
+        source: true,
+      },
+      orderBy: { tx_timestamp: "asc" },
+    });
 
-    const dbTotals = {
-      gains: Number(dbGains._sum.gain_loss_usd || 0),
-      losses: Number(dbLosses._sum.gain_loss_usd || 0),
-      net: Number(dbAgg._sum.gain_loss_usd || 0),
+    // Build TaxableEvent-compatible objects from DB rows
+    const dbEvents: TaxableEvent[] = disposalTxns
+      .filter(tx => Number(tx.gain_loss_usd) !== 0 || Number(tx.cost_basis_usd) !== 0)
+      .map(tx => ({
+        id: tx.id,
+        date: tx.tx_timestamp,
+        asset: tx.asset_symbol,
+        amount: Math.abs(Number(tx.amount_value)),
+        proceeds: Math.abs(Number(tx.value_usd)),
+        costBasis: Math.abs(Number(tx.cost_basis_usd || 0)),
+        gainLoss: Number(tx.gain_loss_usd),
+        holdingPeriod: (tx.holding_period === "long" ? "long" : "short") as "short" | "long",
+        dateAcquired: tx.date_acquired || undefined,
+        source: tx.source || undefined,
+        washSale: false,
+        washSaleAdjustment: 0,
+      }));
+
+    // Aggregate totals
+    const stEvents = dbEvents.filter(e => e.holdingPeriod === "short");
+    const ltEvents = dbEvents.filter(e => e.holdingPeriod === "long");
+    const netShortTermGain = stEvents.reduce((s, e) => s + e.gainLoss, 0);
+    const netLongTermGain = ltEvents.reduce((s, e) => s + e.gainLoss, 0);
+
+    // Income total
+    const dbIncomeAgg = await prisma.transaction.aggregate({
+      where: { ...yearFilter, is_income: true },
+      _sum: { value_usd: true },
+    });
+    const totalIncome = Number(dbIncomeAgg._sum.value_usd || 0);
+
+    // Build a TaxReport-compatible object from DB data
+    const report: TaxReport = {
+      taxableEvents: dbEvents,
+      incomeEvents: [],
+      totalIncome,
+      netShortTermGain,
+      netLongTermGain,
+      summary: {
+        shortTermGain: stEvents.filter(e => e.gainLoss > 0).reduce((s, e) => s + e.gainLoss, 0),
+        shortTermLoss: stEvents.filter(e => e.gainLoss < 0).reduce((s, e) => s + e.gainLoss, 0),
+        longTermGain: ltEvents.filter(e => e.gainLoss > 0).reduce((s, e) => s + e.gainLoss, 0),
+        longTermLoss: ltEvents.filter(e => e.gainLoss < 0).reduce((s, e) => s + e.gainLoss, 0),
+        netGain: netShortTermGain + netLongTermGain,
+        totalProceeds: dbEvents.reduce((s, e) => s + e.proceeds, 0),
+        totalCostBasis: dbEvents.reduce((s, e) => s + e.costBasis, 0),
+      },
     };
-    const dbIncome = Number(dbIncomeAgg._sum.value_usd || 0);
 
     // ---- Generate the PDF ----
     let pdfBytes: Uint8Array;
     let filename: string;
 
     if (formParam === "8949") {
-      pdfBytes = await generateForm8949(report, taxpayerName, ssn, dbTotals);
+      pdfBytes = await generateForm8949(report, taxpayerName, ssn);
       filename = `Form8949-${year}.pdf`;
     } else if (formParam === "scheduled") {
-      pdfBytes = await generateScheduleD(report, taxpayerName, ssn, dbTotals);
+      pdfBytes = await generateScheduleD(report, taxpayerName, ssn);
       filename = `ScheduleD-${year}.pdf`;
     } else {
-      pdfBytes = await generateSchedule1(report, taxpayerName, ssn, dbIncome);
+      pdfBytes = await generateSchedule1(report, taxpayerName, ssn);
       filename = `Schedule1-${year}.pdf`;
     }
 

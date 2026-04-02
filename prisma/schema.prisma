@@ -131,6 +131,8 @@ model Transaction {
   incoming_asset_address String?  @db.VarChar(255)
   cost_basis_usd         Decimal? @db.Decimal(30, 15)
   gain_loss_usd          Decimal? @db.Decimal(30, 15)
+  holding_period         String?  @db.VarChar(10)
+  date_acquired          DateTime? @db.Timestamptz(6)
   is_income              Boolean  @default(false)
   helius_raw_id          Int?
   edit_version           Int      @default(0)

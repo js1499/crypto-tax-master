@@ -70,13 +70,15 @@ export async function recomputeCostBasis(userId: string, perWallet?: boolean): P
       const valuesList = chunk.map(r => {
         const cb = r.costBasisUsd !== null ? r.costBasisUsd.toString() : 'NULL';
         const gl = r.gainLossUsd !== null ? r.gainLossUsd.toString() : 'NULL';
-        return `(${r.transactionId}, ${cb}::numeric(30,15), ${gl}::numeric(30,15))`;
+        const hp = r.holdingPeriod ? `'${r.holdingPeriod}'` : 'NULL';
+        const da = r.dateAcquired ? `'${r.dateAcquired.toISOString()}'::timestamptz` : 'NULL';
+        return `(${r.transactionId}, ${cb}::numeric(30,15), ${gl}::numeric(30,15), ${hp}::varchar(10), ${da})`;
       }).join(',\n');
 
       await prisma.$executeRawUnsafe(`
         UPDATE transactions AS t
-        SET cost_basis_usd = v.cb, gain_loss_usd = v.gl
-        FROM (VALUES ${valuesList}) AS v(id, cb, gl)
+        SET cost_basis_usd = v.cb, gain_loss_usd = v.gl, holding_period = v.hp, date_acquired = v.da
+        FROM (VALUES ${valuesList}) AS v(id, cb, gl, hp, da)
         WHERE t.id = v.id
       `);
     }
