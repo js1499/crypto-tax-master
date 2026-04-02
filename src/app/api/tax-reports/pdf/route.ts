@@ -525,22 +525,30 @@ export async function GET(request: NextRequest) {
     });
 
     // Build TaxableEvent-compatible objects from DB rows
+    // Only include actual disposals (non-zero gain/loss) — not buys with cost_basis set
     const dbEvents: TaxableEvent[] = disposalTxns
-      .filter(tx => Number(tx.gain_loss_usd) !== 0 || Number(tx.cost_basis_usd) !== 0)
-      .map(tx => ({
-        id: tx.id,
-        date: tx.tx_timestamp,
-        asset: tx.asset_symbol,
-        amount: Math.abs(Number(tx.amount_value)),
-        proceeds: Math.abs(Number(tx.value_usd)),
-        costBasis: Math.abs(Number(tx.cost_basis_usd || 0)),
-        gainLoss: Number(tx.gain_loss_usd),
-        holdingPeriod: (tx.holding_period === "long" ? "long" : "short") as "short" | "long",
-        dateAcquired: tx.date_acquired || undefined,
-        source: tx.source || undefined,
-        washSale: false,
-        washSaleAdjustment: 0,
-      }));
+      .filter(tx => Number(tx.gain_loss_usd) !== 0)
+      .map(tx => {
+        const gainLoss = Number(tx.gain_loss_usd);
+        const costBasis = Math.abs(Number(tx.cost_basis_usd || 0));
+        // Proceeds = costBasis + gainLoss (more reliable than value_usd which
+        // may be the gross value before fee deduction)
+        const proceeds = Math.round((costBasis + gainLoss) * 100) / 100;
+        return {
+          id: tx.id,
+          date: tx.tx_timestamp,
+          asset: tx.asset_symbol,
+          amount: Math.abs(Number(tx.amount_value)),
+          proceeds,
+          costBasis,
+          gainLoss,
+          holdingPeriod: (tx.holding_period === "long" ? "long" : "short") as "short" | "long",
+          dateAcquired: tx.date_acquired || undefined,
+          source: tx.source || undefined,
+          washSale: false,
+          washSaleAdjustment: 0,
+        };
+      });
 
     // Aggregate totals
     const stEvents = dbEvents.filter(e => e.holdingPeriod === "short");
