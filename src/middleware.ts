@@ -33,6 +33,7 @@ export const config = {
     "/transactions/:path*",
     "/tax-reports/:path*",
     "/tax-ai/:path*",
+    "/tutorial/:path*",
     "/settings/:path*",
     "/securities/:path*",
   ],

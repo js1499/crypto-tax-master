@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { resetOnboarding } from "@/lib/onboarding";
 import Link from "next/link";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,9 @@ export default function RegisterPage() {
     setIsLoading(true);
 
     try {
+      // Reset onboarding so new account gets the tutorial (even on same device)
+      resetOnboarding();
+
       // Register the user
       const response = await fetch("/api/auth/register", {
         method: "POST",

@@ -14,6 +14,7 @@ import {
   HelpCircle,
   Building,
   ArrowRightLeft,
+  GraduationCap,
 } from "lucide-react";
 import {
   Sidebar as ShadcnSidebar,
@@ -59,6 +60,7 @@ const navGroups: NavGroup[] = [
 const standaloneItems: NavItem[] = [
   { title: "Tax Reports", href: "/tax-reports", icon: FileText },
   { title: "Tax AI", href: "/tax-ai", icon: Sparkles },
+  { title: "Tutorial", href: "/tutorial", icon: GraduationCap },
 ];
 
 const footerItems = [
