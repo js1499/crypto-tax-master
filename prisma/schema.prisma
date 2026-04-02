@@ -75,8 +75,9 @@ model Wallet {
   lastSyncAt DateTime?
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([address, provider])
+  @@unique([address, provider, userId])
   @@index([userId])
+  @@index([address])
 }
 
 model Exchange {
