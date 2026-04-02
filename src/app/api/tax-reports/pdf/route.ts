@@ -314,10 +314,20 @@ async function generateSchedule1(
 // Schedule D generation
 // ---------------------------------------------------------------------------
 
+/**
+ * Generate Schedule D using BOTH sources:
+ * - DB gain_loss_usd for accurate totals (matches transactions page)
+ * - Tax calculator for ST/LT split proportions
+ *
+ * This ensures the Schedule D totals match what the user sees on the
+ * transactions page and tax reports page, while still providing the
+ * ST/LT breakdown that Schedule D requires.
+ */
 async function generateScheduleD(
   report: TaxReport,
   taxpayerName?: string,
   ssn?: string,
+  dbTotals?: { gains: number; losses: number; net: number } | null,
 ): Promise<Uint8Array> {
   const templatePath = path.join(process.cwd(), "public", "forms", "f1040sd.pdf");
   const templateBytes = new Uint8Array(fs.readFileSync(templatePath));
@@ -332,39 +342,66 @@ async function generateScheduleD(
   // Checkbox: "Did you dispose of any investments?" — Yes
   checkCheckbox(form, "c1_1[0]");
 
-  // ---- Part I: Short-Term ----
-  // Line 1a (Form 8949 Box A totals): proceeds, cost, adjustments, gain/loss
+  // Use DB totals as the source of truth when available
+  // Tax calculator's ST/LT split ratio is applied to the DB totals
   const stEvents = report.taxableEvents.filter((e) => e.holdingPeriod === "short");
-  const stProceeds = stEvents.reduce((s, e) => s + e.proceeds, 0);
-  const stCostBasis = stEvents.reduce((s, e) => s + e.costBasis, 0);
-  const stGainLoss = stEvents.reduce((s, e) => s + e.gainLoss, 0);
+  const ltEvents = report.taxableEvents.filter((e) => e.holdingPeriod === "long");
+  const calcStGain = stEvents.reduce((s, e) => s + e.gainLoss, 0);
+  const calcLtGain = ltEvents.reduce((s, e) => s + e.gainLoss, 0);
+  const calcTotal = calcStGain + calcLtGain;
 
+  let stGainLoss: number;
+  let ltGainLoss: number;
+  let stProceeds: number;
+  let stCostBasis: number;
+  let ltProceeds: number;
+  let ltCostBasis: number;
+
+  if (dbTotals && Math.abs(calcTotal) > 0.01) {
+    // Scale the calculator's ST/LT split to match DB totals
+    const stRatio = calcStGain / calcTotal;
+    const ltRatio = calcLtGain / calcTotal;
+    stGainLoss = Math.round(dbTotals.net * stRatio * 100) / 100;
+    ltGainLoss = Math.round((dbTotals.net - stGainLoss) * 100) / 100; // Remainder to avoid rounding drift
+
+    // Scale proceeds/cost basis proportionally too
+    const calcStProceeds = stEvents.reduce((s, e) => s + e.proceeds, 0);
+    const calcLtProceeds = ltEvents.reduce((s, e) => s + e.proceeds, 0);
+    const calcTotalProceeds = calcStProceeds + calcLtProceeds;
+    const proceedsRatio = calcTotalProceeds > 0 ? calcStProceeds / calcTotalProceeds : 1;
+    const totalProceeds = dbTotals.gains + Math.abs(dbTotals.losses); // Rough approximation
+    stProceeds = Math.round(totalProceeds * proceedsRatio * 100) / 100;
+    ltProceeds = Math.round((totalProceeds - stProceeds) * 100) / 100;
+    stCostBasis = Math.round((stProceeds - stGainLoss) * 100) / 100;
+    ltCostBasis = Math.round((ltProceeds - ltGainLoss) * 100) / 100;
+  } else {
+    // Fallback: use calculator values directly (no DB totals or zero total)
+    stProceeds = stEvents.reduce((s, e) => s + e.proceeds, 0);
+    stCostBasis = stEvents.reduce((s, e) => s + e.costBasis, 0);
+    stGainLoss = calcStGain;
+    ltProceeds = ltEvents.reduce((s, e) => s + e.proceeds, 0);
+    ltCostBasis = ltEvents.reduce((s, e) => s + e.costBasis, 0);
+    ltGainLoss = calcLtGain;
+  }
+
+  // ---- Part I: Short-Term ----
   setTextField(form, "f1_3[0]", formatCurrency(stProceeds));
   setTextField(form, "f1_4[0]", formatCurrency(stCostBasis));
-  // f1_5 = adjustments (skip)
   setTextField(form, "f1_6[0]", formatCurrency(stGainLoss));
 
   // Line 7: Net short-term capital gain or loss
-  setTextField(form, "f1_22[0]", formatCurrency(report.netShortTermGain));
+  setTextField(form, "f1_22[0]", formatCurrency(stGainLoss));
 
   // ---- Part II: Long-Term ----
-  // Line 8a (Form 8949 Box D totals)
-  const ltEvents = report.taxableEvents.filter((e) => e.holdingPeriod === "long");
-  const ltProceeds = ltEvents.reduce((s, e) => s + e.proceeds, 0);
-  const ltCostBasis = ltEvents.reduce((s, e) => s + e.costBasis, 0);
-  const ltGainLoss = ltEvents.reduce((s, e) => s + e.gainLoss, 0);
-
   setTextField(form, "f1_23[0]", formatCurrency(ltProceeds));
   setTextField(form, "f1_24[0]", formatCurrency(ltCostBasis));
-  // f1_25 = adjustments (skip)
   setTextField(form, "f1_26[0]", formatCurrency(ltGainLoss));
 
   // Line 15: Net long-term capital gain or loss
-  setTextField(form, "f1_43[0]", formatCurrency(report.netLongTermGain));
+  setTextField(form, "f1_43[0]", formatCurrency(ltGainLoss));
 
   // ---- Part III: Summary (Page 2) ----
-  // Line 16: Combine lines 7 and 15
-  const combined = report.netShortTermGain + report.netLongTermGain;
+  const combined = stGainLoss + ltGainLoss;
   setTextField(form, "f2_1[0]", formatCurrency(combined));
 
   // Line 21: If loss, capital loss deduction (max $3,000)
@@ -508,7 +545,55 @@ export async function GET(request: NextRequest) {
       pdfBytes = await generateForm8949(report, taxpayerName, ssn);
       filename = `Form8949-${year}.pdf`;
     } else if (formParam === "scheduled") {
-      pdfBytes = await generateScheduleD(report, taxpayerName, ssn);
+      // Query DB totals (same source as transactions page) so Schedule D matches
+      const yearStart = new Date(`${year}-01-01T00:00:00Z`);
+      const yearEnd = new Date(`${year}-12-31T23:59:59.999Z`);
+      const orConditions: any[] = [];
+      if (walletAddresses.length > 0) {
+        orConditions.push({ wallet_address: { in: walletAddresses } });
+      }
+      orConditions.push({ AND: [{ source_type: "csv_import" }, { userId: user.id }] });
+      const userExchanges = await prisma.exchange.findMany({
+        where: { userId: user.id },
+        select: { name: true },
+      });
+      if (userExchanges.length > 0) {
+        orConditions.push({
+          AND: [{ source_type: "exchange_api" }, { source: { in: userExchanges.map(e => e.name) } }],
+        });
+      }
+      const dbAgg = await prisma.transaction.aggregate({
+        where: {
+          OR: orConditions,
+          tx_timestamp: { gte: yearStart, lte: yearEnd },
+          gain_loss_usd: { not: null },
+        },
+        _sum: { gain_loss_usd: true },
+      });
+      const dbGains = await prisma.transaction.aggregate({
+        where: {
+          OR: orConditions,
+          tx_timestamp: { gte: yearStart, lte: yearEnd },
+          gain_loss_usd: { gt: 0 },
+        },
+        _sum: { gain_loss_usd: true },
+      });
+      const dbLosses = await prisma.transaction.aggregate({
+        where: {
+          OR: orConditions,
+          tx_timestamp: { gte: yearStart, lte: yearEnd },
+          gain_loss_usd: { lt: 0 },
+        },
+        _sum: { gain_loss_usd: true },
+      });
+
+      const dbTotals = {
+        gains: Number(dbGains._sum.gain_loss_usd || 0),
+        losses: Number(dbLosses._sum.gain_loss_usd || 0),
+        net: Number(dbAgg._sum.gain_loss_usd || 0),
+      };
+
+      pdfBytes = await generateScheduleD(report, taxpayerName, ssn, dbTotals);
       filename = `ScheduleD-${year}.pdf`;
     } else {
       pdfBytes = await generateSchedule1(report, taxpayerName, ssn);
