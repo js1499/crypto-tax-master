@@ -328,10 +328,8 @@ export async function POST(request: NextRequest) {
     const totalDuration = Date.now() - requestStartTime;
     console.log(`[Wallet Sync] Done in ${(totalDuration / 1000).toFixed(1)}s: ${totalAdded} added, ${totalSkipped} skipped, ${totalErrors} errors across ${wallets.length} wallet(s)${errors.length > 0 ? ` | errors: ${errors.join(" | ")}` : ""}`);
 
-    // Auto-recompute cost basis after sync
-    await recomputeCostBasis(user.id);
-
     // Invalidate tax report cache after transaction mutations
+    // Note: cost basis is NOT auto-computed here — run enrichment first, then compute
     await invalidateTaxReportCache(user.id);
 
     const response = {

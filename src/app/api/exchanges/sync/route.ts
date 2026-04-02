@@ -331,10 +331,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Auto-recompute cost basis after sync
-    await recomputeCostBasis(user.id);
-
     // Invalidate tax report cache after transaction mutations
+    // Note: cost basis is NOT auto-computed here — run enrichment first, then compute
     await invalidateTaxReportCache(user.id);
 
     // PRD Observability: Structured response with metrics
