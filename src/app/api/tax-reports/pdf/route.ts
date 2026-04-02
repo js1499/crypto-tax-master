@@ -236,27 +236,82 @@ async function generateForm8949(
     return sheet.save();
   }
 
-  // For large datasets: summary-only page with "See attached statement"
-  // This is standard IRS practice — detail rows go in the CSV export
+  // For large datasets: aggregate by symbol, one row per asset
+  // Each row: "X.XX BTC (N txns) — See attached", with per-symbol totals
+  // If symbols exceed 11 rows, use continuation sheets
+
+  type SymbolAgg = { symbol: string; count: number; proceeds: number; costBasis: number; gainLoss: number };
+
+  const aggregateBySymbol = (events: TaxableEvent[]): SymbolAgg[] => {
+    const map = new Map<string, SymbolAgg>();
+    for (const e of events) {
+      const existing = map.get(e.asset);
+      if (existing) {
+        existing.count++;
+        existing.proceeds += e.proceeds;
+        existing.costBasis += e.costBasis;
+        existing.gainLoss += e.gainLoss;
+      } else {
+        map.set(e.asset, { symbol: e.asset, count: 1, proceeds: e.proceeds, costBasis: e.costBasis, gainLoss: e.gainLoss });
+      }
+    }
+    // Sort by absolute gain/loss descending (most significant first)
+    return Array.from(map.values()).sort((a, b) => Math.abs(b.gainLoss) - Math.abs(a.gainLoss));
+  };
+
+  const stSymbols = aggregateBySymbol(shortTerm);
+  const ltSymbols = aggregateBySymbol(longTerm);
+
+  // If aggregated symbols fit on one sheet, use a single page
+  if (stSymbols.length <= ROWS_PER_PAGE && ltSymbols.length <= ROWS_PER_PAGE) {
+    // Build symbol-level TaxableEvents for the sheet filler
+    const toEvents = (syms: SymbolAgg[]): TaxableEvent[] => syms.map(s => ({
+      id: 0,
+      date: new Date(),
+      asset: `${s.symbol} (${s.count} txns)`,
+      amount: 0,
+      proceeds: s.proceeds,
+      costBasis: s.costBasis,
+      gainLoss: s.gainLoss,
+      holdingPeriod: "short" as const,
+      washSale: false,
+      washSaleAdjustment: 0,
+    }));
+
+    const sheet = await buildForm8949Sheet(
+      templateBytes,
+      toEvents(stSymbols),
+      toEvents(ltSymbols),
+      taxpayerName, ssn,
+      shortTermTotals, longTermTotals,
+      shortBox, longBox,
+    );
+    return sheet.save();
+  }
+
+  // Too many symbols even aggregated — use "See attached" with top symbols
   const doc = await PDFDocument.load(templateBytes, { ignoreEncryption: true });
   const form = doc.getForm();
 
-  // Page 1: Short-term
+  const pad = (n: number) => String(n).padStart(2, "0");
+
+  // Page 1: Short-term — fill up to ROWS_PER_PAGE symbol rows
   if (taxpayerName) setTextField(form, "f1_01[0]", taxpayerName);
   if (ssn) setTextField(form, "f1_02[0]", ssn);
   checkCheckbox(form, shortBox);
 
-  if (shortTerm.length > 0) {
-    // First row: "See attached statement — N transactions"
-    setTextField(form, "f1_03[0]", `See attached statement (${shortTerm.length} transactions)`);
-    setTextField(form, "f1_04[0]", "Various");
-    setTextField(form, "f1_05[0]", "Various");
-    setTextField(form, "f1_06[0]", formatCurrency(shortTermTotals.proceeds));
-    setTextField(form, "f1_07[0]", formatCurrency(shortTermTotals.costBasis));
-    setTextField(form, "f1_10[0]", formatCurrency(shortTermTotals.gainLoss));
+  const stToFill = stSymbols.slice(0, ROWS_PER_PAGE);
+  for (let i = 0; i < stToFill.length; i++) {
+    const s = stToFill[i];
+    const baseIdx = 3 + i * 8;
+    setTextField(form, `f1_${pad(baseIdx)}[0]`, `${s.symbol} (${s.count} txns) — See attached`);
+    setTextField(form, `f1_${pad(baseIdx + 1)}[0]`, "Various");
+    setTextField(form, `f1_${pad(baseIdx + 2)}[0]`, "Various");
+    setTextField(form, `f1_${pad(baseIdx + 3)}[0]`, formatCurrency(s.proceeds));
+    setTextField(form, `f1_${pad(baseIdx + 4)}[0]`, formatCurrency(s.costBasis));
+    setTextField(form, `f1_${pad(baseIdx + 7)}[0]`, formatCurrency(s.gainLoss));
   }
 
-  // Totals
   setTextField(form, "f1_91[0]", formatCurrency(shortTermTotals.proceeds));
   setTextField(form, "f1_92[0]", formatCurrency(shortTermTotals.costBasis));
   setTextField(form, "f1_94[0]", formatCurrency(shortTermTotals.gainLoss));
@@ -266,13 +321,16 @@ async function generateForm8949(
   if (ssn) setTextField(form, "f2_02[0]", ssn);
   checkCheckbox(form, longBox);
 
-  if (longTerm.length > 0) {
-    setTextField(form, "f2_03[0]", `See attached statement (${longTerm.length} transactions)`);
-    setTextField(form, "f2_04[0]", "Various");
-    setTextField(form, "f2_05[0]", "Various");
-    setTextField(form, "f2_06[0]", formatCurrency(longTermTotals.proceeds));
-    setTextField(form, "f2_07[0]", formatCurrency(longTermTotals.costBasis));
-    setTextField(form, "f2_10[0]", formatCurrency(longTermTotals.gainLoss));
+  const ltToFill = ltSymbols.slice(0, ROWS_PER_PAGE);
+  for (let i = 0; i < ltToFill.length; i++) {
+    const s = ltToFill[i];
+    const baseIdx = 3 + i * 8;
+    setTextField(form, `f2_${pad(baseIdx)}[0]`, `${s.symbol} (${s.count} txns) — See attached`);
+    setTextField(form, `f2_${pad(baseIdx + 1)}[0]`, "Various");
+    setTextField(form, `f2_${pad(baseIdx + 2)}[0]`, "Various");
+    setTextField(form, `f2_${pad(baseIdx + 3)}[0]`, formatCurrency(s.proceeds));
+    setTextField(form, `f2_${pad(baseIdx + 4)}[0]`, formatCurrency(s.costBasis));
+    setTextField(form, `f2_${pad(baseIdx + 7)}[0]`, formatCurrency(s.gainLoss));
   }
 
   setTextField(form, "f2_91[0]", formatCurrency(longTermTotals.proceeds));
