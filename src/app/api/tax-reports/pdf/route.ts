@@ -190,6 +190,7 @@ async function generateForm8949(
   report: TaxReport,
   taxpayerName?: string,
   ssn?: string,
+  dbTotals?: { gains: number; losses: number; net: number } | null,
 ): Promise<Uint8Array> {
   const templatePath = path.join(process.cwd(), "public", "forms", "f8949.pdf");
   const templateBytes = new Uint8Array(fs.readFileSync(templatePath));
@@ -208,8 +209,34 @@ async function generateForm8949(
     gainLoss: events.reduce((s, e) => s + e.gainLoss, 0),
   });
 
-  const shortTermTotals = sumTotals(shortTerm);
-  const longTermTotals = sumTotals(longTerm);
+  let shortTermTotals = sumTotals(shortTerm);
+  let longTermTotals = sumTotals(longTerm);
+
+  // Scale totals to match DB if available (same fix as Schedule D)
+  if (dbTotals) {
+    const calcTotal = shortTermTotals.gainLoss + longTermTotals.gainLoss;
+    if (Math.abs(calcTotal) > 0.01) {
+      const stRatio = shortTermTotals.gainLoss / calcTotal;
+      const scaledStGain = Math.round(dbTotals.net * stRatio * 100) / 100;
+      const scaledLtGain = Math.round((dbTotals.net - scaledStGain) * 100) / 100;
+      // Scale proceeds and cost basis proportionally
+      const calcTotalProceeds = shortTermTotals.proceeds + longTermTotals.proceeds;
+      if (calcTotalProceeds > 0) {
+        const stProcRatio = shortTermTotals.proceeds / calcTotalProceeds;
+        const dbTotalProceeds = dbTotals.gains + Math.abs(dbTotals.losses);
+        shortTermTotals = {
+          proceeds: Math.round(dbTotalProceeds * stProcRatio * 100) / 100,
+          costBasis: Math.round((dbTotalProceeds * stProcRatio - scaledStGain) * 100) / 100,
+          gainLoss: scaledStGain,
+        };
+        longTermTotals = {
+          proceeds: Math.round(dbTotalProceeds * (1 - stProcRatio) * 100) / 100,
+          costBasis: Math.round((dbTotalProceeds * (1 - stProcRatio) - scaledLtGain) * 100) / 100,
+          gainLoss: scaledLtGain,
+        };
+      }
+    }
+  }
 
   // Determine correct checkboxes based on source
   const { shortBox, longBox } = getCheckboxForEvents(allEvents);
@@ -281,6 +308,7 @@ async function generateSchedule1(
   report: TaxReport,
   taxpayerName?: string,
   ssn?: string,
+  dbIncome?: number | null,
 ): Promise<Uint8Array> {
   const templatePath = path.join(process.cwd(), "public", "forms", "f1040s1.pdf");
   const templateBytes = new Uint8Array(fs.readFileSync(templatePath));
@@ -292,7 +320,8 @@ async function generateSchedule1(
   if (taxpayerName) setTextField(form, "f1_01[0]", taxpayerName);
   if (ssn) setTextField(form, "f1_02[0]", ssn);
 
-  const totalIncome = report.totalIncome;
+  // Use DB income total when available (matches transactions page)
+  const totalIncome = dbIncome != null ? dbIncome : report.totalIncome;
 
   // Line 8z description
   setTextField(form, "f1_35[0]", "Cryptocurrency income");
@@ -537,66 +566,66 @@ export async function GET(request: NextRequest) {
     const taxpayerName = searchParams.get("name") || user.name || undefined;
     const ssn = searchParams.get("ssn") || undefined;
 
+    // ---- Query DB totals (same source as transactions page) ----
+    const yearStart = new Date(`${year}-01-01T00:00:00Z`);
+    const yearEnd = new Date(`${year}-12-31T23:59:59.999Z`);
+    const orConditions: any[] = [];
+    if (walletAddresses.length > 0) {
+      orConditions.push({ wallet_address: { in: walletAddresses } });
+    }
+    orConditions.push({ AND: [{ source_type: "csv_import" }, { userId: user.id }] });
+    const userExchanges = await prisma.exchange.findMany({
+      where: { userId: user.id },
+      select: { name: true },
+    });
+    if (userExchanges.length > 0) {
+      orConditions.push({
+        AND: [{ source_type: "exchange_api" }, { source: { in: userExchanges.map(e => e.name) } }],
+      });
+    }
+    const yearFilter = {
+      OR: orConditions,
+      tx_timestamp: { gte: yearStart, lte: yearEnd },
+    };
+
+    const [dbAgg, dbGains, dbLosses, dbIncomeAgg] = await Promise.all([
+      prisma.transaction.aggregate({
+        where: { ...yearFilter, gain_loss_usd: { not: null } },
+        _sum: { gain_loss_usd: true },
+      }),
+      prisma.transaction.aggregate({
+        where: { ...yearFilter, gain_loss_usd: { gt: 0 } },
+        _sum: { gain_loss_usd: true },
+      }),
+      prisma.transaction.aggregate({
+        where: { ...yearFilter, gain_loss_usd: { lt: 0 } },
+        _sum: { gain_loss_usd: true },
+      }),
+      prisma.transaction.aggregate({
+        where: { ...yearFilter, is_income: true },
+        _sum: { value_usd: true },
+      }),
+    ]);
+
+    const dbTotals = {
+      gains: Number(dbGains._sum.gain_loss_usd || 0),
+      losses: Number(dbLosses._sum.gain_loss_usd || 0),
+      net: Number(dbAgg._sum.gain_loss_usd || 0),
+    };
+    const dbIncome = Number(dbIncomeAgg._sum.value_usd || 0);
+
     // ---- Generate the PDF ----
     let pdfBytes: Uint8Array;
     let filename: string;
 
     if (formParam === "8949") {
-      pdfBytes = await generateForm8949(report, taxpayerName, ssn);
+      pdfBytes = await generateForm8949(report, taxpayerName, ssn, dbTotals);
       filename = `Form8949-${year}.pdf`;
     } else if (formParam === "scheduled") {
-      // Query DB totals (same source as transactions page) so Schedule D matches
-      const yearStart = new Date(`${year}-01-01T00:00:00Z`);
-      const yearEnd = new Date(`${year}-12-31T23:59:59.999Z`);
-      const orConditions: any[] = [];
-      if (walletAddresses.length > 0) {
-        orConditions.push({ wallet_address: { in: walletAddresses } });
-      }
-      orConditions.push({ AND: [{ source_type: "csv_import" }, { userId: user.id }] });
-      const userExchanges = await prisma.exchange.findMany({
-        where: { userId: user.id },
-        select: { name: true },
-      });
-      if (userExchanges.length > 0) {
-        orConditions.push({
-          AND: [{ source_type: "exchange_api" }, { source: { in: userExchanges.map(e => e.name) } }],
-        });
-      }
-      const dbAgg = await prisma.transaction.aggregate({
-        where: {
-          OR: orConditions,
-          tx_timestamp: { gte: yearStart, lte: yearEnd },
-          gain_loss_usd: { not: null },
-        },
-        _sum: { gain_loss_usd: true },
-      });
-      const dbGains = await prisma.transaction.aggregate({
-        where: {
-          OR: orConditions,
-          tx_timestamp: { gte: yearStart, lte: yearEnd },
-          gain_loss_usd: { gt: 0 },
-        },
-        _sum: { gain_loss_usd: true },
-      });
-      const dbLosses = await prisma.transaction.aggregate({
-        where: {
-          OR: orConditions,
-          tx_timestamp: { gte: yearStart, lte: yearEnd },
-          gain_loss_usd: { lt: 0 },
-        },
-        _sum: { gain_loss_usd: true },
-      });
-
-      const dbTotals = {
-        gains: Number(dbGains._sum.gain_loss_usd || 0),
-        losses: Number(dbLosses._sum.gain_loss_usd || 0),
-        net: Number(dbAgg._sum.gain_loss_usd || 0),
-      };
-
       pdfBytes = await generateScheduleD(report, taxpayerName, ssn, dbTotals);
       filename = `ScheduleD-${year}.pdf`;
     } else {
-      pdfBytes = await generateSchedule1(report, taxpayerName, ssn);
+      pdfBytes = await generateSchedule1(report, taxpayerName, ssn, dbIncome);
       filename = `Schedule1-${year}.pdf`;
     }
 
