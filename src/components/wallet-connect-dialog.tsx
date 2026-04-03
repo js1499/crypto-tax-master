@@ -29,6 +29,19 @@ const WALLET_OPTIONS = [
   { id: "bitcoin", name: "BTC Wallet", logo: "/logos/BTC.svg", placeholder: "Enter Bitcoin address...", addressPattern: /^(1|3|bc1)[a-zA-HJ-NP-Z0-9]{25,62}$/, errorMsg: "Invalid Bitcoin address" },
 ];
 
+// L2/EVM chains shown as separate entry points in the wallet grid
+// All use the same EVM address format and provider
+const L2_WALLET_OPTIONS = [
+  { id: "evm-polygon", name: "Polygon", logo: "/logos/polygon-placeholder.svg", chains: ["polygon"] },
+  { id: "evm-arbitrum", name: "Arbitrum", logo: "/logos/arbitrum-placeholder.svg", chains: ["arbitrum"] },
+  { id: "evm-optimism", name: "Optimism", logo: "/logos/optimism-placeholder.svg", chains: ["optimism"] },
+  { id: "evm-base", name: "Base", logo: "/logos/base-placeholder.svg", chains: ["base"] },
+  { id: "evm-avalanche", name: "Avalanche", logo: "/logos/avalanche-placeholder.svg", chains: ["avalanche"] },
+  { id: "evm-bsc", name: "BNB Chain", logo: "/logos/bsc-placeholder.svg", chains: ["bsc"] },
+  { id: "evm-linea", name: "Linea", logo: "/logos/linea-placeholder.svg", chains: ["linea"] },
+  { id: "evm-fantom", name: "Fantom", logo: "/logos/fantom-placeholder.svg", chains: ["fantom"] },
+];
+
 const EXCHANGE_OPTIONS = [
   { id: "coinbase", name: "Coinbase", logo: "/logos/coinbase.png", connection: "OAuth" as const },
   { id: "binance", name: "Binance", logo: "/logos/binance.jpg", connection: "API" as const },
@@ -244,13 +257,33 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
             </Button>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-3">
-            {WALLET_OPTIONS.map((option) => (
-              <button key={option.id} onClick={() => setSelectedWallet(option.id)} className="flex flex-col items-center gap-2.5 rounded-xl border border-[#E5E5E0] dark:border-[#333] p-5 hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
-                <img src={option.logo} alt={option.name} className="h-10 w-10 rounded-full" />
-                <span className="text-[13px] font-medium">{option.name}</span>
-              </button>
-            ))}
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              {WALLET_OPTIONS.map((option) => (
+                <button key={option.id} onClick={() => setSelectedWallet(option.id)} className="flex flex-col items-center gap-2.5 rounded-xl border border-[#E5E5E0] dark:border-[#333] p-5 hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
+                  <img src={option.logo} alt={option.name} className="h-10 w-10 rounded-full" />
+                  <span className="text-[13px] font-medium">{option.name}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">L2 / EVM Chains</p>
+            <div className="grid grid-cols-4 gap-2">
+              {L2_WALLET_OPTIONS.map((option) => (
+                <button
+                  key={option.id}
+                  onClick={() => {
+                    setSelectedWallet("evm");
+                    setSelectedChains(option.chains);
+                  }}
+                  className="flex flex-col items-center gap-1.5 rounded-lg border border-[#E5E5E0] dark:border-[#333] p-3 hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors"
+                >
+                  <div className="h-8 w-8 rounded-full bg-[#F5F5F0] dark:bg-[#222] flex items-center justify-center text-[10px] font-bold text-[#6B7280]">
+                    {option.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  <span className="text-[11px] font-medium">{option.name}</span>
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </TabsContent>

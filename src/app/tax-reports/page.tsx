@@ -254,7 +254,7 @@ interface TaxReportData {
 export default function TaxReportsPage() {
   const [mounted, setMounted] = useState(false);
   const [selectedYear, setSelectedYear] = useState("2024");
-  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [generatingFormId, setGeneratingFormId] = useState<string | null>(null);
   const [reportData, setReportData] = useState<TaxReportData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -422,7 +422,7 @@ export default function TaxReportsPage() {
       return;
     }
     try {
-      setIsGeneratingReport(true);
+      setGeneratingFormId(_currentFormId);
       const response = await fetch(`/api/tax-reports/export?year=${selectedYear}&type=${exportType}`, {
         method: "GET",
         credentials: "include",
@@ -450,7 +450,7 @@ export default function TaxReportsPage() {
       const errorMessage = error instanceof Error ? error.message : `Failed to download ${filename}`;
       toast.error(errorMessage);
     } finally {
-      setIsGeneratingReport(false);
+      setGeneratingFormId(null);
     }
   };
 
@@ -464,7 +464,7 @@ export default function TaxReportsPage() {
       return;
     }
     try {
-      setIsGeneratingReport(true);
+      setGeneratingFormId(_currentFormId);
       const response = await fetch(`/api/tax-reports/pdf?year=${selectedYear}&form=${formParam}`, {
         credentials: "include",
       });
@@ -491,7 +491,7 @@ export default function TaxReportsPage() {
       const errorMessage = error instanceof Error ? error.message : `Failed to download ${filename}`;
       toast.error(errorMessage);
     } finally {
-      setIsGeneratingReport(false);
+      setGeneratingFormId(null);
     }
   };
 
@@ -505,7 +505,7 @@ export default function TaxReportsPage() {
       return;
     }
     try {
-      setIsGeneratingReport(true);
+      setGeneratingFormId(_currentFormId);
       const response = await fetch(`/api/securities/reports?year=${selectedYear}&type=${reportType}`, {
         method: "GET",
         credentials: "include",
@@ -533,7 +533,7 @@ export default function TaxReportsPage() {
       const errorMessage = error instanceof Error ? error.message : `Failed to download ${filename}`;
       toast.error(errorMessage);
     } finally {
-      setIsGeneratingReport(false);
+      setGeneratingFormId(null);
     }
   };
 
@@ -547,7 +547,7 @@ export default function TaxReportsPage() {
       return;
     }
     try {
-      setIsGeneratingReport(true);
+      setGeneratingFormId(_currentFormId);
       const response = await fetch(`/api/tax-reports/combined?year=${selectedYear}&form=${formParam}`, {
         credentials: "include",
       });
@@ -574,15 +574,19 @@ export default function TaxReportsPage() {
       const errorMessage = error instanceof Error ? error.message : `Failed to download ${filename}`;
       toast.error(errorMessage);
     } finally {
-      setIsGeneratingReport(false);
+      setGeneratingFormId(null);
     }
   };
+
+  // Track which form is currently downloading (used by sub-handlers via closure)
+  let _currentFormId: string | null = null;
 
   const handleFormDownload = async (form: typeof taxForms[0]) => {
     if (form.status === "needs-pdf") {
       toast.info(`${form.name} requires fillable PDF support — coming soon.`);
       return;
     }
+    _currentFormId = form.name;
 
     // Securities CSV exports
     const securitiesExportMap: Record<string, { type: string; filename: string }> = {
@@ -696,10 +700,10 @@ export default function TaxReportsPage() {
             Tax Reports
           </h1>
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 border border-[#E5E5E0] dark:border-[#333] rounded-lg px-3 h-9">
-              <Calendar className="h-3.5 w-3.5 text-[#9CA3AF]" />
+            <div className="flex items-center gap-2 border border-[#E5E5E0] dark:border-[#333] rounded-lg px-4 h-11">
+              <Calendar className="h-4 w-4 text-[#9CA3AF]" />
               <Select value={selectedYear} onValueChange={setSelectedYear}>
-                <SelectTrigger className="border-0 shadow-none h-8 text-[13px] font-medium w-[80px] p-0 pl-1">
+                <SelectTrigger className="border-0 shadow-none h-10 text-[15px] font-semibold w-[90px] p-0 pl-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -932,10 +936,10 @@ export default function TaxReportsPage() {
                   ) : (
                     <button
                       onClick={() => handleFormDownload(form)}
-                      disabled={isGeneratingReport}
+                      disabled={!!generatingFormId}
                       className="inline-flex items-center gap-1.5 rounded-lg border border-[#E5E5E0] dark:border-[#333] px-3.5 py-1.5 text-[12px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5] hover:bg-[#F5F5F0] dark:hover:bg-[#222] transition-colors disabled:opacity-50"
                     >
-                      {isGeneratingReport ? (
+                      {generatingFormId === form.name ? (
                         <>
                           <div className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
                           Generating...

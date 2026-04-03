@@ -594,7 +594,7 @@ function AccountsContent() {
                   disabled={enrichingAll || !!enriching}
                 >
                   {enrichingAll ? <DollarSign className="mr-2 h-4 w-4 animate-pulse" /> : <DollarSign className="mr-2 h-4 w-4" />}
-                  {enrichingAll ? "Enriching..." : "Enrich All"}
+                  {enrichingAll ? "Pulling Prices..." : "Pull All Prices"}
                 </Button>
                 <Button variant="outline" onClick={handleRefresh}>
                   <RefreshCw className="mr-2 h-4 w-4" />
@@ -736,8 +736,8 @@ function AccountsContent() {
                     <TableCell colSpan={8}>
                       <div className="py-16 text-center">
                         <Wallet className="h-12 w-12 text-[#9CA3AF] mx-auto mb-4" />
-                        <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">No accounts connected</p>
-                        <p className="text-sm text-[#6B7280] mt-2">Connect your first wallet or exchange to get started.</p>
+                        <p className="text-[17px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">No accounts connected</p>
+                        <p className="text-[15px] text-[#6B7280] mt-2">Connect your first account (wallet or exchange) to get started.</p>
                         <Button className="mt-4" onClick={() => setIsAddDialogOpen(true)} data-onboarding="connect-wallet">
                           <PlusCircle className="mr-2 h-4 w-4" />
                           Add Account
@@ -882,7 +882,7 @@ function AccountsContent() {
                                 }}
                               >
                                 <DollarSign className={cn("h-3 w-3", enriching === account.id && "animate-pulse")} />
-                                Enrich
+                                Pull Prices
                               </button>
                             )}
                             <button
@@ -1125,7 +1125,7 @@ function AccountsContent() {
                           disabled={enriching === selectedAccount.id || enrichingAll}
                         >
                           <DollarSign className={cn("mr-2 h-4 w-4", enriching === selectedAccount.id && "animate-pulse")} />
-                          {enriching === selectedAccount.id ? "Enriching..." : "Enrich Prices"}
+                          {enriching === selectedAccount.id ? "Pulling Prices..." : "Pull Prices"}
                         </Button>
                       )}
                       {isExchange && !isConnected && (
