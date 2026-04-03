@@ -268,7 +268,7 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
               ))}
             </div>
             <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">L2 / EVM Chains</p>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-3">
               {L2_WALLET_OPTIONS.map((option) => (
                 <button
                   key={option.id}
@@ -276,12 +276,12 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
                     setSelectedWallet("evm");
                     setSelectedChains(option.chains);
                   }}
-                  className="flex flex-col items-center gap-1.5 rounded-lg border border-[#E5E5E0] dark:border-[#333] p-3 hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors"
+                  className="aspect-square flex flex-col items-center justify-center gap-2 rounded-xl border border-[#E5E5E0] dark:border-[#333] hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors"
                 >
-                  <div className="h-8 w-8 rounded-full bg-[#F5F5F0] dark:bg-[#222] flex items-center justify-center text-[10px] font-bold text-[#6B7280]">
+                  <div className="h-10 w-10 rounded-full bg-[#F5F5F0] dark:bg-[#222] flex items-center justify-center text-[12px] font-bold text-[#6B7280]">
                     {option.name.slice(0, 2).toUpperCase()}
                   </div>
-                  <span className="text-[11px] font-medium">{option.name}</span>
+                  <span className="text-[13px] font-medium">{option.name}</span>
                 </button>
               ))}
             </div>
