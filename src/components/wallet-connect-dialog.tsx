@@ -40,6 +40,7 @@ const L2_WALLET_OPTIONS = [
   { id: "evm-bsc", name: "BNB Chain", logo: "/logos/bsc-placeholder.svg", chains: ["bsc"] },
   { id: "evm-linea", name: "Linea", logo: "/logos/linea-placeholder.svg", chains: ["linea"] },
   { id: "evm-fantom", name: "Fantom", logo: "/logos/fantom-placeholder.svg", chains: ["fantom"] },
+  { id: "evm-cronos", name: "Cronos", logo: "/logos/cronos-placeholder.svg", chains: ["cronos"] },
 ];
 
 const EXCHANGE_OPTIONS = [
@@ -267,7 +268,7 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
               ))}
             </div>
             <p className="text-[11px] font-semibold text-[#9CA3AF] tracking-wide uppercase">L2 / EVM Chains</p>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {L2_WALLET_OPTIONS.map((option) => (
                 <button
                   key={option.id}
