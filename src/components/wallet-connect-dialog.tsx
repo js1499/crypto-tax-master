@@ -423,9 +423,9 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
             {/* Add another wallet */}
             <button
               onClick={addBulkRow}
-              className="w-full py-2 rounded-lg border border-dashed border-[#E5E5E0] dark:border-[#333] text-[12px] font-medium text-[#6B7280] hover:border-[#9CA3AF] hover:text-[#4B5563] transition-colors"
+              className="w-full py-2.5 rounded-lg border-2 border-dashed border-[#2563EB]/40 text-[13px] font-semibold text-[#2563EB] hover:border-[#2563EB] hover:bg-[#EFF6FF] dark:hover:bg-[rgba(37,99,235,0.08)] transition-colors"
             >
-              <Plus className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
+              <Plus className="inline h-4 w-4 mr-1.5 -mt-0.5" />
               Add Another Wallet
             </button>
 
