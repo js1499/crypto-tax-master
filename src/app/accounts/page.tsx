@@ -98,6 +98,7 @@ function AccountsContent() {
   const [mounted, setMounted] = useState(false);
   const [filter, setFilter] = useState("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [addDialogBulk, setAddDialogBulk] = useState(false);
   const [exclusiveWallets, setExclusiveWallets] = useState(false);
   const [oauthStatus, setOauthStatus] = useState<{ success?: boolean; error?: string } | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -602,7 +603,11 @@ function AccountsContent() {
                 </Button>
               </>
             )}
-            <Button onClick={() => setIsAddDialogOpen(true)} data-onboarding="connect-wallet">
+            <Button variant="outline" onClick={() => { setIsAddDialogOpen(true); setAddDialogBulk(true); }}>
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Add Multiple
+            </Button>
+            <Button onClick={() => { setIsAddDialogOpen(true); setAddDialogBulk(false); }} data-onboarding="connect-wallet">
               <PlusCircle className="mr-2 h-4 w-4" />
               Add Account
             </Button>
@@ -992,7 +997,7 @@ function AccountsContent() {
               Connect a wallet, exchange, or import transactions
             </DialogDescription>
           </DialogHeader>
-          <WalletConnectDialog onConnect={handleAccountConnect} exclusive={exclusiveWallets} />
+          <WalletConnectDialog onConnect={handleAccountConnect} exclusive={exclusiveWallets} initialBulk={addDialogBulk} />
         </DialogContent>
       </Dialog>
 

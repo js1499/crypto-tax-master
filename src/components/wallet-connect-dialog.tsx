@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,9 +55,10 @@ const EXCHANGE_OPTIONS = [
 interface WalletConnectDialogProps {
   onConnect?: (provider: string, data: ConnectionResult) => void;
   exclusive?: boolean;
+  initialBulk?: boolean;
 }
 
-export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialogProps) {
+export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: WalletConnectDialogProps) {
   const [connecting, setConnecting] = useState(false);
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
   const [selectedExchange, setSelectedExchange] = useState<string | null>(null);
@@ -72,18 +73,40 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
   const [csvFile, setCsvFile] = useState<File | null>(null);
 
   // Bulk wallet add
-  const [bulkMode, setBulkMode] = useState(false);
-  const [bulkAddresses, setBulkAddresses] = useState("");
-  const [bulkProvider, setBulkProvider] = useState<string>("solana");
+  const [bulkMode, setBulkMode] = useState(initialBulk || false);
+  useEffect(() => { setBulkMode(initialBulk || false); }, [initialBulk]);
+  const [bulkRows, setBulkRows] = useState<Array<{ id: number; provider: string; address: string; name: string; chains: string[] }>>([
+    { id: 1, provider: "solana", address: "", name: "SOL Wallet 1", chains: ["eth", "polygon", "arbitrum", "optimism", "base"] },
+  ]);
+  const [bulkNextId, setBulkNextId] = useState(2);
   const { startPipeline, isRunning } = useSyncPipeline();
 
-  const handleBulkAdd = async () => {
-    const lines = bulkAddresses
-      .split("\n")
-      .map(l => l.trim())
-      .filter(l => l.length > 0);
+  const addBulkRow = () => {
+    const count = bulkRows.length + 1;
+    setBulkRows(prev => [...prev, { id: bulkNextId, provider: "solana", address: "", name: `SOL Wallet ${count}`, chains: ["eth", "polygon", "arbitrum", "optimism", "base"] }]);
+    setBulkNextId(prev => prev + 1);
+  };
 
-    if (lines.length === 0) {
+  const removeBulkRow = (id: number) => {
+    setBulkRows(prev => prev.filter(r => r.id !== id));
+  };
+
+  const updateBulkRow = (id: number, field: string, value: string | string[]) => {
+    setBulkRows(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const updated = { ...r, [field]: value };
+      // Auto-update name prefix when provider changes
+      if (field === "provider" && r.name.match(/^(SOL|ETH|BTC) Wallet/)) {
+        const prefix = value === "solana" ? "SOL" : value === "evm" ? "ETH" : "BTC";
+        updated.name = r.name.replace(/^(SOL|ETH|BTC)/, prefix);
+      }
+      return updated;
+    }));
+  };
+
+  const handleBulkAdd = async () => {
+    const validRows = bulkRows.filter(r => r.address.trim().length > 0);
+    if (validRows.length === 0) {
       toast.error("Enter at least one wallet address");
       return;
     }
@@ -93,16 +116,14 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
     const addedWallets: WalletJob[] = [];
 
     try {
-      for (let i = 0; i < lines.length; i++) {
-        const address = lines[i];
-        const name = `${bulkProvider === "solana" ? "SOL" : "ETH"} Wallet ${i + 1}`;
+      for (const row of validRows) {
         const body: Record<string, unknown> = {
-          name,
-          address: bulkProvider === "evm" ? address.toLowerCase() : address,
-          provider: bulkProvider,
+          name: row.name.trim() || `Wallet ${addedWallets.length + 1}`,
+          address: row.provider === "evm" ? row.address.trim().toLowerCase() : row.address.trim(),
+          provider: row.provider,
           exclusive,
         };
-        if (bulkProvider === "evm") body.chains = selectedChains.join(",");
+        if (row.provider === "evm") body.chains = row.chains.join(",");
 
         const res = await fetch("/api/wallets", {
           method: "POST",
@@ -111,16 +132,16 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
         });
         const data = await res.json();
         if (!res.ok) {
-          toast.error(`Wallet ${i + 1}: ${data.error || "Failed"}`);
+          toast.error(`${row.name}: ${data.error || "Failed"}`);
           continue;
         }
 
         addedWallets.push({
           walletId: data.wallet.id,
-          name,
-          address,
-          provider: bulkProvider,
-          chains: bulkProvider === "evm" ? selectedChains : undefined,
+          name: row.name,
+          address: row.address.trim(),
+          provider: row.provider,
+          chains: row.provider === "evm" ? row.chains : undefined,
         });
       }
 
@@ -129,7 +150,7 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
         startPipeline(addedWallets);
         resetForm();
         if (onConnect) {
-          onConnect(bulkProvider, { success: true, provider: bulkProvider, address: "bulk", timestamp: new Date().toISOString() });
+          onConnect("bulk", { success: true, provider: "bulk", address: "bulk", timestamp: new Date().toISOString() });
         }
       }
     } catch (err) {
@@ -145,7 +166,8 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
     setSelectedWallet(null);
     setSelectedExchange(null);
     setBulkMode(false);
-    setBulkAddresses("");
+    setBulkRows([{ id: 1, provider: "solana", address: "", name: "SOL Wallet 1", chains: ["eth", "polygon", "arbitrum", "optimism", "base"] }]);
+    setBulkNextId(2);
     setWalletName("");
     setWalletAddress("");
     setApiKey("");
@@ -321,7 +343,7 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
             </Button>
           </div>
         ) : bulkMode ? (
-          /* ── Bulk Add Mode ── */
+          /* ── Bulk Add Mode — row-based ── */
           <div className="space-y-4">
             <button onClick={() => setBulkMode(false)} className="flex items-center gap-1 text-[13px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">
               <ArrowLeft className="h-3.5 w-3.5" /> Back
@@ -329,60 +351,95 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
 
             <div>
               <h3 className="text-[14px] font-semibold">Add Multiple Wallets</h3>
-              <p className="text-[12px] text-[#9CA3AF] mt-0.5">One address per line. All wallets will be synced, priced, and computed automatically.</p>
+              <p className="text-[12px] text-[#9CA3AF] mt-0.5">Add each wallet below. All will be synced, priced, and computed automatically.</p>
             </div>
 
-            <div className="space-y-2">
-              <Label>Wallet Type</Label>
-              <div className="flex gap-2">
-                {[{ id: "solana", label: "Solana" }, { id: "evm", label: "EVM (ETH)" }].map(opt => (
-                  <button
-                    key={opt.id}
-                    onClick={() => setBulkProvider(opt.id)}
-                    className={`flex-1 py-2 rounded-lg text-[13px] font-medium border transition-colors ${bulkProvider === opt.id ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)]" : "border-[#E5E5E0] dark:border-[#333] text-[#6B7280]"}`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
+              {bulkRows.map((row, idx) => (
+                <div key={row.id} className="rounded-lg border border-[#E5E5E0] dark:border-[#333] p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wide">Wallet {idx + 1}</span>
+                    {bulkRows.length > 1 && (
+                      <button onClick={() => removeBulkRow(row.id)} className="text-[11px] text-[#9CA3AF] hover:text-[#DC2626] transition-colors">
+                        Remove
+                      </button>
+                    )}
+                  </div>
 
-            {bulkProvider === "evm" && (
-              <div className="space-y-2">
-                <Label>Chains to Sync</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {EVM_CHAINS.map((chain) => (
-                    <div key={chain.id} className="flex items-center space-x-2">
-                      <Checkbox id={`bulk-chain-${chain.id}`} checked={selectedChains.includes(chain.id)} onCheckedChange={() => setSelectedChains(prev => prev.includes(chain.id) ? prev.filter(c => c !== chain.id) : [...prev, chain.id])} />
-                      <label htmlFor={`bulk-chain-${chain.id}`} className="text-sm cursor-pointer">{chain.name}</label>
+                  {/* Type + Name row */}
+                  <div className="flex gap-2">
+                    <select
+                      value={row.provider}
+                      onChange={(e) => updateBulkRow(row.id, "provider", e.target.value)}
+                      className="h-8 rounded-md border border-[#E5E5E0] dark:border-[#333] bg-transparent text-[12px] font-medium px-2 w-[100px] focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+                    >
+                      <option value="solana">Solana</option>
+                      <option value="evm">EVM (ETH)</option>
+                      <option value="bitcoin">Bitcoin</option>
+                    </select>
+                    <Input
+                      value={row.name}
+                      onChange={(e) => updateBulkRow(row.id, "name", e.target.value)}
+                      placeholder="Wallet name"
+                      className="h-8 text-[12px] flex-1"
+                    />
+                  </div>
+
+                  {/* Address */}
+                  <Input
+                    value={row.address}
+                    onChange={(e) => updateBulkRow(row.id, "address", e.target.value)}
+                    placeholder={row.provider === "solana" ? "Solana address..." : row.provider === "evm" ? "0x..." : "Bitcoin address..."}
+                    className="h-8 text-[12px] font-mono"
+                  />
+
+                  {/* Chain selector for EVM */}
+                  {row.provider === "evm" && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {EVM_CHAINS.map((chain) => (
+                        <button
+                          key={chain.id}
+                          onClick={() => {
+                            const next = row.chains.includes(chain.id)
+                              ? row.chains.filter(c => c !== chain.id)
+                              : [...row.chains, chain.id];
+                            updateBulkRow(row.id, "chains", next);
+                          }}
+                          className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                            row.chains.includes(chain.id)
+                              ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)]"
+                              : "border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF]"
+                          }`}
+                        >
+                          {chain.name}
+                        </button>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>Addresses (one per line)</Label>
-              <textarea
-                value={bulkAddresses}
-                onChange={(e) => setBulkAddresses(e.target.value)}
-                placeholder={bulkProvider === "solana"
-                  ? "9qXZvHdc2hwnbpyFM2e4pbMvZKdDoX8WhtcoBsRZQgCr\nHp3nbEkYvoDfE7KydunZM1d2mWnt98J7ZDaFrK4CXYaD"
-                  : "0x1234...abcd\n0x5678...efgh"}
-                className="w-full h-28 rounded-lg border border-[#E5E5E0] dark:border-[#333] bg-transparent px-3 py-2 text-[13px] font-mono resize-none focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
-              />
-              <p className="text-[11px] text-[#9CA3AF]">
-                {bulkAddresses.split("\n").filter(l => l.trim()).length} address(es) entered
-              </p>
+              ))}
             </div>
+
+            {/* Add another wallet */}
+            <button
+              onClick={addBulkRow}
+              className="w-full py-2 rounded-lg border border-dashed border-[#E5E5E0] dark:border-[#333] text-[12px] font-medium text-[#6B7280] hover:border-[#9CA3AF] hover:text-[#4B5563] transition-colors"
+            >
+              <Plus className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
+              Add Another Wallet
+            </button>
 
             {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}
 
-            <Button className="w-full" onClick={handleBulkAdd} disabled={connecting || isRunning || !bulkAddresses.trim()}>
+            <Button
+              className="w-full"
+              onClick={handleBulkAdd}
+              disabled={connecting || isRunning || bulkRows.every(r => !r.address.trim())}
+            >
               {connecting ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Adding wallets...</>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Adding {bulkRows.filter(r => r.address.trim()).length} wallets...</>
               ) : (
-                <><Plus className="mr-2 h-4 w-4" />Add & Sync All</>
+                <><Plus className="mr-2 h-4 w-4" />Add & Sync {bulkRows.filter(r => r.address.trim()).length} Wallet{bulkRows.filter(r => r.address.trim()).length !== 1 ? "s" : ""}</>
               )}
             </Button>
           </div>
