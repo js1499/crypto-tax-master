@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { QrCode, Loader2, Wallet, ArrowLeft } from "lucide-react";
+import { QrCode, Loader2, Wallet, ArrowLeft, Plus } from "lucide-react";
 import type { ConnectionResult } from "@/types/wallet";
 import { toast } from "sonner";
+import { useSyncPipeline, type WalletJob } from "@/components/sync-pipeline/pipeline-provider";
 
 const EVM_CHAINS = [
   { id: "eth", name: "Ethereum" },
@@ -70,9 +71,81 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [csvFile, setCsvFile] = useState<File | null>(null);
 
+  // Bulk wallet add
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkAddresses, setBulkAddresses] = useState("");
+  const [bulkProvider, setBulkProvider] = useState<string>("solana");
+  const { startPipeline, isRunning } = useSyncPipeline();
+
+  const handleBulkAdd = async () => {
+    const lines = bulkAddresses
+      .split("\n")
+      .map(l => l.trim())
+      .filter(l => l.length > 0);
+
+    if (lines.length === 0) {
+      toast.error("Enter at least one wallet address");
+      return;
+    }
+
+    setConnecting(true);
+    setConnectionError(null);
+    const addedWallets: WalletJob[] = [];
+
+    try {
+      for (let i = 0; i < lines.length; i++) {
+        const address = lines[i];
+        const name = `${bulkProvider === "solana" ? "SOL" : "ETH"} Wallet ${i + 1}`;
+        const body: Record<string, unknown> = {
+          name,
+          address: bulkProvider === "evm" ? address.toLowerCase() : address,
+          provider: bulkProvider,
+          exclusive,
+        };
+        if (bulkProvider === "evm") body.chains = selectedChains.join(",");
+
+        const res = await fetch("/api/wallets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          toast.error(`Wallet ${i + 1}: ${data.error || "Failed"}`);
+          continue;
+        }
+
+        addedWallets.push({
+          walletId: data.wallet.id,
+          name,
+          address,
+          provider: bulkProvider,
+          chains: bulkProvider === "evm" ? selectedChains : undefined,
+        });
+      }
+
+      if (addedWallets.length > 0) {
+        toast.success(`Added ${addedWallets.length} wallet(s). Starting sync pipeline...`);
+        startPipeline(addedWallets);
+        resetForm();
+        if (onConnect) {
+          onConnect(bulkProvider, { success: true, provider: bulkProvider, address: "bulk", timestamp: new Date().toISOString() });
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Bulk add failed";
+      setConnectionError(msg);
+      toast.error(msg);
+    } finally {
+      setConnecting(false);
+    }
+  };
+
   const resetForm = () => {
     setSelectedWallet(null);
     setSelectedExchange(null);
+    setBulkMode(false);
+    setBulkAddresses("");
     setWalletName("");
     setWalletAddress("");
     setApiKey("");
@@ -121,24 +194,14 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
       toast.success("Wallet added successfully");
 
       if (syncAfterAdd) {
-        toast.info("Syncing transactions...");
-        try {
-          const syncBody: Record<string, unknown> = { walletId: data.wallet.id };
-          if (selectedWallet === "evm") syncBody.chains = selectedChains;
-          const syncResponse = await fetch("/api/wallets/sync", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(syncBody),
-          });
-          const syncData = await syncResponse.json();
-          if (syncResponse.ok) {
-            toast.success(`Sync complete — ${syncData.transactionsAdded} transactions added`);
-          } else {
-            toast.error("Wallet added but sync failed. You can sync later.");
-          }
-        } catch {
-          toast.error("Wallet added but sync failed. You can sync later.");
-        }
+        // Use pipeline for sync → enrich → compute
+        startPipeline([{
+          walletId: data.wallet.id,
+          name: walletName,
+          address: walletAddress,
+          provider: selectedWallet === "evm" ? "evm" : selectedWallet!,
+          chains: selectedWallet === "evm" ? selectedChains : undefined,
+        }]);
       }
 
       resetForm();
@@ -257,7 +320,74 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
               {connecting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{syncAfterAdd ? "Adding & Syncing..." : "Adding..."}</> : <><Wallet className="mr-2 h-4 w-4" />{syncAfterAdd ? "Add & Sync" : "Add Wallet"}</>}
             </Button>
           </div>
+        ) : bulkMode ? (
+          /* ── Bulk Add Mode ── */
+          <div className="space-y-4">
+            <button onClick={() => setBulkMode(false)} className="flex items-center gap-1 text-[13px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">
+              <ArrowLeft className="h-3.5 w-3.5" /> Back
+            </button>
+
+            <div>
+              <h3 className="text-[14px] font-semibold">Add Multiple Wallets</h3>
+              <p className="text-[12px] text-[#9CA3AF] mt-0.5">One address per line. All wallets will be synced, priced, and computed automatically.</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Wallet Type</Label>
+              <div className="flex gap-2">
+                {[{ id: "solana", label: "Solana" }, { id: "evm", label: "EVM (ETH)" }].map(opt => (
+                  <button
+                    key={opt.id}
+                    onClick={() => setBulkProvider(opt.id)}
+                    className={`flex-1 py-2 rounded-lg text-[13px] font-medium border transition-colors ${bulkProvider === opt.id ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)]" : "border-[#E5E5E0] dark:border-[#333] text-[#6B7280]"}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {bulkProvider === "evm" && (
+              <div className="space-y-2">
+                <Label>Chains to Sync</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {EVM_CHAINS.map((chain) => (
+                    <div key={chain.id} className="flex items-center space-x-2">
+                      <Checkbox id={`bulk-chain-${chain.id}`} checked={selectedChains.includes(chain.id)} onCheckedChange={() => setSelectedChains(prev => prev.includes(chain.id) ? prev.filter(c => c !== chain.id) : [...prev, chain.id])} />
+                      <label htmlFor={`bulk-chain-${chain.id}`} className="text-sm cursor-pointer">{chain.name}</label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label>Addresses (one per line)</Label>
+              <textarea
+                value={bulkAddresses}
+                onChange={(e) => setBulkAddresses(e.target.value)}
+                placeholder={bulkProvider === "solana"
+                  ? "9qXZvHdc2hwnbpyFM2e4pbMvZKdDoX8WhtcoBsRZQgCr\nHp3nbEkYvoDfE7KydunZM1d2mWnt98J7ZDaFrK4CXYaD"
+                  : "0x1234...abcd\n0x5678...efgh"}
+                className="w-full h-28 rounded-lg border border-[#E5E5E0] dark:border-[#333] bg-transparent px-3 py-2 text-[13px] font-mono resize-none focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+              />
+              <p className="text-[11px] text-[#9CA3AF]">
+                {bulkAddresses.split("\n").filter(l => l.trim()).length} address(es) entered
+              </p>
+            </div>
+
+            {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}
+
+            <Button className="w-full" onClick={handleBulkAdd} disabled={connecting || isRunning || !bulkAddresses.trim()}>
+              {connecting ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Adding wallets...</>
+              ) : (
+                <><Plus className="mr-2 h-4 w-4" />Add & Sync All</>
+              )}
+            </Button>
+          </div>
         ) : (
+          /* ── Wallet Selection Grid ── */
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-3">
               {WALLET_OPTIONS.map((option) => (
@@ -285,6 +415,15 @@ export function WalletConnectDialog({ onConnect, exclusive }: WalletConnectDialo
                 </button>
               ))}
             </div>
+
+            {/* Bulk add link */}
+            <button
+              onClick={() => setBulkMode(true)}
+              className="w-full py-2.5 rounded-lg border border-dashed border-[#E5E5E0] dark:border-[#333] text-[13px] font-medium text-[#6B7280] hover:border-[#9CA3AF] hover:text-[#4B5563] transition-colors"
+            >
+              <Plus className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" />
+              Add Multiple Wallets at Once
+            </button>
           </div>
         )}
       </TabsContent>

@@ -6,7 +6,9 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { NextAuthSessionProvider } from "@/components/providers/session-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { OnboardingProvider } from "@/components/onboarding/onboarding-provider";
-import { Toaster } from "sonner"; // Added Toaster import
+import { SyncPipelineProvider } from "@/components/sync-pipeline/pipeline-provider";
+import { PipelineProgress } from "@/components/sync-pipeline/pipeline-progress";
+import { Toaster } from "sonner";
 
 // Initialize Sentry on the client side
 if (typeof window !== "undefined") {
@@ -48,8 +50,11 @@ export default function RootLayout({
               disableTransitionOnChange
             >
               <OnboardingProvider>
-                {children}
-                <Toaster theme="light" position="top-right" />
+                <SyncPipelineProvider>
+                  {children}
+                  <PipelineProgress />
+                  <Toaster theme="light" position="top-right" />
+                </SyncPipelineProvider>
               </OnboardingProvider>
             </ThemeProvider>
           </NextAuthSessionProvider>
