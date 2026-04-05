@@ -85,41 +85,9 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
     
     checkingRef.current = true;
 
-    try {
-      // Step 1: Check if any accounts are connected
-      if (!currentState.steps[0]?.completed) {
-        const [walletsRes, exchangesRes] = await Promise.all([
-          fetch("/api/wallets", { credentials: "include" }).catch(() => ({ ok: false, json: async () => ({ wallets: [] }) })),
-          fetch("/api/exchanges", { credentials: "include" }).catch(() => ({ ok: false, json: async () => ({ exchanges: [] }) })),
-        ]);
-
-        const hasWallets = walletsRes?.ok && (await walletsRes.json()).wallets?.length > 0;
-        const hasExchanges = exchangesRes?.ok && (await exchangesRes.json()).exchanges?.length > 0;
-
-        if (hasWallets || hasExchanges) {
-          const newState = completeStep("connect-account");
-          setState(newState);
-        }
-      }
-
-      // Step 2: Check if transactions have been synced
-      if (!currentState.steps[1]?.completed) {
-        const transactionsRes = await fetch("/api/transactions?page=1&limit=1", { credentials: "include" }).catch(() => null);
-        if (transactionsRes?.ok) {
-          const data = await transactionsRes.json();
-          if (data.transactions?.length > 0) {
-            const newState = completeStep("sync-transactions");
-            setState(newState);
-          }
-        }
-      }
-    } catch (error) {
-      if (process.env.NODE_ENV === "development") {
-        console.error("[Onboarding] Error checking completion:", error);
-      }
-    } finally {
-      checkingRef.current = false;
-    }
+    // Steps are now advanced by clicking the highlighted target element.
+    // No auto-completion needed — the tooltip click handler does it.
+    checkingRef.current = false;
   }, [isAuthenticated]);
 
   useEffect(() => {

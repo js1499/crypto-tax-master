@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { X, ChevronRight, ChevronLeft, Check } from "lucide-react";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { OnboardingStep, OnboardingState } from "@/lib/onboarding";
+import type { OnboardingStep } from "@/lib/onboarding";
 
 interface OnboardingTooltipProps {
   step: OnboardingStep;
@@ -16,10 +14,16 @@ interface OnboardingTooltipProps {
   onPrevious: () => void;
   onSkip: () => void;
   onComplete: () => void;
-  position?: { top: number; left: number } | null;
   anchorElement?: HTMLElement | null;
 }
 
+/**
+ * Spotlight-style onboarding tooltip.
+ * - Dark overlay with a cutout around the target element
+ * - Pulse ring animation on the target
+ * - Click on the target advances the tutorial (no separate Next button)
+ * - Tooltip card floats near the target with step info
+ */
 export function OnboardingTooltip({
   step,
   currentStepIndex,
@@ -28,174 +32,239 @@ export function OnboardingTooltip({
   onPrevious,
   onSkip,
   onComplete,
-  position,
   anchorElement,
 }: OnboardingTooltipProps) {
-  const [tooltipPosition, setTooltipPosition] = useState<{
-    top: number;
-    left: number;
-  } | null>(position || null);
+  const [rect, setRect] = useState<DOMRect | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const isLastStep = currentStepIndex === totalSteps - 1;
+
+  // Track anchor element position
+  const updateRect = useCallback(() => {
+    if (anchorElement) {
+      setRect(anchorElement.getBoundingClientRect());
+    } else {
+      setRect(null);
+    }
+  }, [anchorElement]);
 
   useEffect(() => {
-    if (anchorElement) {
-      const updatePosition = () => {
-        const rect = anchorElement.getBoundingClientRect();
-        const scrollY = window.scrollY || window.pageYOffset;
-        const scrollX = window.scrollX || window.pageXOffset;
+    updateRect();
+    window.addEventListener("scroll", updateRect, true);
+    window.addEventListener("resize", updateRect);
+    const interval = setInterval(updateRect, 300); // catch layout shifts
+    return () => {
+      window.removeEventListener("scroll", updateRect, true);
+      window.removeEventListener("resize", updateRect);
+      clearInterval(interval);
+    };
+  }, [updateRect]);
 
-        // Position tooltip below the element, centered
-        setTooltipPosition({
-          top: rect.bottom + scrollY + 16,
-          left: rect.left + scrollX + rect.width / 2,
-        });
-      };
+  // Listen for clicks on the anchor element to advance
+  useEffect(() => {
+    if (!anchorElement) return;
 
-      updatePosition();
-      window.addEventListener("scroll", updatePosition);
-      window.addEventListener("resize", updatePosition);
+    const handleClick = () => {
+      // Small delay so the button's own click handler fires first
+      setTimeout(() => {
+        if (isLastStep) onComplete();
+        else onNext();
+      }, 200);
+    };
 
-      return () => {
-        window.removeEventListener("scroll", updatePosition);
-        window.removeEventListener("resize", updatePosition);
-      };
-    } else if (position) {
-      setTooltipPosition(position);
-    }
-  }, [anchorElement, position]);
+    anchorElement.addEventListener("click", handleClick);
+    return () => anchorElement.removeEventListener("click", handleClick);
+  }, [anchorElement, onNext, onComplete, isLastStep]);
 
-  // Calculate tooltip position relative to viewport
+  if (typeof window === "undefined") return null;
+
+  const pad = 8; // padding around the spotlight cutout
+  const hasAnchor = rect !== null;
+
+  // Spotlight cutout CSS (inset box-shadow trick)
+  const overlayStyle: React.CSSProperties = hasAnchor
+    ? {
+        // Giant box-shadow creates the dark overlay with a transparent hole
+        boxShadow: `0 0 0 9999px rgba(0,0,0,0.6)`,
+        position: "fixed",
+        top: rect!.top - pad,
+        left: rect!.left - pad,
+        width: rect!.width + pad * 2,
+        height: rect!.height + pad * 2,
+        borderRadius: "12px",
+        zIndex: 9998,
+        pointerEvents: "none",
+      }
+    : {};
+
+  // Tooltip position: prefer below, fallback above
   const getTooltipStyle = (): React.CSSProperties => {
-    if (!tooltipPosition) {
+    if (!hasAnchor) {
       return {
         position: "fixed",
         top: "50%",
         left: "50%",
         transform: "translate(-50%, -50%)",
-        zIndex: 9999,
+        zIndex: 10000,
       };
     }
 
-    const tooltipWidth = 400;
-    const tooltipHeight = 200;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
+    const tooltipW = 360;
+    const gap = 16;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
 
-    let left = tooltipPosition.left - tooltipWidth / 2;
-    let top = tooltipPosition.top;
+    let top = rect!.bottom + gap;
+    let left = rect!.left + rect!.width / 2 - tooltipW / 2;
 
-    // Adjust if tooltip goes off screen
-    if (left < 16) left = 16;
-    if (left + tooltipWidth > viewportWidth - 16) {
-      left = viewportWidth - tooltipWidth - 16;
+    // If tooltip goes below viewport, show above
+    if (top + 160 > vh) {
+      top = rect!.top - 160 - gap;
     }
-    if (top + tooltipHeight > viewportHeight - 16) {
-      top = tooltipPosition.top - tooltipHeight - 80; // Show above instead
-    }
+    // Clamp horizontally
+    if (left < 12) left = 12;
+    if (left + tooltipW > vw - 12) left = vw - tooltipW - 12;
 
     return {
       position: "fixed",
-      top: `${top}px`,
-      left: `${left}px`,
-      transform: "translateX(-50%)",
-      zIndex: 9999,
-      maxWidth: `${tooltipWidth}px`,
+      top,
+      left,
+      width: tooltipW,
+      zIndex: 10000,
     };
   };
 
-  const isLastStep = currentStepIndex === totalSteps - 1;
-  const isFirstStep = currentStepIndex === 0;
-
-  if (typeof window === "undefined") return null;
-
   return createPortal(
     <>
-      {/* Backdrop overlay */}
+      {/* Full-screen click blocker (except the spotlight area) */}
       <div
-        className="fixed inset-0 bg-black/50 z-[9998]"
-        onClick={(e) => {
-          // Don't close on backdrop click - require explicit action
-        }}
+        className="fixed inset-0 z-[9997]"
+        onClick={(e) => e.stopPropagation()}
       />
 
-      {/* Tooltip */}
-      <div
-        ref={tooltipRef}
-        style={getTooltipStyle()}
-        className="pointer-events-auto"
-      >
-        <Card className="shadow-2xl border-2 border-primary">
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary text-primary-foreground text-sm font-bold">
-                    {currentStepIndex + 1}
-                  </div>
-                  <CardTitle className="text-lg">
-                    {step.title}
-                  </CardTitle>
+      {/* Spotlight cutout with dark overlay */}
+      {hasAnchor && <div style={overlayStyle} />}
+      {!hasAnchor && (
+        <div className="fixed inset-0 bg-black/60 z-[9998]" />
+      )}
+
+      {/* Pulse ring around target */}
+      {hasAnchor && (
+        <div
+          className="fixed z-[9999] pointer-events-none"
+          style={{
+            top: rect!.top - pad,
+            left: rect!.left - pad,
+            width: rect!.width + pad * 2,
+            height: rect!.height + pad * 2,
+          }}
+        >
+          <div className="absolute inset-0 rounded-xl border-2 border-[#2563EB] animate-pulse" />
+          <div className="absolute -inset-1 rounded-xl border border-[#2563EB]/40 animate-ping" style={{ animationDuration: "1.5s" }} />
+        </div>
+      )}
+
+      {/* Make the target element clickable above the overlay */}
+      {hasAnchor && (
+        <div
+          className="fixed z-[9999]"
+          style={{
+            top: rect!.top - pad,
+            left: rect!.left - pad,
+            width: rect!.width + pad * 2,
+            height: rect!.height + pad * 2,
+            pointerEvents: "none",
+          }}
+        >
+          {/* Re-expose the actual element's click area */}
+          <div
+            className="absolute"
+            style={{
+              top: pad,
+              left: pad,
+              width: rect!.width,
+              height: rect!.height,
+              pointerEvents: "auto",
+              cursor: "pointer",
+            }}
+            onClick={() => {
+              // Trigger the actual element's click
+              anchorElement?.click();
+            }}
+          />
+        </div>
+      )}
+
+      {/* Tooltip card */}
+      <div ref={tooltipRef} style={getTooltipStyle()} className="pointer-events-auto">
+        <div className="rounded-xl bg-white dark:bg-[#1A1A1A] border border-[#E5E5E0] dark:border-[#333] shadow-2xl overflow-hidden">
+          {/* Blue accent bar */}
+          <div className="h-1 bg-[#2563EB]" />
+
+          <div className="p-4">
+            {/* Header */}
+            <div className="flex items-start justify-between mb-2">
+              <div className="flex items-center gap-2.5">
+                <div className="flex items-center justify-center w-7 h-7 rounded-full bg-[#2563EB] text-white text-[12px] font-bold shrink-0">
+                  {currentStepIndex + 1}
                 </div>
-                <p className="text-sm text-muted-foreground mt-2">
-                  {step.description}
-                </p>
+                <h3 className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
+                  {step.title}
+                </h3>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 w-8 p-0"
+              <button
                 onClick={onSkip}
+                className="p-1 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
               >
                 <X className="h-4 w-4" />
-              </Button>
+              </button>
             </div>
-          </CardHeader>
-          <CardContent>
+
+            {/* Description */}
+            <p className="text-[13px] text-[#6B7280] leading-relaxed mb-3">
+              {step.description}
+            </p>
+
+            {/* Action hint */}
+            {hasAnchor && (
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#EFF6FF] dark:bg-[rgba(37,99,235,0.08)] border border-[#BFDBFE] dark:border-[#1E3A5F]">
+                <div className="h-2 w-2 rounded-full bg-[#2563EB] animate-pulse shrink-0" />
+                <p className="text-[12px] font-medium text-[#2563EB]">
+                  Click the highlighted button to continue
+                </p>
+              </div>
+            )}
+
+            {/* Progress dots + skip */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  Step {currentStepIndex + 1} of {totalSteps}
+                <span className="text-[11px] text-[#9CA3AF]">
+                  {currentStepIndex + 1} / {totalSteps}
                 </span>
                 <div className="flex gap-1">
                   {Array.from({ length: totalSteps }).map((_, i) => (
                     <div
                       key={i}
                       className={cn(
-                        "h-1.5 w-1.5 rounded-full transition-colors",
-                        i <= currentStepIndex
-                          ? "bg-primary"
-                          : "bg-muted"
+                        "h-1.5 rounded-full transition-all",
+                        i === currentStepIndex
+                          ? "w-4 bg-[#2563EB]"
+                          : i < currentStepIndex
+                          ? "w-1.5 bg-[#2563EB]/40"
+                          : "w-1.5 bg-[#E5E5E0] dark:bg-[#333]"
                       )}
                     />
                   ))}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {!isFirstStep && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={onPrevious}
-                  >
-                    <ChevronLeft className="mr-1 h-4 w-4" />
-                    Previous
-                  </Button>
-                )}
-                {isLastStep ? (
-                  <Button size="sm" onClick={onComplete}>
-                    <Check className="mr-1 h-4 w-4" />
-                    Complete
-                  </Button>
-                ) : (
-                  <Button size="sm" onClick={onNext}>
-                    Next
-                    <ChevronRight className="ml-1 h-4 w-4" />
-                  </Button>
-                )}
-              </div>
+              <button
+                onClick={onSkip}
+                className="text-[12px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
+              >
+                Skip tutorial
+              </button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
     </>,
     document.body

@@ -254,7 +254,7 @@ export default function SettingsPage() {
                       <Label htmlFor="tax-jurisdiction">Tax Jurisdiction</Label>
                       <p className="text-xs text-muted-foreground">Determines which country-specific tax rules are applied</p>
                       <Select value={country} onValueChange={setCountry}>
-                        <SelectTrigger id="tax-jurisdiction">
+                        <SelectTrigger id="tax-jurisdiction" data-onboarding="select-country">
                           <SelectValue placeholder="Select jurisdiction" />
                         </SelectTrigger>
                         <SelectContent>

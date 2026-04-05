@@ -844,7 +844,7 @@ export default function TaxReportsPage() {
                 size="sm"
                 className="w-full text-[13px]"
                 onClick={() => handleDownloadExport("summary-report", `Crypto-Tax-Summary-${selectedYear}.csv`)}
-                disabled={isGeneratingReport}
+                disabled={!!generatingFormId}
               >
                 <ArrowDownToLine className="mr-1.5 h-3.5 w-3.5" />
                 Download Summary CSV
@@ -854,7 +854,7 @@ export default function TaxReportsPage() {
         </div>
 
         {/* Row 2: Available Reports */}
-        <div className="border border-[#E5E5E0] dark:border-[#333] rounded-xl bg-white dark:bg-[#1A1A1A]">
+        <div data-onboarding="download-reports" className="border border-[#E5E5E0] dark:border-[#333] rounded-xl bg-white dark:bg-[#1A1A1A]">
           {/* Engine filter tabs */}
           <div className="flex items-center gap-2 px-6 pt-6 pb-3">
             {([
