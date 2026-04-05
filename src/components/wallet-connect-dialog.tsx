@@ -375,16 +375,16 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
           </div>
         ) : bulkMode ? (
           /* ── Bulk Add Mode — sectioned ── */
-          <div className="space-y-5 max-h-[500px] overflow-y-auto pr-1">
+          <div className="space-y-6 max-h-[550px] overflow-y-auto pr-1">
             <button onClick={() => setBulkMode(false)} className="flex items-center gap-1 text-[13px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">
               <ArrowLeft className="h-3.5 w-3.5" /> Back
             </button>
 
             {/* ── Wallets Section ── */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[12px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] uppercase tracking-wide">Wallets</p>
-                <span className="text-[11px] text-[#9CA3AF]">Synced, priced, and computed automatically</span>
+              <div className="pb-2 border-b border-[#E5E5E0] dark:border-[#333]">
+                <h3 className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Wallets</h3>
+                <p className="text-[12px] text-[#9CA3AF] mt-0.5">On-chain wallets — synced, priced, and computed automatically</p>
               </div>
 
               {bulkRows.filter(r => r.type === "wallet").map((row, idx) => (
@@ -428,9 +428,9 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
 
             {/* ── CSV Section ── */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[12px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] uppercase tracking-wide">CSV Imports</p>
-                <span className="text-[11px] text-[#9CA3AF]">Transaction history from exchanges</span>
+              <div className="pb-2 border-b border-[#E5E5E0] dark:border-[#333]">
+                <h3 className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">CSV Imports</h3>
+                <p className="text-[12px] text-[#9CA3AF] mt-0.5">Upload transaction history exported from exchanges</p>
               </div>
 
               {bulkRows.filter(r => r.type === "csv").length === 0 && (
@@ -468,12 +468,16 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
               </button>
             </div>
 
-            {/* ── Exchanges Section (disclaimer) ── */}
-            <div className="rounded-lg bg-[#FFF7ED] dark:bg-[rgba(234,88,12,0.08)] border border-[#FDBA74] dark:border-[#92400E]/40 px-3.5 py-3">
-              <p className="text-[12px] font-medium text-[#9A3412] dark:text-[#FB923C]">Exchanges</p>
-              <p className="text-[11px] text-[#C2410C] dark:text-[#FDBA74] mt-0.5 leading-relaxed">
-                Exchange API connections (Coinbase, Binance, Kraken, etc.) can only be added one at a time. Use <strong>Add One Account</strong> &gt; <strong>Exchanges</strong> tab to connect an exchange.
-              </p>
+            {/* ── Exchanges Section ── */}
+            <div className="space-y-3">
+              <div className="pb-2 border-b border-[#E5E5E0] dark:border-[#333]">
+                <h3 className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Exchanges</h3>
+              </div>
+              <div className="rounded-lg bg-[#FFF7ED] dark:bg-[rgba(234,88,12,0.08)] border border-[#FDBA74] dark:border-[#92400E]/40 px-4 py-3">
+                <p className="text-[12px] text-[#9A3412] dark:text-[#FB923C] leading-relaxed">
+                  Exchange API connections (Coinbase, Binance, Kraken, etc.) can only be added one at a time. Use <strong>Add One Account</strong> &rarr; <strong>Exchanges</strong> tab to connect an exchange.
+                </p>
+              </div>
             </div>
 
             {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}

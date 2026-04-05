@@ -1012,7 +1012,7 @@ function AccountsContent() {
       </div>
 
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[540px]">
           <DialogHeader>
             <DialogTitle>Add Account</DialogTitle>
             <DialogDescription>
