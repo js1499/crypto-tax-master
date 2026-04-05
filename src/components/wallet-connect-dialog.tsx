@@ -375,20 +375,20 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
           </div>
         ) : bulkMode ? (
           /* ── Bulk Add Mode — sectioned ── */
-          <div className="space-y-6">
+          <div className="space-y-5">
             <button onClick={() => setBulkMode(false)} className="flex items-center gap-1 text-[13px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">
               <ArrowLeft className="h-3.5 w-3.5" /> Back
             </button>
 
             {/* ── Wallets Section ── */}
-            <div className="space-y-3">
-              <div className="pb-3 border-b border-[#E5E5E0] dark:border-[#333]">
+            <div className="rounded-xl bg-[#F8FAFF] dark:bg-[rgba(37,99,235,0.04)] border border-[#D6E4FF] dark:border-[#1E3A5F] p-4 space-y-3">
+              <div className="pb-2">
                 <h3 className="text-[18px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Wallets</h3>
-                <p className="text-[13px] text-[#9CA3AF] mt-0.5">On-chain wallets — synced, priced, and computed automatically</p>
+                <p className="text-[13px] text-[#6B7280] mt-0.5">On-chain wallets — synced, priced, and computed automatically</p>
               </div>
 
               {bulkRows.filter(r => r.type === "wallet").map((row, idx) => (
-                <div key={row.id} className="rounded-lg border border-[#E5E5E0] dark:border-[#333] p-3 space-y-2.5">
+                <div key={row.id} className="rounded-lg bg-white dark:bg-[#1A1A1A] border border-[#E5E5E0] dark:border-[#333] p-3.5 space-y-2.5 shadow-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-[13px] font-semibold text-[#6B7280]">Wallet {idx + 1}</span>
                     {bulkRows.filter(r => r.type === "wallet").length > 1 && (
@@ -427,10 +427,10 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
             </div>
 
             {/* ── CSV Section ── */}
-            <div className="space-y-3">
-              <div className="pb-3 border-b border-[#E5E5E0] dark:border-[#333]">
+            <div className="rounded-xl bg-[#FBF5FF] dark:bg-[rgba(147,51,234,0.04)] border border-[#E9D5FF] dark:border-[#3B1F5E] p-4 space-y-3">
+              <div className="pb-2">
                 <h3 className="text-[18px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">CSV Imports</h3>
-                <p className="text-[13px] text-[#9CA3AF] mt-0.5">Upload transaction history exported from exchanges</p>
+                <p className="text-[13px] text-[#6B7280] mt-0.5">Upload transaction history exported from exchanges</p>
               </div>
 
               {bulkRows.filter(r => r.type === "csv").length === 0 && (
@@ -438,7 +438,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
               )}
 
               {bulkRows.filter(r => r.type === "csv").map((row, idx) => (
-                <div key={row.id} className="rounded-lg border border-[#E5E5E0] dark:border-[#333] p-3 space-y-2">
+                <div key={row.id} className="rounded-lg bg-white dark:bg-[#1A1A1A] border border-[#E5E5E0] dark:border-[#333] p-3.5 space-y-2 shadow-sm">
                   <div className="flex items-center justify-between">
                     <span className="text-[13px] font-semibold text-[#6B7280]">CSV {idx + 1}</span>
                     <button onClick={() => removeBulkRow(row.id)} className="text-[12px] text-[#9CA3AF] hover:text-[#DC2626] transition-colors">Remove</button>
@@ -469,15 +469,11 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
             </div>
 
             {/* ── Exchanges Section ── */}
-            <div className="space-y-3">
-              <div className="pb-3 border-b border-[#E5E5E0] dark:border-[#333]">
-                <h3 className="text-[18px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Exchanges</h3>
-              </div>
-              <div className="rounded-lg bg-[#FFF7ED] dark:bg-[rgba(234,88,12,0.08)] border border-[#FDBA74] dark:border-[#92400E]/40 px-4 py-3.5">
-                <p className="text-[13px] text-[#9A3412] dark:text-[#FB923C] leading-relaxed">
-                  Exchange API connections (Coinbase, Binance, Kraken, etc.) can only be added one at a time. Use <strong>Add One Account</strong> &rarr; <strong>Exchanges</strong> tab to connect an exchange.
-                </p>
-              </div>
+            <div className="rounded-xl bg-[#FFFBEB] dark:bg-[rgba(234,88,12,0.04)] border border-[#FDE68A] dark:border-[#78350F] p-4">
+              <h3 className="text-[18px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Exchanges</h3>
+              <p className="text-[13px] text-[#92400E] dark:text-[#FBBF24] mt-2 leading-relaxed">
+                Exchange API connections (Coinbase, Binance, Kraken, etc.) can only be added one at a time. Use <strong>Add One Account</strong> &rarr; <strong>Exchanges</strong> tab to connect an exchange.
+              </p>
             </div>
 
             {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}
