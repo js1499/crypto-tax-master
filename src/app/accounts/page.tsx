@@ -10,7 +10,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { PlusCircle, Plus, Wallet, Building, ExternalLink, AlertCircle, CheckCircle, RefreshCw, RotateCw, Trash2, Link2, DollarSign, Pencil, Copy } from "lucide-react";
+import { PlusCircle, Plus, Wallet, Building, ExternalLink, AlertCircle, CheckCircle, RefreshCw, RotateCw, Trash2, Link2, DollarSign, Pencil, Copy, ChevronDown, Wrench, Upload } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -568,31 +575,64 @@ function AccountsContent() {
                     Exclusive
                   </span>
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    startSyncAll();
-                    toast.info("Pipeline started — sync → pull prices → compute cost basis");
-                  }}
-                  disabled={isPipelineRunning}
-                >
-                  {isPipelineRunning ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RotateCw className="mr-2 h-4 w-4" />}
-                  {isPipelineRunning ? "Running..." : "Sync All"}
-                </Button>
-                <Button variant="outline" onClick={handleRefresh}>
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  Refresh
-                </Button>
+
+                {/* Manual Actions dropdown */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                      <Wrench className="mr-2 h-4 w-4" />
+                      Manual Actions
+                      <ChevronDown className="ml-2 h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-52">
+                    <DropdownMenuItem
+                      onClick={() => {
+                        startSyncAll();
+                        toast.info("Pipeline started — sync → pull prices → compute cost basis");
+                      }}
+                      disabled={isPipelineRunning}
+                    >
+                      <RotateCw className="mr-2 h-4 w-4" />
+                      Resync All
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={handleEnrichAll}
+                      disabled={enrichingAll || !!enriching}
+                    >
+                      <DollarSign className="mr-2 h-4 w-4" />
+                      Repull All Prices
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={handleRefresh}>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Refresh Wallet Page
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </>
             )}
-            <Button variant="outline" onClick={() => { setIsAddDialogOpen(true); setAddDialogBulk(true); }}>
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add Multiple
-            </Button>
-            <Button onClick={() => { setIsAddDialogOpen(true); setAddDialogBulk(false); }} data-onboarding="connect-wallet">
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add Account
-            </Button>
+
+            {/* Add Account dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button data-onboarding="connect-wallet">
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Add Account
+                  <ChevronDown className="ml-2 h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onClick={() => { setIsAddDialogOpen(true); setAddDialogBulk(false); }}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Account
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setIsAddDialogOpen(true); setAddDialogBulk(true); }}>
+                  <PlusCircle className="mr-2 h-4 w-4" />
+                  Add Multiple
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 

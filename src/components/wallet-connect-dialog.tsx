@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { QrCode, Loader2, Wallet, ArrowLeft, Plus } from "lucide-react";
+import { QrCode, Loader2, Wallet, ArrowLeft, Plus, Upload } from "lucide-react";
 import type { ConnectionResult } from "@/types/wallet";
 import { toast } from "sonner";
 import { useSyncPipeline, type WalletJob } from "@/components/sync-pipeline/pipeline-provider";
@@ -75,15 +75,23 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
   // Bulk wallet add
   const [bulkMode, setBulkMode] = useState(initialBulk || false);
   useEffect(() => { setBulkMode(initialBulk || false); }, [initialBulk]);
-  const [bulkRows, setBulkRows] = useState<Array<{ id: number; provider: string; address: string; name: string; chains: string[] }>>([
-    { id: 1, provider: "solana", address: "", name: "SOL Wallet 1", chains: ["eth", "polygon", "arbitrum", "optimism", "base"] },
+  const [bulkRows, setBulkRows] = useState<Array<{ id: number; type: "wallet" | "csv"; provider: string; address: string; name: string; chains: string[]; csvFile?: File | null }>>([
+    { id: 1, type: "wallet", provider: "solana", address: "", name: "SOL Wallet 1", chains: ["eth", "polygon", "arbitrum", "optimism", "base"] },
   ]);
   const [bulkNextId, setBulkNextId] = useState(2);
   const { startPipeline, isRunning } = useSyncPipeline();
 
-  const addBulkRow = () => {
+  const addBulkRow = (rowType: "wallet" | "csv" = "wallet") => {
     const count = bulkRows.length + 1;
-    setBulkRows(prev => [...prev, { id: bulkNextId, provider: "solana", address: "", name: `SOL Wallet ${count}`, chains: ["eth", "polygon", "arbitrum", "optimism", "base"] }]);
+    setBulkRows(prev => [...prev, {
+      id: bulkNextId,
+      type: rowType,
+      provider: rowType === "csv" ? "custom" : "solana",
+      address: "",
+      name: rowType === "csv" ? `CSV Import ${count}` : `SOL Wallet ${count}`,
+      chains: ["eth", "polygon", "arbitrum", "optimism", "base"],
+      csvFile: null,
+    }]);
     setBulkNextId(prev => prev + 1);
   };
 
@@ -105,9 +113,11 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
   };
 
   const handleBulkAdd = async () => {
-    const validRows = bulkRows.filter(r => r.address.trim().length > 0);
-    if (validRows.length === 0) {
-      toast.error("Enter at least one wallet address");
+    const walletRows = bulkRows.filter(r => r.type === "wallet" && r.address.trim().length > 0);
+    const csvRows = bulkRows.filter(r => r.type === "csv" && r.csvFile);
+
+    if (walletRows.length === 0 && csvRows.length === 0) {
+      toast.error("Enter at least one wallet address or select a CSV file");
       return;
     }
 
@@ -116,7 +126,8 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
     const addedWallets: WalletJob[] = [];
 
     try {
-      for (const row of validRows) {
+      // Process wallet rows
+      for (const row of walletRows) {
         const body: Record<string, unknown> = {
           name: row.name.trim() || `Wallet ${addedWallets.length + 1}`,
           address: row.provider === "evm" ? row.address.trim().toLowerCase() : row.address.trim(),
@@ -145,13 +156,33 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
         });
       }
 
+      // Process CSV rows
+      for (const row of csvRows) {
+        if (!row.csvFile) continue;
+        const formData = new FormData();
+        formData.append("file", row.csvFile);
+        formData.append("exchange", row.provider);
+
+        const res = await fetch("/api/transactions/import", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          toast.error(`${row.csvFile.name}: ${data.error || "Import failed"}`);
+        } else {
+          toast.success(`${row.csvFile.name}: ${data.transactionsAdded || 0} transactions imported`);
+        }
+      }
+
       if (addedWallets.length > 0) {
         toast.success(`Added ${addedWallets.length} wallet(s). Starting sync pipeline...`);
         startPipeline(addedWallets);
-        resetForm();
-        if (onConnect) {
-          onConnect("bulk", { success: true, provider: "bulk", address: "bulk", timestamp: new Date().toISOString() });
-        }
+      }
+
+      resetForm();
+      if (onConnect) {
+        onConnect("bulk", { success: true, provider: "bulk", address: "bulk", timestamp: new Date().toISOString() });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Bulk add failed";
@@ -166,7 +197,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
     setSelectedWallet(null);
     setSelectedExchange(null);
     setBulkMode(false);
-    setBulkRows([{ id: 1, provider: "solana", address: "", name: "SOL Wallet 1", chains: ["eth", "polygon", "arbitrum", "optimism", "base"] }]);
+    setBulkRows([{ id: 1, type: "wallet", provider: "solana", address: "", name: "SOL Wallet 1", chains: ["eth", "polygon", "arbitrum", "optimism", "base"] }]);
     setBulkNextId(2);
     setWalletName("");
     setWalletAddress("");
@@ -358,7 +389,9 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
               {bulkRows.map((row, idx) => (
                 <div key={row.id} className="rounded-lg border border-[#E5E5E0] dark:border-[#333] p-3 space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wide">Wallet {idx + 1}</span>
+                    <span className="text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wide">
+                      {row.type === "csv" ? `CSV ${idx + 1}` : `Wallet ${idx + 1}`}
+                    </span>
                     {bulkRows.length > 1 && (
                       <button onClick={() => removeBulkRow(row.id)} className="text-[11px] text-[#9CA3AF] hover:text-[#DC2626] transition-colors">
                         Remove
@@ -366,80 +399,130 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
                     )}
                   </div>
 
-                  {/* Type + Name row */}
-                  <div className="flex gap-2">
-                    <select
-                      value={row.provider}
-                      onChange={(e) => updateBulkRow(row.id, "provider", e.target.value)}
-                      className="h-8 rounded-md border border-[#E5E5E0] dark:border-[#333] bg-transparent text-[12px] font-medium px-2 w-[100px] focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
-                    >
-                      <option value="solana">Solana</option>
-                      <option value="evm">EVM (ETH)</option>
-                      <option value="bitcoin">Bitcoin</option>
-                    </select>
-                    <Input
-                      value={row.name}
-                      onChange={(e) => updateBulkRow(row.id, "name", e.target.value)}
-                      placeholder="Wallet name"
-                      className="h-8 text-[12px] flex-1"
-                    />
-                  </div>
-
-                  {/* Address */}
-                  <Input
-                    value={row.address}
-                    onChange={(e) => updateBulkRow(row.id, "address", e.target.value)}
-                    placeholder={row.provider === "solana" ? "Solana address..." : row.provider === "evm" ? "0x..." : "Bitcoin address..."}
-                    className="h-8 text-[12px] font-mono"
-                  />
-
-                  {/* Chain selector for EVM */}
-                  {row.provider === "evm" && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {EVM_CHAINS.map((chain) => (
-                        <button
-                          key={chain.id}
-                          onClick={() => {
-                            const next = row.chains.includes(chain.id)
-                              ? row.chains.filter(c => c !== chain.id)
-                              : [...row.chains, chain.id];
-                            updateBulkRow(row.id, "chains", next);
-                          }}
-                          className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
-                            row.chains.includes(chain.id)
-                              ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)]"
-                              : "border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF]"
-                          }`}
+                  {row.type === "csv" ? (
+                    /* ── CSV row ── */
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <select
+                          value={row.provider}
+                          onChange={(e) => updateBulkRow(row.id, "provider", e.target.value)}
+                          className="h-8 rounded-md border border-[#E5E5E0] dark:border-[#333] bg-transparent text-[12px] font-medium px-2 flex-1 focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
                         >
-                          {chain.name}
-                        </button>
-                      ))}
+                          <option value="custom">Custom Format</option>
+                          <option value="coinbase">Coinbase</option>
+                          <option value="binance">Binance</option>
+                          <option value="kraken">Kraken</option>
+                          <option value="kucoin">KuCoin</option>
+                          <option value="gemini">Gemini</option>
+                        </select>
+                      </div>
+                      <label className="flex items-center justify-center gap-2 h-10 rounded-lg border border-dashed border-[#E5E5E0] dark:border-[#333] cursor-pointer hover:border-[#9CA3AF] transition-colors">
+                        <input
+                          type="file"
+                          accept=".csv"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, csvFile: file, name: file.name } : r));
+                            }
+                          }}
+                        />
+                        {row.csvFile ? (
+                          <span className="text-[12px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">{row.csvFile.name} ({(row.csvFile.size / 1024).toFixed(0)} KB)</span>
+                        ) : (
+                          <span className="text-[12px] text-[#9CA3AF]">Click to select CSV file</span>
+                        )}
+                      </label>
                     </div>
+                  ) : (
+                    /* ── Wallet row ── */
+                    <>
+                      <div className="flex gap-2">
+                        <select
+                          value={row.provider}
+                          onChange={(e) => updateBulkRow(row.id, "provider", e.target.value)}
+                          className="h-8 rounded-md border border-[#E5E5E0] dark:border-[#333] bg-transparent text-[12px] font-medium px-2 w-[100px] focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+                        >
+                          <option value="solana">Solana</option>
+                          <option value="evm">EVM (ETH)</option>
+                          <option value="bitcoin">Bitcoin</option>
+                        </select>
+                        <Input
+                          value={row.name}
+                          onChange={(e) => updateBulkRow(row.id, "name", e.target.value)}
+                          placeholder="Wallet name"
+                          className="h-8 text-[12px] flex-1"
+                        />
+                      </div>
+                      <Input
+                        value={row.address}
+                        onChange={(e) => updateBulkRow(row.id, "address", e.target.value)}
+                        placeholder={row.provider === "solana" ? "Solana address..." : row.provider === "evm" ? "0x..." : "Bitcoin address..."}
+                        className="h-8 text-[12px] font-mono"
+                      />
+                      {row.provider === "evm" && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {EVM_CHAINS.map((chain) => (
+                            <button
+                              key={chain.id}
+                              onClick={() => {
+                                const next = row.chains.includes(chain.id)
+                                  ? row.chains.filter(c => c !== chain.id)
+                                  : [...row.chains, chain.id];
+                                updateBulkRow(row.id, "chains", next);
+                              }}
+                              className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
+                                row.chains.includes(chain.id)
+                                  ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)]"
+                                  : "border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF]"
+                              }`}
+                            >
+                              {chain.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
             </div>
 
-            {/* Add another wallet */}
-            <button
-              onClick={addBulkRow}
-              className="w-full py-2.5 rounded-lg border-2 border-dashed border-[#2563EB]/40 text-[13px] font-semibold text-[#2563EB] hover:border-[#2563EB] hover:bg-[#EFF6FF] dark:hover:bg-[rgba(37,99,235,0.08)] transition-colors"
-            >
-              <Plus className="inline h-4 w-4 mr-1.5 -mt-0.5" />
-              Add Another Wallet
-            </button>
+            {/* Add another */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => addBulkRow("wallet")}
+                className="flex-1 py-2.5 rounded-lg border-2 border-dashed border-[#2563EB]/40 text-[13px] font-semibold text-[#2563EB] hover:border-[#2563EB] hover:bg-[#EFF6FF] dark:hover:bg-[rgba(37,99,235,0.08)] transition-colors"
+              >
+                <Plus className="inline h-4 w-4 mr-1 -mt-0.5" />
+                Add Wallet
+              </button>
+              <button
+                onClick={() => addBulkRow("csv")}
+                className="flex-1 py-2.5 rounded-lg border-2 border-dashed border-[#9333EA]/40 text-[13px] font-semibold text-[#9333EA] hover:border-[#9333EA] hover:bg-[#FAF5FF] dark:hover:bg-[rgba(147,51,234,0.08)] transition-colors"
+              >
+                <Upload className="inline h-4 w-4 mr-1 -mt-0.5" />
+                Add CSV
+              </button>
+            </div>
+
+            {/* Exchange disclaimer */}
+            <p className="text-[11px] text-[#9CA3AF] leading-relaxed">
+              Exchange API connections (Coinbase, Binance, etc.) can only be added one at a time via the Add Account &gt; Exchanges tab.
+            </p>
 
             {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}
 
             <Button
               className="w-full"
               onClick={handleBulkAdd}
-              disabled={connecting || isRunning || bulkRows.every(r => !r.address.trim())}
+              disabled={connecting || isRunning || bulkRows.every(r => r.type === "wallet" ? !r.address.trim() : !r.csvFile)}
             >
               {connecting ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Adding {bulkRows.filter(r => r.address.trim()).length} wallets...</>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
               ) : (
-                <><Plus className="mr-2 h-4 w-4" />Add & Sync {bulkRows.filter(r => r.address.trim()).length} Wallet{bulkRows.filter(r => r.address.trim()).length !== 1 ? "s" : ""}</>
+                <><Plus className="mr-2 h-4 w-4" />Add & Sync All ({bulkRows.filter(r => r.type === "wallet" ? r.address.trim() : r.csvFile).length} items)</>
               )}
             </Button>
           </div>

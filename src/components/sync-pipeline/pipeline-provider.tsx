@@ -76,12 +76,12 @@ export function useSyncPipeline() {
 // Throughput estimates (txns/second) — empirically observed
 // ---------------------------------------------------------------------------
 
-// Sync: Helius/Moralis fetches pages of ~100 txns, ~1-2 pages/sec
-const SYNC_TXNS_PER_SEC = 150;
+// Sync: Helius/Moralis fetches pages of ~100 txns, ~0.5-1 pages/sec
+const SYNC_TXNS_PER_SEC = 75;
 // Enrich: CoinGecko + OHLCV lookups, ~50-100 txns/sec
 const ENRICH_TXNS_PER_SEC = 75;
-// Compute: pure CPU FIFO lot matching, very fast
-const COMPUTE_TXNS_PER_SEC = 5000;
+// Compute: FIFO lot matching + DB writes, slower than pure CPU
+const COMPUTE_TXNS_PER_SEC = 2500;
 // Minimum estimated duration per step (seconds)
 const MIN_STEP_SECONDS = 3;
 
