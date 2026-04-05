@@ -374,143 +374,107 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
             </Button>
           </div>
         ) : bulkMode ? (
-          /* ── Bulk Add Mode — row-based ── */
-          <div className="space-y-4">
+          /* ── Bulk Add Mode — sectioned ── */
+          <div className="space-y-5 max-h-[500px] overflow-y-auto pr-1">
             <button onClick={() => setBulkMode(false)} className="flex items-center gap-1 text-[13px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">
               <ArrowLeft className="h-3.5 w-3.5" /> Back
             </button>
 
-            <div>
-              <h3 className="text-[14px] font-semibold">Add Multiple Wallets</h3>
-              <p className="text-[12px] text-[#9CA3AF] mt-0.5">Add each wallet below. All will be synced, priced, and computed automatically.</p>
-            </div>
+            {/* ── Wallets Section ── */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[12px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] uppercase tracking-wide">Wallets</p>
+                <span className="text-[11px] text-[#9CA3AF]">Synced, priced, and computed automatically</span>
+              </div>
 
-            <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1">
-              {bulkRows.map((row, idx) => (
+              {bulkRows.filter(r => r.type === "wallet").map((row, idx) => (
                 <div key={row.id} className="rounded-lg border border-[#E5E5E0] dark:border-[#333] p-3 space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold text-[#9CA3AF] uppercase tracking-wide">
-                      {row.type === "csv" ? `CSV ${idx + 1}` : `Wallet ${idx + 1}`}
-                    </span>
-                    {bulkRows.length > 1 && (
-                      <button onClick={() => removeBulkRow(row.id)} className="text-[11px] text-[#9CA3AF] hover:text-[#DC2626] transition-colors">
-                        Remove
-                      </button>
+                    <span className="text-[11px] font-semibold text-[#9CA3AF]">Wallet {idx + 1}</span>
+                    {bulkRows.filter(r => r.type === "wallet").length > 1 && (
+                      <button onClick={() => removeBulkRow(row.id)} className="text-[11px] text-[#9CA3AF] hover:text-[#DC2626] transition-colors">Remove</button>
                     )}
                   </div>
-
-                  {row.type === "csv" ? (
-                    /* ── CSV row ── */
-                    <div className="space-y-2">
-                      <div className="flex gap-2">
-                        <select
-                          value={row.provider}
-                          onChange={(e) => updateBulkRow(row.id, "provider", e.target.value)}
-                          className="h-8 rounded-md border border-[#E5E5E0] dark:border-[#333] bg-transparent text-[12px] font-medium px-2 flex-1 focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
-                        >
-                          <option value="custom">Custom Format</option>
-                          <option value="coinbase">Coinbase</option>
-                          <option value="binance">Binance</option>
-                          <option value="kraken">Kraken</option>
-                          <option value="kucoin">KuCoin</option>
-                          <option value="gemini">Gemini</option>
-                        </select>
-                      </div>
-                      <label className="flex items-center justify-center gap-2 h-10 rounded-lg border border-dashed border-[#E5E5E0] dark:border-[#333] cursor-pointer hover:border-[#9CA3AF] transition-colors">
-                        <input
-                          type="file"
-                          accept=".csv"
-                          className="hidden"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, csvFile: file, name: file.name } : r));
-                            }
-                          }}
-                        />
-                        {row.csvFile ? (
-                          <span className="text-[12px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">{row.csvFile.name} ({(row.csvFile.size / 1024).toFixed(0)} KB)</span>
-                        ) : (
-                          <span className="text-[12px] text-[#9CA3AF]">Click to select CSV file</span>
-                        )}
-                      </label>
+                  <div className="flex gap-2">
+                    <select
+                      value={row.provider}
+                      onChange={(e) => updateBulkRow(row.id, "provider", e.target.value)}
+                      className="h-8 rounded-md border border-[#E5E5E0] dark:border-[#333] bg-transparent text-[12px] font-medium px-2 w-[100px] focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+                    >
+                      <option value="solana">Solana</option>
+                      <option value="evm">EVM (ETH)</option>
+                      <option value="bitcoin">Bitcoin</option>
+                    </select>
+                    <Input value={row.name} onChange={(e) => updateBulkRow(row.id, "name", e.target.value)} placeholder="Wallet name" className="h-8 text-[12px] flex-1" />
+                  </div>
+                  <Input value={row.address} onChange={(e) => updateBulkRow(row.id, "address", e.target.value)} placeholder={row.provider === "solana" ? "Solana address..." : row.provider === "evm" ? "0x..." : "Bitcoin address..."} className="h-8 text-[12px] font-mono" />
+                  {row.provider === "evm" && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {EVM_CHAINS.map((chain) => (
+                        <button key={chain.id} onClick={() => { const next = row.chains.includes(chain.id) ? row.chains.filter(c => c !== chain.id) : [...row.chains, chain.id]; updateBulkRow(row.id, "chains", next); }} className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${row.chains.includes(chain.id) ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)]" : "border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF]"}`}>
+                          {chain.name}
+                        </button>
+                      ))}
                     </div>
-                  ) : (
-                    /* ── Wallet row ── */
-                    <>
-                      <div className="flex gap-2">
-                        <select
-                          value={row.provider}
-                          onChange={(e) => updateBulkRow(row.id, "provider", e.target.value)}
-                          className="h-8 rounded-md border border-[#E5E5E0] dark:border-[#333] bg-transparent text-[12px] font-medium px-2 w-[100px] focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
-                        >
-                          <option value="solana">Solana</option>
-                          <option value="evm">EVM (ETH)</option>
-                          <option value="bitcoin">Bitcoin</option>
-                        </select>
-                        <Input
-                          value={row.name}
-                          onChange={(e) => updateBulkRow(row.id, "name", e.target.value)}
-                          placeholder="Wallet name"
-                          className="h-8 text-[12px] flex-1"
-                        />
-                      </div>
-                      <Input
-                        value={row.address}
-                        onChange={(e) => updateBulkRow(row.id, "address", e.target.value)}
-                        placeholder={row.provider === "solana" ? "Solana address..." : row.provider === "evm" ? "0x..." : "Bitcoin address..."}
-                        className="h-8 text-[12px] font-mono"
-                      />
-                      {row.provider === "evm" && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {EVM_CHAINS.map((chain) => (
-                            <button
-                              key={chain.id}
-                              onClick={() => {
-                                const next = row.chains.includes(chain.id)
-                                  ? row.chains.filter(c => c !== chain.id)
-                                  : [...row.chains, chain.id];
-                                updateBulkRow(row.id, "chains", next);
-                              }}
-                              className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
-                                row.chains.includes(chain.id)
-                                  ? "border-[#2563EB] bg-[#EFF6FF] text-[#2563EB] dark:bg-[rgba(37,99,235,0.12)]"
-                                  : "border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF]"
-                              }`}
-                            >
-                              {chain.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </>
                   )}
                 </div>
               ))}
-            </div>
 
-            {/* Add another */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => addBulkRow("wallet")}
-                className="flex-1 py-2.5 rounded-lg border-2 border-dashed border-[#2563EB]/40 text-[13px] font-semibold text-[#2563EB] hover:border-[#2563EB] hover:bg-[#EFF6FF] dark:hover:bg-[rgba(37,99,235,0.08)] transition-colors"
-              >
-                <Plus className="inline h-4 w-4 mr-1 -mt-0.5" />
-                Add Wallet
-              </button>
-              <button
-                onClick={() => addBulkRow("csv")}
-                className="flex-1 py-2.5 rounded-lg border-2 border-dashed border-[#9333EA]/40 text-[13px] font-semibold text-[#9333EA] hover:border-[#9333EA] hover:bg-[#FAF5FF] dark:hover:bg-[rgba(147,51,234,0.08)] transition-colors"
-              >
-                <Upload className="inline h-4 w-4 mr-1 -mt-0.5" />
-                Add CSV
+              <button onClick={() => addBulkRow("wallet")} className="w-full py-2 rounded-lg border-2 border-dashed border-[#2563EB]/40 text-[12px] font-semibold text-[#2563EB] hover:border-[#2563EB] hover:bg-[#EFF6FF] dark:hover:bg-[rgba(37,99,235,0.08)] transition-colors">
+                <Plus className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
+                Add Another Wallet
               </button>
             </div>
 
-            {/* Exchange disclaimer */}
-            <p className="text-[11px] text-[#9CA3AF] leading-relaxed">
-              Exchange API connections (Coinbase, Binance, etc.) can only be added one at a time via the Add Account &gt; Exchanges tab.
-            </p>
+            {/* ── CSV Section ── */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-[12px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] uppercase tracking-wide">CSV Imports</p>
+                <span className="text-[11px] text-[#9CA3AF]">Transaction history from exchanges</span>
+              </div>
+
+              {bulkRows.filter(r => r.type === "csv").length === 0 && (
+                <p className="text-[12px] text-[#9CA3AF] py-2 text-center">No CSVs added yet</p>
+              )}
+
+              {bulkRows.filter(r => r.type === "csv").map((row, idx) => (
+                <div key={row.id} className="rounded-lg border border-[#E5E5E0] dark:border-[#333] p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-[#9CA3AF]">CSV {idx + 1}</span>
+                    <button onClick={() => removeBulkRow(row.id)} className="text-[11px] text-[#9CA3AF] hover:text-[#DC2626] transition-colors">Remove</button>
+                  </div>
+                  <select value={row.provider} onChange={(e) => updateBulkRow(row.id, "provider", e.target.value)} className="h-8 w-full rounded-md border border-[#E5E5E0] dark:border-[#333] bg-transparent text-[12px] font-medium px-2 focus:outline-none focus:ring-1 focus:ring-[#9333EA]">
+                    <option value="custom">Custom Format</option>
+                    <option value="coinbase">Coinbase</option>
+                    <option value="binance">Binance</option>
+                    <option value="kraken">Kraken</option>
+                    <option value="kucoin">KuCoin</option>
+                    <option value="gemini">Gemini</option>
+                  </select>
+                  <label className="flex items-center justify-center gap-2 h-10 rounded-lg border border-dashed border-[#E5E5E0] dark:border-[#333] cursor-pointer hover:border-[#9CA3AF] transition-colors">
+                    <input type="file" accept=".csv" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) setBulkRows(prev => prev.map(r => r.id === row.id ? { ...r, csvFile: file, name: file.name } : r)); }} />
+                    {row.csvFile ? (
+                      <span className="text-[12px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">{row.csvFile.name} ({(row.csvFile.size / 1024).toFixed(0)} KB)</span>
+                    ) : (
+                      <span className="text-[12px] text-[#9CA3AF]"><Upload className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />Select CSV file</span>
+                    )}
+                  </label>
+                </div>
+              ))}
+
+              <button onClick={() => addBulkRow("csv")} className="w-full py-2 rounded-lg border-2 border-dashed border-[#9333EA]/40 text-[12px] font-semibold text-[#9333EA] hover:border-[#9333EA] hover:bg-[#FAF5FF] dark:hover:bg-[rgba(147,51,234,0.08)] transition-colors">
+                <Upload className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
+                Add CSV File
+              </button>
+            </div>
+
+            {/* ── Exchanges Section (disclaimer) ── */}
+            <div className="rounded-lg bg-[#FFF7ED] dark:bg-[rgba(234,88,12,0.08)] border border-[#FDBA74] dark:border-[#92400E]/40 px-3.5 py-3">
+              <p className="text-[12px] font-medium text-[#9A3412] dark:text-[#FB923C]">Exchanges</p>
+              <p className="text-[11px] text-[#C2410C] dark:text-[#FDBA74] mt-0.5 leading-relaxed">
+                Exchange API connections (Coinbase, Binance, Kraken, etc.) can only be added one at a time. Use <strong>Add One Account</strong> &gt; <strong>Exchanges</strong> tab to connect an exchange.
+              </p>
+            </div>
 
             {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}
 

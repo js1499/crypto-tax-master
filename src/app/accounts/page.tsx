@@ -623,11 +623,11 @@ function AccountsContent() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onClick={() => { setIsAddDialogOpen(true); setAddDialogBulk(false); }}>
+                <DropdownMenuItem onSelect={() => setTimeout(() => { setAddDialogBulk(false); setIsAddDialogOpen(true); }, 10)}>
                   <Plus className="mr-2 h-4 w-4" />
-                  Add Account
+                  Add One Account
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => { setIsAddDialogOpen(true); setAddDialogBulk(true); }}>
+                <DropdownMenuItem onSelect={() => setTimeout(() => { setAddDialogBulk(true); setIsAddDialogOpen(true); }, 10)}>
                   <PlusCircle className="mr-2 h-4 w-4" />
                   Add Multiple
                 </DropdownMenuItem>
