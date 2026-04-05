@@ -375,7 +375,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
           </div>
         ) : bulkMode ? (
           /* ── Bulk Add Mode — sectioned ── */
-          <div className="space-y-6 max-h-[550px] overflow-y-auto pr-1">
+          <div className="space-y-6">
             <button onClick={() => setBulkMode(false)} className="flex items-center gap-1 text-[13px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors">
               <ArrowLeft className="h-3.5 w-3.5" /> Back
             </button>
