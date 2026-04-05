@@ -65,12 +65,28 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
 ];
 
 /**
+ * TESTING MODE: Set to true to force onboarding on every page load for every user.
+ * Set back to false before shipping to production.
+ */
+const FORCE_ONBOARDING = true;
+
+/**
  * Get onboarding state from localStorage
  */
 export function getOnboardingState(): OnboardingState {
   if (typeof window === "undefined") {
     return {
       isActive: false,
+      currentStep: 0,
+      steps: ONBOARDING_STEPS.map((step) => ({ ...step, completed: false })),
+      completed: false,
+    };
+  }
+
+  // Testing mode: always start fresh
+  if (FORCE_ONBOARDING) {
+    return {
+      isActive: true,
       currentStep: 0,
       steps: ONBOARDING_STEPS.map((step) => ({ ...step, completed: false })),
       completed: false,
