@@ -26,6 +26,8 @@ export interface PipelineStep {
   label: string;
   status: "pending" | "running" | "done" | "error";
   detail?: string;
+  /** Per-step progress 0-100 (estimated during running, 100 when done) */
+  progress: number;
 }
 
 export interface PipelineState {
@@ -39,10 +41,14 @@ export interface PipelineState {
 interface PipelineContextType {
   state: PipelineState;
   isRunning: boolean;
-  /** Start the full pipeline: sync each wallet → enrich each → compute cost basis */
+  /** Start full pipeline: sync → enrich → compute */
   startPipeline: (wallets: WalletJob[]) => void;
-  /** Cancel (best-effort — current API call will finish) */
+  /** Start pipeline for existing wallets (Sync All on accounts page) */
+  startSyncAll: () => void;
+  /** Cancel (best-effort) */
   cancel: () => void;
+  /** Dismiss the progress bar */
+  dismiss: () => void;
 }
 
 const IDLE_STATE: PipelineState = {
@@ -57,12 +63,27 @@ const PipelineContext = createContext<PipelineContextType>({
   state: IDLE_STATE,
   isRunning: false,
   startPipeline: () => {},
+  startSyncAll: () => {},
   cancel: () => {},
+  dismiss: () => {},
 });
 
 export function useSyncPipeline() {
   return useContext(PipelineContext);
 }
+
+// ---------------------------------------------------------------------------
+// Throughput estimates (txns/second) — empirically observed
+// ---------------------------------------------------------------------------
+
+// Sync: Helius/Moralis fetches pages of ~100 txns, ~1-2 pages/sec
+const SYNC_TXNS_PER_SEC = 150;
+// Enrich: CoinGecko + OHLCV lookups, ~50-100 txns/sec
+const ENRICH_TXNS_PER_SEC = 75;
+// Compute: pure CPU FIFO lot matching, very fast
+const COMPUTE_TXNS_PER_SEC = 5000;
+// Minimum estimated duration per step (seconds)
+const MIN_STEP_SECONDS = 3;
 
 // ---------------------------------------------------------------------------
 // Provider
@@ -71,165 +92,246 @@ export function useSyncPipeline() {
 export function SyncPipelineProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<PipelineState>(IDLE_STATE);
   const cancelledRef = useRef(false);
+  const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isRunning = state.phase !== "idle" && state.phase !== "done" && state.phase !== "error";
 
-  const updateStep = (
-    steps: PipelineStep[],
-    index: number,
-    update: Partial<PipelineStep>,
-    totalSteps: number,
-  ) => {
-    const next = [...steps];
-    next[index] = { ...next[index], ...update };
-    const doneCount = next.filter(s => s.status === "done").length;
-    // Current running step counts as partial progress
-    const runningBonus = next.some(s => s.status === "running") ? 0.5 : 0;
-    const progress = Math.round(((doneCount + runningBonus) / totalSteps) * 100);
-    return { steps: next, progress };
+  // Recalculate overall progress from steps
+  const calcOverall = (steps: PipelineStep[]): number => {
+    if (steps.length === 0) return 0;
+    const total = steps.reduce((sum, s) => sum + s.progress, 0);
+    return Math.round(total / steps.length);
   };
 
-  const startPipeline = useCallback((wallets: WalletJob[]) => {
-    if (wallets.length === 0) return;
+  // Start a progress ticker that smoothly animates the current step's progress
+  // based on estimated duration. Returns cleanup function.
+  const startTicker = (
+    stepsRef: { current: PipelineStep[] },
+    stepIdx: number,
+    estimatedSeconds: number,
+  ) => {
+    const startTime = Date.now();
+    const targetMs = Math.max(estimatedSeconds, MIN_STEP_SECONDS) * 1000;
+    // Tick every 500ms, asymptotically approach 95% (never 100 — that's set on completion)
+    const maxProgress = 95;
 
-    cancelledRef.current = false;
+    if (tickerRef.current) clearInterval(tickerRef.current);
+    tickerRef.current = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const fraction = Math.min(elapsed / targetMs, 1);
+      // Ease-out: fast start, slows down near end
+      const eased = 1 - Math.pow(1 - fraction, 2);
+      const progress = Math.round(eased * maxProgress);
 
-    // Build step list: sync each → enrich each → compute once
+      const next = [...stepsRef.current];
+      if (next[stepIdx] && next[stepIdx].status === "running") {
+        next[stepIdx] = { ...next[stepIdx], progress };
+        stepsRef.current = next;
+        setState(prev => ({
+          ...prev,
+          steps: next,
+          overallProgress: calcOverall(next),
+        }));
+      }
+    }, 500);
+  };
+
+  const stopTicker = () => {
+    if (tickerRef.current) {
+      clearInterval(tickerRef.current);
+      tickerRef.current = null;
+    }
+  };
+
+  // Get transaction count for a wallet (for time estimation)
+  const getTxnCount = async (walletAddress: string): Promise<number> => {
+    try {
+      const res = await fetch(`/api/transactions?wallet=${walletAddress}&limit=1&page=1`, {
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return data.pagination?.totalCount || 0;
+      }
+    } catch { /* ignore */ }
+    return 1000; // default estimate
+  };
+
+  // Core pipeline execution
+  const runPipeline = async (wallets: WalletJob[]) => {
     const steps: PipelineStep[] = [
-      ...wallets.map(w => ({ label: `Sync ${w.name}`, status: "pending" as const })),
-      ...wallets.map(w => ({ label: `Pull prices: ${w.name}`, status: "pending" as const })),
-      { label: "Compute cost basis", status: "pending" as const },
+      ...wallets.map(w => ({ label: `Sync ${w.name}`, status: "pending" as const, progress: 0 })),
+      ...wallets.map(w => ({ label: `Pull prices: ${w.name}`, status: "pending" as const, progress: 0 })),
+      { label: "Compute cost basis", status: "pending" as const, progress: 0 },
     ];
     const totalSteps = steps.length;
+    const stepsRef = { current: [...steps] };
 
     setState({
       phase: "syncing",
-      steps,
+      steps: stepsRef.current,
       currentStepIndex: 0,
       overallProgress: 0,
       error: null,
     });
 
-    // Run pipeline async — not awaited, runs in background
-    (async () => {
-      let currentSteps = [...steps];
-      let stepIdx = 0;
-
-      try {
-        // ── Phase 1: Sync each wallet ──
-        for (let i = 0; i < wallets.length; i++) {
-          if (cancelledRef.current) throw new Error("Cancelled");
-          stepIdx = i;
-
-          const { steps: s1, progress: p1 } = updateStep(currentSteps, stepIdx, { status: "running", detail: "Syncing transactions..." }, totalSteps);
-          currentSteps = s1;
-          setState(prev => ({ ...prev, phase: "syncing", steps: s1, currentStepIndex: stepIdx, overallProgress: p1 }));
-
-          const body: Record<string, unknown> = { walletId: wallets[i].walletId };
-          if (wallets[i].chains) body.chains = wallets[i].chains;
-
-          const res = await fetch("/api/wallets/sync", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify(body),
-          });
-          const data = await res.json();
-
-          if (!res.ok) {
-            const { steps: sErr } = updateStep(currentSteps, stepIdx, { status: "error", detail: data.error || "Sync failed" }, totalSteps);
-            currentSteps = sErr;
-            // Continue to next wallet even if one fails
-          } else {
-            const detail = `${data.transactionsAdded || 0} added, ${data.transactionsSkipped || 0} skipped`;
-            const { steps: sOk, progress: pOk } = updateStep(currentSteps, stepIdx, { status: "done", detail }, totalSteps);
-            currentSteps = sOk;
-            setState(prev => ({ ...prev, steps: sOk, overallProgress: pOk }));
-          }
-        }
-
-        // ── Phase 2: Enrich each wallet ──
-        setState(prev => ({ ...prev, phase: "enriching" }));
-
-        for (let i = 0; i < wallets.length; i++) {
-          if (cancelledRef.current) throw new Error("Cancelled");
-          stepIdx = wallets.length + i;
-
-          const { steps: s2, progress: p2 } = updateStep(currentSteps, stepIdx, { status: "running", detail: "Pulling prices..." }, totalSteps);
-          currentSteps = s2;
-          setState(prev => ({ ...prev, steps: s2, currentStepIndex: stepIdx, overallProgress: p2 }));
-
-          const res = await fetch("/api/prices/enrich-historical", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            credentials: "include",
-            body: JSON.stringify({ walletId: wallets[i].walletId }),
-          });
-          const data = await res.json();
-
-          if (!res.ok && res.status !== 409) {
-            const { steps: sErr } = updateStep(currentSteps, stepIdx, { status: "error", detail: data.error || "Enrich failed" }, totalSteps);
-            currentSteps = sErr;
-          } else {
-            const updated = data.updated || 0;
-            const detail = res.status === 409 ? "Already running" : `${updated} prices updated`;
-            const { steps: sOk, progress: pOk } = updateStep(currentSteps, stepIdx, { status: "done", detail }, totalSteps);
-            currentSteps = sOk;
-            setState(prev => ({ ...prev, steps: sOk, overallProgress: pOk }));
-          }
-        }
-
-        // ── Phase 3: Compute cost basis (one call) ──
+    try {
+      // ── Phase 1: Sync each wallet ──
+      for (let i = 0; i < wallets.length; i++) {
         if (cancelledRef.current) throw new Error("Cancelled");
-        stepIdx = totalSteps - 1;
-        setState(prev => ({ ...prev, phase: "computing" }));
+        const stepIdx = i;
 
-        const { steps: s3, progress: p3 } = updateStep(currentSteps, stepIdx, { status: "running", detail: "Computing..." }, totalSteps);
-        currentSteps = s3;
-        setState(prev => ({ ...prev, steps: s3, currentStepIndex: stepIdx, overallProgress: p3 }));
+        // Estimate: new wallets ~30s, existing ~5s
+        const estimatedSec = wallets[i].walletId ? 10 : 30;
 
-        const cbRes = await fetch("/api/cost-basis/compute", {
+        stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "running", detail: "Syncing transactions...", progress: 0 };
+        setState(prev => ({ ...prev, phase: "syncing", steps: [...stepsRef.current], currentStepIndex: stepIdx, overallProgress: calcOverall(stepsRef.current) }));
+        startTicker(stepsRef, stepIdx, estimatedSec);
+
+        const body: Record<string, unknown> = { walletId: wallets[i].walletId };
+        if (wallets[i].chains) body.chains = wallets[i].chains;
+
+        const res = await fetch("/api/wallets/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({}),
+          body: JSON.stringify(body),
         });
-        const cbData = await cbRes.json();
+        const data = await res.json();
+        stopTicker();
 
-        if (!cbRes.ok) {
-          const { steps: sErr } = updateStep(currentSteps, stepIdx, { status: "error", detail: cbData.error || "Failed" }, totalSteps);
-          currentSteps = sErr;
+        if (!res.ok) {
+          stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "error", detail: data.error || "Sync failed", progress: 100 };
         } else {
-          const { steps: sOk } = updateStep(currentSteps, stepIdx, { status: "done", detail: cbData.message || "Done" }, totalSteps);
-          currentSteps = sOk;
+          const detail = `${data.transactionsAdded || 0} added, ${data.transactionsSkipped || 0} skipped`;
+          stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "done", detail, progress: 100 };
         }
-
-        // ── Done ──
-        setState({
-          phase: "done",
-          steps: currentSteps,
-          currentStepIndex: totalSteps - 1,
-          overallProgress: 100,
-          error: null,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Pipeline failed";
-        setState(prev => ({
-          ...prev,
-          phase: "error",
-          error: msg,
-        }));
+        setState(prev => ({ ...prev, steps: [...stepsRef.current], overallProgress: calcOverall(stepsRef.current) }));
       }
-    })();
+
+      // ── Phase 2: Enrich each wallet ──
+      setState(prev => ({ ...prev, phase: "enriching" }));
+
+      for (let i = 0; i < wallets.length; i++) {
+        if (cancelledRef.current) throw new Error("Cancelled");
+        const stepIdx = wallets.length + i;
+
+        // Estimate based on transaction count
+        const txnCount = await getTxnCount(wallets[i].address);
+        const estimatedSec = Math.max(txnCount / ENRICH_TXNS_PER_SEC, MIN_STEP_SECONDS);
+
+        stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "running", detail: `Pulling prices (~${txnCount.toLocaleString()} txns)...`, progress: 0 };
+        setState(prev => ({ ...prev, steps: [...stepsRef.current], currentStepIndex: stepIdx, overallProgress: calcOverall(stepsRef.current) }));
+        startTicker(stepsRef, stepIdx, estimatedSec);
+
+        const res = await fetch("/api/prices/enrich-historical", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ walletId: wallets[i].walletId }),
+        });
+        const data = await res.json();
+        stopTicker();
+
+        if (!res.ok && res.status !== 409) {
+          stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "error", detail: data.error || "Enrich failed", progress: 100 };
+        } else {
+          const updated = data.updated || 0;
+          const detail = res.status === 409 ? "Already running" : `${updated} prices updated`;
+          stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "done", detail, progress: 100 };
+        }
+        setState(prev => ({ ...prev, steps: [...stepsRef.current], overallProgress: calcOverall(stepsRef.current) }));
+      }
+
+      // ── Phase 3: Compute cost basis ──
+      if (cancelledRef.current) throw new Error("Cancelled");
+      const cbIdx = totalSteps - 1;
+      setState(prev => ({ ...prev, phase: "computing" }));
+
+      // Estimate: sum all wallet txn counts
+      let totalTxns = 0;
+      for (const w of wallets) {
+        totalTxns += await getTxnCount(w.address);
+      }
+      const cbEstSec = Math.max(totalTxns / COMPUTE_TXNS_PER_SEC, MIN_STEP_SECONDS);
+
+      stepsRef.current[cbIdx] = { ...stepsRef.current[cbIdx], status: "running", detail: `Computing (~${totalTxns.toLocaleString()} txns)...`, progress: 0 };
+      setState(prev => ({ ...prev, steps: [...stepsRef.current], currentStepIndex: cbIdx, overallProgress: calcOverall(stepsRef.current) }));
+      startTicker(stepsRef, cbIdx, cbEstSec);
+
+      const cbRes = await fetch("/api/cost-basis/compute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      const cbData = await cbRes.json();
+      stopTicker();
+
+      if (!cbRes.ok) {
+        stepsRef.current[cbIdx] = { ...stepsRef.current[cbIdx], status: "error", detail: cbData.error || "Failed", progress: 100 };
+      } else {
+        stepsRef.current[cbIdx] = { ...stepsRef.current[cbIdx], status: "done", detail: cbData.message || "Done", progress: 100 };
+      }
+
+      setState({
+        phase: "done",
+        steps: [...stepsRef.current],
+        currentStepIndex: totalSteps - 1,
+        overallProgress: 100,
+        error: null,
+      });
+    } catch (err) {
+      stopTicker();
+      const msg = err instanceof Error ? err.message : "Pipeline failed";
+      setState(prev => ({ ...prev, phase: "error", error: msg }));
+    }
+  };
+
+  const startPipeline = useCallback((wallets: WalletJob[]) => {
+    if (wallets.length === 0) return;
+    cancelledRef.current = false;
+    runPipeline(wallets);
+  }, []);
+
+  // "Sync All" — fetch user's wallets from API, then run pipeline
+  const startSyncAll = useCallback(async () => {
+    cancelledRef.current = false;
+    try {
+      const res = await fetch("/api/wallets", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch wallets");
+      const data = await res.json();
+      const wallets: WalletJob[] = (data.wallets || []).map((w: any) => ({
+        walletId: w.id,
+        name: w.name,
+        address: w.address,
+        provider: w.provider,
+        chains: w.chains ? w.chains.split(",") : undefined,
+      }));
+      if (wallets.length === 0) return;
+      runPipeline(wallets);
+    } catch (err) {
+      setState(prev => ({
+        ...prev,
+        phase: "error",
+        error: err instanceof Error ? err.message : "Failed to start sync",
+      }));
+    }
   }, []);
 
   const cancel = useCallback(() => {
     cancelledRef.current = true;
+    stopTicker();
     setState(prev => ({ ...prev, phase: "error", error: "Cancelled by user" }));
   }, []);
 
+  const dismiss = useCallback(() => {
+    stopTicker();
+    setState(IDLE_STATE);
+  }, []);
+
   return (
-    <PipelineContext.Provider value={{ state, isRunning, startPipeline, cancel }}>
+    <PipelineContext.Provider value={{ state, isRunning, startPipeline, startSyncAll, cancel, dismiss }}>
       {children}
     </PipelineContext.Provider>
   );

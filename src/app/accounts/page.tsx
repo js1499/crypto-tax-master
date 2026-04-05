@@ -48,6 +48,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useSyncPipeline } from "@/components/sync-pipeline/pipeline-provider";
 
 // Define types
 interface BaseAccount {
@@ -99,6 +100,7 @@ function AccountsContent() {
   const [filter, setFilter] = useState("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [addDialogBulk, setAddDialogBulk] = useState(false);
+  const { startSyncAll, isRunning: isPipelineRunning } = useSyncPipeline();
   const [exclusiveWallets, setExclusiveWallets] = useState(false);
   const [oauthStatus, setOauthStatus] = useState<{ success?: boolean; error?: string } | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -568,34 +570,14 @@ function AccountsContent() {
                 </div>
                 <Button
                   variant="outline"
-                  onClick={async () => {
-                    setSyncing("all");
-                    try {
-                      // Sync all wallets
-                      for (const wallet of accounts) {
-                        await handleSyncWallet(wallet.id);
-                      }
-                      // Sync connected exchanges
-                      for (const exchange of exchanges.filter(e => e.isConnected)) {
-                        await handleSyncExchange(exchange.id);
-                      }
-                      toast.success("All accounts synced");
-                      fetchWallets();
-                    } catch { toast.error("Failed to sync"); }
-                    finally { setSyncing(null); }
+                  onClick={() => {
+                    startSyncAll();
+                    toast.info("Pipeline started — sync → pull prices → compute cost basis");
                   }}
-                  disabled={syncing === "all"}
+                  disabled={isPipelineRunning}
                 >
-                  {syncing === "all" ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RotateCw className="mr-2 h-4 w-4" />}
-                  {syncing === "all" ? "Syncing..." : "Sync All"}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleEnrichAll}
-                  disabled={enrichingAll || !!enriching}
-                >
-                  {enrichingAll ? <DollarSign className="mr-2 h-4 w-4 animate-pulse" /> : <DollarSign className="mr-2 h-4 w-4" />}
-                  {enrichingAll ? "Pulling Prices..." : "Pull All Prices"}
+                  {isPipelineRunning ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <RotateCw className="mr-2 h-4 w-4" />}
+                  {isPipelineRunning ? "Running..." : "Sync All"}
                 </Button>
                 <Button variant="outline" onClick={handleRefresh}>
                   <RefreshCw className="mr-2 h-4 w-4" />
