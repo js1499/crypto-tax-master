@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, useCallback, useRef } from "react";
+import { addActivityEntry } from "@/lib/activity-log";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -202,9 +203,11 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
 
         if (!res.ok) {
           stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "error", detail: data.error || "Sync failed", progress: 100 };
+          addActivityEntry({ type: "error", message: `Sync failed: ${wallets[i].name}`, detail: data.error });
         } else {
           const detail = `${data.transactionsAdded || 0} added, ${data.transactionsSkipped || 0} skipped`;
           stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "done", detail, progress: 100 };
+          addActivityEntry({ type: "sync", message: `Synced ${wallets[i].name}`, detail });
         }
         setState(prev => ({ ...prev, steps: [...stepsRef.current], overallProgress: calcOverall(stepsRef.current) }));
       }
@@ -235,10 +238,12 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
 
         if (!res.ok && res.status !== 409) {
           stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "error", detail: data.error || "Enrich failed", progress: 100 };
+          addActivityEntry({ type: "error", message: `Price pull failed: ${wallets[i].name}`, detail: data.error });
         } else {
           const updated = data.updated || 0;
           const detail = res.status === 409 ? "Already running" : `${updated} prices updated`;
           stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "done", detail, progress: 100 };
+          addActivityEntry({ type: "enrich", message: `Pulled prices: ${wallets[i].name}`, detail });
         }
         setState(prev => ({ ...prev, steps: [...stepsRef.current], overallProgress: calcOverall(stepsRef.current) }));
       }
@@ -270,8 +275,10 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
 
       if (!cbRes.ok) {
         stepsRef.current[cbIdx] = { ...stepsRef.current[cbIdx], status: "error", detail: cbData.error || "Failed", progress: 100 };
+        addActivityEntry({ type: "error", message: "Cost basis computation failed", detail: cbData.error });
       } else {
         stepsRef.current[cbIdx] = { ...stepsRef.current[cbIdx], status: "done", detail: cbData.message || "Done", progress: 100 };
+        addActivityEntry({ type: "compute", message: "Computed cost basis", detail: cbData.message });
       }
 
       setState({
