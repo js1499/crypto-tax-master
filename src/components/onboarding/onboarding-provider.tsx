@@ -212,7 +212,14 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
 
   const handleSkip = () => {
     skipOnboarding();
-    setState(getOnboardingState());
+    // Set state directly (don't re-read from getOnboardingState which
+    // may return fresh state in FORCE_ONBOARDING testing mode)
+    setState({
+      isActive: false,
+      currentStep: 0,
+      steps: state.steps,
+      completed: true,
+    });
   };
 
   const handleComplete = () => {
@@ -236,7 +243,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       }}
     >
       {children}
-      {isAuthenticated && state.isActive && !state.completed && currentStep && (
+      {isAuthenticated && state.isActive && !state.completed && currentStep && anchorElement && (
         <OnboardingTooltip
           step={currentStep}
           currentStepIndex={state.currentStep}

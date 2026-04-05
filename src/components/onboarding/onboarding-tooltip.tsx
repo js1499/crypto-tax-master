@@ -135,16 +135,22 @@ export function OnboardingTooltip({
 
   return createPortal(
     <>
-      {/* Full-screen click blocker (except the spotlight area) */}
-      <div
-        className="fixed inset-0 z-[9997]"
-        onClick={(e) => e.stopPropagation()}
-      />
-
-      {/* Spotlight cutout with dark overlay */}
-      {hasAnchor && <div style={overlayStyle} />}
-      {!hasAnchor && (
-        <div className="fixed inset-0 bg-black/60 z-[9998]" />
+      {/*
+        Overlay strategy: 4 dark panels around the spotlight hole.
+        This lets the target element receive real clicks natively
+        (no synthetic click forwarding needed).
+      */}
+      {hasAnchor && (
+        <>
+          {/* Top panel */}
+          <div className="fixed inset-x-0 top-0 bg-black/60 z-[9998]" style={{ height: rect!.top - pad }} />
+          {/* Bottom panel */}
+          <div className="fixed inset-x-0 bottom-0 bg-black/60 z-[9998]" style={{ top: rect!.bottom + pad }} />
+          {/* Left panel */}
+          <div className="fixed left-0 bg-black/60 z-[9998]" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, width: rect!.left - pad }} />
+          {/* Right panel */}
+          <div className="fixed right-0 bg-black/60 z-[9998]" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, left: rect!.right + pad }} />
+        </>
       )}
 
       {/* Pulse ring around target */}
@@ -160,37 +166,6 @@ export function OnboardingTooltip({
         >
           <div className="absolute inset-0 rounded-xl border-2 border-[#2563EB] animate-pulse" />
           <div className="absolute -inset-1 rounded-xl border border-[#2563EB]/40 animate-ping" style={{ animationDuration: "1.5s" }} />
-        </div>
-      )}
-
-      {/* Make the target element clickable above the overlay */}
-      {hasAnchor && (
-        <div
-          className="fixed z-[9999]"
-          style={{
-            top: rect!.top - pad,
-            left: rect!.left - pad,
-            width: rect!.width + pad * 2,
-            height: rect!.height + pad * 2,
-            pointerEvents: "none",
-          }}
-        >
-          {/* Re-expose the actual element's click area */}
-          <div
-            className="absolute"
-            style={{
-              top: pad,
-              left: pad,
-              width: rect!.width,
-              height: rect!.height,
-              pointerEvents: "auto",
-              cursor: "pointer",
-            }}
-            onClick={() => {
-              // Trigger the actual element's click
-              anchorElement?.click();
-            }}
-          />
         </div>
       )}
 
