@@ -161,13 +161,13 @@ export function OnboardingTooltip({
       {/* Overlay: full dim when searching, 4-panel spotlight when found */}
       {hasAnchor ? (
         <>
-          <div className="fixed inset-x-0 top-0 bg-black/50 z-[40] pointer-events-none" style={{ height: rect!.top - pad }} />
-          <div className="fixed inset-x-0 bottom-0 bg-black/50 z-[40] pointer-events-none" style={{ top: rect!.bottom + pad }} />
-          <div className="fixed left-0 bg-black/50 z-[40] pointer-events-none" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, width: Math.max(0, rect!.left - pad) }} />
-          <div className="fixed right-0 bg-black/50 z-[40] pointer-events-none" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, left: rect!.right + pad }} />
+          <div className="fixed inset-x-0 top-0 bg-black/30 z-[40] pointer-events-none" style={{ height: rect!.top - pad }} />
+          <div className="fixed inset-x-0 bottom-0 bg-black/30 z-[40] pointer-events-none" style={{ top: rect!.bottom + pad }} />
+          <div className="fixed left-0 bg-black/30 z-[40] pointer-events-none" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, width: Math.max(0, rect!.left - pad) }} />
+          <div className="fixed right-0 bg-black/30 z-[40] pointer-events-none" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, left: rect!.right + pad }} />
         </>
       ) : (
-        <div className="fixed inset-0 bg-black/50 z-[40] pointer-events-none" />
+        <div className="fixed inset-0 bg-black/30 z-[40] pointer-events-none" />
       )}
 
       {/* Pulse ring */}
