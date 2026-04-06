@@ -96,7 +96,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     };
 
     // Delay search to let the tooltip fade out first (matches the 250ms in tooltip)
-    const delay = setTimeout(find, 300);
+    const delay = setTimeout(find, 500);
 
     return () => { cancelled = true; clearTimeout(delay); };
   }, [state.currentStep, state.isActive, state.completed, pathname, isAuthenticated]);

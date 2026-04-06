@@ -55,7 +55,7 @@ export function OnboardingTooltip({
   // Fade out → pause → fade in on step change
   useEffect(() => {
     setVisible(false); // exit: fade out
-    const t = setTimeout(() => setVisible(true), 250); // entrance: fade in after pause
+    const t = setTimeout(() => setVisible(true), 500); // entrance: fade in after pause
     return () => clearTimeout(t);
   }, [currentStepIndex]);
 
@@ -175,7 +175,7 @@ export function OnboardingTooltip({
       {/* Everything below fades on step change */}
       <div
         className={cn(
-          "transition-all duration-250 ease-in-out",
+          "transition-all duration-400 ease-in-out",
           visible ? "opacity-100" : "opacity-0",
         )}
       >
@@ -201,7 +201,7 @@ export function OnboardingTooltip({
         ref={tooltipRef}
         style={getTooltipStyle()}
         className={cn(
-          "pointer-events-auto transition-all duration-250 ease-in-out",
+          "pointer-events-auto transition-all duration-400 ease-in-out",
           visible ? "translate-y-0 opacity-100 ease-out" : "-translate-y-1 opacity-0 ease-in",
         )}
       >
