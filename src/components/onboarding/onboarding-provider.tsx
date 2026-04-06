@@ -173,9 +173,9 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       }}
     >
       {children}
-      {/* Persistent base dim for entire tutorial */}
-      {tutorialActive && (
-        <div className="fixed inset-0 bg-black/30 z-[39] pointer-events-none" />
+      {/* Dim between steps (when no anchor — box-shadow spotlight handles the rest) */}
+      {tutorialActive && !anchorElement && (
+        <div className="fixed inset-0 bg-black/50 z-[40] pointer-events-none" />
       )}
       {showTooltip && (
         <OnboardingTooltip

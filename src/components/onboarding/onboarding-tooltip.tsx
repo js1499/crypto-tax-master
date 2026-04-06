@@ -159,7 +159,7 @@ export function OnboardingTooltip({
       )}
     >
       {/* Spotlight overlay: box-shadow creates dim everywhere except the hole */}
-      {hasAnchor && (
+      {hasAnchor && visible && (
         <div
           className="fixed z-[40] pointer-events-none rounded-xl"
           style={{
@@ -173,7 +173,7 @@ export function OnboardingTooltip({
       )}
 
       {/* Pulse ring */}
-      {hasAnchor && (
+      {hasAnchor && visible && (
         <div
           className="fixed z-[41] pointer-events-none transition-all duration-300"
           style={{
