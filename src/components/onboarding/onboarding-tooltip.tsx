@@ -79,7 +79,7 @@ export function OnboardingTooltip({
   // Tooltip position
   const getTooltipStyle = (): React.CSSProperties => {
     if (!hasAnchor) {
-      return { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 10000 };
+      return { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 9999 };
     }
     const tooltipW = 380;
     const tooltipH = 220;
@@ -128,7 +128,7 @@ export function OnboardingTooltip({
     // Clamp vertically
     if (top < 12) top = 12;
 
-    return { position: "fixed", top, left, width: tooltipW, zIndex: 10000 };
+    return { position: "fixed", top, left, width: tooltipW, zIndex: 9999 };
   };
 
   return createPortal(
@@ -141,17 +141,17 @@ export function OnboardingTooltip({
       {/* 4-panel overlay with animated fade */}
       {hasAnchor && (
         <>
-          <div className="fixed inset-x-0 top-0 bg-black/50 z-[9998] pointer-events-none transition-all duration-300" style={{ height: rect!.top - pad }} />
-          <div className="fixed inset-x-0 bottom-0 bg-black/50 z-[9998] pointer-events-none transition-all duration-300" style={{ top: rect!.bottom + pad }} />
-          <div className="fixed left-0 bg-black/50 z-[9998] pointer-events-none transition-all duration-300" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, width: Math.max(0, rect!.left - pad) }} />
-          <div className="fixed right-0 bg-black/50 z-[9998] pointer-events-none transition-all duration-300" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, left: rect!.right + pad }} />
+          <div className="fixed inset-x-0 top-0 bg-black/50 z-[40] pointer-events-none transition-all duration-300" style={{ height: rect!.top - pad }} />
+          <div className="fixed inset-x-0 bottom-0 bg-black/50 z-[40] pointer-events-none transition-all duration-300" style={{ top: rect!.bottom + pad }} />
+          <div className="fixed left-0 bg-black/50 z-[40] pointer-events-none transition-all duration-300" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, width: Math.max(0, rect!.left - pad) }} />
+          <div className="fixed right-0 bg-black/50 z-[40] pointer-events-none transition-all duration-300" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, left: rect!.right + pad }} />
         </>
       )}
 
       {/* Pulse ring */}
       {hasAnchor && (
         <div
-          className="fixed z-[9999] pointer-events-none transition-all duration-300"
+          className="fixed z-[41] pointer-events-none transition-all duration-300"
           style={{
             top: rect!.top - pad,
             left: rect!.left - pad,
