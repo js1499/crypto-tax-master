@@ -22,34 +22,11 @@ export interface OnboardingState {
 }
 
 export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
-  // ── Settings ──
-  {
-    id: "nav-settings",
-    title: "Open Settings",
-    description: "First, let's configure your tax jurisdiction. Click Settings in the sidebar.",
-    targetElement: "[data-onboarding='nav-settings']",
-  },
-  {
-    id: "click-preferences",
-    title: "Go to Preferences",
-    description: "Click the Preferences tab to find your tax settings.",
-    targetPage: "/settings",
-    targetElement: "[data-onboarding='select-country']",
-  },
-  {
-    id: "select-jurisdiction",
-    title: "Select Your Country",
-    description: "Choose your tax jurisdiction from the dropdown. This determines cost basis method, holding period rules, and which tax forms are generated.",
-    targetPage: "/settings",
-    targetElement: "#tax-jurisdiction",
-    autoAdvance: true,
-  },
-
   // ── Accounts ──
   {
     id: "nav-accounts",
     title: "Connect Your Accounts",
-    description: "Now let's connect your wallets and exchanges. Click Accounts in the sidebar.",
+    description: "Let's connect your wallets and exchanges. Click Accounts in the sidebar.",
     targetElement: "[data-onboarding='nav-accounts']",
   },
   {
