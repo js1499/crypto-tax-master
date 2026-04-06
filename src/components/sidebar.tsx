@@ -33,6 +33,7 @@ interface NavItem {
   title: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  onboarding?: string;
 }
 
 interface NavGroup {
@@ -44,8 +45,8 @@ const navGroups: NavGroup[] = [
   {
     title: "Crypto",
     items: [
-      { title: "Accounts", href: "/accounts", icon: Landmark },
-      { title: "Transactions", href: "/transactions", icon: Wallet },
+      { title: "Accounts", href: "/accounts", icon: Landmark, onboarding: "nav-accounts" },
+      { title: "Transactions", href: "/transactions", icon: Wallet, onboarding: "nav-transactions" },
     ],
   },
   {
@@ -58,7 +59,7 @@ const navGroups: NavGroup[] = [
 ];
 
 const standaloneItems: NavItem[] = [
-  { title: "Tax Reports", href: "/tax-reports", icon: FileText },
+  { title: "Tax Reports", href: "/tax-reports", icon: FileText, onboarding: "nav-tax-reports" },
   { title: "Tax AI", href: "/tax-ai", icon: Sparkles },
   { title: "Tutorial", href: "/tutorial", icon: GraduationCap },
 ];
@@ -138,6 +139,7 @@ export function AppSidebar() {
                               isActive={isActive}
                               onClick={() => handleNavigation(item.href)}
                               className="h-9 pl-7"
+                              {...(item.onboarding ? { "data-onboarding": item.onboarding } : {})}
                             >
                               <item.icon className="h-[18px] w-[18px]" />
                               <span className="text-[14px]">{item.title}</span>
@@ -157,6 +159,7 @@ export function AppSidebar() {
                       isActive={isActive}
                       onClick={() => handleNavigation(item.href)}
                       className="h-9"
+                      {...(item.onboarding ? { "data-onboarding": item.onboarding } : {})}
                     >
                       <item.icon className="h-[18px] w-[18px]" />
                       <span className="text-[14px]">{item.title}</span>

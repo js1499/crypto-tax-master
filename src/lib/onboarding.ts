@@ -21,32 +21,23 @@ export interface OnboardingState {
 
 export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
-    id: "select-country",
-    title: "Set Your Tax Jurisdiction",
-    description: "Click the dropdown and select your country. This determines your cost basis method, holding period rules, and tax report formats.",
-    targetPage: "/settings",
-    targetElement: "[data-onboarding='select-country']",
-  },
-  {
     id: "connect-account",
-    title: "Add Your First Account",
-    description: "Click here to connect a wallet or exchange. You can add Solana, Ethereum, Bitcoin wallets, or link exchanges like Coinbase and Binance.",
-    targetPage: "/accounts",
-    targetElement: "[data-onboarding='connect-wallet']",
+    title: "Step 1: Add Your Accounts",
+    description: "Click Accounts to connect your wallets or exchanges. We'll sync transactions, pull prices, and compute cost basis automatically.",
+    // No targetPage — don't navigate. Target the sidebar link which is always visible.
+    targetElement: "[data-onboarding='nav-accounts']",
   },
   {
     id: "review-transactions",
-    title: "Review Your Transactions",
-    description: "After syncing, your transactions appear here. Check that types are correct, prices are filled, and nothing is missing. You can edit or reclassify any transaction.",
-    targetPage: "/transactions",
-    targetElement: "[data-onboarding='review-transactions']",
+    title: "Step 2: Review Transactions",
+    description: "Click Transactions to see your imported data. Verify types, prices, and categories. You can edit or reclassify anything.",
+    targetElement: "[data-onboarding='nav-transactions']",
   },
   {
     id: "download-reports",
-    title: "Download Your Tax Reports",
-    description: "Your tax forms are ready! Download Schedule D, Form 8949, and CSV exports. We generate the right reports for your jurisdiction automatically.",
-    targetPage: "/tax-reports",
-    targetElement: "[data-onboarding='download-reports']",
+    title: "Step 3: Download Tax Reports",
+    description: "Click Tax Reports to generate IRS forms and CSV exports. Set your country in Settings if you're outside the US.",
+    targetElement: "[data-onboarding='nav-tax-reports']",
   },
 ];
 
