@@ -132,12 +132,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       const next = { ...state, currentStep: state.currentStep + 1 };
       setState(next);
       saveOnboardingState(next);
-      setAnchorElement(null);
-      advanceRef.current = () => {}; // reset
+      // Don't clear anchorElement — keep old overlay visible until new anchor found
+      // The effect will set the new anchor when it finds the next step's element
     }
   }, [state]);
 
-  // Keep ref updated so MutationObserver can call latest handleNext
   advanceRef.current = handleNext;
 
   const handlePrevious = useCallback(() => {
@@ -145,7 +144,6 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       const next = { ...state, currentStep: state.currentStep - 1 };
       setState(next);
       saveOnboardingState(next);
-      setAnchorElement(null);
     }
   }, [state]);
 

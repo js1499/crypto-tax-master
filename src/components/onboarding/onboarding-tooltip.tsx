@@ -53,11 +53,12 @@ export function OnboardingTooltip({
   }, [updateRect]);
 
   // Fade-in animation on mount and step change
+  // Smooth transition: brief fade on step change only (not anchor changes)
   useEffect(() => {
     setVisible(false);
-    const t = setTimeout(() => setVisible(true), 50);
+    const t = setTimeout(() => setVisible(true), 80);
     return () => clearTimeout(t);
-  }, [currentStepIndex, anchorElement]);
+  }, [currentStepIndex]);
 
   // Click on anchor advances the tutorial (only if autoAdvance is not false)
   const shouldAutoAdvance = step.autoAdvance !== false;
