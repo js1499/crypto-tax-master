@@ -94,13 +94,21 @@ export function OnboardingTooltip({
     let top: number;
     let left: number;
 
-    if (spaceRight > tooltipW + gap + 20) {
+    const spaceLeft = rect!.left;
+    const isTopRight = rect!.top < vh / 3 && rect!.right > vw / 2;
+
+    if (isTopRight && spaceLeft > tooltipW + gap) {
+      // Target is top-right — position to the LEFT so dropdown has room below
+      top = rect!.top;
+      left = rect!.left - tooltipW - gap;
+      if (top + tooltipH > vh - 12) top = vh - tooltipH - 12;
+    } else if (spaceRight > tooltipW + gap + 20) {
       // Position to the right (best for sidebar nav items)
       top = rect!.top;
       left = rect!.right + gap;
       if (top + tooltipH > vh - 12) top = vh - tooltipH - 12;
     } else if (spaceBelow > tooltipH + gap + 80) {
-      // Position below — only if plenty of room (leave 80px for dropdowns)
+      // Position below with clearance for dropdowns
       top = rect!.bottom + gap;
       left = rect!.left + rect!.width / 2 - tooltipW / 2;
     } else if (spaceAbove > tooltipH + gap) {
@@ -108,9 +116,9 @@ export function OnboardingTooltip({
       top = rect!.top - tooltipH - gap;
       left = rect!.left + rect!.width / 2 - tooltipW / 2;
     } else {
-      // Fallback: position at bottom-right of viewport out of the way
+      // Fallback: bottom-left corner
       top = vh - tooltipH - 20;
-      left = vw - tooltipW - 20;
+      left = 20;
     }
 
     // Clamp horizontally
