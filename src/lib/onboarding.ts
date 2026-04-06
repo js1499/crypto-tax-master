@@ -55,10 +55,9 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
     id: "click-add-account",
     title: "Add an Account",
-    description: "Click Add Account, then choose 'Add One Account' for a single wallet/exchange, or 'Add Multiple' to add several at once.",
+    description: "Click Add Account, then choose 'Add One Account' or 'Add Multiple' from the dropdown.",
     targetPage: "/accounts",
     targetElement: "[data-onboarding='connect-wallet']",
-    autoAdvance: false,
   },
   {
     id: "add-account-dialog",
