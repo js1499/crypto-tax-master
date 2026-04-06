@@ -59,20 +59,20 @@ export function OnboardingTooltip({
     };
   }, [updateRect]);
 
-  // Listen for clicks on the anchor element to advance
+  // Listen for clicks on the anchor element to advance.
+  // Use capture phase + synchronous save so it persists before
+  // any full-page navigation (window.location.href) fires.
   useEffect(() => {
     if (!anchorElement) return;
 
     const handleClick = () => {
-      // Small delay so the button's own click handler fires first
-      setTimeout(() => {
-        if (isLastStep) onComplete();
-        else onNext();
-      }, 200);
+      if (isLastStep) onComplete();
+      else onNext();
     };
 
-    anchorElement.addEventListener("click", handleClick);
-    return () => anchorElement.removeEventListener("click", handleClick);
+    // Capture phase fires before the element's own click handler
+    anchorElement.addEventListener("click", handleClick, true);
+    return () => anchorElement.removeEventListener("click", handleClick, true);
   }, [anchorElement, onNext, onComplete, isLastStep]);
 
   if (typeof window === "undefined") return null;

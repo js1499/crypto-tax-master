@@ -82,7 +82,8 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
 ];
 
 /**
- * TESTING MODE: Set to true to force onboarding on every page load for every user.
+ * TESTING MODE: Set to true to force onboarding for every user.
+ * When true, onboarding auto-starts if not already in progress.
  * Set back to false before shipping to production.
  */
 const FORCE_ONBOARDING = true;
@@ -100,38 +101,45 @@ export function getOnboardingState(): OnboardingState {
     };
   }
 
-  // Testing mode: always start fresh
-  if (FORCE_ONBOARDING) {
-    return {
-      isActive: true,
-      currentStep: 0,
-      steps: ONBOARDING_STEPS.map((step) => ({ ...step, completed: false })),
-      completed: false,
-    };
-  }
-
   try {
     const stored = localStorage.getItem("onboarding_state");
     if (stored) {
       const parsed = JSON.parse(stored);
-      return {
+      const state: OnboardingState = {
         ...parsed,
         steps: ONBOARDING_STEPS.map((step, index) => ({
           ...step,
           completed: parsed.steps?.[index]?.completed || false,
         })),
       };
+
+      // FORCE_ONBOARDING: if tutorial was completed or skipped, restart it
+      if (FORCE_ONBOARDING && (!state.isActive || state.completed)) {
+        const fresh: OnboardingState = {
+          isActive: true,
+          currentStep: 0,
+          steps: ONBOARDING_STEPS.map((step) => ({ ...step, completed: false })),
+          completed: false,
+        };
+        saveOnboardingState(fresh);
+        return fresh;
+      }
+
+      return state;
     }
   } catch (error) {
     console.error("[Onboarding] Error reading state:", error);
   }
 
-  return {
+  // No stored state — start fresh (always active for new users)
+  const fresh: OnboardingState = {
     isActive: true,
     currentStep: 0,
     steps: ONBOARDING_STEPS.map((step) => ({ ...step, completed: false })),
     completed: false,
   };
+  saveOnboardingState(fresh);
+  return fresh;
 }
 
 /**
