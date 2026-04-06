@@ -52,9 +52,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
   // Single effect: navigate to target page + find anchor element
   useEffect(() => {
-    console.log("[Onboarding]", { isActive: state.isActive, completed: state.completed, isAuthenticated, step: state.currentStep, pathname });
     if (!state.isActive || state.completed || !isAuthenticated) {
-      console.log("[Onboarding] Skipping — inactive/completed/unauthed");
       setAnchorElement(null);
       return;
     }
@@ -85,45 +83,18 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       const el = step.targetElement
         ? (document.querySelector(step.targetElement) as HTMLElement)
         : null;
-      console.log("[Onboarding] find attempt", attempts, "selector:", step.targetElement, "found:", !!el);
       if (el) {
-        console.log("[Onboarding] Found! Setting anchor.");
         setAnchorElement(el);
         el.scrollIntoView({ behavior: "smooth", block: "center" });
       } else if (attempts < 30) {
         attempts++;
         setTimeout(find, 300);
-      } else {
-        console.log("[Onboarding] Gave up after 30 attempts");
       }
     };
 
     find();
 
-    // Watch for dynamic elements (dialogs/popups) appearing.
-    // If the NEXT step's target appears in the DOM, auto-advance to it.
-    // But ONLY if the current step auto-advances (not a "interact then click Next" step).
-    const nextStep = state.steps[state.currentStep + 1];
-    const currentAutoAdvance = step.autoAdvance !== false;
-    let observer: MutationObserver | null = null;
-    if (nextStep?.targetElement && currentAutoAdvance) {
-      observer = new MutationObserver(() => {
-        if (cancelled) return;
-        const nextEl = document.querySelector(nextStep.targetElement!) as HTMLElement;
-        if (nextEl) {
-          observer?.disconnect();
-          setTimeout(() => {
-            if (!cancelled) advanceRef.current();
-          }, 150);
-        }
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-    }
-
-    return () => {
-      cancelled = true;
-      observer?.disconnect();
-    };
+    return () => { cancelled = true; };
   }, [state.currentStep, state.isActive, state.completed, pathname, isAuthenticated]);
 
   const startOnboarding = useCallback(() => {
