@@ -158,16 +158,18 @@ export function OnboardingTooltip({
         visible ? "opacity-100" : "opacity-0",
       )}
     >
-      {/* Overlay: full dim when searching, 4-panel spotlight when found */}
-      {hasAnchor ? (
-        <>
-          <div className="fixed inset-x-0 top-0 bg-black/30 z-[40] pointer-events-none" style={{ height: rect!.top - pad }} />
-          <div className="fixed inset-x-0 bottom-0 bg-black/30 z-[40] pointer-events-none" style={{ top: rect!.bottom + pad }} />
-          <div className="fixed left-0 bg-black/30 z-[40] pointer-events-none" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, width: Math.max(0, rect!.left - pad) }} />
-          <div className="fixed right-0 bg-black/30 z-[40] pointer-events-none" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, left: rect!.right + pad }} />
-        </>
-      ) : (
-        <div className="fixed inset-0 bg-black/30 z-[40] pointer-events-none" />
+      {/* Spotlight overlay: box-shadow creates dim everywhere except the hole */}
+      {hasAnchor && (
+        <div
+          className="fixed z-[40] pointer-events-none rounded-xl"
+          style={{
+            top: rect!.top - pad,
+            left: rect!.left - pad,
+            width: rect!.width + pad * 2,
+            height: rect!.height + pad * 2,
+            boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
+          }}
+        />
       )}
 
       {/* Pulse ring */}
