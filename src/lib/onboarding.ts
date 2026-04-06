@@ -30,7 +30,7 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
     id: "select-country",
     title: "Select Your Country",
-    description: "Choose your tax jurisdiction. This determines cost basis rules, holding periods, and report formats.",
+    description: "Click the Preferences tab, then choose your tax jurisdiction. This determines cost basis rules, holding periods, and report formats.",
     targetPage: "/settings",
     targetElement: "[data-onboarding='select-country']",
   },

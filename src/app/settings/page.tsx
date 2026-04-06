@@ -106,7 +106,7 @@ export default function SettingsPage() {
               <Key className="mr-2 h-4 w-4" />
               Account
             </TabsTrigger>
-            <TabsTrigger value="preferences">
+            <TabsTrigger value="preferences" data-onboarding="select-country">
               <Bell className="mr-2 h-4 w-4" />
               Preferences
             </TabsTrigger>
