@@ -59,16 +59,17 @@ export function OnboardingTooltip({
     return () => clearTimeout(t);
   }, [currentStepIndex, anchorElement]);
 
-  // Click on anchor advances the tutorial
+  // Click on anchor advances the tutorial (only if autoAdvance is not false)
+  const shouldAutoAdvance = step.autoAdvance !== false;
   useEffect(() => {
-    if (!anchorElement) return;
+    if (!anchorElement || !shouldAutoAdvance) return;
     const handleClick = () => {
       if (isLastStep) onComplete();
       else onNext();
     };
     anchorElement.addEventListener("click", handleClick, true);
     return () => anchorElement.removeEventListener("click", handleClick, true);
-  }, [anchorElement, onNext, onComplete, isLastStep]);
+  }, [anchorElement, onNext, onComplete, isLastStep, shouldAutoAdvance]);
 
   if (typeof window === "undefined") return null;
 
@@ -201,7 +202,9 @@ export function OnboardingTooltip({
               <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#EFF6FF] dark:bg-[rgba(37,99,235,0.08)] border border-[#BFDBFE] dark:border-[#1E3A5F]">
                 <div className="h-2 w-2 rounded-full bg-[#2563EB] animate-pulse shrink-0" />
                 <p className="text-[12px] font-medium text-[#2563EB]">
-                  Click the highlighted element, or use the buttons below
+                  {shouldAutoAdvance
+                    ? "Click the highlighted element to continue"
+                    : "Interact with the highlighted area, then click Next"}
                 </p>
               </div>
             )}

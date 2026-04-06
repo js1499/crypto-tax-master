@@ -628,11 +628,11 @@ function AccountsContent() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-48">
-                <DropdownMenuItem onSelect={() => setTimeout(() => { setAddDialogBulk(false); setIsAddDialogOpen(true); }, 10)}>
+                <DropdownMenuItem data-onboarding="add-one-account" onSelect={() => setTimeout(() => { setAddDialogBulk(false); setIsAddDialogOpen(true); }, 10)}>
                   <Plus className="mr-2 h-4 w-4" />
                   Add One Account
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => setTimeout(() => { setAddDialogBulk(true); setIsAddDialogOpen(true); }, 10)}>
+                <DropdownMenuItem data-onboarding="add-multiple" onSelect={() => setTimeout(() => { setAddDialogBulk(true); setIsAddDialogOpen(true); }, 10)}>
                   <PlusCircle className="mr-2 h-4 w-4" />
                   Add Multiple
                 </DropdownMenuItem>
@@ -1017,7 +1017,7 @@ function AccountsContent() {
       </div>
 
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto" data-onboarding="add-account-dialog">
           <DialogHeader>
             <DialogTitle>Add Account</DialogTitle>
             <DialogDescription>

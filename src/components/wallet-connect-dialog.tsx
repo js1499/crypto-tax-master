@@ -320,9 +320,9 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
 
   return (
     <Tabs defaultValue="wallets" className="w-full">
-      <TabsList className="grid w-full grid-cols-3">
-        <TabsTrigger value="wallets">Wallets</TabsTrigger>
-        <TabsTrigger value="exchanges">Exchanges</TabsTrigger>
+      <TabsList className="grid w-full grid-cols-3" data-onboarding="dialog-tabs">
+        <TabsTrigger value="wallets" data-onboarding="tab-wallets">Wallets</TabsTrigger>
+        <TabsTrigger value="exchanges" data-onboarding="tab-exchanges">Exchanges</TabsTrigger>
         <TabsTrigger value="csv">CSV Upload</TabsTrigger>
       </TabsList>
 
@@ -493,9 +493,9 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
         ) : (
           /* ── Wallet Selection Grid ── */
           <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-3" data-onboarding="wallet-grid">
               {WALLET_OPTIONS.map((option) => (
-                <button key={option.id} onClick={() => setSelectedWallet(option.id)} className="aspect-square flex flex-col items-center justify-center gap-2 rounded-xl border border-[#E5E5E0] dark:border-[#333] hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
+                <button key={option.id} data-onboarding={`wallet-${option.id}`} onClick={() => setSelectedWallet(option.id)} className="aspect-square flex flex-col items-center justify-center gap-2 rounded-xl border border-[#E5E5E0] dark:border-[#333] hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
                   <img src={option.logo} alt={option.name} className="h-10 w-10 rounded-full" />
                   <span className="text-[13px] font-medium">{option.name}</span>
                 </button>

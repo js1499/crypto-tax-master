@@ -9,6 +9,8 @@ export interface OnboardingStep {
   description: string;
   targetPage?: string;
   targetElement?: string;
+  /** If true, auto-advance when target is clicked (default true). Set false for steps where user needs to interact then hit Next. */
+  autoAdvance?: boolean;
   completed: boolean;
 }
 
@@ -37,9 +39,10 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
     id: "select-jurisdiction",
     title: "Select Your Country",
-    description: "Choose your tax jurisdiction from the dropdown. This determines cost basis method, holding period rules, and which tax forms are generated.",
+    description: "Choose your tax jurisdiction from the dropdown. This determines cost basis method, holding period rules, and which tax forms are generated. Click Next when done.",
     targetPage: "/settings",
     targetElement: "#tax-jurisdiction",
+    autoAdvance: false,
   },
 
   // ── Accounts ──
@@ -50,26 +53,40 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
     targetElement: "[data-onboarding='nav-accounts']",
   },
   {
-    id: "add-account",
-    title: "Add Your Accounts",
-    description: "Click Add Account to connect wallets, exchanges, or import CSVs. You can add one at a time or add multiple. After adding, we'll automatically sync transactions, pull prices, and compute cost basis.",
+    id: "click-add-account",
+    title: "Add an Account",
+    description: "Click the Add Account button to see your options.",
     targetPage: "/accounts",
     targetElement: "[data-onboarding='connect-wallet']",
+  },
+  {
+    id: "choose-add-type",
+    title: "Choose How to Add",
+    description: "Select 'Add One Account' to add a single wallet or exchange, or 'Add Multiple' to add several at once. Click your choice.",
+    targetElement: "[data-onboarding='add-one-account']",
+  },
+  {
+    id: "dialog-walkthrough",
+    title: "Connect Your Wallet",
+    description: "Choose Wallets, Exchanges, or CSV Upload. Select your wallet type (SOL, ETH, BTC), enter your address, and click Add & Sync. We'll automatically sync transactions, pull prices, and compute cost basis. Click Next when ready.",
+    targetElement: "[data-onboarding='dialog-tabs']",
+    autoAdvance: false,
   },
 
   // ── Transactions ──
   {
     id: "nav-transactions",
     title: "Review Your Transactions",
-    description: "Once your wallets are synced and the progress bar completes, click Transactions to review your data.",
+    description: "Once your wallets are synced (check the progress bar in the bottom right), click Transactions to review your data.",
     targetElement: "[data-onboarding='nav-transactions']",
   },
   {
     id: "view-transactions",
     title: "Your Transaction Ledger",
-    description: "This is your full transaction history. Verify types, prices, and gain/loss are correct. You can filter, edit, or reclassify any transaction.",
+    description: "This is your full transaction history. Verify types, prices, and gain/loss are correct. You can filter, search, edit, or reclassify any transaction. Click Next when done reviewing.",
     targetPage: "/transactions",
     targetElement: "[data-onboarding='review-transactions']",
+    autoAdvance: false,
   },
 
   // ── Tax Reports ──
@@ -81,10 +98,11 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   },
   {
     id: "download-reports",
-    title: "Your Tax Forms",
-    description: "Download your required IRS forms here: Schedule D (capital gains summary), Form 8949 (detailed transactions), and Schedule 1 (crypto income). CSV exports for TurboTax are also available.",
+    title: "Your Required Tax Forms",
+    description: "For US taxpayers, you'll need: Schedule D (capital gains summary), Form 8949 (detailed transaction list), and Schedule 1 (crypto income). TurboTax-compatible CSV exports are also available. Download what you need!",
     targetPage: "/tax-reports",
     targetElement: "[data-onboarding='download-reports']",
+    autoAdvance: false,
   },
 ];
 
