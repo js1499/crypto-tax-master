@@ -177,6 +177,12 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       }}
     >
       {children}
+      {/* Persistent light dim — always mounted while tutorial active.
+          The spotlight box-shadow (z-40) adds more darkness outside the hole.
+          Hole area gets only this light dim (15%), outside gets ~55% total. */}
+      {tutorialActive && (
+        <div className="fixed inset-0 z-[39] pointer-events-none" style={{ backgroundColor: "rgba(0,0,0,0.15)" }} />
+      )}
       {showTooltip && (
         <OnboardingTooltip
           step={currentStep}

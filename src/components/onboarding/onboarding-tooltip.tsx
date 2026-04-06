@@ -162,20 +162,20 @@ export function OnboardingTooltip({
           left: rect!.left - pad,
           width: rect!.width + pad * 2,
           height: rect!.height + pad * 2,
-          boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
+          boxShadow: "0 0 0 9999px rgba(0,0,0,0.4)",
         } : {
           top: 0,
           left: 0,
           width: 0,
           height: 0,
-          boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
+          boxShadow: "0 0 0 9999px rgba(0,0,0,0.4)",
         }}
       />
 
       {/* Everything below fades on step change */}
       <div
         className={cn(
-          "transition-opacity duration-200",
+          "transition-all duration-250 ease-in-out",
           visible ? "opacity-100" : "opacity-0",
         )}
       >
@@ -201,7 +201,7 @@ export function OnboardingTooltip({
         ref={tooltipRef}
         style={getTooltipStyle()}
         className={cn(
-          "pointer-events-auto transition-all duration-200",
+          "pointer-events-auto transition-all duration-250 ease-in-out",
           visible ? "translate-y-0 opacity-100 ease-out" : "-translate-y-1 opacity-0 ease-in",
         )}
       >
