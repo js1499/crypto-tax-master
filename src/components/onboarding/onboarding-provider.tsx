@@ -84,6 +84,9 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
         ? (document.querySelector(step.targetElement) as HTMLElement)
         : null;
       if (el) {
+        // Elevate target above the base dim overlay (z-39)
+        el.style.position = el.style.position || "relative";
+        el.style.zIndex = "41";
         setAnchorElement(el);
         el.scrollIntoView({ behavior: "smooth", block: "center" });
       } else if (attempts < 30) {
@@ -94,7 +97,16 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
     find();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      // Restore the previous element's z-index
+      if (anchorElement) {
+        anchorElement.style.zIndex = "";
+        if (anchorElement.style.position === "relative" && !anchorElement.getAttribute("class")?.includes("relative")) {
+          anchorElement.style.position = "";
+        }
+      }
+    };
   }, [state.currentStep, state.isActive, state.completed, pathname, isAuthenticated]);
 
   const startOnboarding = useCallback(() => {
