@@ -158,7 +158,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   }, [completeCurrentStep]);
 
   const currentStep = state.steps[state.currentStep];
-  const showTooltip = isAuthenticated && state.isActive && !state.completed && currentStep && anchorElement;
+  const tutorialActive = isAuthenticated && state.isActive && !state.completed && currentStep;
+  const showTooltip = tutorialActive && anchorElement;
 
   return (
     <OnboardingContext.Provider
@@ -172,6 +173,10 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       }}
     >
       {children}
+      {/* Persistent dim for entire tutorial duration */}
+      {tutorialActive && (
+        <div className="fixed inset-0 bg-black/40 z-[39] pointer-events-none" />
+      )}
       {showTooltip && (
         <OnboardingTooltip
           step={currentStep}
