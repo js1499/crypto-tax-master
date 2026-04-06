@@ -158,19 +158,25 @@ export function OnboardingTooltip({
         visible ? "opacity-100" : "opacity-0",
       )}
     >
-      {/* Spotlight overlay: box-shadow creates dim everywhere except the hole */}
-      {hasAnchor && visible && (
-        <div
-          className="fixed z-[40] pointer-events-none rounded-xl"
-          style={{
-            top: rect!.top - pad,
-            left: rect!.left - pad,
-            width: rect!.width + pad * 2,
-            height: rect!.height + pad * 2,
-            boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
-          }}
-        />
-      )}
+      {/* Single overlay div — always rendered, never unmounts.
+          With anchor: positioned as spotlight hole with box-shadow dim.
+          Without anchor: zero-size at 0,0 so box-shadow covers everything. */}
+      <div
+        className="fixed z-[40] pointer-events-none rounded-xl"
+        style={hasAnchor && visible ? {
+          top: rect!.top - pad,
+          left: rect!.left - pad,
+          width: rect!.width + pad * 2,
+          height: rect!.height + pad * 2,
+          boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
+        } : {
+          top: 0,
+          left: 0,
+          width: 0,
+          height: 0,
+          boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
+        }}
+      />
 
       {/* Pulse ring */}
       {hasAnchor && visible && (

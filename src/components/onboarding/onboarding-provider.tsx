@@ -177,10 +177,6 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       }}
     >
       {children}
-      {/* Dim between steps (when no anchor — box-shadow spotlight handles the rest) */}
-      {tutorialActive && !anchorElement && (
-        <div className="fixed inset-0 bg-black/50 z-[40] pointer-events-none" />
-      )}
       {showTooltip && (
         <OnboardingTooltip
           step={currentStep}
