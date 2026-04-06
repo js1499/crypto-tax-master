@@ -44,6 +44,7 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   // Initialize state once from localStorage/FORCE_ONBOARDING
   const [state, setState] = useState<OnboardingState>(() => getOnboardingState());
   const [anchorElement, setAnchorElement] = useState<HTMLElement | null>(null);
+  const advanceRef = useRef<() => void>(() => {});
   const router = useRouter();
   const pathname = usePathname();
   const { status } = useSession();
@@ -99,7 +100,28 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
     find();
 
-    return () => { cancelled = true; };
+    // Watch for dynamic elements (dialogs/popups) appearing.
+    // If the NEXT step's target appears in the DOM, auto-advance to it.
+    const nextStep = state.steps[state.currentStep + 1];
+    let observer: MutationObserver | null = null;
+    if (nextStep?.targetElement) {
+      observer = new MutationObserver(() => {
+        if (cancelled) return;
+        const nextEl = document.querySelector(nextStep.targetElement!) as HTMLElement;
+        if (nextEl) {
+          observer?.disconnect();
+          setTimeout(() => {
+            if (!cancelled) advanceRef.current();
+          }, 150);
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+    };
   }, [state.currentStep, state.isActive, state.completed, pathname, isAuthenticated]);
 
   const startOnboarding = useCallback(() => {
@@ -138,8 +160,12 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       setState(next);
       saveOnboardingState(next);
       setAnchorElement(null);
+      advanceRef.current = () => {}; // reset
     }
   }, [state]);
+
+  // Keep ref updated so MutationObserver can call latest handleNext
+  advanceRef.current = handleNext;
 
   const handlePrevious = useCallback(() => {
     if (state.currentStep > 0) {

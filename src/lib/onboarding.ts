@@ -55,21 +55,16 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
     id: "click-add-account",
     title: "Add an Account",
-    description: "Click the Add Account button to see your options.",
+    description: "Click Add Account, then choose 'Add One Account' for a single wallet/exchange, or 'Add Multiple' to add several at once.",
     targetPage: "/accounts",
     targetElement: "[data-onboarding='connect-wallet']",
+    autoAdvance: false,
   },
   {
-    id: "choose-add-type",
-    title: "Choose How to Add",
-    description: "Select 'Add One Account' to add a single wallet or exchange, or 'Add Multiple' to add several at once. Click your choice.",
-    targetElement: "[data-onboarding='add-one-account']",
-  },
-  {
-    id: "dialog-walkthrough",
-    title: "Connect Your Wallet",
-    description: "Choose Wallets, Exchanges, or CSV Upload. Select your wallet type (SOL, ETH, BTC), enter your address, and click Add & Sync. We'll automatically sync transactions, pull prices, and compute cost basis. Click Next when ready.",
-    targetElement: "[data-onboarding='dialog-tabs']",
+    id: "add-account-dialog",
+    title: "Set Up Your Account",
+    description: "Use the Wallets tab to connect on-chain wallets (SOL, ETH, BTC), the Exchanges tab for API connections (Coinbase, Binance), or CSV Upload to import transaction files. Enter your details and click Add & Sync. Click Next when done adding accounts.",
+    targetElement: "[data-onboarding='add-account-dialog']",
     autoAdvance: false,
   },
 
