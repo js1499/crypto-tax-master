@@ -111,9 +111,22 @@ export function getOnboardingState(): OnboardingState {
 
       // If actively in progress, return stored state (preserves currentStep across reloads)
       if (parsed.isActive && !parsed.completed) {
+        // Validate currentStep is within bounds (steps may have changed)
+        const currentStep = (parsed.currentStep || 0) < ONBOARDING_STEPS.length
+          ? (parsed.currentStep || 0)
+          : 0;
+        // Also validate the step ID matches — if steps were reorganized, reset
+        const storedStepId = parsed.steps?.[currentStep]?.id;
+        const expectedStepId = ONBOARDING_STEPS[currentStep]?.id;
+        if (storedStepId && expectedStepId && storedStepId !== expectedStepId) {
+          // Steps changed — restart
+          const fresh = freshState();
+          saveOnboardingState(fresh);
+          return fresh;
+        }
         return {
           isActive: true,
-          currentStep: parsed.currentStep || 0,
+          currentStep,
           steps: ONBOARDING_STEPS.map((step, i) => ({
             ...step,
             completed: parsed.steps?.[i]?.completed || false,
