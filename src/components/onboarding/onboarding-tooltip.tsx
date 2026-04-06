@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { X } from "lucide-react";
+import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { OnboardingStep } from "@/lib/onboarding";
 
@@ -166,15 +166,16 @@ export function OnboardingTooltip({
               <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#EFF6FF] dark:bg-[rgba(37,99,235,0.08)] border border-[#BFDBFE] dark:border-[#1E3A5F]">
                 <div className="h-2 w-2 rounded-full bg-[#2563EB] animate-pulse shrink-0" />
                 <p className="text-[12px] font-medium text-[#2563EB]">
-                  Click the highlighted element to continue
+                  Click the highlighted element, or use the buttons below
                 </p>
               </div>
             )}
 
+            {/* Progress + navigation */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-[#9CA3AF]">
-                  {currentStepIndex + 1} / {totalSteps}
+                <span className="text-[11px] text-[#9CA3AF]" style={{ fontVariantNumeric: "tabular-nums" }}>
+                  {currentStepIndex + 1}/{totalSteps}
                 </span>
                 <div className="flex gap-1">
                   {Array.from({ length: totalSteps }).map((_, i) => (
@@ -192,12 +193,39 @@ export function OnboardingTooltip({
                   ))}
                 </div>
               </div>
-              <button
-                onClick={onSkip}
-                className="text-[12px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
-              >
-                Skip tutorial
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={onSkip}
+                  className="text-[12px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors mr-1"
+                >
+                  Skip
+                </button>
+                {currentStepIndex > 0 && (
+                  <button
+                    onClick={onPrevious}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[12px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors"
+                  >
+                    <ChevronLeft className="h-3 w-3" />
+                    Back
+                  </button>
+                )}
+                {!isLastStep ? (
+                  <button
+                    onClick={onNext}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#2563EB] text-white text-[12px] font-medium hover:bg-[#1D4ED8] transition-colors"
+                  >
+                    Next
+                    <ChevronRight className="h-3 w-3" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={onComplete}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#16A34A] text-white text-[12px] font-medium hover:bg-[#15803D] transition-colors"
+                  >
+                    Done
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
