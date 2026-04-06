@@ -173,9 +173,9 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       }}
     >
       {children}
-      {/* Persistent dim for entire tutorial duration */}
-      {tutorialActive && (
-        <div className="fixed inset-0 bg-black/40 z-[39] pointer-events-none" />
+      {/* Persistent base dim — only when tooltip is NOT showing (between steps) */}
+      {tutorialActive && !anchorElement && (
+        <div className="fixed inset-0 bg-black/50 z-[39] pointer-events-none" />
       )}
       {showTooltip && (
         <OnboardingTooltip
