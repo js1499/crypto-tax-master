@@ -124,34 +124,51 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
 
   // Find anchor element for current step
   useEffect(() => {
+    console.log("[Onboarding] Effect fired:", { isActive: state.isActive, completed: state.completed, currentStep: state.currentStep, pathname, isAuthenticated, status });
+
     if (!state.isActive || state.completed) {
+      console.log("[Onboarding] Inactive or completed, clearing anchor");
       setAnchorElement(null);
       return;
     }
 
     const currentStep = state.steps[state.currentStep];
     if (!currentStep) {
+      console.log("[Onboarding] No current step at index", state.currentStep);
       setAnchorElement(null);
       return;
     }
 
-    // Navigate to target page if needed (but not on public pages like login/register)
-    const isPublicPage = pathname === "/login" || pathname === "/register";
-    if (currentStep.targetPage && pathname !== currentStep.targetPage && !isPublicPage && isAuthenticated) {
-      router.push(currentStep.targetPage);
+    console.log("[Onboarding] Current step:", currentStep.id, "target:", currentStep.targetPage, currentStep.targetElement);
+
+    // Don't navigate if not yet authenticated
+    if (!isAuthenticated) {
+      console.log("[Onboarding] Not authenticated yet, waiting...");
       return;
     }
 
-    // Find the target element with retries (page may still be rendering)
+    // Navigate to target page if needed
+    const isPublicPage = pathname === "/login" || pathname === "/register";
+    const normalizedPath = pathname.replace(/\/$/, "") || "/";
+    const targetPath = currentStep.targetPage?.replace(/\/$/, "") || "";
+
+    if (targetPath && normalizedPath !== targetPath && !isPublicPage) {
+      console.log("[Onboarding] Navigating from", normalizedPath, "to", targetPath);
+      router.push(targetPath);
+      return;
+    }
+
+    console.log("[Onboarding] On correct page, looking for element:", currentStep.targetElement);
+
+    // Find the target element with retries
     let attempts = 0;
-    const maxAttempts = 20; // 20 x 250ms = 5 seconds max
+    const maxAttempts = 20;
 
     const findElement = () => {
       if (currentStep.targetElement) {
-        const element = document.querySelector(
-          currentStep.targetElement
-        ) as HTMLElement;
+        const element = document.querySelector(currentStep.targetElement) as HTMLElement;
         if (element) {
+          console.log("[Onboarding] Found element!", currentStep.targetElement);
           setAnchorElement(element);
           element.scrollIntoView({ behavior: "smooth", block: "center" });
           return true;
@@ -161,19 +178,18 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       return false;
     };
 
-    // Try immediately
     if (findElement()) return;
 
-    // Retry with interval until found or max attempts
     const interval = setInterval(() => {
       attempts++;
       if (findElement() || attempts >= maxAttempts) {
+        if (attempts >= maxAttempts) console.log("[Onboarding] Gave up finding element after", maxAttempts, "attempts");
         clearInterval(interval);
       }
     }, 250);
 
     return () => clearInterval(interval);
-  }, [state.currentStep, state.isActive, state.completed, pathname, router]);
+  }, [state.currentStep, state.isActive, state.completed, pathname, isAuthenticated, status]);
 
   const startOnboarding = () => {
     // Force a fresh start — briefly set inactive then active to ensure React detects the change
