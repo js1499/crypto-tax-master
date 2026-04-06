@@ -74,7 +74,10 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       return;
     }
 
-    // On the right page — find the element with retries
+    // Clear old anchor immediately, then wait for fade-out to finish
+    // before searching for the new element (prevents ghost highlights)
+    setAnchorElement(null);
+
     let cancelled = false;
     let attempts = 0;
 
@@ -92,9 +95,10 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
       }
     };
 
-    find();
+    // Delay search to let the tooltip fade out first (matches the 250ms in tooltip)
+    const delay = setTimeout(find, 300);
 
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(delay); };
   }, [state.currentStep, state.isActive, state.completed, pathname, isAuthenticated]);
 
   const startOnboarding = useCallback(() => {
