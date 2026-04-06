@@ -102,9 +102,11 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
     // Watch for dynamic elements (dialogs/popups) appearing.
     // If the NEXT step's target appears in the DOM, auto-advance to it.
+    // But ONLY if the current step auto-advances (not a "interact then click Next" step).
     const nextStep = state.steps[state.currentStep + 1];
+    const currentAutoAdvance = step.autoAdvance !== false;
     let observer: MutationObserver | null = null;
-    if (nextStep?.targetElement) {
+    if (nextStep?.targetElement && currentAutoAdvance) {
       observer = new MutationObserver(() => {
         if (cancelled) return;
         const nextEl = document.querySelector(nextStep.targetElement!) as HTMLElement;
