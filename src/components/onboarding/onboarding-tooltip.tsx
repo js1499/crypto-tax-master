@@ -63,12 +63,32 @@ export function OnboardingTooltip({
   const shouldAutoAdvance = step.autoAdvance !== false;
   useEffect(() => {
     if (!anchorElement || !shouldAutoAdvance) return;
-    const handleClick = () => {
+
+    const advance = () => {
       if (isLastStep) onComplete();
       else onNext();
     };
-    anchorElement.addEventListener("click", handleClick, true);
-    return () => anchorElement.removeEventListener("click", handleClick, true);
+
+    // Standard click handler (capture phase for sidebar links)
+    anchorElement.addEventListener("click", advance, true);
+
+    // For Radix Select triggers: watch for the dropdown to close after opening
+    // (data-state goes "open" → "closed" = selection made)
+    let wasOpen = false;
+    const attrObserver = new MutationObserver(() => {
+      const state = anchorElement.getAttribute("data-state");
+      if (state === "open") wasOpen = true;
+      if (state === "closed" && wasOpen) {
+        wasOpen = false;
+        setTimeout(advance, 100);
+      }
+    });
+    attrObserver.observe(anchorElement, { attributes: true, attributeFilter: ["data-state"] });
+
+    return () => {
+      anchorElement.removeEventListener("click", advance, true);
+      attrObserver.disconnect();
+    };
   }, [anchorElement, onNext, onComplete, isLastStep, shouldAutoAdvance]);
 
   if (typeof window === "undefined") return null;

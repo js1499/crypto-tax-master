@@ -39,10 +39,10 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
     id: "select-jurisdiction",
     title: "Select Your Country",
-    description: "Choose your tax jurisdiction from the dropdown. This determines cost basis method, holding period rules, and which tax forms are generated. Click Next when done.",
+    description: "Choose your tax jurisdiction from the dropdown. This determines cost basis method, holding period rules, and which tax forms are generated.",
     targetPage: "/settings",
     targetElement: "#tax-jurisdiction",
-    autoAdvance: false,
+    autoAdvance: true,
   },
 
   // ── Accounts ──
@@ -62,7 +62,7 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
     id: "add-account-dialog",
     title: "Set Up Your Account",
-    description: "Use the Wallets tab to connect on-chain wallets (SOL, ETH, BTC), the Exchanges tab for API connections (Coinbase, Binance), or CSV Upload to import transaction files. Enter your details and click Add & Sync. Click Next when done adding accounts.",
+    description: "Use the Wallets tab to connect on-chain wallets (SOL, ETH, BTC), the Exchanges tab for API connections (Coinbase, Binance), or CSV Upload to import transaction files. Enter your details and click Add & Sync. Close the dialog or click Next when done.",
     targetElement: "[data-onboarding='add-account-dialog']",
     autoAdvance: false,
   },
