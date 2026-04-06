@@ -105,7 +105,7 @@ export function getOnboardingState(): OnboardingState {
   }
 
   try {
-    const stored = localStorage.getItem("onboarding_state");
+    const stored = localStorage.getItem("onboarding_v2");
     if (stored) {
       const parsed = JSON.parse(stored);
 
@@ -165,7 +165,7 @@ export function saveOnboardingState(state: OnboardingState): void {
   if (typeof window === "undefined") return;
 
   try {
-    localStorage.setItem("onboarding_state", JSON.stringify(state));
+    localStorage.setItem("onboarding_v2", JSON.stringify(state));
   } catch (error) {
     console.error("[Onboarding] Error saving state:", error);
   }
@@ -212,7 +212,7 @@ export function skipOnboarding(): void {
  */
 export function resetOnboarding(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem("onboarding_state");
+  localStorage.removeItem("onboarding_v2");
 }
 
 /**
