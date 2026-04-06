@@ -98,16 +98,19 @@ export function OnboardingTooltip({
       // Position to the right (best for sidebar nav items)
       top = rect!.top;
       left = rect!.right + gap;
-      // Keep within viewport vertically
       if (top + tooltipH > vh - 12) top = vh - tooltipH - 12;
-    } else if (spaceBelow > tooltipH + gap) {
-      // Position below
+    } else if (spaceBelow > tooltipH + gap + 80) {
+      // Position below — only if plenty of room (leave 80px for dropdowns)
       top = rect!.bottom + gap;
       left = rect!.left + rect!.width / 2 - tooltipW / 2;
-    } else {
+    } else if (spaceAbove > tooltipH + gap) {
       // Position above
       top = rect!.top - tooltipH - gap;
       left = rect!.left + rect!.width / 2 - tooltipW / 2;
+    } else {
+      // Fallback: position at bottom-right of viewport out of the way
+      top = vh - tooltipH - 20;
+      left = vw - tooltipW - 20;
     }
 
     // Clamp horizontally
