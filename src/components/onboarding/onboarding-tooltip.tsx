@@ -162,13 +162,13 @@ export function OnboardingTooltip({
           left: rect!.left - pad,
           width: rect!.width + pad * 2,
           height: rect!.height + pad * 2,
-          boxShadow: "0 0 0 9999px rgba(0,0,0,0.4)",
+          boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
         } : {
           top: 0,
           left: 0,
           width: 0,
           height: 0,
-          boxShadow: "0 0 0 9999px rgba(0,0,0,0.4)",
+          boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
         }}
       />
 
