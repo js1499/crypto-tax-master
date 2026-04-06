@@ -81,16 +81,40 @@ export function OnboardingTooltip({
       return { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 10000 };
     }
     const tooltipW = 380;
-    const gap = 16;
+    const tooltipH = 220;
+    const gap = 20;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
 
-    let top = rect!.bottom + gap;
-    let left = rect!.left + rect!.width / 2 - tooltipW / 2;
+    // Determine best position: right of element (for sidebar items), below, or above
+    const spaceRight = vw - rect!.right;
+    const spaceBelow = vh - rect!.bottom;
+    const spaceAbove = rect!.top;
 
-    if (top + 180 > vh) top = rect!.top - 180 - gap;
+    let top: number;
+    let left: number;
+
+    if (spaceRight > tooltipW + gap + 20) {
+      // Position to the right (best for sidebar nav items)
+      top = rect!.top;
+      left = rect!.right + gap;
+      // Keep within viewport vertically
+      if (top + tooltipH > vh - 12) top = vh - tooltipH - 12;
+    } else if (spaceBelow > tooltipH + gap) {
+      // Position below
+      top = rect!.bottom + gap;
+      left = rect!.left + rect!.width / 2 - tooltipW / 2;
+    } else {
+      // Position above
+      top = rect!.top - tooltipH - gap;
+      left = rect!.left + rect!.width / 2 - tooltipW / 2;
+    }
+
+    // Clamp horizontally
     if (left < 12) left = 12;
     if (left + tooltipW > vw - 12) left = vw - tooltipW - 12;
+    // Clamp vertically
+    if (top < 12) top = 12;
 
     return { position: "fixed", top, left, width: tooltipW, zIndex: 10000 };
   };
@@ -105,10 +129,10 @@ export function OnboardingTooltip({
       {/* 4-panel overlay with animated fade */}
       {hasAnchor && (
         <>
-          <div className="fixed inset-x-0 top-0 bg-black/60 z-[9998] transition-all duration-300" style={{ height: rect!.top - pad }} />
-          <div className="fixed inset-x-0 bottom-0 bg-black/60 z-[9998] transition-all duration-300" style={{ top: rect!.bottom + pad }} />
-          <div className="fixed left-0 bg-black/60 z-[9998] transition-all duration-300" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, width: Math.max(0, rect!.left - pad) }} />
-          <div className="fixed right-0 bg-black/60 z-[9998] transition-all duration-300" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, left: rect!.right + pad }} />
+          <div className="fixed inset-x-0 top-0 bg-black/50 z-[9998] pointer-events-none transition-all duration-300" style={{ height: rect!.top - pad }} />
+          <div className="fixed inset-x-0 bottom-0 bg-black/50 z-[9998] pointer-events-none transition-all duration-300" style={{ top: rect!.bottom + pad }} />
+          <div className="fixed left-0 bg-black/50 z-[9998] pointer-events-none transition-all duration-300" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, width: Math.max(0, rect!.left - pad) }} />
+          <div className="fixed right-0 bg-black/50 z-[9998] pointer-events-none transition-all duration-300" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, left: rect!.right + pad }} />
         </>
       )}
 
