@@ -250,7 +250,7 @@ export default function SettingsPage() {
                 <div className="space-y-4">
                   <h3 className="text-lg font-medium">Tax Calculation</h3>
                   <div className="space-y-4">
-                    <div className="space-y-2" data-onboarding="select-country">
+                    <div className="space-y-2">
                       <Label htmlFor="tax-jurisdiction">Tax Jurisdiction</Label>
                       <p className="text-xs text-muted-foreground">Determines which country-specific tax rules are applied</p>
                       <Select value={country} onValueChange={setCountry}>

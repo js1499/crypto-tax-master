@@ -24,28 +24,35 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
     id: "nav-settings",
     title: "Open Settings",
-    description: "First, let's set your tax jurisdiction. Click Settings in the sidebar.",
+    description: "First, let's configure your tax jurisdiction. Click Settings in the sidebar.",
     targetElement: "[data-onboarding='nav-settings']",
   },
   {
-    id: "select-country",
-    title: "Select Your Country",
-    description: "Click the Preferences tab, then choose your tax jurisdiction. This determines cost basis rules, holding periods, and report formats.",
+    id: "click-preferences",
+    title: "Go to Preferences",
+    description: "Click the Preferences tab to find your tax settings.",
     targetPage: "/settings",
     targetElement: "[data-onboarding='select-country']",
+  },
+  {
+    id: "select-jurisdiction",
+    title: "Select Your Country",
+    description: "Choose your tax jurisdiction from the dropdown. This determines cost basis method, holding period rules, and which tax forms are generated.",
+    targetPage: "/settings",
+    targetElement: "#tax-jurisdiction",
   },
 
   // ── Accounts ──
   {
     id: "nav-accounts",
-    title: "Go to Accounts",
+    title: "Connect Your Accounts",
     description: "Now let's connect your wallets and exchanges. Click Accounts in the sidebar.",
     targetElement: "[data-onboarding='nav-accounts']",
   },
   {
     id: "add-account",
-    title: "Add an Account",
-    description: "Click Add Account to connect a wallet, exchange, or import a CSV. After adding, we'll automatically sync, pull prices, and compute cost basis.",
+    title: "Add Your Accounts",
+    description: "Click Add Account to connect wallets, exchanges, or import CSVs. You can add one at a time or add multiple. After adding, we'll automatically sync transactions, pull prices, and compute cost basis.",
     targetPage: "/accounts",
     targetElement: "[data-onboarding='connect-wallet']",
   },
@@ -53,14 +60,14 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   // ── Transactions ──
   {
     id: "nav-transactions",
-    title: "Review Transactions",
-    description: "After syncing, check your transaction data. Click Transactions in the sidebar.",
+    title: "Review Your Transactions",
+    description: "Once your wallets are synced and the progress bar completes, click Transactions to review your data.",
     targetElement: "[data-onboarding='nav-transactions']",
   },
   {
     id: "view-transactions",
     title: "Your Transaction Ledger",
-    description: "This is your full transaction history. Check types, prices, and gain/loss. You can filter, edit, or reclassify any transaction.",
+    description: "This is your full transaction history. Verify types, prices, and gain/loss are correct. You can filter, edit, or reclassify any transaction.",
     targetPage: "/transactions",
     targetElement: "[data-onboarding='review-transactions']",
   },
@@ -68,14 +75,14 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   // ── Tax Reports ──
   {
     id: "nav-reports",
-    title: "Generate Tax Reports",
-    description: "Time to download your tax forms. Click Tax Reports in the sidebar.",
+    title: "Download Tax Reports",
+    description: "Once syncing is complete, click Tax Reports to generate your tax forms.",
     targetElement: "[data-onboarding='nav-tax-reports']",
   },
   {
     id: "download-reports",
-    title: "Download Your Forms",
-    description: "Here are your tax reports — Form 8949, Schedule D, and CSV exports. Download what you need for your jurisdiction.",
+    title: "Your Tax Forms",
+    description: "Download your required IRS forms here: Schedule D (capital gains summary), Form 8949 (detailed transactions), and Schedule 1 (crypto income). CSV exports for TurboTax are also available.",
     targetPage: "/tax-reports",
     targetElement: "[data-onboarding='download-reports']",
   },

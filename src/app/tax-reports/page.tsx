@@ -255,7 +255,7 @@ interface TaxReportData {
 export default function TaxReportsPage() {
   const { refreshKey } = useSyncPipeline();
   const [mounted, setMounted] = useState(false);
-  const [selectedYear, setSelectedYear] = useState("2024");
+  const [selectedYear, setSelectedYear] = useState("2025");
   const [generatingFormId, setGeneratingFormId] = useState<string | null>(null);
   const [reportData, setReportData] = useState<TaxReportData | null>(null);
   const [isLoading, setIsLoading] = useState(true);

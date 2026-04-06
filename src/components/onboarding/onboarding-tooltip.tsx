@@ -17,13 +17,6 @@ interface OnboardingTooltipProps {
   anchorElement?: HTMLElement | null;
 }
 
-/**
- * Spotlight-style onboarding tooltip.
- * - Dark overlay with a cutout around the target element
- * - Pulse ring animation on the target
- * - Click on the target advances the tutorial (no separate Next button)
- * - Tooltip card floats near the target with step info
- */
 export function OnboardingTooltip({
   step,
   currentStepIndex,
@@ -35,10 +28,10 @@ export function OnboardingTooltip({
   anchorElement,
 }: OnboardingTooltipProps) {
   const [rect, setRect] = useState<DOMRect | null>(null);
+  const [visible, setVisible] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const isLastStep = currentStepIndex === totalSteps - 1;
 
-  // Track anchor element position
   const updateRect = useCallback(() => {
     if (anchorElement) {
       setRect(anchorElement.getBoundingClientRect());
@@ -51,7 +44,7 @@ export function OnboardingTooltip({
     updateRect();
     window.addEventListener("scroll", updateRect, true);
     window.addEventListener("resize", updateRect);
-    const interval = setInterval(updateRect, 300); // catch layout shifts
+    const interval = setInterval(updateRect, 300);
     return () => {
       window.removeEventListener("scroll", updateRect, true);
       window.removeEventListener("resize", updateRect);
@@ -59,56 +52,35 @@ export function OnboardingTooltip({
     };
   }, [updateRect]);
 
-  // Listen for clicks on the anchor element to advance.
-  // Use capture phase + synchronous save so it persists before
-  // any full-page navigation (window.location.href) fires.
+  // Fade-in animation on mount and step change
+  useEffect(() => {
+    setVisible(false);
+    const t = setTimeout(() => setVisible(true), 50);
+    return () => clearTimeout(t);
+  }, [currentStepIndex, anchorElement]);
+
+  // Click on anchor advances the tutorial
   useEffect(() => {
     if (!anchorElement) return;
-
     const handleClick = () => {
       if (isLastStep) onComplete();
       else onNext();
     };
-
-    // Capture phase fires before the element's own click handler
     anchorElement.addEventListener("click", handleClick, true);
     return () => anchorElement.removeEventListener("click", handleClick, true);
   }, [anchorElement, onNext, onComplete, isLastStep]);
 
   if (typeof window === "undefined") return null;
 
-  const pad = 8; // padding around the spotlight cutout
+  const pad = 8;
   const hasAnchor = rect !== null;
 
-  // Spotlight cutout CSS (inset box-shadow trick)
-  const overlayStyle: React.CSSProperties = hasAnchor
-    ? {
-        // Giant box-shadow creates the dark overlay with a transparent hole
-        boxShadow: `0 0 0 9999px rgba(0,0,0,0.6)`,
-        position: "fixed",
-        top: rect!.top - pad,
-        left: rect!.left - pad,
-        width: rect!.width + pad * 2,
-        height: rect!.height + pad * 2,
-        borderRadius: "12px",
-        zIndex: 9998,
-        pointerEvents: "none",
-      }
-    : {};
-
-  // Tooltip position: prefer below, fallback above
+  // Tooltip position
   const getTooltipStyle = (): React.CSSProperties => {
     if (!hasAnchor) {
-      return {
-        position: "fixed",
-        top: "50%",
-        left: "50%",
-        transform: "translate(-50%, -50%)",
-        zIndex: 10000,
-      };
+      return { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 10000 };
     }
-
-    const tooltipW = 360;
+    const tooltipW = 380;
     const gap = 16;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -116,47 +88,34 @@ export function OnboardingTooltip({
     let top = rect!.bottom + gap;
     let left = rect!.left + rect!.width / 2 - tooltipW / 2;
 
-    // If tooltip goes below viewport, show above
-    if (top + 160 > vh) {
-      top = rect!.top - 160 - gap;
-    }
-    // Clamp horizontally
+    if (top + 180 > vh) top = rect!.top - 180 - gap;
     if (left < 12) left = 12;
     if (left + tooltipW > vw - 12) left = vw - tooltipW - 12;
 
-    return {
-      position: "fixed",
-      top,
-      left,
-      width: tooltipW,
-      zIndex: 10000,
-    };
+    return { position: "fixed", top, left, width: tooltipW, zIndex: 10000 };
   };
 
   return createPortal(
-    <>
-      {/*
-        Overlay strategy: 4 dark panels around the spotlight hole.
-        This lets the target element receive real clicks natively
-        (no synthetic click forwarding needed).
-      */}
+    <div
+      className={cn(
+        "transition-opacity duration-300",
+        visible ? "opacity-100" : "opacity-0",
+      )}
+    >
+      {/* 4-panel overlay with animated fade */}
       {hasAnchor && (
         <>
-          {/* Top panel */}
-          <div className="fixed inset-x-0 top-0 bg-black/60 z-[9998]" style={{ height: rect!.top - pad }} />
-          {/* Bottom panel */}
-          <div className="fixed inset-x-0 bottom-0 bg-black/60 z-[9998]" style={{ top: rect!.bottom + pad }} />
-          {/* Left panel */}
-          <div className="fixed left-0 bg-black/60 z-[9998]" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, width: rect!.left - pad }} />
-          {/* Right panel */}
-          <div className="fixed right-0 bg-black/60 z-[9998]" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, left: rect!.right + pad }} />
+          <div className="fixed inset-x-0 top-0 bg-black/60 z-[9998] transition-all duration-300" style={{ height: rect!.top - pad }} />
+          <div className="fixed inset-x-0 bottom-0 bg-black/60 z-[9998] transition-all duration-300" style={{ top: rect!.bottom + pad }} />
+          <div className="fixed left-0 bg-black/60 z-[9998] transition-all duration-300" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, width: Math.max(0, rect!.left - pad) }} />
+          <div className="fixed right-0 bg-black/60 z-[9998] transition-all duration-300" style={{ top: rect!.top - pad, height: rect!.height + pad * 2, left: rect!.right + pad }} />
         </>
       )}
 
-      {/* Pulse ring around target */}
+      {/* Pulse ring */}
       {hasAnchor && (
         <div
-          className="fixed z-[9999] pointer-events-none"
+          className="fixed z-[9999] pointer-events-none transition-all duration-300"
           style={{
             top: rect!.top - pad,
             left: rect!.left - pad,
@@ -169,14 +128,19 @@ export function OnboardingTooltip({
         </div>
       )}
 
-      {/* Tooltip card */}
-      <div ref={tooltipRef} style={getTooltipStyle()} className="pointer-events-auto">
+      {/* Tooltip card with slide + fade animation */}
+      <div
+        ref={tooltipRef}
+        style={getTooltipStyle()}
+        className={cn(
+          "pointer-events-auto transition-all duration-300 ease-out",
+          visible ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0",
+        )}
+      >
         <div className="rounded-xl bg-white dark:bg-[#1A1A1A] border border-[#E5E5E0] dark:border-[#333] shadow-2xl overflow-hidden">
-          {/* Blue accent bar */}
           <div className="h-1 bg-[#2563EB]" />
 
           <div className="p-4">
-            {/* Header */}
             <div className="flex items-start justify-between mb-2">
               <div className="flex items-center gap-2.5">
                 <div className="flex items-center justify-center w-7 h-7 rounded-full bg-[#2563EB] text-white text-[12px] font-bold shrink-0">
@@ -194,22 +158,19 @@ export function OnboardingTooltip({
               </button>
             </div>
 
-            {/* Description */}
             <p className="text-[13px] text-[#6B7280] leading-relaxed mb-3">
               {step.description}
             </p>
 
-            {/* Action hint */}
             {hasAnchor && (
               <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#EFF6FF] dark:bg-[rgba(37,99,235,0.08)] border border-[#BFDBFE] dark:border-[#1E3A5F]">
                 <div className="h-2 w-2 rounded-full bg-[#2563EB] animate-pulse shrink-0" />
                 <p className="text-[12px] font-medium text-[#2563EB]">
-                  Click the highlighted button to continue
+                  Click the highlighted element to continue
                 </p>
               </div>
             )}
 
-            {/* Progress dots + skip */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="text-[11px] text-[#9CA3AF]">
@@ -220,7 +181,7 @@ export function OnboardingTooltip({
                     <div
                       key={i}
                       className={cn(
-                        "h-1.5 rounded-full transition-all",
+                        "h-1.5 rounded-full transition-all duration-300",
                         i === currentStepIndex
                           ? "w-4 bg-[#2563EB]"
                           : i < currentStepIndex
@@ -241,7 +202,7 @@ export function OnboardingTooltip({
           </div>
         </div>
       </div>
-    </>,
+    </div>,
     document.body
   );
 }
