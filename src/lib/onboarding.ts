@@ -20,64 +20,35 @@ export interface OnboardingState {
 }
 
 export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
-  // ── Settings ──
   {
     id: "nav-settings",
-    title: "Open Settings",
-    description: "First, let's set your tax jurisdiction. Click Settings in the sidebar.",
+    title: "Set Your Country",
+    description: "Click Settings to choose your tax jurisdiction (US, UK, or Germany). This determines how your taxes are calculated.",
     targetElement: "[data-onboarding='nav-settings']",
   },
   {
-    id: "select-country",
-    title: "Select Your Country",
-    description: "Choose your tax jurisdiction. This determines cost basis rules, holding periods, and report formats.",
-    targetPage: "/settings",
-    targetElement: "[data-onboarding='select-country']",
-  },
-
-  // ── Accounts ──
-  {
     id: "nav-accounts",
-    title: "Go to Accounts",
-    description: "Now let's connect your wallets and exchanges. Click Accounts.",
+    title: "Connect Your Accounts",
+    description: "Click Accounts to connect wallets and exchanges. We'll sync transactions, pull prices, and compute cost basis automatically.",
     targetElement: "[data-onboarding='nav-accounts']",
   },
   {
-    id: "add-account",
-    title: "Add an Account",
-    description: "Click Add Account to connect a wallet, exchange, or import a CSV. After adding, we'll automatically sync, pull prices, and compute cost basis.",
-    targetPage: "/accounts",
-    targetElement: "[data-onboarding='connect-wallet']",
-  },
-
-  // ── Transactions ──
-  {
     id: "nav-transactions",
     title: "Review Transactions",
-    description: "After syncing, check your transaction data. Click Transactions.",
+    description: "Click Transactions to see your imported data. Verify types, prices, and categories are correct. You can edit anything.",
     targetElement: "[data-onboarding='nav-transactions']",
   },
   {
-    id: "view-transactions",
-    title: "Your Transaction Ledger",
-    description: "This is your full transaction history. Check types, prices, and gain/loss. You can filter, edit, or reclassify any transaction.",
-    targetPage: "/transactions",
-    targetElement: "[data-onboarding='review-transactions']",
-  },
-
-  // ── Tax Reports ──
-  {
     id: "nav-reports",
-    title: "Generate Tax Reports",
-    description: "Time to download your tax forms. Click Tax Reports.",
+    title: "Download Tax Reports",
+    description: "Click Tax Reports to generate IRS forms (Form 8949, Schedule D) and CSV exports for your tax filing.",
     targetElement: "[data-onboarding='nav-tax-reports']",
   },
   {
-    id: "download-reports",
-    title: "Download Your Forms",
-    description: "Here are your tax reports — Form 8949, Schedule D, and CSV exports. Download what you need for your jurisdiction.",
-    targetPage: "/tax-reports",
-    targetElement: "[data-onboarding='download-reports']",
+    id: "nav-tutorial",
+    title: "Need More Help?",
+    description: "Click Tutorial for a detailed step-by-step guide, or click the ? button anytime to restart this walkthrough.",
+    targetElement: "[data-onboarding='nav-tutorial']",
   },
 ];
 
