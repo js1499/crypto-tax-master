@@ -9,6 +9,7 @@ import {
   completeStep,
   skipOnboarding,
   shouldShowOnboarding,
+  ONBOARDING_STEPS,
   type OnboardingState,
   type OnboardingStep,
 } from "@/lib/onboarding";
@@ -141,7 +142,10 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
       return;
     }
 
-    // Wait for page to load, then find element
+    // Find the target element with retries (page may still be rendering)
+    let attempts = 0;
+    const maxAttempts = 20; // 20 x 250ms = 5 seconds max
+
     const findElement = () => {
       if (currentStep.targetElement) {
         const element = document.querySelector(
@@ -149,29 +153,35 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
         ) as HTMLElement;
         if (element) {
           setAnchorElement(element);
-          // Scroll element into view
           element.scrollIntoView({ behavior: "smooth", block: "center" });
-        } else {
-          // If element not found, show tooltip in center
-          setAnchorElement(null);
+          return true;
         }
-      } else {
-        setAnchorElement(null);
       }
+      setAnchorElement(null);
+      return false;
     };
 
-    // Wait a bit for page to render
-    const timeout = setTimeout(findElement, 300);
-    findElement(); // Also try immediately
+    // Try immediately
+    if (findElement()) return;
 
-    return () => clearTimeout(timeout);
+    // Retry with interval until found or max attempts
+    const interval = setInterval(() => {
+      attempts++;
+      if (findElement() || attempts >= maxAttempts) {
+        clearInterval(interval);
+      }
+    }, 250);
+
+    return () => clearInterval(interval);
   }, [state.currentStep, state.isActive, state.completed, pathname, router]);
 
   const startOnboarding = () => {
+    // Force a fresh start — briefly set inactive then active to ensure React detects the change
+    setAnchorElement(null);
     const newState: OnboardingState = {
       isActive: true,
       currentStep: 0,
-      steps: state.steps.map((s) => ({ ...s, completed: false })),
+      steps: ONBOARDING_STEPS.map((step) => ({ ...step, completed: false })),
       completed: false,
     };
     setState(newState);
