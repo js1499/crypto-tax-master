@@ -60,12 +60,13 @@ const navGroups: NavGroup[] = [
 
 const standaloneItems: NavItem[] = [
   { title: "Tax Reports", href: "/tax-reports", icon: FileText, onboarding: "nav-tax-reports" },
+  { title: "Tutorial", href: "/tutorial", icon: GraduationCap, onboarding: "nav-tutorial" },
   { title: "Tax AI", href: "/tax-ai", icon: Sparkles },
   { title: "Tutorial", href: "/tutorial", icon: GraduationCap },
 ];
 
-const footerItems = [
-  { title: "Settings", href: "/settings", icon: Settings },
+const footerItems: NavItem[] = [
+  { title: "Settings", href: "/settings", icon: Settings, onboarding: "nav-settings" },
   { title: "Help & Support", href: "#", icon: HelpCircle },
 ];
 
@@ -180,6 +181,7 @@ export function AppSidebar() {
               <SidebarMenuButton
                 onClick={() => handleNavigation(item.href)}
                 className="h-9"
+                {...(item.onboarding ? { "data-onboarding": item.onboarding } : {})}
               >
                 <item.icon className="h-[18px] w-[18px]" />
                 <span className="text-[14px]">{item.title}</span>
