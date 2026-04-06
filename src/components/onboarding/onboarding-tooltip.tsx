@@ -152,15 +152,9 @@ export function OnboardingTooltip({
   };
 
   return createPortal(
-    <div
-      className={cn(
-        "transition-opacity duration-300",
-        visible ? "opacity-100" : "opacity-0",
-      )}
-    >
-      {/* Single overlay div — always rendered, never unmounts.
-          With anchor: positioned as spotlight hole with box-shadow dim.
-          Without anchor: zero-size at 0,0 so box-shadow covers everything. */}
+    <>
+      {/* Dim overlay — OUTSIDE the fade wrapper so it never disappears.
+          With anchor+visible: spotlight hole. Otherwise: full screen dim. */}
       <div
         className="fixed z-[40] pointer-events-none rounded-xl"
         style={hasAnchor && visible ? {
@@ -177,6 +171,14 @@ export function OnboardingTooltip({
           boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
         }}
       />
+
+      {/* Everything below fades on step change */}
+      <div
+        className={cn(
+          "transition-opacity duration-200",
+          visible ? "opacity-100" : "opacity-0",
+        )}
+      >
 
       {/* Pulse ring */}
       {hasAnchor && visible && (
@@ -298,7 +300,8 @@ export function OnboardingTooltip({
           </div>
         </div>
       </div>
-    </div>,
+      </div>
+    </>,
     document.body
   );
 }
