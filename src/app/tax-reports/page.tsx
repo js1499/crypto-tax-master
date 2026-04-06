@@ -31,6 +31,7 @@ import {
 import { toast } from "sonner";
 import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
+import { useSyncPipeline } from "@/components/sync-pipeline/pipeline-provider";
 
 const taxForms = [
   // Crypto forms
@@ -252,6 +253,7 @@ interface TaxReportData {
 }
 
 export default function TaxReportsPage() {
+  const { refreshKey } = useSyncPipeline();
   const [mounted, setMounted] = useState(false);
   const [selectedYear, setSelectedYear] = useState("2024");
   const [generatingFormId, setGeneratingFormId] = useState<string | null>(null);
@@ -334,7 +336,7 @@ export default function TaxReportsPage() {
 
     setInitialLoadDone(false);
     loadData();
-  }, [selectedYear, mounted]);
+  }, [selectedYear, mounted, refreshKey]);
 
   const handleMethodChange = async (method: "FIFO" | "LIFO" | "HIFO") => {
     if (method === costBasisMethod) return;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart2,
   ChevronDown,
@@ -72,14 +72,14 @@ const footerItems: NavItem[] = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     Crypto: true,
     Securities: true,
   });
 
   const handleNavigation = (path: string) => {
-    const pathWithTrailingSlash = path.endsWith('/') ? path : `${path}/`;
-    window.location.href = `${window.location.origin}${pathWithTrailingSlash}`;
+    router.push(path);
   };
 
   const isActivePath = (itemPath: string, currentPath: string) => {

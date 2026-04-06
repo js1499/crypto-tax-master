@@ -42,6 +42,8 @@ export interface PipelineState {
 interface PipelineContextType {
   state: PipelineState;
   isRunning: boolean;
+  /** Increments each time the pipeline completes — pages watch this to refetch */
+  refreshKey: number;
   /** Start full pipeline: sync → enrich → compute */
   startPipeline: (wallets: WalletJob[]) => void;
   /** Start pipeline for existing wallets (Sync All on accounts page) */
@@ -63,6 +65,7 @@ const IDLE_STATE: PipelineState = {
 const PipelineContext = createContext<PipelineContextType>({
   state: IDLE_STATE,
   isRunning: false,
+  refreshKey: 0,
   startPipeline: () => {},
   startSyncAll: () => {},
   cancel: () => {},
@@ -92,6 +95,7 @@ const MIN_STEP_SECONDS = 3;
 
 export function SyncPipelineProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<PipelineState>(IDLE_STATE);
+  const [refreshKey, setRefreshKey] = useState(0);
   const cancelledRef = useRef(false);
   const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -288,6 +292,8 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
         overallProgress: 100,
         error: null,
       });
+      // Signal all pages to refetch their data
+      setRefreshKey(k => k + 1);
     } catch (err) {
       stopTicker();
       const msg = err instanceof Error ? err.message : "Pipeline failed";
@@ -338,7 +344,7 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
   }, []);
 
   return (
-    <PipelineContext.Provider value={{ state, isRunning, startPipeline, startSyncAll, cancel, dismiss }}>
+    <PipelineContext.Provider value={{ state, isRunning, refreshKey, startPipeline, startSyncAll, cancel, dismiss }}>
       {children}
     </PipelineContext.Provider>
   );

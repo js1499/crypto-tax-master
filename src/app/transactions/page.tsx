@@ -75,6 +75,7 @@ import {
   TableRow
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { useSyncPipeline } from "@/components/sync-pipeline/pipeline-provider";
 import { PnLBreakdownChart } from "@/components/pnl-breakdown-chart";
 import { YearHeatmap } from "@/components/year-heatmap";
 import { getCategoryBadgeColor, formatTypeForDisplay, isOutflow, getCategory } from "@/lib/transaction-categorizer";
@@ -193,6 +194,7 @@ function getExplorerUrl(chain: string | undefined, txHash: string): string {
 function TransactionsContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { refreshKey } = useSyncPipeline();
   const [mounted, setMounted] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -479,6 +481,7 @@ function TransactionsContent() {
     valueMin,
     valueMax,
     router,
+    refreshKey, // refetch when pipeline completes
   ]);
 
   // Note: Filtering, sorting, and search are now handled server-side via API

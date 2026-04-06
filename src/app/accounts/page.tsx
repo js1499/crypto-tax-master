@@ -107,7 +107,7 @@ function AccountsContent() {
   const [filter, setFilter] = useState("all");
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [addDialogBulk, setAddDialogBulk] = useState(false);
-  const { startSyncAll, isRunning: isPipelineRunning } = useSyncPipeline();
+  const { startSyncAll, isRunning: isPipelineRunning, refreshKey } = useSyncPipeline();
   const [exclusiveWallets, setExclusiveWallets] = useState(false);
   const [oauthStatus, setOauthStatus] = useState<{ success?: boolean; error?: string } | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -385,6 +385,11 @@ function AccountsContent() {
       );
     }
   };
+
+  // Refetch when pipeline completes (sync/enrich/compute done)
+  useEffect(() => {
+    if (refreshKey > 0) fetchWallets();
+  }, [refreshKey]);
 
   // Redirect unauthenticated users to login
   useEffect(() => {
