@@ -101,7 +101,7 @@ export function OnboardingTooltip({
     if (!hasAnchor) {
       return { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 9999 };
     }
-    const tooltipW = 380;
+    const tooltipW = 420;
     const tooltipH = 220;
     const gap = 20;
     const vw = window.innerWidth;
@@ -208,43 +208,32 @@ export function OnboardingTooltip({
         <div className="rounded-xl bg-white dark:bg-[#1A1A1A] border border-[#E5E5E0] dark:border-[#333] shadow-2xl overflow-hidden">
           <div className="h-1 bg-[#2563EB]" />
 
-          <div className="p-4">
-            <div className="flex items-start justify-between mb-2">
-              <div className="flex items-center gap-2.5">
-                <div className="flex items-center justify-center w-7 h-7 rounded-full bg-[#2563EB] text-white text-[12px] font-bold shrink-0">
+          <div className="p-5">
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#2563EB] text-white text-[13px] font-bold shrink-0">
                   {currentStepIndex + 1}
                 </div>
-                <h3 className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
+                <h3 className="text-[17px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
                   {step.title}
                 </h3>
               </div>
               <button
                 onClick={onSkip}
-                className="p-1 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
+                className="p-1.5 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <p className="text-[13px] text-[#6B7280] leading-relaxed mb-3">
+            <p className="text-[14px] text-[#6B7280] leading-relaxed mb-4">
               {step.description}
             </p>
-
-            {hasAnchor && (
-              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-[#EFF6FF] dark:bg-[rgba(37,99,235,0.08)] border border-[#BFDBFE] dark:border-[#1E3A5F]">
-                <div className="h-2 w-2 rounded-full bg-[#2563EB] animate-pulse shrink-0" />
-                <p className="text-[12px] font-medium text-[#2563EB]">
-                  {shouldAutoAdvance
-                    ? "Click the highlighted element to continue"
-                    : "Interact with the highlighted area, then click Next"}
-                </p>
-              </div>
-            )}
 
             {/* Progress + navigation */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-[11px] text-[#9CA3AF]" style={{ fontVariantNumeric: "tabular-nums" }}>
+                <span className="text-[12px] text-[#9CA3AF]" style={{ fontVariantNumeric: "tabular-nums" }}>
                   {currentStepIndex + 1}/{totalSteps}
                 </span>
                 <div className="flex gap-1">
@@ -263,34 +252,34 @@ export function OnboardingTooltip({
                   ))}
                 </div>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={onSkip}
-                  className="text-[12px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors mr-1"
+                  className="text-[13px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors mr-1"
                 >
                   Skip
                 </button>
                 {currentStepIndex > 0 && (
                   <button
                     onClick={onPrevious}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[12px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors"
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[13px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors"
                   >
-                    <ChevronLeft className="h-3 w-3" />
+                    <ChevronLeft className="h-3.5 w-3.5" />
                     Back
                   </button>
                 )}
                 {!isLastStep ? (
                   <button
                     onClick={onNext}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#2563EB] text-white text-[12px] font-medium hover:bg-[#1D4ED8] transition-colors"
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-[#2563EB] text-white text-[13px] font-medium hover:bg-[#1D4ED8] transition-colors"
                   >
                     Next
-                    <ChevronRight className="h-3 w-3" />
+                    <ChevronRight className="h-3.5 w-3.5" />
                   </button>
                 ) : (
                   <button
                     onClick={onComplete}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#16A34A] text-white text-[12px] font-medium hover:bg-[#15803D] transition-colors"
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-[#16A34A] text-white text-[13px] font-medium hover:bg-[#15803D] transition-colors"
                   >
                     Done
                   </button>

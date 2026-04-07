@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSyncPipeline } from "./pipeline-provider";
 import { Check, X, Loader2, ChevronDown, ChevronUp, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -16,6 +16,14 @@ const PHASE_LABELS: Record<string, string> = {
 export function PipelineProgress() {
   const { state, isRunning, cancel, dismiss } = useSyncPipeline();
   const [expanded, setExpanded] = useState(true);
+
+  // Auto-dismiss after completion (so advanceWhenGone tutorial step detects it)
+  useEffect(() => {
+    if (state.phase === "done" || state.phase === "error") {
+      const t = setTimeout(() => dismiss(), 5000);
+      return () => clearTimeout(t);
+    }
+  }, [state.phase, dismiss]);
 
   if (state.phase === "idle") return null;
 

@@ -73,7 +73,7 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
     id: "view-transactions",
     title: "Your Transaction Ledger",
-    description: "This is your full transaction history. Verify types, prices, and gain/loss are correct. You can filter, search, edit, or reclassify any transaction. Click Next when done reviewing.",
+    description: "This is your full transaction history. Verify types, prices, and gain/loss are correct. You can filter, search, edit, or reclassify any transaction. You can always come back here for a deeper review after completing the tutorial.",
     targetPage: "/transactions",
     targetElement: "[data-onboarding='review-transactions']",
     autoAdvance: false,
