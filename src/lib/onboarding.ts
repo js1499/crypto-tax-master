@@ -43,6 +43,14 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
     targetElement: "[data-onboarding='add-account-dialog']",
     autoAdvance: false,
   },
+  {
+    id: "confirm-accounts",
+    title: "All Accounts Added?",
+    description: "If you need to add more wallets or exchanges, click Add Account again. Otherwise, click Next to continue. Your accounts will sync, pull prices, and compute cost basis in the background — you can check progress in the bottom-right corner.",
+    targetPage: "/accounts",
+    targetElement: "[data-onboarding='connect-wallet']",
+    autoAdvance: false,
+  },
 
   // ── Transactions ──
   {
