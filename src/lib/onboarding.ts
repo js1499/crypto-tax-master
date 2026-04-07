@@ -11,6 +11,8 @@ export interface OnboardingStep {
   targetElement?: string;
   /** If true, auto-advance when target is clicked (default true). Set false for steps where user needs to interact then hit Next. */
   autoAdvance?: boolean;
+  /** If true, auto-advance when the target element disappears from the DOM. Used for "wait for progress" steps. */
+  advanceWhenGone?: boolean;
   completed: boolean;
 }
 
@@ -46,17 +48,25 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
     id: "confirm-accounts",
     title: "All Accounts Added?",
-    description: "If you need to add more wallets or exchanges, click Add Account again. Otherwise, click Next to continue. Your accounts will sync, pull prices, and compute cost basis in the background — you can check progress in the bottom-right corner.",
+    description: "If you need to add more wallets or exchanges, click Add Account again. Otherwise, click Next to continue.",
     targetPage: "/accounts",
     targetElement: "[data-onboarding='connect-wallet']",
     autoAdvance: false,
+  },
+  {
+    id: "wait-for-sync",
+    title: "Syncing in Progress",
+    description: "Your accounts are being synced, prices pulled, and cost basis computed. This runs automatically in the background. Once the progress bar completes, we'll move to the next step.",
+    targetElement: "[data-onboarding='pipeline-progress']",
+    autoAdvance: false,
+    advanceWhenGone: true,
   },
 
   // ── Transactions ──
   {
     id: "nav-transactions",
     title: "Review Your Transactions",
-    description: "Once your wallets are synced (check the progress bar in the bottom right), click Transactions to review your data.",
+    description: "Syncing is complete! Click Transactions to review your data.",
     targetElement: "[data-onboarding='nav-transactions']",
   },
   {

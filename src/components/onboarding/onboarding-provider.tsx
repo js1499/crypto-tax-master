@@ -81,24 +81,58 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     let cancelled = false;
     let attempts = 0;
 
+    let wasFound = false;
+
     const find = () => {
       if (cancelled) return;
       const el = step.targetElement
         ? (document.querySelector(step.targetElement) as HTMLElement)
         : null;
       if (el) {
+        wasFound = true;
         setAnchorElement(el);
         el.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else if (wasFound && step.advanceWhenGone) {
+        // Element was found before but now gone — auto-advance
+        advanceRef.current();
+        return;
       } else if (attempts < 30) {
         attempts++;
         setTimeout(find, 300);
+      } else if (step.advanceWhenGone) {
+        // Element was never found (pipeline not running) — skip this step
+        advanceRef.current();
+        return;
       }
     };
 
-    // Delay search to let the tooltip fade out first (matches the 250ms in tooltip)
+    // Delay search to let the tooltip fade out first
     const delay = setTimeout(find, 500);
 
-    return () => { cancelled = true; clearTimeout(delay); };
+    // For advanceWhenGone steps, keep polling even after element is found
+    // to detect when it disappears
+    let pollInterval: ReturnType<typeof setInterval> | null = null;
+    if (step.advanceWhenGone) {
+      pollInterval = setInterval(() => {
+        if (cancelled) return;
+        const el = step.targetElement
+          ? (document.querySelector(step.targetElement) as HTMLElement)
+          : null;
+        if (el) {
+          wasFound = true;
+          setAnchorElement(el);
+        } else if (wasFound) {
+          // Was visible, now gone — pipeline completed
+          advanceRef.current();
+        }
+      }, 1000);
+    }
+
+    return () => {
+      cancelled = true;
+      clearTimeout(delay);
+      if (pollInterval) clearInterval(pollInterval);
+    };
   }, [state.currentStep, state.isActive, state.completed, pathname, isAuthenticated]);
 
   const startOnboarding = useCallback(() => {

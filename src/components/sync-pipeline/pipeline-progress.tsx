@@ -24,7 +24,7 @@ export function PipelineProgress() {
   const phaseLabel = PHASE_LABELS[state.phase] || state.phase;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 w-[380px] rounded-xl border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] shadow-xl overflow-hidden">
+    <div data-onboarding="pipeline-progress" className="fixed bottom-4 right-4 z-50 w-[380px] rounded-xl border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] shadow-xl overflow-hidden">
       {/* Header bar */}
       <div
         className={cn(
