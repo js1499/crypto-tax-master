@@ -246,8 +246,8 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
 
       toast.success("Wallet added successfully");
 
-      if (syncAfterAdd) {
-        // Use pipeline for sync → enrich → compute
+      if (syncAfterAdd && !isRunning) {
+        // Use pipeline for sync → enrich → compute (only if not already running)
         startPipeline([{
           walletId: data.wallet.id,
           name: walletName,
@@ -255,6 +255,8 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
           provider: selectedWallet === "evm" ? "evm" : selectedWallet!,
           chains: selectedWallet === "evm" ? selectedChains : undefined,
         }]);
+      } else if (syncAfterAdd && isRunning) {
+        toast.info("Wallet added. It will be synced after the current pipeline finishes — or use Sync All from Manual Actions.");
       }
 
       resetForm();

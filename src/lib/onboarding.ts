@@ -41,9 +41,10 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
   {
     id: "add-account-dialog",
     title: "Set Up Your Account",
-    description: "Use the Wallets tab to connect on-chain wallets (SOL, ETH, BTC), the Exchanges tab for API connections (Coinbase, Binance), or CSV Upload to import transaction files. Enter your details and click Add & Sync. Close the dialog or click Next when done.",
+    description: "Use the Wallets tab to connect on-chain wallets (SOL, ETH, BTC), the Exchanges tab for API connections (Coinbase, Binance), or CSV Upload to import transaction files. Enter your details and click Add & Sync.",
     targetElement: "[data-onboarding='add-account-dialog']",
     autoAdvance: false,
+    advanceWhenGone: true,
   },
   {
     id: "confirm-accounts",
