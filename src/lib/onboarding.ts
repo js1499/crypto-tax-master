@@ -87,6 +87,14 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
     targetElement: "[data-onboarding='nav-tax-reports']",
   },
   {
+    id: "select-tax-year",
+    title: "Select Tax Year",
+    description: "Choose the tax year you want to generate reports for. Your reports will reflect all transactions within that calendar year.",
+    targetPage: "/tax-reports",
+    targetElement: "[data-onboarding='tax-year-picker']",
+    autoAdvance: false,
+  },
+  {
     id: "download-reports",
     title: "Your Required Tax Forms",
     description: "For US taxpayers, you'll need: Schedule D (capital gains summary), Form 8949 (detailed transaction list), and Schedule 1 (crypto income). TurboTax-compatible CSV exports are also available. Download what you need!",
