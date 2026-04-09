@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import prisma from "@/lib/prisma";
-import { calculateTaxReport, TaxReport } from "@/lib/tax-calculator";
+import { TaxReport, TaxableEvent, IncomeEvent } from "@/lib/tax-calculator";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 
@@ -91,22 +91,118 @@ export async function GET(request: NextRequest) {
 
     const walletAddresses = userWithWallets.wallets.map((w) => w.address);
 
-    // Get filing status from query params (default to "single")
-    const filingStatus = (searchParams.get("filingStatus") || "single") as "single" | "married_joint" | "married_separate" | "head_of_household";
-    
-    // Calculate tax report
-    const costBasisMethod = (userWithWallets.costBasisMethod || "FIFO") as "FIFO" | "LIFO" | "HIFO";
+    // ── Build report from DB (single source of truth, same as transactions page) ──
+    const yearStart = new Date(`${year}-01-01T00:00:00Z`);
+    const yearEnd = new Date(`${year}-12-31T23:59:59.999Z`);
 
-    const report = await calculateTaxReport(
-      prisma,
-      walletAddresses,
-      year,
-      costBasisMethod,
-      user.id,
-      filingStatus,
-      userWithWallets.timezone || "America/New_York",
-      userWithWallets.country || "US"
-    );
+    const orConditions: Prisma.TransactionWhereInput[] = [];
+    if (walletAddresses.length > 0) {
+      orConditions.push({ wallet_address: { in: walletAddresses } });
+    }
+    orConditions.push({ AND: [{ source_type: "csv_import" }, { userId: user.id }] });
+    const userExchanges = await prisma.exchange.findMany({
+      where: { userId: user.id },
+      select: { name: true },
+    });
+    if (userExchanges.length > 0) {
+      orConditions.push({
+        AND: [{ source_type: "exchange_api" }, { source: { in: userExchanges.map(e => e.name) } }],
+      });
+    }
+
+    const yearFilter: Prisma.TransactionWhereInput = {
+      OR: orConditions,
+      tx_timestamp: { gte: yearStart, lte: yearEnd },
+    };
+
+    // Fetch disposal transactions (for capital gains reports)
+    const disposalTxns = await prisma.transaction.findMany({
+      where: { ...yearFilter, gain_loss_usd: { not: null } },
+      select: {
+        id: true, asset_symbol: true, amount_value: true, value_usd: true,
+        cost_basis_usd: true, gain_loss_usd: true, holding_period: true,
+        date_acquired: true, tx_timestamp: true, source: true, type: true,
+      },
+      orderBy: { tx_timestamp: "asc" },
+    });
+
+    // Fetch income transactions
+    const incomeTxns = await prisma.transaction.findMany({
+      where: { ...yearFilter, is_income: true },
+      select: {
+        id: true, asset_symbol: true, amount_value: true, value_usd: true,
+        tx_timestamp: true, type: true, source: true, chain: true, tx_hash: true,
+      },
+      orderBy: { tx_timestamp: "asc" },
+    });
+
+    // Fetch ALL transactions (for transaction history export)
+    const allTxns = await prisma.transaction.findMany({
+      where: yearFilter,
+      select: {
+        id: true, type: true, asset_symbol: true, amount_value: true,
+        value_usd: true, fee_usd: true, cost_basis_usd: true, gain_loss_usd: true,
+        holding_period: true, date_acquired: true, tx_timestamp: true,
+        source: true, wallet_address: true, tx_hash: true, is_income: true,
+        incoming_asset_symbol: true, incoming_amount_value: true, incoming_value_usd: true,
+      },
+      orderBy: { tx_timestamp: "asc" },
+    });
+
+    // Build TaxableEvent objects from DB
+    const taxableEvents: TaxableEvent[] = disposalTxns
+      .filter(tx => Number(tx.gain_loss_usd) !== 0)
+      .map(tx => {
+        const gainLoss = Number(tx.gain_loss_usd);
+        const costBasis = Math.abs(Number(tx.cost_basis_usd || 0));
+        return {
+          id: tx.id,
+          date: tx.tx_timestamp,
+          asset: tx.asset_symbol,
+          amount: Math.abs(Number(tx.amount_value)),
+          proceeds: costBasis + gainLoss,
+          costBasis,
+          gainLoss,
+          holdingPeriod: (tx.holding_period === "long" ? "long" : "short") as "short" | "long",
+          dateAcquired: tx.date_acquired || undefined,
+          source: tx.source || undefined,
+          washSale: false,
+          washSaleAdjustment: 0,
+        };
+      });
+
+    const incomeEvents: IncomeEvent[] = incomeTxns.map(tx => ({
+      id: tx.id,
+      date: tx.tx_timestamp,
+      asset: tx.asset_symbol,
+      amount: Math.abs(Number(tx.amount_value)),
+      valueUsd: Math.abs(Number(tx.value_usd)),
+      type: tx.type as any,
+      chain: tx.chain || undefined,
+      txHash: tx.tx_hash || undefined,
+    }));
+
+    const stEvents = taxableEvents.filter(e => e.holdingPeriod === "short");
+    const ltEvents = taxableEvents.filter(e => e.holdingPeriod === "long");
+
+    const report: TaxReport = {
+      taxableEvents,
+      incomeEvents,
+      totalIncome: incomeEvents.reduce((s, e) => s + e.valueUsd, 0),
+      netShortTermGain: stEvents.reduce((s, e) => s + e.gainLoss, 0),
+      netLongTermGain: ltEvents.reduce((s, e) => s + e.gainLoss, 0),
+      summary: {
+        shortTermGain: stEvents.filter(e => e.gainLoss > 0).reduce((s, e) => s + e.gainLoss, 0),
+        shortTermLoss: stEvents.filter(e => e.gainLoss < 0).reduce((s, e) => s + e.gainLoss, 0),
+        longTermGain: ltEvents.filter(e => e.gainLoss > 0).reduce((s, e) => s + e.gainLoss, 0),
+        longTermLoss: ltEvents.filter(e => e.gainLoss < 0).reduce((s, e) => s + e.gainLoss, 0),
+        netGain: taxableEvents.reduce((s, e) => s + e.gainLoss, 0),
+        totalProceeds: taxableEvents.reduce((s, e) => s + e.proceeds, 0),
+        totalCostBasis: taxableEvents.reduce((s, e) => s + e.costBasis, 0),
+      },
+      // Pass raw transactions for history/income exports
+      _allTransactions: allTxns as any,
+    };
 
     // Generate CSV based on export type
     let csvContent = "";
