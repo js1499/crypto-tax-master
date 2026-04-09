@@ -702,10 +702,10 @@ export default function TaxReportsPage() {
             Tax Reports
           </h1>
           <div className="flex items-center gap-2">
-            <div data-onboarding="tax-year-picker" className="flex items-center gap-2 border border-[#E5E5E0] dark:border-[#333] rounded-lg px-4 h-11">
+            <div className="flex items-center gap-2 border border-[#E5E5E0] dark:border-[#333] rounded-lg px-4 h-11">
               <Calendar className="h-4 w-4 text-[#9CA3AF]" />
               <Select value={selectedYear} onValueChange={setSelectedYear}>
-                <SelectTrigger className="border-0 shadow-none h-10 text-[15px] font-semibold w-[90px] p-0 pl-1">
+                <SelectTrigger data-onboarding="tax-year-picker" className="border-0 shadow-none h-10 text-[15px] font-semibold w-[90px] p-0 pl-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

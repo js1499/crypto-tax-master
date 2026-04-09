@@ -92,7 +92,7 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
     description: "Choose the tax year you want to generate reports for. Your reports will reflect all transactions within that calendar year.",
     targetPage: "/tax-reports",
     targetElement: "[data-onboarding='tax-year-picker']",
-    autoAdvance: false,
+    autoAdvance: true,
   },
   {
     id: "download-reports",
