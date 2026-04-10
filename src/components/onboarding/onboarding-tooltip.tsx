@@ -101,8 +101,8 @@ export function OnboardingTooltip({
     if (!hasAnchor) {
       return { position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", zIndex: 9999 };
     }
-    const tooltipW = 420;
-    const tooltipH = 220;
+    const tooltipW = 480;
+    const tooltipH = 260;
     const gap = 20;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -206,80 +206,80 @@ export function OnboardingTooltip({
         )}
       >
         <div className="rounded-xl bg-white dark:bg-[#1A1A1A] border border-[#E5E5E0] dark:border-[#333] shadow-2xl overflow-hidden">
-          <div className="h-1 bg-[#2563EB]" />
+          <div className="h-1.5 bg-[#2563EB]" />
 
-          <div className="p-5">
-            <div className="flex items-start justify-between mb-3">
+          <div className="p-6">
+            <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[#2563EB] text-white text-[13px] font-bold shrink-0">
+                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-[#2563EB] text-white text-[15px] font-bold shrink-0">
                   {currentStepIndex + 1}
                 </div>
-                <h3 className="text-[17px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
+                <h3 className="text-[20px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
                   {step.title}
                 </h3>
               </div>
               <button
                 onClick={onSkip}
-                className="p-1.5 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
+                className="p-2 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] text-[#9CA3AF] hover:text-[#6B7280] transition-colors"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
             </div>
 
-            <p className="text-[14px] text-[#6B7280] leading-relaxed mb-4">
+            <p className="text-[16px] text-[#6B7280] leading-relaxed mb-5">
               {step.description}
             </p>
 
             {/* Progress + navigation */}
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-[12px] text-[#9CA3AF]" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <div className="flex items-center gap-2.5">
+                <span className="text-[14px] text-[#9CA3AF]" style={{ fontVariantNumeric: "tabular-nums" }}>
                   {currentStepIndex + 1}/{totalSteps}
                 </span>
-                <div className="flex gap-1">
+                <div className="flex gap-1.5">
                   {Array.from({ length: totalSteps }).map((_, i) => (
                     <div
                       key={i}
                       className={cn(
-                        "h-1.5 rounded-full transition-all duration-300",
+                        "h-2 rounded-full transition-all duration-300",
                         i === currentStepIndex
-                          ? "w-4 bg-[#2563EB]"
+                          ? "w-5 bg-[#2563EB]"
                           : i < currentStepIndex
-                          ? "w-1.5 bg-[#2563EB]/40"
-                          : "w-1.5 bg-[#E5E5E0] dark:bg-[#333]"
+                          ? "w-2 bg-[#2563EB]/40"
+                          : "w-2 bg-[#E5E5E0] dark:bg-[#333]"
                       )}
                     />
                   ))}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <button
                   onClick={onSkip}
-                  className="text-[13px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors mr-1"
+                  className="text-[14px] text-[#9CA3AF] hover:text-[#6B7280] transition-colors mr-1"
                 >
                   Skip
                 </button>
                 {currentStepIndex > 0 && (
                   <button
                     onClick={onPrevious}
-                    className="inline-flex items-center gap-1 px-3 py-2 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[13px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors"
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg border border-[#E5E5E0] dark:border-[#333] text-[14px] font-medium text-[#4B5563] dark:text-[#9CA3AF] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors"
                   >
-                    <ChevronLeft className="h-3.5 w-3.5" />
+                    <ChevronLeft className="h-4 w-4" />
                     Back
                   </button>
                 )}
                 {!isLastStep ? (
                   <button
                     onClick={onNext}
-                    className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-[#2563EB] text-white text-[13px] font-medium hover:bg-[#1D4ED8] transition-colors"
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-[#2563EB] text-white text-[14px] font-medium hover:bg-[#1D4ED8] transition-colors"
                   >
                     Next
-                    <ChevronRight className="h-3.5 w-3.5" />
+                    <ChevronRight className="h-4 w-4" />
                   </button>
                 ) : (
                   <button
                     onClick={onComplete}
-                    className="inline-flex items-center gap-1 px-3 py-2 rounded-md bg-[#16A34A] text-white text-[13px] font-medium hover:bg-[#15803D] transition-colors"
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-[#16A34A] text-white text-[14px] font-medium hover:bg-[#15803D] transition-colors"
                   >
                     Done
                   </button>
