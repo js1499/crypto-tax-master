@@ -922,18 +922,18 @@
 
       var logoImages = {};
       var logoSrcs = {
-        'GLIDE': 'logos/glide-logo.png',
-        'Solana': 'logos/solana.png',
-        'Ethereum': 'logos/ethereum.png',
-        'Bitcoin': 'logos/bitcoin.png',
-        'Binance': 'logos/binance.png',
-        'Coinbase': 'logos/coinbase.png',
-        'Kraken': 'logos/kraken.png',
-        'KuCoin': 'logos/kucoin.png',
-        'Phemex': 'logos/phemex.png',
-        'MEXC': 'logos/mexc.png',
-        'Gemini': 'logos/gemini.png',
-        'Crypto.com': 'logos/cryptocom.png'
+        'GLIDE': '/landing/logos/glide-logo.png',
+        'Solana': '/landing/logos/solana.png',
+        'Ethereum': '/landing/logos/ethereum.png',
+        'Bitcoin': '/landing/logos/bitcoin.png',
+        'Binance': '/landing/logos/binance.png',
+        'Coinbase': '/landing/logos/coinbase.png',
+        'Kraken': '/landing/logos/kraken.png',
+        'KuCoin': '/landing/logos/kucoin.png',
+        'Phemex': '/landing/logos/phemex.png',
+        'MEXC': '/landing/logos/mexc.png',
+        'Gemini': '/landing/logos/gemini.png',
+        'Crypto.com': '/landing/logos/cryptocom.png'
       };
 
       Object.keys(logoSrcs).forEach(function(name) {
