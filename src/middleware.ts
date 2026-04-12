@@ -28,7 +28,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // Only run middleware on protected pages — NOT on login, register, API, or static assets
   matcher: [
-    "/",
+    "/dashboard/:path*",
     "/accounts/:path*",
     "/transactions/:path*",
     "/tax-reports/:path*",

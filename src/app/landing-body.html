@@ -1,0 +1,1339 @@
+
+  <!-- ============================================================
+       NAVIGATION
+  ============================================================ -->
+  <nav class="nav" id="nav">
+    <div class="container">
+      <div class="nav__inner">
+
+        <!-- Logo -->
+        <a href="#" class="nav__logo">
+          <img src="/landing/logos/glide-logo.png" alt="Glide" style="height:80px;width:auto;display:block;" />
+        </a>
+
+        <!-- Center Links -->
+        <div class="nav__links">
+          <a href="#how" class="nav__link">How it works</a>
+          <a href="#pricing" class="nav__link">Pricing</a>
+        </div>
+
+        <!-- Right CTA + Toggle -->
+        <a href="/login" class="nav__link">Log in</a>
+        <div class="nav__cta" style="display:flex;align-items:center;gap:0;">
+          <a href="/register" class="btn btn--primary">Get started</a>
+          <button class="theme-toggle" id="theme-toggle" aria-label="Toggle theme">
+            <svg class="theme-toggle__sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            <svg class="theme-toggle__moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </nav>
+
+  <!-- ============================================================
+       HERO SECTION
+  ============================================================ -->
+  <section class="hero section--textured" id="hero">
+
+    <!-- Background elements -->
+    <div class="hero__grid" aria-hidden="true"></div>
+    <div class="hero__glow" aria-hidden="true"></div>
+
+    <!-- Particles -->
+    <!-- Particles -->
+    <div class="hero__particles" aria-hidden="true">
+      <canvas id="mesh-canvas" style="width:100%;height:100%;"></canvas>
+    </div>
+
+    <!-- Content -->
+    <div class="container">
+      <div class="hero__content">
+
+        <!-- Headline -->
+        <h1 class="hero__headline">
+          Every transaction identified.<br />
+          <span class="hero__headline-accent">Effortlessly exact.</span>
+        </h1>
+
+        <!-- Subline -->
+        <p class="hero__subline">
+          On-chain verification at the exact <span style="color:var(--accent);font-weight:700;">block timestamp</span>. Connect your accounts, and Glide calculates the rest.
+        </p>
+
+        <!-- CTAs -->
+        <div class="hero__ctas">
+          <a href="/register" class="btn btn--primary">Get started</a>
+        </div>
+
+        <!-- Stats removed -->
+
+        <!-- Product screenshot -->
+        <!-- product screenshot removed — shown in tabbed showcase below -->
+
+      </div>
+    </div>
+  </section>
+
+  <!-- METHODOLOGY -->
+  <section class="section section--border section--warm-reverse" id="how">
+    <div class="container">
+
+      <div class="reveal" style="text-align:center;">
+        <span class="section__label section__label--accent">Verifiable accuracy</span>
+        <h2 class="section__title">Exact to the second. Effortless from the start.</h2>
+        <p style="font-size:clamp(1.5rem,3vw,2rem);font-weight:500;color:var(--text-secondary);line-height:1.4;max-width:700px;margin:0 auto;">We use the <span style="color:var(--accent);font-weight:700;">IRS endorsed</span> fair market value method, pricing both sides of every swap at the on chain <span style="color:var(--accent);font-weight:700;">block timestamp</span>. You connect. We calculate.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- WHY VARIANCE IS BAD -->
+  <section class="section section--alt section--warm-reverse" id="inaccuracy-risk">
+    <div class="container">
+
+      <div class="reveal" style="text-align:center; margin-bottom:3rem;">
+        <h2 class="section__title" style="color:var(--accent);font-size:clamp(2.5rem,5vw,3.5rem);">Inaccuracy is an audit risk.</h2>
+        <p class="section__desc" style="margin:0 auto;font-size:clamp(1.75rem, 5vw, 2.75rem);font-weight:700;line-height:1.3;">Cost basis errors don't cancel out. They create risk, whether you <span style="color:#dc2626;">overestimate</span> or <span style="color:#eab308;">underestimate</span>.</p>
+      </div>
+
+      <div class="variance-spectrum reveal reveal-delay-1" id="variance-spectrum">
+        <svg viewBox="0 0 800 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Variance spectrum diagram showing overestimated and underestimated cost basis risks">
+          <defs>
+            <linearGradient id="grad-danger" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#dc2626" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="#dc2626" stop-opacity="0"/>
+            </linearGradient>
+            <linearGradient id="grad-warning" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#dc2626" stop-opacity="0"/>
+              <stop offset="100%" stop-color="#eab308" stop-opacity="0.35"/>
+            </linearGradient>
+            <marker id="arrowhead-left" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto" markerUnits="strokeWidth">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+            </marker>
+            <marker id="arrowhead-right" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto" markerUnits="strokeWidth">
+              <polygon points="0 0, 10 3.5, 0 7" fill="#eab308"/>
+            </marker>
+          </defs>
+
+          <!-- Left card box -->
+          <g class="annotation-left">
+            <rect x="15" y="10" width="350" height="160" rx="12" fill="none" stroke="#dc2626" stroke-width="2" opacity="0.6"/>
+            <text x="190" y="50" text-anchor="middle" fill="#dc2626" font-family="'Cabinet Grotesk', sans-serif" font-size="22" font-weight="700">Overestimated cost basis</text>
+            <text x="190" y="82" text-anchor="middle" fill="currentColor" font-family="'Cabinet Grotesk', sans-serif" font-size="17">You underreport gains.</text>
+            <text x="190" y="106" text-anchor="middle" fill="currentColor" font-family="'Cabinet Grotesk', sans-serif" font-size="17">The IRS sees the discrepancy.</text>
+            <rect x="86" y="112" width="208" height="48" rx="8" fill="#dc2626" opacity="0.15"/>
+            <text x="190" y="143" text-anchor="middle" fill="#dc2626" font-family="'Cabinet Grotesk', sans-serif" font-size="28" font-weight="600">Audit risk</text>
+          </g>
+
+          <!-- Right card box -->
+          <g class="annotation-right">
+            <rect x="435" y="10" width="350" height="160" rx="12" fill="none" stroke="#eab308" stroke-width="2" opacity="0.6"/>
+            <text x="610" y="50" text-anchor="middle" fill="#eab308" font-family="'Cabinet Grotesk', sans-serif" font-size="22" font-weight="700">Underestimated cost basis</text>
+            <text x="610" y="82" text-anchor="middle" fill="currentColor" font-family="'Cabinet Grotesk', sans-serif" font-size="17">You overreport gains.</text>
+            <text x="610" y="106" text-anchor="middle" fill="currentColor" font-family="'Cabinet Grotesk', sans-serif" font-size="17">You pay taxes you don't owe.</text>
+            <rect x="506" y="112" width="208" height="48" rx="8" fill="#eab308" opacity="0.15"/>
+            <text x="610" y="143" text-anchor="middle" fill="#eab308" font-family="'Cabinet Grotesk', sans-serif" font-size="28" font-weight="600">Money lost</text>
+          </g>
+
+          <!-- Connector lines from cards to arrows -->
+          <line x1="190" y1="170" x2="190" y2="240" stroke="#dc2626" stroke-width="1" stroke-dasharray="3 3" opacity="0.3"/>
+          <line x1="610" y1="170" x2="610" y2="240" stroke="#eab308" stroke-width="1" stroke-dasharray="3 3" opacity="0.3"/>
+
+          <!-- Danger zone (left) -->
+          <rect class="zone-left" x="60" y="215" width="340" height="50" rx="6" fill="url(#grad-danger)"/>
+
+          <!-- Warning zone (right) -->
+          <rect class="zone-right" x="400" y="215" width="340" height="50" rx="6" fill="url(#grad-warning)"/>
+
+          <!-- Center axis line -->
+          <line x1="60" y1="240" x2="740" y2="240" stroke="#888" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.4"/>
+
+          <!-- Left arrow -->
+          <g class="arrow-left">
+            <line x1="370" y1="240" x2="100" y2="240" stroke="#dc2626" stroke-width="2.5" marker-end="url(#arrowhead-left)"/>
+          </g>
+
+          <!-- Right arrow -->
+          <g class="arrow-right">
+            <line x1="430" y1="240" x2="700" y2="240" stroke="#eab308" stroke-width="2.5" marker-end="url(#arrowhead-right)"/>
+          </g>
+
+          <!-- Center dot -->
+          <g class="center-dot">
+            <circle cx="400" cy="240" r="12" fill="#10b981"/>
+            <circle cx="400" cy="240" r="20" fill="none" stroke="#10b981" stroke-width="2" opacity="0.3"/>
+            <text x="400" y="305" text-anchor="middle" fill="#10b981" font-family="'Cabinet Grotesk', sans-serif" font-size="24" font-weight="600">Exact</text>
+          </g>
+        </svg>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- BEAT 1: The resolution gap — price chart with magnifier -->
+  <section class="section section--border">
+    <div class="container">
+      <div class="vs-section-box">
+
+      <div class="reveal" style="text-align:center; margin-bottom:1.5rem;">
+        <span class="section__label section__label--accent">Why it matters</span>
+        <h2 class="section__title">Same trade. Two different prices.</h2>
+      </div>
+
+      <!-- Row 1: Text left, chart right -->
+      <div class="reveal reveal-delay-1 vs-feature-row">
+        <div class="vs-feature-row__text">
+          <div class="vs-feature-row__label vs-feature-row__label--them">Common Frustrations</div>
+          <h3 class="vs-feature-row__title">Hourly estimate</h3>
+          <ul class="vs-feature-row__bullets">
+            <li class="vs-feature-row__bullet vs-feature-row__bullet--them"><span class="vs-feature-row__bullet-icon vs-feature-row__bullet-icon--them">!</span> 1 candle for the entire hour</li>
+            <li class="vs-feature-row__bullet vs-feature-row__bullet--them"><span class="vs-feature-row__bullet-icon vs-feature-row__bullet-icon--them">!</span> Price used: <strong id="vs-price-them" style="color:var(--danger);">$148.50</strong></li>
+            <li class="vs-feature-row__bullet vs-feature-row__bullet--them"><span class="vs-feature-row__bullet-icon vs-feature-row__bullet-icon--them">!</span> Highest price in the range</li>
+          </ul>
+        </div>
+        <div class="vs-feature-row__visual vs-feature-row__visual--them">
+          <div class="vs-feature-row__card vs-feature-row__card--them">
+            <canvas id="vs-candles" class="vs-compare__canvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 2: Text left, chart right -->
+      <div class="reveal reveal-delay-2 vs-feature-row">
+        <div class="vs-feature-row__text">
+          <div class="vs-feature-row__label vs-feature-row__label--us"><img src="/landing/logos/glide-logo.png" alt="Glide" style="height:64px;width:auto;vertical-align:middle;display:block;" /></div>
+          <h3 class="vs-feature-row__title">Exact pricing, to the second</h3>
+          <ul class="vs-feature-row__bullets">
+            <li class="vs-feature-row__bullet vs-feature-row__bullet--us"><span class="vs-feature-row__bullet-icon vs-feature-row__bullet-icon--us">&#10003;</span> 180 candles for 3 minutes of data</li>
+            <li class="vs-feature-row__bullet vs-feature-row__bullet--us"><span class="vs-feature-row__bullet-icon vs-feature-row__bullet-icon--us">&#10003;</span> Price used: <strong id="vs-price-us" style="color:var(--green);">$147.88</strong></li>
+            <li class="vs-feature-row__bullet vs-feature-row__bullet--us"><span class="vs-feature-row__bullet-icon vs-feature-row__bullet-icon--us">&#10003;</span> Exact price at moment of trade</li>
+          </ul>
+        </div>
+        <div class="vs-feature-row__visual vs-feature-row__visual--us">
+          <div class="vs-feature-row__card vs-feature-row__card--us">
+            <canvas id="vs-line" class="vs-compare__canvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- $31 callout -->
+      <div class="reveal reveal-delay-3" style="text-align:center;margin-top:1rem;">
+        <div style="width:100%;height:3px;background:var(--green);margin:0 auto 1.5rem;border-radius:2px;"></div>
+        <div style="font-family:var(--font-display);font-size:1.375rem;color:var(--text-muted);margin-bottom:0.5rem;">Difference on a 100 SOL trade</div>
+        <div style="font-family:var(--font-display);font-size:clamp(3rem,6vw,4.5rem);font-weight:800;color:var(--accent);line-height:1;">$62.00</div>
+        <div style="font-family:var(--font-display);font-size:1.375rem;color:var(--text-secondary);margin-top:0.75rem;">Now multiply that across your trading history.</div>
+      </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- COST OF INACCURATE DATA -->
+  <section class="section section--border">
+    <div class="container">
+
+      <div class="reveal" style="text-align:center; margin-bottom:3rem;">
+        <span class="section__label section__label--accent">The cost of inaccurate data</span>
+        <h2 class="section__title">Small errors compound fast.</h2>
+        <p class="section__desc" style="margin:0 auto;font-size:1.375rem;">A $62 cost basis difference on a single trade might seem minor. Multiply it across your trading history.</p>
+      </div>
+
+      <div class="compound-grid reveal reveal-delay-1">
+        <div class="compound-card">
+          <div class="compound-card__trades">100 trades</div>
+          <div class="compound-card__error">
+            <div class="compound-card__error-label">Cost basis error</div>
+            <div class="compound-card__error-amount">$6,200</div>
+          </div>
+          <div class="compound-card__context">A few swaps per week. Even casual traders deserve exact numbers.</div>
+        </div>
+
+        <div class="compound-card compound-card--highlight">
+          <div class="compound-card__trades">500 trades</div>
+          <div class="compound-card__error">
+            <div class="compound-card__error-label">Cost basis error</div>
+            <div class="compound-card__error-amount">$31,000</div>
+          </div>
+          <div class="compound-card__context">Daily positions across multiple exchanges. Too many trades to verify manually.</div>
+        </div>
+
+        <div class="compound-card compound-card--severe">
+          <div class="compound-card__trades">1,000 trades</div>
+          <div class="compound-card__error">
+            <div class="compound-card__error-label">Cost basis error</div>
+            <div class="compound-card__error-amount">$62,000</div>
+          </div>
+          <div class="compound-card__context">DCA, DeFi, and cross chain activity. Exactly the complexity we built for.</div>
+        </div>
+      </div>
+
+      <p class="reveal reveal-delay-2" style="text-align:center;margin-top:2rem;font-size:1.375rem;color:var(--text-muted);">Based on a $62 average difference per trade between snapshot pricing and exact <span style="color:var(--accent);font-weight:700;">block timestamp</span> pricing.</p>
+
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="section section--alt section--warm-reverse" id="how-it-works">
+    <div class="container">
+
+      <div class="reveal">
+        <span class="section__label section__label--accent">How it works</span>
+        <h2 class="section__title">Connect. Import. Done.</h2>
+        <p class="section__desc" style="font-size:clamp(1.75rem,4vw,2.75rem);font-weight:600;max-width:none;margin:0;text-align:left;">From sign up to tax ready reports in minutes.</p>
+      </div>
+
+      <div class="how__pipeline reveal" id="how-pipeline">
+        <div class="how__pipeline-line"><div class="how__pipeline-line-fill"></div></div>
+        <div class="how__pipeline-particles">
+          <div class="how__pipeline-dot" style="animation-delay: 2s;"></div>
+          <div class="how__pipeline-dot" style="animation-delay: 2.6s;"></div>
+          <div class="how__pipeline-dot" style="animation-delay: 3.2s;"></div>
+          <div class="how__pipeline-dot" style="animation-delay: 3.8s;"></div>
+          <div class="how__pipeline-dot" style="animation-delay: 4.4s;"></div>
+        </div>
+        <div class="how__pipeline-node how__pipeline-node--sources">
+          <span><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block;margin:0 auto;"><circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/><line x1="6" y1="7" x2="10" y2="11"/><line x1="18" y1="7" x2="14" y2="11"/><line x1="6" y1="17" x2="10" y2="13"/><line x1="18" y1="17" x2="14" y2="13"/></svg></span>
+          <div class="how__pipeline-node-label">Your accounts</div>
+        </div>
+        <div class="how__pipeline-node how__pipeline-node--process">
+          <span>TX</span>
+          <div class="how__pipeline-node-label"><img src="/landing/logos/glide-logo.png" alt="Glide" style="height:40px;width:auto;display:block;max-width:none;" /></div>
+        </div>
+        <div class="how__pipeline-node how__pipeline-node--output">
+          <span>&#10003;</span>
+          <div class="how__pipeline-node-label">Tax forms</div>
+        </div>
+      </div>
+
+      <div class="how__steps reveal reveal-delay-1">
+
+        <div class="how__step">
+          <div class="how__step-timing">
+            <div class="how__step-timer" style="font-family:var(--font-display);font-size:2.25rem;font-weight:700;color:var(--accent);">2 minutes</div>
+          </div>
+          <div class="how__step-num">01</div>
+          <div class="how__step-title">Connect your exchanges</div>
+          <p class="how__step-text">Paste your API key or upload a CSV. Glide handles the formatting, the parsing, and the edge cases.</p>
+        </div>
+
+        <div class="how__step">
+          <div class="how__step-timing">
+            <div class="how__step-timer" style="font-family:var(--font-display);font-size:2.25rem;font-weight:700;color:var(--accent);">1 minute</div>
+          </div>
+          <div class="how__step-num">02</div>
+          <div class="how__step-title">Add your wallet addresses</div>
+          <p class="how__step-text">Enter your wallet address. Glide scans every on chain transaction automatically. Swaps, staking, bridging, all of it.</p>
+        </div>
+
+        <div class="how__step">
+          <div class="how__step-timing">
+            <div class="how__step-timer" style="font-family:var(--font-display);font-size:2.25rem;font-weight:700;color:var(--accent);">~10 minutes</div>
+          </div>
+          <div class="how__step-num">03</div>
+          <div class="how__step-title">See what you owe</div>
+          <p class="how__step-text">Capital gains, income, and losses. Categorized by year, ready to export. Every number traceable to its source.</p>
+        </div>
+
+      </div>
+
+      <p class="reveal reveal-delay-2" style="text-align:center;margin-top:1.5rem;font-size:1.375rem;color:var(--text-muted);">For up to 10,000 transactions.</p>
+
+    </div>
+  </section>
+
+  <!-- PRODUCT SHOWCASE — with context -->
+  <section class="showcase section--accent-bg">
+    <div class="container">
+      <div class="reveal" style="text-align:center; margin-bottom:2rem;">
+        <span class="section__label" style="color:#fff;">See it in action</span>
+        <h2 class="section__title" style="color:#fff;">Glide through your crypto taxes</h2>
+        <p class="section__desc" style="color:#fff; margin:0 auto;font-size:clamp(1.5rem,3.5vw,2.25rem);font-weight:600;">Use our Guided Mode to identify and calculate your taxes.</p>
+      </div>
+      <div class="showcase__frame reveal reveal-delay-1">
+        <div class="showcase__img-wrap active">
+          <div class="showcase__dots"><div class="showcase__dot"></div><div class="showcase__dot"></div><div class="showcase__dot"></div></div>
+          <video id="guided-mode-video" src="/landing/guided-mode.mp4" muted playsinline preload="metadata" style="width:100%;height:auto;display:block;"></video>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EXCHANGES -->
+  <section class="section section--border">
+    <div class="container">
+
+      <div class="reveal">
+        <span class="section__label section__label--accent">Supported platforms</span>
+        <h2 class="section__title">All major exchanges. Three chains. One click.</h2>
+        <p class="section__desc" style="text-align:left;max-width:none;margin:0;">Connect once and we pull everything. CEX trades, on chain swaps, DeFi activity. All in one place.</p>
+      </div>
+
+      <div class="exchange-network reveal" id="exchange-network">
+        <canvas class="exchange-network__canvas" id="network-canvas"></canvas>
+        <div class="exchange-network__labels" id="network-labels"></div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- COMPARISON -->
+  <section class="section section--alt section--warm" id="compare">
+    <div class="container">
+
+      <div class="reveal" style="text-align:center; margin-bottom:3rem;">
+        <span class="section__label section__label--accent">The right approach</span>
+        <h2 class="section__title">How we achieve accuracy</h2>
+      </div>
+
+      <div class="compare-grid reveal reveal-delay-1">
+        <!-- Header row -->
+        <div class="compare-grid__header">
+          <div class="compare-grid__header-cell"></div>
+          <div class="compare-grid__header-cell compare-grid__header-cell--them">Common frustrations</div>
+          <div class="compare-grid__header-cell compare-grid__header-cell--us" style="display:flex;align-items:center;justify-content:center;"><img src="/landing/logos/glide-logo.png" alt="Glide" style="height:45px;width:auto;display:block;" /></div>
+        </div>
+
+        <!-- Row 1: Price granularity — magnifying glass blurry vs sharp -->
+        <div class="compare-grid__row">
+          <div class="compare-grid__category">Price granularity</div>
+          <div class="compare-grid__cell compare-grid__cell--them">
+            <svg class="compare-icon compare-icon--bad" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="22" cy="22" r="12" stroke="var(--danger)" stroke-width="2.5" opacity="0.5"/>
+              <line x1="31" y1="31" x2="42" y2="42" stroke="var(--danger)" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
+              <rect x="16" y="16" width="4" height="4" rx="0.5" fill="var(--danger)" opacity="0.4" class="compare-jitter"/>
+              <rect x="22" y="16" width="4" height="4" rx="0.5" fill="var(--danger)" opacity="0.3" class="compare-jitter" style="animation-delay:0.3s"/>
+              <rect x="16" y="22" width="4" height="4" rx="0.5" fill="var(--danger)" opacity="0.3" class="compare-jitter" style="animation-delay:0.6s"/>
+              <rect x="22" y="22" width="4" height="4" rx="0.5" fill="var(--danger)" opacity="0.4" class="compare-jitter" style="animation-delay:0.9s"/>
+            </svg>
+            <div class="compare-grid__val--bad">As high as daily</div>
+          </div>
+          <div class="compare-grid__cell compare-grid__cell--us">
+            <svg class="compare-icon compare-icon--good" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="22" cy="22" r="12" stroke="var(--green)" stroke-width="2.5" opacity="0.7"/>
+              <line x1="31" y1="31" x2="42" y2="42" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" opacity="0.7"/>
+              <line x1="22" y1="16" x2="22" y2="28" stroke="var(--green)" stroke-width="1.5" opacity="0.4"/>
+              <line x1="16" y1="22" x2="28" y2="22" stroke="var(--green)" stroke-width="1.5" opacity="0.4"/>
+              <circle cx="22" cy="22" r="3" fill="var(--green)" class="compare-pulse"/>
+            </svg>
+            <div class="compare-grid__val--good">Exact second</div>
+          </div>
+        </div>
+
+        <!-- Row 2: Unlisted tokens — question mark coin vs checkmark coin -->
+        <div class="compare-grid__row">
+          <div class="compare-grid__category">Unlisted tokens</div>
+          <div class="compare-grid__cell compare-grid__cell--them">
+            <svg class="compare-icon compare-icon--bad" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="24" cy="24" r="14" stroke="var(--danger)" stroke-width="2" opacity="0.4"/>
+              <text x="24" y="30" text-anchor="middle" font-family="var(--font-display)" font-size="18" font-weight="700" fill="var(--danger)" opacity="0.5" class="compare-jitter">?</text>
+            </svg>
+            <div class="compare-grid__val--bad">$0 cost basis</div>
+          </div>
+          <div class="compare-grid__cell compare-grid__cell--us">
+            <svg class="compare-icon compare-icon--good" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="24" cy="24" r="14" fill="var(--green)" opacity="0.15" class="compare-pulse"/>
+              <circle cx="24" cy="24" r="14" stroke="var(--green)" stroke-width="2" opacity="0.6"/>
+              <polyline points="17,24 22,29 31,19" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.8"/>
+            </svg>
+            <div class="compare-grid__val--good">Liquid leg method</div>
+          </div>
+        </div>
+
+        <!-- Row 3: DCA lot accuracy — scattered vs aligned dots -->
+        <div class="compare-grid__row">
+          <div class="compare-grid__category">DCA lot accuracy</div>
+          <div class="compare-grid__cell compare-grid__cell--them">
+            <svg class="compare-icon compare-icon--bad" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="18" r="4" fill="var(--danger)" opacity="0.3" class="compare-jitter"/>
+              <circle cx="24" cy="30" r="4" fill="var(--danger)" opacity="0.4" class="compare-jitter" style="animation-delay:0.2s"/>
+              <circle cx="36" cy="14" r="4" fill="var(--danger)" opacity="0.3" class="compare-jitter" style="animation-delay:0.4s"/>
+              <circle cx="18" cy="34" r="4" fill="var(--danger)" opacity="0.35" class="compare-jitter" style="animation-delay:0.6s"/>
+              <circle cx="34" cy="28" r="4" fill="var(--danger)" opacity="0.3" class="compare-jitter" style="animation-delay:0.8s"/>
+            </svg>
+            <div class="compare-grid__val--bad">Manual verification</div>
+          </div>
+          <div class="compare-grid__cell compare-grid__cell--us">
+            <svg class="compare-icon compare-icon--good" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <line x1="8" y1="24" x2="40" y2="24" stroke="var(--green)" stroke-width="1.5" opacity="0.3"/>
+              <circle cx="10" cy="24" r="4" fill="var(--green)" opacity="0.7" class="compare-pulse" style="animation-delay:0s"/>
+              <circle cx="18" cy="24" r="4" fill="var(--green)" opacity="0.7" class="compare-pulse" style="animation-delay:0.15s"/>
+              <circle cx="26" cy="24" r="4" fill="var(--green)" opacity="0.7" class="compare-pulse" style="animation-delay:0.3s"/>
+              <circle cx="34" cy="24" r="4" fill="var(--green)" opacity="0.7" class="compare-pulse" style="animation-delay:0.45s"/>
+              <circle cx="42" cy="24" r="4" fill="var(--green)" opacity="0.7" class="compare-pulse" style="animation-delay:0.6s"/>
+            </svg>
+            <div class="compare-grid__val--good">Fully automated</div>
+          </div>
+        </div>
+
+        <!-- Row 4: Cost basis methods — single bar vs three bars -->
+        <div class="compare-grid__row">
+          <div class="compare-grid__category">Cost basis methods</div>
+          <div class="compare-grid__cell compare-grid__cell--them">
+            <svg class="compare-icon compare-icon--bad" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="10" y="21" width="28" height="6" rx="2" fill="var(--danger)" opacity="0.25"/>
+            </svg>
+            <div class="compare-grid__val--bad">Limited</div>
+          </div>
+          <div class="compare-grid__cell compare-grid__cell--us">
+            <svg class="compare-icon compare-icon--good" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="10" y="12" width="28" height="5" rx="2" fill="var(--green)" opacity="0.5" class="compare-pulse" style="animation-delay:0s"/>
+              <rect x="10" y="21" width="28" height="5" rx="2" fill="var(--green)" opacity="0.65" class="compare-pulse" style="animation-delay:0.2s"/>
+              <rect x="10" y="30" width="28" height="5" rx="2" fill="var(--green)" opacity="0.8" class="compare-pulse" style="animation-delay:0.4s"/>
+            </svg>
+            <div class="compare-grid__val--good">FIFO, LIFO, specific ID</div>
+          </div>
+        </div>
+
+        <!-- Row 5: Verification — broken chain vs linked chain -->
+        <div class="compare-grid__row">
+          <div class="compare-grid__category">Verification</div>
+          <div class="compare-grid__cell compare-grid__cell--them">
+            <svg class="compare-icon compare-icon--bad" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="6" y="17" width="16" height="14" rx="7" stroke="var(--danger)" stroke-width="2" opacity="0.4" class="compare-drift-left"/>
+              <rect x="26" y="17" width="16" height="14" rx="7" stroke="var(--danger)" stroke-width="2" opacity="0.4" class="compare-drift-right"/>
+            </svg>
+            <div class="compare-grid__val--bad">Limited</div>
+          </div>
+          <div class="compare-grid__cell compare-grid__cell--us">
+            <svg class="compare-icon compare-icon--good" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="6" y="17" width="20" height="14" rx="7" stroke="var(--green)" stroke-width="2" opacity="0.7"/>
+              <rect x="22" y="17" width="20" height="14" rx="7" stroke="var(--green)" stroke-width="2" opacity="0.7"/>
+              <circle cx="24" cy="24" r="2.5" fill="var(--green)" class="compare-pulse"/>
+            </svg>
+            <div class="compare-grid__val--good">On chain tx hash</div>
+          </div>
+        </div>
+
+        <!-- Row 6: Tax optimization — flat chart vs shield with arrow -->
+        <div class="compare-grid__row">
+          <div class="compare-grid__category">Tax optimization</div>
+          <div class="compare-grid__cell compare-grid__cell--them">
+            <svg class="compare-icon compare-icon--bad" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <!-- Flat chart with single line -->
+              <line x1="8" y1="38" x2="8" y2="12" stroke="var(--danger)" stroke-width="1.5" opacity="0.25"/>
+              <line x1="8" y1="38" x2="42" y2="38" stroke="var(--danger)" stroke-width="1.5" opacity="0.25"/>
+              <line x1="10" y1="28" x2="40" y2="28" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" opacity="0.45" class="compare-jitter"/>
+            </svg>
+            <div class="compare-grid__val--bad">Partial</div>
+          </div>
+          <div class="compare-grid__cell compare-grid__cell--us">
+            <svg class="compare-icon compare-icon--good" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <!-- Shield with upward arrow -->
+              <path d="M24 4 L38 10 V24 C38 34 24 44 24 44 C24 44 10 34 10 24 V10 Z" fill="var(--green)" opacity="0.05" class="compare-pulse"/>
+              <path d="M24 4 L38 10 V24 C38 34 24 44 24 44 C24 44 10 34 10 24 V10 Z" stroke="var(--green)" stroke-width="2" opacity="0.35"/>
+              <!-- Arrow pointing up inside shield -->
+              <line x1="24" y1="32" x2="24" y2="16" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+              <polyline points="18,22 24,16 30,22" stroke="var(--green)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+            </svg>
+            <div class="compare-grid__val--good">Full suite</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- PRICING + FEATURE TABLE wrapper (for side arrow) -->
+  <div class="pricing-wrap">
+    <!-- Side arrow spanning from pricing to feature table -->
+    <div class="pricing-side-arrow" aria-hidden="true">
+      <!-- Stretchable dashed line (no arrowhead) -->
+      <svg class="pricing-side-arrow__line" viewBox="0 0 120 600" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M 90 20 C 30 180, 30 380, 90 560" stroke="var(--accent)" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-dasharray="8 6" vector-effect="non-scaling-stroke"/>
+      </svg>
+      <!-- Fixed-size arrowhead placed at the path endpoint, rotated to match tangent -->
+      <svg class="pricing-side-arrow__head" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <polygon points="0,0 22,8 8,22" fill="var(--accent)"/>
+      </svg>
+    </div>
+
+  <!-- PRICING -->
+  <section class="section section--border" id="pricing">
+    <div class="container">
+
+      <div class="pricing__header reveal">
+        <span class="section__label section__label--accent">Pricing</span>
+        <h2 class="section__title">Transparent pricing, built for traders.</h2>
+        <p class="section__desc">No hidden fees. No surprise upsells. Pick your tier, connect your exchanges, and you're done.</p>
+      </div>
+
+      <!-- Trial banner — horizontal -->
+      <div class="pricing__trial-banner reveal reveal-delay-1">
+        <div class="pricing__trial-text">
+          <div class="pricing__tier" style="margin-bottom:0;">Trial</div>
+          <div class="pricing__subtitle" style="margin-bottom:0;">Explore the platform for free: connect exchanges and view your transactions.</div>
+        </div>
+        <div class="pricing__trial-price">
+          <span style="font-family:var(--font-display);font-size:2rem;font-weight:800;">$0</span>
+        </div>
+        <button class="pricing__btn" style="width:auto;padding:0.6rem 2rem;">Try free</button>
+      </div>
+
+      <!-- 4 paid plans + done-for-you — linked with column dividers -->
+      <div class="pricing__linked">
+
+      <div class="pricing__grid pricing__grid--4col reveal reveal-delay-2" style="margin-top:1.25rem;position:relative;">
+        <div class="pricing__linked-line pricing__linked-line--1"></div>
+        <div class="pricing__linked-line pricing__linked-line--2"></div>
+        <div class="pricing__linked-line pricing__linked-line--3"></div>
+
+        <!-- Starter -->
+        <div class="pricing__col">
+          <div class="pricing__card">
+            <div class="pricing__tier">Starter</div>
+            <div class="pricing__subtitle">Casual traders</div>
+            <div class="pricing__price"><span class="currency">$</span>49<span class="period">/year</span></div>
+            <div class="pricing__limit">Up to 300 transactions</div>
+            <ul class="pricing__features">
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> Full feature tax suite</li>
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> 50 features</li>
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> All report exports</li>
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> Email support</li>
+            </ul>
+            <button class="pricing__btn">Get started</button>
+          </div>
+        </div>
+
+        <!-- Active (Featured) -->
+        <div class="pricing__col">
+          <div class="pricing__card pricing__card--featured">
+            <div class="pricing__badge">Popular</div>
+            <div class="pricing__tier">Active</div>
+            <div class="pricing__subtitle">Active traders</div>
+            <div class="pricing__price"><span class="currency">$</span>99<span class="period">/year</span></div>
+            <div class="pricing__limit">Up to 1,000 transactions</div>
+            <ul class="pricing__features">
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> Everything in Starter</li>
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> An additional 20 features</li>
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> In app chat support</li>
+            </ul>
+            <button class="pricing__btn">Get started</button>
+          </div>
+        </div>
+
+        <!-- Pro -->
+        <div class="pricing__col">
+          <div class="pricing__card">
+            <div class="pricing__tier">Pro</div>
+            <div class="pricing__subtitle">Serious traders</div>
+            <div class="pricing__price"><span class="currency">$</span>299<span class="period">/year</span></div>
+            <div class="pricing__limit">Up to 10,000 transactions</div>
+            <ul class="pricing__features">
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> Everything in Active</li>
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> Advanced trade analytics</li>
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> Risk adjusted metrics</li>
+            </ul>
+            <button class="pricing__btn">Get started</button>
+          </div>
+        </div>
+
+        <!-- Prime -->
+        <div class="pricing__col">
+          <div class="pricing__card">
+            <div class="pricing__tier">Prime</div>
+            <div class="pricing__subtitle">High volume</div>
+            <div class="pricing__price"><span class="currency">$</span>699<span class="period">/year</span></div>
+            <div class="pricing__limit">Up to 100,000 transactions</div>
+            <ul class="pricing__features">
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> Everything in Pro</li>
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> Built for high frequency traders</li>
+              <li class="pricing__feature"><span class="pricing__check">&#10003;</span> 100,000+ transactions supported</li>
+            </ul>
+            <button class="pricing__btn">Get started</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Glide does it for you -->
+      <div class="pricing__dfy-section reveal reveal-delay-3">
+        <div class="pricing__grid pricing__grid--4col pricing__dfy-row">
+          <div class="pricing__dfy-divider-mid"></div>
+          <div class="pricing__dfy-cell">
+            <div class="pricing__dfy-price">$399<span>/yr</span></div>
+            <button class="pricing__dfy-btn">Get started</button>
+          </div>
+          <div class="pricing__dfy-cell">
+            <div class="pricing__dfy-price">$399<span>/yr</span></div>
+            <button class="pricing__dfy-btn">Get started</button>
+          </div>
+          <div class="pricing__dfy-cell">
+            <div class="pricing__dfy-price">$999<span>/yr</span></div>
+            <button class="pricing__dfy-btn">Get started</button>
+          </div>
+          <div class="pricing__dfy-cell">
+            <div class="pricing__dfy-price">$1,999<span>/yr</span></div>
+            <button class="pricing__dfy-btn">Get started</button>
+          </div>
+        </div>
+        <div class="pricing__dfy-title-wrap">
+          <h3 class="pricing__dfy-title">Glide does it for you</h3>
+        </div>
+        <div class="pricing__dfy-bullets-wrap">
+          <ul class="pricing__dfy-bullets">
+            <li>Our tax experts reconcile every transaction, resolve edge cases, and ensure your cost basis is accurate across all exchanges and wallets</li>
+            <li>You receive a fully prepared, audit ready tax package with every figure verified and traceable to its source</li>
+            <li>Includes a license to Glide software</li>
+          </ul>
+        </div>
+      </div>
+
+      </div><!-- /.pricing__linked -->
+
+      <!-- CPA FILING -->
+      <div class="fullservice-banner reveal" style="margin-top:1.5rem;">
+        <div class="fullservice-banner__text">
+          <h2 class="fullservice-banner__title">CPA Filing</h2>
+          <p class="fullservice-banner__sub">Add CPA filing to any plan</p>
+        </div>
+        <div class="fullservice-banner__cta">
+          <div class="fullservice-banner__starts">Starts at</div>
+          <div class="fullservice-banner__price"><span class="currency">$</span>750<span class="period">/year</span></div>
+          <button class="btn btn--primary" style="width:100%;justify-content:center;border-radius:10px;margin-top:1rem;">Learn more</button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  </div><!-- /.pricing-wrap -->
+
+  <!-- FEATURE COMPARISON TABLE -->
+  <section class="section section--tight">
+    <div class="container">
+      <div class="feature-table reveal">
+
+        <!-- Header row -->
+        <div class="feature-table__header">
+          <div class="feature-table__label"></div>
+          <div class="feature-table__plan">Trial</div>
+          <div class="feature-table__plan">Starter</div>
+          <div class="feature-table__plan feature-table__plan--featured">Active</div>
+          <div class="feature-table__plan">Pro</div>
+          <div class="feature-table__plan">Prime</div>
+        </div>
+
+        <!-- TRANSACTIONS & LIMITS -->
+        <div class="feature-table__category" style="background:#064e3b;">Transactions &amp; Limits</div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Price</div>
+          <div class="feature-table__val">$0/yr</div>
+          <div class="feature-table__val">$49/yr</div>
+          <div class="feature-table__val feature-table__val--featured">$99/yr</div>
+          <div class="feature-table__val">$299/yr</div>
+          <div class="feature-table__val">$699/yr</div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Yearly transaction limit</div>
+          <div class="feature-table__val">Unlimited*</div>
+          <div class="feature-table__val">300</div>
+          <div class="feature-table__val feature-table__val--featured">1,000</div>
+          <div class="feature-table__val">10,000</div>
+          <div class="feature-table__val">100,000</div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Micro transaction support</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Spam detection</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+
+        <!-- DATA IMPORT -->
+        <div class="feature-table__category" style="background:#065f46;">Data Import</div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Exchange CSV import</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Custom CSV import</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Full exchange support</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+
+        <!-- ASSET CLASS SUPPORT -->
+        <div class="feature-table__category" style="background:#047857;">Asset Class Support</div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">DeFi</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">NFTs</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Staking rewards</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Margin trading</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Lending &amp; borrowing</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Liquidity pools / LP tokens</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Yield farming rewards</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Airdrops</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Forks &amp; chain splits</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Wrapped &amp; bridged assets</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">DCAs</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Unlisted tokens</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Meme tokens</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Stablecoins</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Derivatives &amp; perpetuals</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+
+        <!-- EQUITIES / SECURITIES SUPPORT -->
+        <div class="feature-table__category" style="background:#059669;">Equities / Securities Support</div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">US stocks &amp; ETFs</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Options trading</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Futures &amp; futures options</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Mutual funds</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Bonds &amp; fixed income</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Dividends &amp; distributions</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Stock splits &amp; corp actions</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Wash sale detection</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Short sales &amp; covered calls</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">1099B reconciliation</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">RSUs, ESPP, equity comp</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Section 1256 contracts</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+
+        <!-- RECONCILIATION -->
+        <div class="feature-table__category" style="background:#10b981;">Reconciliation</div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Double entry ledger</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Transaction sorting</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Cost analysis</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Error reconciliation</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+
+        <!-- COST BASIS & TAX OPTIMIZATION -->
+        <div class="feature-table__category" style="background:#047857;">Cost Basis &amp; Tax Optimization</div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">FIFO, LIFO, ACB methods</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Wallet based cost tracking</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Change method by year</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Tax loss harvesting</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Tax lots breakdown</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Advanced tax settings</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Tax planning insights</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Capital gains preview</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Performance dashboard</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+
+        <!-- TAX FORMS & REPORTS -->
+        <div class="feature-table__category" style="background:#065f46;">Tax Forms &amp; Reports</div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Form 8949 / Schedule D</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">International tax reports</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Income report</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Capital gains report</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Download tax forms</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Export to TurboTax, TaxACT</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+
+        <!-- PORTFOLIO & TRACKING -->
+        <div class="feature-table__category" style="background:#064e3b;">Portfolio &amp; Tracking</div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Unlimited revisions</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">20,000+ cryptocurrencies</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Unlimited exchanges &amp; wallets</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Wallet tracking (live)</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Price tracking (live)</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Portfolio tracking (live)</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+
+        <!-- PROFESSIONAL & SUPPORT -->
+        <div class="feature-table__category" style="background:#059669;">Professional &amp; Support</div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Email support</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Live / in app chat support</div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+
+        <!-- TRADE ANALYSIS -->
+        <div class="feature-table__category" style="background:#10b981;">Trade Analysis</div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Win/loss ratio</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Realized vs. unrealized P&amp;L</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Best &amp; worst trades</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Average hold time analysis</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Performance by asset</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Entry/exit timing analysis</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Risk adjusted metrics</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+        <div class="feature-table__row">
+          <div class="feature-table__label">Benchmark comparisons</div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val feature-table__val--featured"><span class="ft-x">&#10007;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+          <div class="feature-table__val"><span class="ft-check">&#10003;</span></div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- Verifiability section removed -->
+
+  <!-- Final CTA removed -->
+
+  <!-- Ambient particles removed -->
+
+  <!-- FOOTER -->
+  <footer class="footer" style="position:relative;z-index:1;">
+    <div class="container">
+      <div class="footer__top">
+        <div>
+          <div style="display:flex;align-items:center;">
+            <img src="/landing/logos/glide-logo.png" alt="Glide" style="height:48px;width:auto;" />
+          </div>
+          <p class="footer__brand-desc">Crypto tax compliance, simplified.</p>
+        </div>
+        <div>
+          <div class="footer__col-title">Legal</div>
+          <ul class="footer__col-links">
+            <li><a href="#" class="footer__col-link">Privacy policy</a></li>
+            <li><a href="#" class="footer__col-link">Terms of service</a></li>
+            <li><a href="#" class="footer__col-link">Support</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="footer__bottom">
+        <div class="footer__copy">2026 GLIDE. All rights reserved.</div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- THEME TOGGLE -->
+  <!-- toggle moved to nav -->
+
+  <!-- ============================================================
+       JAVASCRIPT
