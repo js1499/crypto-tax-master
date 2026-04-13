@@ -11,7 +11,6 @@ import {
   Settings,
   Sparkles,
   Wallet,
-  HelpCircle,
   Building,
   ArrowRightLeft,
   GraduationCap,
@@ -60,14 +59,12 @@ const navGroups: NavGroup[] = [
 
 const standaloneItems: NavItem[] = [
   { title: "Tax Reports", href: "/tax-reports", icon: FileText, onboarding: "nav-tax-reports" },
-  { title: "Tutorial", href: "/tutorial", icon: GraduationCap, onboarding: "nav-tutorial" },
   { title: "Tax AI", href: "/tax-ai", icon: Sparkles },
-  { title: "Tutorial", href: "/tutorial", icon: GraduationCap },
 ];
 
 const footerItems: NavItem[] = [
   { title: "Settings", href: "/settings", icon: Settings, onboarding: "nav-settings" },
-  { title: "Help & Support", href: "#", icon: HelpCircle },
+  { title: "Tutorial", href: "/tutorial", icon: GraduationCap },
 ];
 
 export function AppSidebar() {
