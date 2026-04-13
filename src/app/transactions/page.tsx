@@ -196,6 +196,7 @@ function TransactionsContent() {
   const router = useRouter();
   const { refreshKey } = useSyncPipeline();
   const [mounted, setMounted] = useState(false);
+  const [isPaidPlan, setIsPaidPlan] = useState(true); // default true to avoid flash of blur
   const [searchTerm, setSearchTerm] = useState("");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
@@ -429,7 +430,8 @@ function TransactionsContent() {
           }));
 
           setTransactions(apiTransactions);
-          setFilteredTransactions(apiTransactions); // Keep for compatibility with existing code
+          setFilteredTransactions(apiTransactions);
+          if (data.plan) setIsPaidPlan(data.plan.isPaid);
           setTotalCount(data.pagination.totalCount);
           setTotalPages(data.pagination.totalPages);
           if (data.stats) {
@@ -1227,6 +1229,12 @@ function TransactionsContent() {
   // Flat list for Select components (detail sheet, etc.)
   const transactionTypes = typeCategories.flatMap(c => c.types.map(t => ({ value: t, label: t })));
 
+  // Blur wrapper for monetary values on free plan
+  const BlurValue = ({ children }: { children: React.ReactNode }) => {
+    if (isPaidPlan) return <>{children}</>;
+    return <span className="blur-sm select-none">{children}</span>;
+  };
+
   // Helper: format amount for display
   const formatAmount = (amount: number | null) => {
     if (amount == null) return null;
@@ -1645,7 +1653,7 @@ function TransactionsContent() {
           <div className="flex items-center justify-between">
 
             {/* Left group — glowing border */}
-            <div className="glow-border">
+            <div className={cn("glow-border", !isPaidPlan && "blur-sm select-none")}>
             <div className="flex items-center px-5 py-4">
             <div className="pr-7">
               <p className={cn(
@@ -1722,7 +1730,7 @@ function TransactionsContent() {
 
         {/* ── P&L Breakdown by Asset ── */}
         {stats?.pnl && (stats.pnl.gainsByAsset.length > 0 || stats.pnl.lossesByAsset.length > 0) && (
-          <div className="space-y-2">
+          <div className={cn("space-y-2", !isPaidPlan && "blur-sm select-none pointer-events-none")}>
             <div className="flex items-center gap-3">
               <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">P&L + Income by Asset</h2>
               <div className="flex items-center gap-1 bg-[#F5F5F0] dark:bg-[#222] rounded-md p-0.5">
@@ -2160,6 +2168,22 @@ function TransactionsContent() {
         )}
 
         {/* ── Transaction Table (no card wrapper — Horizon spec) ── */}
+        {/* Upgrade banner for free users */}
+        {!isPaidPlan && (
+          <div className="rounded-lg bg-[#EFF6FF] dark:bg-[rgba(37,99,235,0.08)] border border-[#BFDBFE] dark:border-[#1E3A5F] px-5 py-4 flex items-center justify-between">
+            <div>
+              <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Unlock full transaction data</p>
+              <p className="text-[13px] text-[#6B7280] mt-0.5">Upgrade to see exact values, cost basis, gain/loss, and download tax reports.</p>
+            </div>
+            <button
+              onClick={() => window.location.href = "/#pricing"}
+              className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#2563EB] text-white text-[14px] font-medium hover:bg-[#1D4ED8] transition-colors"
+            >
+              View Plans
+            </button>
+          </div>
+        )}
+
         <div data-onboarding="review-transactions" className="border border-[#E5E5E0] dark:border-[#333333] rounded-lg">
           <div className="overflow-auto max-h-[calc(100vh-280px)] rounded-lg table-scroll-shadow">
             <Table className={cn("transaction-table", `density-${tableDensity}`)}>
@@ -2355,6 +2379,7 @@ function TransactionsContent() {
 
                       {/* Gain/Loss */}
                       <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                        <BlurValue>
                         {transaction.gainLossUsd != null ? (
                           <span className={cn(
                             "inline-flex items-center gap-1 rounded-md px-2.5 py-[4px] text-[13px] font-medium",
@@ -2370,31 +2395,38 @@ function TransactionsContent() {
                         ) : (
                           <span className="inline-flex items-center rounded-md px-2.5 py-[4px] text-[13px] bg-pill-gray-bg text-pill-gray-text dark:bg-[rgba(75,85,99,0.12)] dark:text-[#9CA3AF]">N/A</span>
                         )}
+                        </BlurValue>
                       </TableCell>
 
                       {/* Advanced columns */}
                       {advancedView && (
                         <>
                           <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                            <BlurValue>
                             <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                               {transaction.outPricePerUnit != null
                                 ? `$${transaction.outPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`
                                 : transaction.price && transaction.price !== "$0.00" ? transaction.price : "—"}
                             </span>
+                            </BlurValue>
                           </TableCell>
                           <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                            <BlurValue>
                             <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                               {transaction.costBasisUsd != null && transaction.costBasisUsd > 0
                                 ? `$${transaction.costBasisUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 : "—"}
                             </span>
+                            </BlurValue>
                           </TableCell>
                           <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                            <BlurValue>
                             <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                               {transaction.valueUsd != null && transaction.valueUsd !== 0
                                 ? `$${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                                 : "—"}
                             </span>
+                            </BlurValue>
                           </TableCell>
                         </>
                       )}

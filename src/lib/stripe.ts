@@ -30,8 +30,8 @@ export const PLANS: Record<PlanKey, PlanConfig> = {
   free: {
     name: "Trial",
     priceEnvKey: "",
-    transactionLimit: 50,
-    walletLimit: 1,
+    transactionLimit: Infinity,
+    walletLimit: Infinity,
     features: { allReports: false, taxAi: false, securities: false, analytics: false, chatSupport: false, dfy: false },
   },
   starter: {

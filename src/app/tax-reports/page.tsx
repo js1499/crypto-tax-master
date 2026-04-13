@@ -254,6 +254,14 @@ interface TaxReportData {
 
 export default function TaxReportsPage() {
   const { refreshKey } = useSyncPipeline();
+  const [isPaidPlan, setIsPaidPlan] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/stripe/status", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setIsPaidPlan(d.planKey !== "free"); })
+      .catch(() => {});
+  }, []);
   const [mounted, setMounted] = useState(false);
   const [selectedYear, setSelectedYear] = useState("2025");
   const [generatingFormId, setGeneratingFormId] = useState<string | null>(null);
@@ -760,7 +768,7 @@ export default function TaxReportsPage() {
         </div>
 
         {/* Row 1: Tax Summary + Breakdown */}
-        <div className="grid grid-cols-[1fr_340px] gap-5">
+        <div className={cn("grid grid-cols-[1fr_340px] gap-5", !isPaidPlan && "blur-sm select-none pointer-events-none")}>
 
           {/* Tax Summary */}
           <div className="border border-[#E5E5E0] dark:border-[#333] rounded-xl bg-white dark:bg-[#1A1A1A]">
@@ -854,6 +862,22 @@ export default function TaxReportsPage() {
             </div>
           </div>
         </div>
+
+        {/* Upgrade banner for free users */}
+        {!isPaidPlan && (
+          <div className="rounded-lg bg-[#EFF6FF] dark:bg-[rgba(37,99,235,0.08)] border border-[#BFDBFE] dark:border-[#1E3A5F] px-5 py-4 flex items-center justify-between">
+            <div>
+              <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Upgrade to download tax reports</p>
+              <p className="text-[13px] text-[#6B7280] mt-0.5">PDF forms (Schedule D, Form 8949, Schedule 1) and CSV exports require a paid plan.</p>
+            </div>
+            <button
+              onClick={() => window.location.href = "/#pricing"}
+              className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#2563EB] text-white text-[14px] font-medium hover:bg-[#1D4ED8] transition-colors"
+            >
+              View Plans
+            </button>
+          </div>
+        )}
 
         {/* Row 2: Available Reports */}
         <div data-onboarding="download-reports" className="border border-[#E5E5E0] dark:border-[#333] rounded-xl bg-white dark:bg-[#1A1A1A]">

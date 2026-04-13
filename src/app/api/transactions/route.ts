@@ -554,8 +554,13 @@ export async function GET(request: NextRequest) {
     const hasNextPage = page < totalPages;
     const hasPreviousPage = page > 1;
 
+    // Get user's plan for feature gating
+    const { getUserPlan } = await import("@/lib/plan-limits");
+    const userPlan = await getUserPlan(user.id);
+
     return NextResponse.json({
       status: "success",
+      plan: { isPaid: userPlan.isPaid, planKey: userPlan.planKey },
       transactions: formattedTransactions,
       pagination: {
         page,
