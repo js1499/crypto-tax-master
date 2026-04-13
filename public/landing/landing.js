@@ -2571,3 +2571,48 @@
     });
   })();
   
+
+// ============================================================
+// STRIPE CHECKOUT — wire pricing buttons to checkout API
+// ============================================================
+(function() {
+  document.querySelectorAll('[data-plan]').forEach(function(btn) {
+    btn.addEventListener('click', async function(e) {
+      e.preventDefault();
+      var planKey = btn.getAttribute('data-plan');
+      if (!planKey) return;
+
+      // Disable button and show loading
+      btn.disabled = true;
+      var originalText = btn.textContent;
+      btn.textContent = 'Redirecting...';
+
+      try {
+        var res = await fetch('/api/stripe/checkout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ planKey: planKey }),
+        });
+
+        var data = await res.json();
+
+        if (data.url) {
+          window.location.href = data.url;
+        } else if (data.error) {
+          // Not authenticated or other error — redirect to register
+          if (res.status === 401) {
+            window.location.href = '/register?plan=' + planKey;
+          } else {
+            alert(data.error);
+            btn.textContent = originalText;
+            btn.disabled = false;
+          }
+        }
+      } catch (err) {
+        // Network error — redirect to register with plan param
+        window.location.href = '/register?plan=' + planKey;
+      }
+    });
+  });
+})();
