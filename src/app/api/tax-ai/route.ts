@@ -175,6 +175,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check plan — Tax AI requires Active or higher
+    const { getUserPlan } = await import("@/lib/plan-limits");
+    const plan = await getUserPlan(user.id);
+    if (!plan.features.taxAi) {
+      return NextResponse.json(
+        { error: "Tax AI requires an Active plan or higher. Upgrade to access AI-powered tax assistance." },
+        { status: 403 },
+      );
+    }
+
     const { question, history, fileContent, fileName, stream: wantStream } = await request.json();
     if (!question || typeof question !== "string" || question.trim().length === 0) {
       return NextResponse.json({ error: "Question is required" }, { status: 400 });

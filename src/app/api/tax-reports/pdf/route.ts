@@ -502,6 +502,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Check plan — PDF reports require a paid plan
+    const { getUserPlan } = await import("@/lib/plan-limits");
+    const plan = await getUserPlan(user.id);
+    if (!plan.features.allReports) {
+      return NextResponse.json(
+        { error: "PDF reports require a paid plan. Upgrade to download Schedule D, Form 8949, and Schedule 1." },
+        { status: 403 },
+      );
+    }
+
     // Per-user rate limiting
     const userRateLimit = rateLimitByUser(user.id, 5); // 5 PDF downloads per minute per user
     if (!userRateLimit.success) {

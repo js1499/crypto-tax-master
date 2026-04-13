@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   BarChart2,
@@ -77,6 +77,14 @@ export function AppSidebar() {
     Crypto: true,
     Securities: true,
   });
+  const [planName, setPlanName] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/stripe/status", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.planName) setPlanName(d.planName); })
+      .catch(() => {});
+  }, []);
 
   const handleNavigation = (path: string) => {
     router.push(path);
@@ -102,7 +110,14 @@ export function AppSidebar() {
             <span className="text-white font-bold text-sm">CT</span>
           </div>
           <div>
-            <div className="text-[15px] font-semibold text-sidebar-foreground">Crypto Tax</div>
+            <div className="flex items-center gap-2">
+              <span className="text-[15px] font-semibold text-sidebar-foreground">Crypto Tax</span>
+              {planName && (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${planName === "Trial" ? "bg-[#F0F0EB] text-[#6B7280]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
+                  {planName}
+                </span>
+              )}
+            </div>
             <div className="text-xs text-muted-foreground">Tax Calculator</div>
           </div>
         </button>

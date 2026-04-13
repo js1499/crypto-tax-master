@@ -26,7 +26,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Bell, Key, Lock, Save, Shield, User } from "lucide-react";
+import { Bell, CreditCard, Key, Lock, Save, Shield, User, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
 
 export default function SettingsPage() {
   const [mounted, setMounted] = useState(false);
@@ -113,6 +114,10 @@ export default function SettingsPage() {
             <TabsTrigger value="security">
               <Shield className="mr-2 h-4 w-4" />
               Security
+            </TabsTrigger>
+            <TabsTrigger value="billing">
+              <CreditCard className="mr-2 h-4 w-4" />
+              Billing
             </TabsTrigger>
           </TabsList>
 
@@ -402,6 +407,42 @@ export default function SettingsPage() {
                     <Button variant="destructive">Delete</Button>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="billing">
+            <Card>
+              <CardHeader>
+                <CardTitle>Billing & Subscription</CardTitle>
+                <CardDescription>
+                  Manage your plan, payment method, and invoices.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between p-4 rounded-lg border border-[#E5E5E0] dark:border-[#333]">
+                  <div>
+                    <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Current Plan</p>
+                    <p className="text-[13px] text-[#6B7280] mt-0.5" id="billing-plan-name">Loading...</p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const res = await fetch("/api/stripe/portal", { method: "POST", credentials: "include" });
+                        const data = await res.json();
+                        if (data.url) window.location.href = data.url;
+                        else if (data.error) toast.error(data.error);
+                      } catch { toast.error("Failed to open billing portal"); }
+                    }}
+                  >
+                    <ExternalLink className="mr-2 h-4 w-4" />
+                    Manage Billing
+                  </Button>
+                </div>
+                <p className="text-[13px] text-[#9CA3AF]">
+                  Manage your subscription, update payment method, view invoices, or cancel through the Stripe Customer Portal.
+                </p>
               </CardContent>
             </Card>
           </TabsContent>

@@ -145,6 +145,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Check wallet limit
+    const { checkWalletLimit } = await import("@/lib/plan-limits");
+    const walletCheck = await checkWalletLimit(user.id);
+    if (!walletCheck.allowed) {
+      return NextResponse.json(
+        { error: `Wallet limit reached (${walletCheck.current}/${walletCheck.limit}). Upgrade your plan to add more wallets.` },
+        { status: 403 },
+      );
+    }
+
     // Only enforce exclusivity if requested
     if (exclusive) {
       const existing = await prisma.wallet.findFirst({
