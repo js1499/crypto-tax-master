@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,11 +26,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Bell, CreditCard, Key, Lock, Save, Shield, User, ExternalLink } from "lucide-react";
+import { Bell, CreditCard, Lock, Save, Shield, User, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
 
 export default function SettingsPage() {
+  const { data: session } = useSession();
   const [mounted, setMounted] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [timezone, setTimezone] = useState("America/New_York");
@@ -97,151 +98,69 @@ export default function SettingsPage() {
           </Button>
         </div>
 
-        <Tabs defaultValue="profile" className="w-full">
+        <Tabs defaultValue="preferences" className="w-full">
           <TabsList className="mb-6 grid w-full grid-cols-4">
-            <TabsTrigger value="profile">
-              <User className="mr-2 h-4 w-4" />
-              Profile
-            </TabsTrigger>
-            <TabsTrigger value="account">
-              <Key className="mr-2 h-4 w-4" />
-              Account
-            </TabsTrigger>
             <TabsTrigger value="preferences" data-onboarding="select-country">
               <Bell className="mr-2 h-4 w-4" />
               Preferences
             </TabsTrigger>
-            <TabsTrigger value="security">
-              <Shield className="mr-2 h-4 w-4" />
-              Security
-            </TabsTrigger>
             <TabsTrigger value="billing">
               <CreditCard className="mr-2 h-4 w-4" />
               Billing
+            </TabsTrigger>
+            <TabsTrigger value="profile">
+              <User className="mr-2 h-4 w-4" />
+              Profile
+            </TabsTrigger>
+            <TabsTrigger value="security">
+              <Shield className="mr-2 h-4 w-4" />
+              Security
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="profile">
             <Card>
               <CardHeader>
-                <CardTitle>Profile Information</CardTitle>
+                <CardTitle>Profile</CardTitle>
                 <CardDescription>
-                  Update your personal information and profile settings.
+                  Your account information.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex flex-col items-center space-y-4 sm:flex-row sm:items-start sm:space-x-6 sm:space-y-0">
-                  <Avatar className="h-24 w-24">
-                    <AvatarImage src="" />
-                    <AvatarFallback className="text-lg">TR</AvatarFallback>
-                  </Avatar>
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-medium">Profile Photo</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Upload a photo to personalize your account.
-                    </p>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline">
-                        Upload
-                      </Button>
-                      <Button size="sm" variant="outline">
-                        Remove
-                      </Button>
-                    </div>
-                  </div>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Email Address</Label>
+                  <p className="text-sm text-[#1A1A1A] dark:text-[#F5F5F5]">{session?.user?.email || "—"}</p>
                 </div>
-
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="first-name">First Name</Label>
-                      <Input id="first-name" defaultValue="Theodore" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="last-name">Last Name</Label>
-                      <Input id="last-name" defaultValue="Rosen" />
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="email">Email Address</Label>
-                    <Input id="email" type="email" defaultValue="theodore.rosen@example.com" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="phone">Phone Number</Label>
-                    <Input id="phone" type="tel" defaultValue="+1 (555) 123-4567" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="timezone">Timezone</Label>
-                    <p className="text-xs text-muted-foreground">Used for tax year boundary determination</p>
-                    <Select value={timezone} onValueChange={setTimezone}>
-                      <SelectTrigger id="timezone">
-                        <SelectValue placeholder="Select timezone" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="America/New_York">Eastern Time (US & Canada)</SelectItem>
-                        <SelectItem value="America/Chicago">Central Time (US & Canada)</SelectItem>
-                        <SelectItem value="America/Denver">Mountain Time (US & Canada)</SelectItem>
-                        <SelectItem value="America/Los_Angeles">Pacific Time (US & Canada)</SelectItem>
-                        <SelectItem value="America/Anchorage">Alaska</SelectItem>
-                        <SelectItem value="Pacific/Honolulu">Hawaii</SelectItem>
-                        <SelectItem value="Europe/London">London</SelectItem>
-                        <SelectItem value="Europe/Paris">Paris / Berlin</SelectItem>
-                        <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
-                        <SelectItem value="Asia/Singapore">Singapore</SelectItem>
-                        <SelectItem value="Australia/Sydney">Sydney</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="space-y-2">
+                  <Label>Name</Label>
+                  <p className="text-sm text-[#1A1A1A] dark:text-[#F5F5F5]">{session?.user?.name || "Not set"}</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="timezone">Timezone</Label>
+                  <p className="text-xs text-muted-foreground">Used for tax year boundary determination</p>
+                  <Select value={timezone} onValueChange={setTimezone}>
+                    <SelectTrigger id="timezone">
+                      <SelectValue placeholder="Select timezone" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="America/New_York">Eastern Time (US & Canada)</SelectItem>
+                      <SelectItem value="America/Chicago">Central Time (US & Canada)</SelectItem>
+                      <SelectItem value="America/Denver">Mountain Time (US & Canada)</SelectItem>
+                      <SelectItem value="America/Los_Angeles">Pacific Time (US & Canada)</SelectItem>
+                      <SelectItem value="America/Anchorage">Alaska</SelectItem>
+                      <SelectItem value="Pacific/Honolulu">Hawaii</SelectItem>
+                      <SelectItem value="Europe/London">London</SelectItem>
+                      <SelectItem value="Europe/Paris">Paris / Berlin</SelectItem>
+                      <SelectItem value="Asia/Tokyo">Tokyo</SelectItem>
+                      <SelectItem value="Asia/Singapore">Singapore</SelectItem>
+                      <SelectItem value="Australia/Sydney">Sydney</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="account">
-            <Card>
-              <CardHeader>
-                <CardTitle>Account Settings</CardTitle>
-                <CardDescription>
-                  Manage your account settings and connected services.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Connected Services</h3>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between rounded-lg border p-4">
-                      <div className="flex items-center space-x-4">
-                        <div className="h-10 w-10 rounded-full bg-gradient-to-r from-blue-500 to-blue-600 flex items-center justify-center text-white">G</div>
-                        <div>
-                          <h4 className="text-sm font-medium">Google</h4>
-                          <p className="text-xs text-muted-foreground">Connected</p>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm">Disconnect</Button>
-                    </div>
-                    <div className="flex items-center justify-between rounded-lg border p-4">
-                      <div className="flex items-center space-x-4">
-                        <div className="h-10 w-10 rounded-full bg-gradient-to-r from-gray-800 to-gray-900 flex items-center justify-center text-white">X</div>
-                        <div>
-                          <h4 className="text-sm font-medium">X (Twitter)</h4>
-                          <p className="text-xs text-muted-foreground">Not connected</p>
-                        </div>
-                      </div>
-                      <Button variant="outline" size="sm">Connect</Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Billing Information</h3>
-                  <p className="text-sm text-muted-foreground">
-                    You are currently on the <strong>Free Plan</strong>. Upgrade to unlock advanced tax calculation features.
-                  </p>
-                  <Button>Upgrade to Pro</Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
 
           <TabsContent value="preferences">
             <Card>

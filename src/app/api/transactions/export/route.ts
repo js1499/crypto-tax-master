@@ -50,6 +50,16 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Check plan — exports require a paid plan
+    const { getUserPlan } = await import("@/lib/plan-limits");
+    const plan = await getUserPlan(user.id);
+    if (!plan.features.allReports) {
+      return NextResponse.json(
+        { error: "Transaction export requires a paid plan. Upgrade to export your data." },
+        { status: 403 },
+      );
+    }
+
     // Parse query parameters (same as GET /api/transactions, minus pagination)
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get("search") || "";

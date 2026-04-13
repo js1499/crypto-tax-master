@@ -1710,7 +1710,7 @@ function TransactionsContent() {
 
             {/* Right group — Activity heatmap */}
             {stats?.weeklyActivity && stats.weeklyActivity.length > 0 && (
-              <div className="flex-1">
+              <div className={cn("flex-1", isPaidPlan === false && "blur-lg select-none pointer-events-none")}>
                 <YearHeatmap
                   weeklyActivity={stats.weeklyActivity}
                   year={yearValue !== "all" ? parseInt(yearValue) : undefined}
