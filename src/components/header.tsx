@@ -92,17 +92,21 @@ export function Header() {
         <SidebarTrigger className="-ml-2" />
       </div>
       <div className="flex items-center gap-3">
-        <ThemeToggle />
         {!isLoading && user && (
           <>
-            {/* Help — triggers tutorial */}
+            {/* Tutorial mode button */}
             <button
               onClick={startOnboarding}
-              className="rounded-full p-1.5 text-[#9CA3AF] hover:bg-[#F5F5F0] dark:hover:bg-[#222] hover:text-[#6B7280] transition-colors"
-              title="Start tutorial"
+              className="relative overflow-hidden rounded-lg bg-[#2563EB] px-3.5 py-1.5 text-[13px] font-medium text-white hover:bg-[#1D4ED8] transition-colors"
             >
-              <HelpCircle className="h-5 w-5" />
+              <span className="relative z-10">Tutorial Mode</span>
+              <span className="absolute inset-0 z-0" style={{
+                background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%)",
+                animation: "shine 2.5s ease-in-out infinite",
+              }} />
+              <style>{`@keyframes shine { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }`}</style>
             </button>
+        <ThemeToggle />
 
             {/* Notifications — activity log */}
             <Popover open={notifOpen} onOpenChange={setNotifOpen}>
