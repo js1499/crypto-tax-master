@@ -196,7 +196,7 @@ function TransactionsContent() {
   const router = useRouter();
   const { refreshKey } = useSyncPipeline();
   const [mounted, setMounted] = useState(false);
-  const [isPaidPlan, setIsPaidPlan] = useState(true); // default true to avoid flash of blur
+  const [isPaidPlan, setIsPaidPlan] = useState<boolean | null>(null); // null = loading
   const [searchTerm, setSearchTerm] = useState("");
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<Transaction[]>([]);
@@ -1231,8 +1231,8 @@ function TransactionsContent() {
 
   // Blur wrapper for monetary values on free plan
   const BlurValue = ({ children }: { children: React.ReactNode }) => {
-    if (isPaidPlan) return <>{children}</>;
-    return <span className="blur-sm select-none">{children}</span>;
+    if (isPaidPlan !== false) return <>{children}</>;
+    return <span className="blur-md select-none">{children}</span>;
   };
 
   // Helper: format amount for display
@@ -1653,7 +1653,7 @@ function TransactionsContent() {
           <div className="flex items-center justify-between">
 
             {/* Left group — glowing border */}
-            <div className={cn("glow-border", !isPaidPlan && "blur-sm select-none")}>
+            <div className={cn("glow-border", isPaidPlan === false && "blur-lg select-none")}>
             <div className="flex items-center px-5 py-4">
             <div className="pr-7">
               <p className={cn(
@@ -1730,7 +1730,7 @@ function TransactionsContent() {
 
         {/* ── P&L Breakdown by Asset ── */}
         {stats?.pnl && (stats.pnl.gainsByAsset.length > 0 || stats.pnl.lossesByAsset.length > 0) && (
-          <div className={cn("space-y-2", !isPaidPlan && "blur-sm select-none pointer-events-none")}>
+          <div className={cn("space-y-2", isPaidPlan === false && "blur-lg select-none pointer-events-none")}>
             <div className="flex items-center gap-3">
               <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">P&L + Income by Asset</h2>
               <div className="flex items-center gap-1 bg-[#F5F5F0] dark:bg-[#222] rounded-md p-0.5">
@@ -2169,7 +2169,7 @@ function TransactionsContent() {
 
         {/* ── Transaction Table (no card wrapper — Horizon spec) ── */}
         {/* Upgrade banner for free users */}
-        {!isPaidPlan && (
+        {isPaidPlan === false && (
           <div className="rounded-lg bg-[#EFF6FF] dark:bg-[rgba(37,99,235,0.08)] border border-[#BFDBFE] dark:border-[#1E3A5F] px-5 py-4 flex items-center justify-between">
             <div>
               <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Unlock full transaction data</p>

@@ -254,7 +254,7 @@ interface TaxReportData {
 
 export default function TaxReportsPage() {
   const { refreshKey } = useSyncPipeline();
-  const [isPaidPlan, setIsPaidPlan] = useState(true);
+  const [isPaidPlan, setIsPaidPlan] = useState<boolean | null>(null); // null = loading
 
   useEffect(() => {
     fetch("/api/stripe/status", { credentials: "include" })
@@ -768,7 +768,7 @@ export default function TaxReportsPage() {
         </div>
 
         {/* Row 1: Tax Summary + Breakdown */}
-        <div className={cn("grid grid-cols-[1fr_340px] gap-5", !isPaidPlan && "blur-sm select-none pointer-events-none")}>
+        <div className={cn("grid grid-cols-[1fr_340px] gap-5", isPaidPlan === false && "blur-lg select-none pointer-events-none")}>
 
           {/* Tax Summary */}
           <div className="border border-[#E5E5E0] dark:border-[#333] rounded-xl bg-white dark:bg-[#1A1A1A]">
@@ -864,7 +864,7 @@ export default function TaxReportsPage() {
         </div>
 
         {/* Upgrade banner for free users */}
-        {!isPaidPlan && (
+        {isPaidPlan === false && (
           <div className="rounded-lg bg-[#EFF6FF] dark:bg-[rgba(37,99,235,0.08)] border border-[#BFDBFE] dark:border-[#1E3A5F] px-5 py-4 flex items-center justify-between">
             <div>
               <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Upgrade to download tax reports</p>
@@ -961,14 +961,24 @@ export default function TaxReportsPage() {
                     </span>
                   ) : (
                     <button
-                      onClick={() => handleFormDownload(form)}
+                      onClick={() => isPaidPlan ? handleFormDownload(form) : (window.location.href = "/#pricing")}
                       disabled={!!generatingFormId}
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-[#E5E5E0] dark:border-[#333] px-3.5 py-1.5 text-[12px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5] hover:bg-[#F5F5F0] dark:hover:bg-[#222] transition-colors disabled:opacity-50"
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50",
+                        isPaidPlan === false
+                          ? "border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF] cursor-not-allowed"
+                          : "border-[#E5E5E0] dark:border-[#333] text-[#1A1A1A] dark:text-[#F5F5F5] hover:bg-[#F5F5F0] dark:hover:bg-[#222]"
+                      )}
                     >
                       {generatingFormId === form.name ? (
                         <>
                           <div className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-current border-t-transparent" />
                           Generating...
+                        </>
+                      ) : isPaidPlan === false ? (
+                        <>
+                          <Lock className="h-3 w-3" />
+                          Upgrade
                         </>
                       ) : (
                         <>
