@@ -3,120 +3,97 @@
 import { useState, useEffect } from "react";
 import { Layout } from "@/components/layout";
 import {
-  Wallet, RefreshCw, DollarSign, Calculator, FileText,
-  ChevronRight, ArrowRight, Upload, Building, Sparkles, Play,
+  Wallet, ChevronRight, ArrowRight, Sparkles, PlusCircle,
+  Settings, FileText, Clock, CheckCircle2, Calendar, Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { useOnboarding } from "@/components/onboarding/onboarding-provider";
 import { useRouter } from "next/navigation";
 
 // ---------------------------------------------------------------------------
-// Step definitions
+// Steps — identical to the interactive guided tutorial
 // ---------------------------------------------------------------------------
 
 const STEPS = [
   {
     number: 1,
-    title: "Connect Wallets & Exchanges",
-    description: "Link your crypto wallets and exchange accounts so we can import your full transaction history.",
-    details: [
-      "Solana wallets sync via Helius API (full history)",
-      "EVM wallets sync via Moralis (Ethereum, Polygon, Arbitrum, Base, and more)",
-      "Exchange API connections: Coinbase, Binance, Kraken, KuCoin, Gemini",
-      "You can also import CSV exports from any exchange",
-      "Add multiple wallets at once using the bulk add feature",
-    ],
+    title: "Connect Your Accounts",
+    description: "Let's connect your wallets and exchanges. Click Accounts in the sidebar.",
     icon: Wallet,
     iconColor: "#2563EB",
     iconBg: "#EFF6FF",
-    href: "/accounts",
-    buttonLabel: "Go to Accounts",
   },
   {
     number: 2,
-    title: "Automatic Sync & Price Enrichment",
-    description: "After connecting, we automatically sync your transactions and pull historical USD prices.",
-    details: [
-      "Transactions are synced from the blockchain or exchange API",
-      "Historical prices are pulled from CoinGecko, on-chain DEX data, and Binance",
-      "Swap prices are calculated at the exact block timestamp for accuracy",
-      "Progress is shown in the bottom-right corner — you can navigate freely while it runs",
-      "Some obscure tokens may remain unpriced — this is normal and won't affect major calculations",
-    ],
-    icon: RefreshCw,
-    iconColor: "#9333EA",
-    iconBg: "#FAF5FF",
-    href: "/accounts",
-    buttonLabel: "Go to Accounts",
+    title: "Add an Account",
+    description: "Click Add Account, then choose 'Add One Account' or 'Add Multiple' from the dropdown.",
+    icon: PlusCircle,
+    iconColor: "#2563EB",
+    iconBg: "#EFF6FF",
   },
   {
     number: 3,
-    title: "Cost Basis Computation",
-    description: "We automatically compute your cost basis, gains, and losses using IRS-compliant methods.",
-    details: [
-      "Per-wallet FIFO for IRS 2025+ compliance (or universal FIFO for prior years)",
-      "Stablecoin transfers are handled specially to avoid phantom gains",
-      "Wash sale detection is applied within 30-day windows",
-      "Cost basis, gain/loss, and holding period are stored on every transaction",
-      "All tax reports read from these computed values — one source of truth",
-    ],
-    icon: Calculator,
-    iconColor: "#0D9488",
-    iconBg: "#F0FDFA",
-    href: "/transactions",
-    buttonLabel: "View Transactions",
+    title: "Set Up Your Account",
+    description: "Use the Wallets tab to connect on-chain wallets (SOL, ETH, BTC), the Exchanges tab for API connections (Coinbase, Binance), or CSV Upload to import transaction files. Enter your details and click Add & Sync.",
+    icon: Settings,
+    iconColor: "#9333EA",
+    iconBg: "#FAF5FF",
   },
   {
     number: 4,
-    title: "Review Your Transactions",
-    description: "Explore your transaction history and make sure everything looks right.",
-    details: [
-      "Filter by type, asset, date, chain, source, or value range",
-      "Mark any bank transfers, gifts, or theft-related transactions accordingly",
-      "Edit transaction types or amounts if something was miscategorized",
-      "View cost basis, proceeds, and gain/loss for every disposal",
-      "You can always come back here for a deeper review",
-    ],
-    icon: FileText,
-    iconColor: "#CA8A04",
-    iconBg: "#FEFCE8",
-    href: "/transactions",
-    buttonLabel: "Go to Transactions",
+    title: "All Accounts Added?",
+    description: "If you need to add more wallets or exchanges, click Add Account again. Otherwise, continue to the next step.",
+    icon: CheckCircle2,
+    iconColor: "#16A34A",
+    iconBg: "#F0FDF4",
   },
   {
     number: 5,
-    title: "Download Tax Reports",
-    description: "Generate IRS forms, TurboTax-compatible exports, and country-specific reports.",
-    details: [
-      "Schedule D — capital gains and losses summary (required for IRS filing)",
-      "Form 8949 — detailed transaction list by asset (required for IRS filing)",
-      "Schedule 1 — crypto income from staking, airdrops, and rewards (required if applicable)",
-      "TurboTax-compatible 1099-B CSV export for easy import",
-      "UK (HMRC share pooling) and Germany (Anlage SO) reports also available",
-    ],
-    icon: FileText,
-    iconColor: "#DC2626",
-    iconBg: "#FEF2F2",
-    href: "/tax-reports",
-    buttonLabel: "Go to Tax Reports",
+    title: "Syncing in Progress",
+    description: "Your accounts are being synced, prices pulled, and cost basis computed. This runs automatically in the background. Once the progress bar completes, you can move to the next step.",
+    icon: Clock,
+    iconColor: "#CA8A04",
+    iconBg: "#FEFCE8",
   },
   {
     number: 6,
-    title: "Securities (Optional)",
-    description: "If you trade stocks, ETFs, options, or other securities, add your brokerage accounts.",
-    details: [
-      "Import transactions via CSV from Fidelity, Schwab, Vanguard, Robinhood, IBKR, and more",
-      "Supports FIFO, LIFO, HIFO, Specific ID, and Average Cost methods",
-      "Full wash sale engine: 30-day rule, cross-account, IRA permanent disallowance",
-      "Section 1256 (futures 60/40), Section 475 (trader MTM), Section 988 (forex)",
-      "Combined crypto + securities reports on the Tax Reports page",
-    ],
-    icon: Building,
-    iconColor: "#9333EA",
-    iconBg: "#FAF5FF",
-    href: "/securities/accounts",
-    buttonLabel: "Go to Securities",
+    title: "Review Your Transactions",
+    description: "Syncing is complete! Click Transactions to review your data.",
+    icon: FileText,
+    iconColor: "#0D9488",
+    iconBg: "#F0FDFA",
+  },
+  {
+    number: 7,
+    title: "Your Transaction Ledger",
+    description: "This is where you can explore all your transactions. If you have any bank transfers, gifts, or theft-related transactions, make sure to mark them accordingly. You can always come back here for a deeper review after completing the tutorial.",
+    icon: FileText,
+    iconColor: "#CA8A04",
+    iconBg: "#FEFCE8",
+  },
+  {
+    number: 8,
+    title: "Download Tax Reports",
+    description: "Once syncing is complete, click Tax Reports to generate your tax forms.",
+    icon: Download,
+    iconColor: "#DC2626",
+    iconBg: "#FEF2F2",
+  },
+  {
+    number: 9,
+    title: "Select Tax Year",
+    description: "Choose the tax year you want to generate reports for. Your reports will reflect all transactions within that calendar year.",
+    icon: Calendar,
+    iconColor: "#2563EB",
+    iconBg: "#EFF6FF",
+  },
+  {
+    number: 10,
+    title: "Your Required Tax Forms",
+    description: "For US taxpayers, you'll need: Schedule D (capital gains summary), Form 8949 (detailed transaction list), and Schedule 1 (crypto income). TurboTax-compatible CSV exports are also available. Download what you need!",
+    icon: FileText,
+    iconColor: "#DC2626",
+    iconBg: "#FEF2F2",
   },
 ];
 
@@ -143,7 +120,7 @@ export default function TutorialPage() {
               Tutorial
             </h1>
             <p className="text-[15px] text-[#6B7280] mt-1">
-              Everything you need to know to calculate your crypto taxes with Glide.
+              Follow along step by step, or click the button to start the interactive guided tour.
             </p>
           </div>
           <Button onClick={startOnboarding} className="bg-[#2563EB] hover:bg-[#1D4ED8]">
@@ -165,71 +142,54 @@ export default function TutorialPage() {
         </div>
 
         {/* Steps */}
-        <div className="space-y-0">
-          {STEPS.map((step, idx) => (
-            <div key={step.number}>
-              {/* Step card */}
-              <div className="flex gap-6 py-8">
-                {/* Left: number + line */}
-                <div className="flex flex-col items-center shrink-0">
-                  <div
-                    className="flex items-center justify-center w-12 h-12 rounded-xl text-white text-[18px] font-bold"
-                    style={{ backgroundColor: step.iconColor }}
-                  >
-                    {step.number}
-                  </div>
-                  {idx < STEPS.length - 1 && (
-                    <div className="w-px flex-1 bg-[#E5E5E0] dark:bg-[#333] mt-3" />
-                  )}
-                </div>
+        <div>
+          <h2 className="text-[20px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5] mb-6">
+            Step-by-Step Instructions
+          </h2>
 
-                {/* Right: content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-3 mb-2">
+          <div className="space-y-0">
+            {STEPS.map((step, idx) => (
+              <div key={step.number}>
+                <div className="flex gap-5 py-6">
+                  {/* Left: number + connecting line */}
+                  <div className="flex flex-col items-center shrink-0">
                     <div
-                      className="flex items-center justify-center h-8 w-8 rounded-lg"
-                      style={{ backgroundColor: step.iconBg }}
+                      className="flex items-center justify-center w-11 h-11 rounded-xl text-white text-[16px] font-bold shrink-0"
+                      style={{ backgroundColor: step.iconColor }}
                     >
-                      <step.icon className="h-4 w-4" style={{ color: step.iconColor }} />
+                      {step.number}
                     </div>
-                    <h2 className="text-[20px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
-                      {step.title}
-                    </h2>
+                    {idx < STEPS.length - 1 && (
+                      <div className="w-px flex-1 bg-[#E5E5E0] dark:bg-[#333] mt-3" />
+                    )}
                   </div>
 
-                  <p className="text-[15px] text-[#6B7280] leading-relaxed mb-4">
-                    {step.description}
-                  </p>
+                  {/* Right: content */}
+                  <div className="flex-1 min-w-0 pt-1">
+                    <div className="flex items-center gap-2.5 mb-2">
+                      <div
+                        className="flex items-center justify-center h-7 w-7 rounded-lg"
+                        style={{ backgroundColor: step.iconBg }}
+                      >
+                        <step.icon className="h-3.5 w-3.5" style={{ color: step.iconColor }} />
+                      </div>
+                      <h3 className="text-[18px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
+                        {step.title}
+                      </h3>
+                    </div>
 
-                  <div className="rounded-lg bg-[#F8F9FA] dark:bg-[#111] border border-[#E5E5E0] dark:border-[#2A2A2A] p-4">
-                    <ul className="space-y-2.5">
-                      {step.details.map((detail, i) => (
-                        <li key={i} className="flex items-start gap-3">
-                          <ChevronRight className="h-4 w-4 text-[#9CA3AF] shrink-0 mt-0.5" />
-                          <span className="text-[14px] text-[#4B5563] dark:text-[#9CA3AF] leading-relaxed">
-                            {detail}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                    <p className="text-[15px] text-[#4B5563] dark:text-[#9CA3AF] leading-relaxed">
+                      {step.description}
+                    </p>
                   </div>
-
-                  <button
-                    onClick={() => router.push(step.href)}
-                    className="mt-4 inline-flex items-center gap-1.5 text-[14px] font-medium text-[#2563EB] hover:text-[#1D4ED8] transition-colors"
-                  >
-                    {step.buttonLabel}
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
                 </div>
-              </div>
 
-              {/* Divider */}
-              {idx < STEPS.length - 1 && (
-                <div className="border-b border-[#F0F0EB] dark:border-[#2A2A2A]" />
-              )}
-            </div>
-          ))}
+                {idx < STEPS.length - 1 && (
+                  <div className="border-b border-[#F0F0EB] dark:border-[#2A2A2A]" />
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Tax AI callout */}
@@ -243,7 +203,7 @@ export default function TutorialPage() {
                 Need help along the way?
               </h3>
               <p className="text-[14px] text-[#6B7280] mt-1 leading-relaxed">
-                Tax AI can answer questions about your data, reformat CSVs for import, and help you understand your tax obligations. It has full access to your transaction database.
+                Tax AI can answer questions about your data, reformat CSVs for import, and help you understand your tax obligations.
               </p>
               <button
                 onClick={() => router.push("/tax-ai")}
