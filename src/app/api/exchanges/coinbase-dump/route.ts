@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/lib/auth-config";
 import prisma from "@/lib/prisma";
 import { decryptApiKey } from "@/lib/exchange-clients";
 import axios from "axios";

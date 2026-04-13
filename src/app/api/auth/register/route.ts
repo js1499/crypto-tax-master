@@ -80,6 +80,33 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Send welcome email (fire-and-forget)
+    if (process.env.RESEND_API_KEY) {
+      import("resend").then(({ Resend }) => {
+        const resend = new Resend(process.env.RESEND_API_KEY);
+        resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || "Glide <noreply@resend.dev>",
+          to: user.email!,
+          subject: "Welcome to Glide",
+          html: `
+            <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+              <h2>Welcome to Glide!</h2>
+              <p>Hi${user.name ? ` ${user.name}` : ""},</p>
+              <p>Your account has been created. You're ready to start calculating your crypto taxes with precision.</p>
+              <p><strong>Here's how to get started:</strong></p>
+              <ol>
+                <li>Connect your wallets and exchanges</li>
+                <li>We'll automatically sync transactions and pull prices</li>
+                <li>Download your tax reports (Schedule D, Form 8949, Schedule 1)</li>
+              </ol>
+              <a href="${process.env.NEXTAUTH_URL || "https://crypto-tax-master.vercel.app"}/accounts" style="display: inline-block; background: #10b981; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 500; margin: 16px 0;">Go to Dashboard</a>
+              <p style="color: #6B7280; font-size: 14px;">If you have any questions, reach out to our support team.</p>
+            </div>
+          `,
+        }).catch(() => {}); // Don't block registration if email fails
+      }).catch(() => {});
+    }
+
     return NextResponse.json(
       {
         message: "User registered successfully",

@@ -108,7 +108,7 @@ export const ONBOARDING_STEPS: Omit<OnboardingStep, "completed">[] = [
  * TESTING MODE: Set to true to force onboarding for every user.
  * Set back to false before shipping to production.
  */
-const FORCE_ONBOARDING = true;
+const FORCE_ONBOARDING = false;
 
 function freshState(): OnboardingState {
   return {

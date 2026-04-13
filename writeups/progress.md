@@ -460,11 +460,27 @@ Auto-creates brokerage accounts from the `account` column during import.
 - [ ] Worthless securities deduction
 - [ ] Multi-year data reconstruction
 
+### Recently Completed
+- [x] Stripe billing (9 products, checkout, webhook, portal, feature gating)
+- [x] Landing page integrated from separate repo (glide-landing-page)
+- [x] Pricing buttons wired to Stripe Checkout
+- [x] Plan badge in sidebar + billing tab in settings
+- [x] Free plan: blurred values, locked reports, upgrade prompts
+- [x] Interactive tutorial (8-step spotlight walkthrough)
+- [x] Client-side navigation (SPA, no page reloads)
+- [x] Reactive data refresh (pipeline completion auto-updates pages)
+- [x] Activity log in header bell icon
+- [x] Welcome email on registration (Resend)
+- [x] Forgot password / reset password flow (Resend)
+- [x] Delete account with Stripe subscription cancellation
+- [x] Post-registration Stripe Checkout redirect
+- [x] Custom 404/500 error pages
+- [x] CSV exports use DB data (single source of truth)
+- [x] All IRS forms use DB data (single source of truth)
+
 ### Infrastructure (Planned)
-- [ ] Stripe billing + subscription management
 - [ ] Upstash Redis for shared rate limiting + faster caching
 - [ ] Cloudflare WAF + DDoS protection
-- [ ] Resend transactional emails
 - [ ] Background job system (QStash) for >13-min operations
 
 ---
