@@ -87,6 +87,26 @@ export default function RegisterPage() {
         router.push("/login");
       } else if (result?.ok) {
         toast.success("Account created and signed in!");
+        // Check if they came from a pricing plan — redirect to checkout
+        const params = new URLSearchParams(window.location.search);
+        const planKey = params.get("plan");
+        if (planKey && planKey !== "free") {
+          try {
+            const checkoutRes = await fetch("/api/stripe/checkout", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ planKey }),
+            });
+            const checkoutData = await checkoutRes.json();
+            if (checkoutData.url) {
+              window.location.href = checkoutData.url;
+              return;
+            }
+          } catch {
+            // If checkout fails, just go to accounts
+          }
+        }
         router.push("/accounts");
         router.refresh();
       }
