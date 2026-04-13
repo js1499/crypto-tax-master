@@ -17,9 +17,15 @@ model User {
   image           String?
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
-  costBasisMethod String     @default("FIFO")
-  timezone        String     @default("America/New_York")
-  country         String     @default("US")
+  costBasisMethod        String     @default("FIFO")
+  timezone               String     @default("America/New_York")
+  country                String     @default("US")
+  stripeCustomerId       String?    @unique @map("stripe_customer_id")
+  subscriptionId         String?    @map("subscription_id")
+  subscriptionStatus     String?    @map("subscription_status")
+  planId                 String     @default("free") @map("plan_id")
+  currentPeriodEnd       DateTime?  @map("current_period_end") @db.Timestamptz(6)
+  hasCpaFiling           Boolean    @default(false) @map("has_cpa_filing")
   accounts        Account[]
   exchanges       Exchange[]
   sessions        Session[]
