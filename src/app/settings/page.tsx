@@ -33,6 +33,7 @@ export default function SettingsPage() {
   const { data: session } = useSession();
   const [mounted, setMounted] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [billingPlan, setBillingPlan] = useState<{ planName: string; subscriptionStatus: string; currentPeriodEnd: string | null; hasStripeAccount: boolean } | null>(null);
   const [timezone, setTimezone] = useState("America/New_York");
   const [costBasisMethod, setCostBasisMethod] = useState("FIFO");
   const [country, setCountry] = useState("US");
@@ -49,6 +50,18 @@ export default function SettingsPage() {
           if (data.costBasisMethod) setCostBasisMethod(data.costBasisMethod);
           if (data.country) setCountry(data.country);
         }
+      })
+      .catch(() => {});
+    // Load billing status
+    fetch("/api/stripe/status", { credentials: "include" })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) setBillingPlan({
+          planName: data.planName,
+          subscriptionStatus: data.subscriptionStatus,
+          currentPeriodEnd: data.currentPeriodEnd,
+          hasStripeAccount: data.hasStripeAccount,
+        });
       })
       .catch(() => {});
   }, []);
@@ -218,59 +231,6 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Notifications</h3>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-medium">Email Notifications</h4>
-                        <p className="text-xs text-muted-foreground">
-                          Receive important updates via email
-                        </p>
-                      </div>
-                      <div className="ml-auto flex h-6 items-center space-x-2">
-                        <input
-                          id="email-notifications"
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-gray-300"
-                          defaultChecked
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-medium">Tax Deadline Reminders</h4>
-                        <p className="text-xs text-muted-foreground">
-                          Get notified about upcoming tax deadlines
-                        </p>
-                      </div>
-                      <div className="ml-auto flex h-6 items-center space-x-2">
-                        <input
-                          id="deadline-reminders"
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-gray-300"
-                          defaultChecked
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-medium">New Features Announcements</h4>
-                        <p className="text-xs text-muted-foreground">
-                          Stay updated about new features and improvements
-                        </p>
-                      </div>
-                      <div className="ml-auto flex h-6 items-center space-x-2">
-                        <input
-                          id="feature-announcements"
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-gray-300"
-                          defaultChecked
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -280,50 +240,76 @@ export default function SettingsPage() {
               <CardHeader>
                 <CardTitle>Security</CardTitle>
                 <CardDescription>
-                  Manage your account security and privacy settings.
+                  Manage your account security.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Change Password</h3>
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="current-password">Current Password</Label>
-                      <Input id="current-password" type="password" />
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-lg font-medium">Reset Password</h3>
+                      <p className="text-sm text-muted-foreground">
+                        We&apos;ll send a password reset link to your email address.
+                      </p>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="new-password">New Password</Label>
-                      <Input id="new-password" type="password" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="confirm-password">Confirm New Password</Label>
-                      <Input id="confirm-password" type="password" />
-                    </div>
-                    <Button>Update Password</Button>
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        const email = session?.user?.email;
+                        if (!email) { toast.error("No email address found"); return; }
+                        try {
+                          const res = await fetch("/api/auth/forgot-password", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ email }),
+                          });
+                          if (res.ok) {
+                            toast.success("Password reset link sent to your email");
+                          } else {
+                            toast.info("If an account exists with that email, a reset link has been sent.");
+                          }
+                        } catch {
+                          toast.error("Failed to send reset email. Please try again.");
+                        }
+                      }}
+                    >
+                      Send Reset Email
+                    </Button>
                   </div>
                 </div>
 
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h3 className="text-lg font-medium">Two-Factor Authentication</h3>
+                      <h3 className="text-lg font-medium text-[#DC2626]">Delete Account</h3>
                       <p className="text-sm text-muted-foreground">
-                        Add an extra layer of security to your account
+                        Permanently delete your account and all associated data. This cannot be undone.
                       </p>
                     </div>
-                    <Button variant="outline">Enable</Button>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-medium">Delete Account</h3>
-                      <p className="text-sm text-muted-foreground">
-                        Permanently delete your account and all associated data
-                      </p>
-                    </div>
-                    <Button variant="destructive">Delete</Button>
+                    <Button
+                      variant="destructive"
+                      onClick={async () => {
+                        if (!confirm("Are you sure you want to delete your account? This will permanently delete all your data, wallets, transactions, and reports. This cannot be undone.")) return;
+                        if (!confirm("This is your final warning. Type your email to confirm.")) return;
+                        try {
+                          const res = await fetch("/api/auth/delete-account", {
+                            method: "DELETE",
+                            credentials: "include",
+                          });
+                          if (res.ok) {
+                            toast.success("Account deleted. Redirecting...");
+                            window.location.href = "/";
+                          } else {
+                            const data = await res.json();
+                            toast.error(data.error || "Failed to delete account");
+                          }
+                        } catch {
+                          toast.error("Failed to delete account");
+                        }
+                      }}
+                    >
+                      Delete Account
+                    </Button>
                   </div>
                 </div>
               </CardContent>
@@ -342,26 +328,42 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between p-4 rounded-lg border border-[#E5E5E0] dark:border-[#333]">
                   <div>
                     <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">Current Plan</p>
-                    <p className="text-[13px] text-[#6B7280] mt-0.5" id="billing-plan-name">Loading...</p>
+                    <p className="text-[13px] text-[#6B7280] mt-0.5">
+                      {billingPlan
+                        ? `${billingPlan.planName}${billingPlan.subscriptionStatus === "active" && billingPlan.currentPeriodEnd ? ` — renews ${new Date(billingPlan.currentPeriodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}`
+                        : "Loading..."}
+                    </p>
                   </div>
-                  <Button
-                    variant="outline"
-                    onClick={async () => {
-                      try {
-                        const res = await fetch("/api/stripe/portal", { method: "POST", credentials: "include" });
-                        const data = await res.json();
-                        if (data.url) window.location.href = data.url;
-                        else if (data.error) toast.error(data.error);
-                      } catch { toast.error("Failed to open billing portal"); }
-                    }}
-                  >
-                    <ExternalLink className="mr-2 h-4 w-4" />
-                    Manage Billing
-                  </Button>
+                  {billingPlan?.hasStripeAccount ? (
+                    <Button
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch("/api/stripe/portal", { method: "POST", credentials: "include" });
+                          const data = await res.json();
+                          if (data.url) window.location.href = data.url;
+                          else if (data.error) toast.error(data.error);
+                        } catch { toast.error("Failed to open billing portal"); }
+                      }}
+                    >
+                      <ExternalLink className="mr-2 h-4 w-4" />
+                      Manage Billing
+                    </Button>
+                  ) : (
+                    <Button onClick={() => window.location.href = "/#pricing"}>
+                      View Plans
+                    </Button>
+                  )}
                 </div>
-                <p className="text-[13px] text-[#9CA3AF]">
-                  Manage your subscription, update payment method, view invoices, or cancel through the Stripe Customer Portal.
-                </p>
+                {billingPlan?.hasStripeAccount ? (
+                  <p className="text-[13px] text-[#9CA3AF]">
+                    Manage your subscription, update payment method, view invoices, or cancel through the Stripe Customer Portal.
+                  </p>
+                ) : (
+                  <p className="text-[13px] text-[#9CA3AF]">
+                    You&apos;re on the free trial. Upgrade to unlock all reports, Tax AI, and advanced features.
+                  </p>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
