@@ -48,13 +48,14 @@ const navGroups: NavGroup[] = [
       { title: "Transactions", href: "/transactions", icon: Wallet, onboarding: "nav-transactions" },
     ],
   },
-  {
-    title: "Securities",
-    items: [
-      { title: "Accounts", href: "/securities/accounts", icon: Building },
-      { title: "Transactions", href: "/securities/transactions", icon: ArrowRightLeft },
-    ],
-  },
+  // Securities hidden for now — uncomment when ready to launch
+  // {
+  //   title: "Securities",
+  //   items: [
+  //     { title: "Accounts", href: "/securities/accounts", icon: Building },
+  //     { title: "Transactions", href: "/securities/transactions", icon: ArrowRightLeft },
+  //   ],
+  // },
 ];
 
 const standaloneItems: NavItem[] = [

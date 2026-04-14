@@ -692,7 +692,9 @@ export default function TaxReportsPage() {
   const barPct = (v: number) => `${Math.min((Math.abs(v) / maxBar) * 100, 100)}%`;
 
   const countryForms = taxForms.filter(f => !f.country || f.country === userCountry);
-  const engineForms = engineFilter === "all" ? countryForms : countryForms.filter(f => f.engine === engineFilter);
+  // Securities hidden for now — filter out securities and combined forms
+  const visibleForms = countryForms.filter(f => f.engine !== "securities" && f.engine !== "combined");
+  const engineForms = engineFilter === "all" ? visibleForms : visibleForms.filter(f => f.engine === engineFilter);
   const filteredForms = formFilter === "all" ? engineForms : engineForms.filter(f => f.category === formFilter);
 
   const formIcon = (form: typeof taxForms[0]) => {
@@ -886,8 +888,9 @@ export default function TaxReportsPage() {
             {([
               { key: "all", label: "All" },
               { key: "crypto", label: "Crypto" },
-              { key: "securities", label: "Securities" },
-              { key: "combined", label: "Combined" },
+              // Securities hidden for now — uncomment when ready to launch
+              // { key: "securities", label: "Securities" },
+              // { key: "combined", label: "Combined" },
             ] as const).map(tab => (
               <button
                 key={tab.key}
