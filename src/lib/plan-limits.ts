@@ -49,22 +49,37 @@ export async function checkWalletLimit(userId: string): Promise<{ allowed: boole
 }
 
 /**
- * Check if a user has exceeded their transaction limit.
+ * Count ALL transactions belonging to a user (wallet, exchange, CSV).
  */
-export async function checkTransactionLimit(userId: string): Promise<{ allowed: boolean; current: number; limit: number }> {
-  const plan = await getUserPlan(userId);
+export async function countUserTransactions(userId: string): Promise<number> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: { wallets: true },
   });
   const walletAddresses = user?.wallets.map(w => w.address) || [];
 
-  let txCount = 0;
-  if (walletAddresses.length > 0) {
-    txCount = await prisma.transaction.count({
-      where: { wallet_address: { in: walletAddresses } },
-    });
-  }
+  // Count wallet-based transactions
+  const walletTxCount = walletAddresses.length > 0
+    ? await prisma.transaction.count({ where: { wallet_address: { in: walletAddresses } } })
+    : 0;
+
+  // Count user-owned transactions (CSV imports and exchange transactions tied to userId)
+  const userTxCount = await prisma.transaction.count({ where: { userId } });
+
+  // Total = wallet-based (no userId) + user-owned (with userId), avoiding double-count
+  const walletWithUserCount = walletAddresses.length > 0
+    ? await prisma.transaction.count({ where: { wallet_address: { in: walletAddresses }, userId } })
+    : 0;
+
+  return walletTxCount + userTxCount - walletWithUserCount;
+}
+
+/**
+ * Check if a user has exceeded their transaction limit.
+ */
+export async function checkTransactionLimit(userId: string): Promise<{ allowed: boolean; current: number; limit: number }> {
+  const plan = await getUserPlan(userId);
+  const txCount = await countUserTransactions(userId);
 
   return {
     allowed: txCount < plan.transactionLimit,

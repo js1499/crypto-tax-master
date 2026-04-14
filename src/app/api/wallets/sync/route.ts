@@ -5,6 +5,7 @@ import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/ra
 import * as Sentry from "@sentry/nextjs";
 import { recomputeCostBasis } from "@/lib/compute-cost-basis";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
+import { getUserPlan, countUserTransactions } from "@/lib/plan-limits";
 import {
   getWalletTransactions,
   getWalletTransactionsAllChains,
@@ -88,6 +89,20 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`[Wallet Sync] User ${user.id} syncing ${wallets.length} wallet(s): ${wallets.map(w => `${w.name}/${w.provider}`).join(", ")}${fullSync ? " (full)" : ""}`);
+
+    // Check transaction limit for user's plan
+    const userPlan = await getUserPlan(user.id);
+    const currentTxCount = await countUserTransactions(user.id);
+    let remainingCapacity = userPlan.transactionLimit === Infinity
+      ? Infinity
+      : Math.max(0, userPlan.transactionLimit - currentTxCount);
+
+    if (remainingCapacity <= 0 && userPlan.transactionLimit !== Infinity) {
+      return NextResponse.json(
+        { error: `Transaction limit reached (${userPlan.transactionLimit.toLocaleString()} for ${userPlan.planName} plan). Upgrade your plan to sync more transactions.` },
+        { status: 403 }
+      );
+    }
 
     // Clear price caches for fresh sync
     clearPriceCache();
@@ -269,6 +284,12 @@ export async function POST(request: NextRequest) {
           });
         }
 
+        // Enforce transaction limit — truncate to remaining capacity
+        if (remainingCapacity !== Infinity && toInsert.length > remainingCapacity) {
+          console.log(`[Wallet Sync] Truncating ${toInsert.length} transactions to ${remainingCapacity} (plan limit: ${userPlan.transactionLimit})`);
+          toInsert.splice(remainingCapacity);
+        }
+
         // Batch insert with createMany
         if (toInsert.length > 0) {
           const insertChunkSize = 500;
@@ -291,6 +312,11 @@ export async function POST(request: NextRequest) {
               totalErrors += chunk.length;
             }
           }
+        }
+
+        // Decrease remaining capacity after this wallet
+        if (remainingCapacity !== Infinity) {
+          remainingCapacity = Math.max(0, remainingCapacity - walletAdded);
         }
 
         const saveDuration = Date.now() - saveStart;

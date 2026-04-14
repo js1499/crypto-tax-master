@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
+import { getUserPlan, countUserTransactions } from "@/lib/plan-limits";
 
 // Configure for long-running operations on Vercel
 export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
@@ -91,6 +92,20 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Check transaction limit
+    const userPlan = await getUserPlan(user.id);
+    const currentTxCount = await countUserTransactions(user.id);
+    let remainingCapacity = userPlan.transactionLimit === Infinity
+      ? Infinity
+      : Math.max(0, userPlan.transactionLimit - currentTxCount);
+
+    if (remainingCapacity <= 0 && userPlan.transactionLimit !== Infinity) {
+      return NextResponse.json(
+        { error: `Transaction limit reached (${userPlan.transactionLimit.toLocaleString()} for ${userPlan.planName} plan). Upgrade your plan to fetch more transactions.` },
+        { status: 403 }
+      );
+    }
+
     // Store or update transactions in database
     let added = 0;
     let skipped = 0;
@@ -135,6 +150,10 @@ export async function POST(request: NextRequest) {
         });
 
         added++;
+        if (remainingCapacity !== Infinity) {
+          remainingCapacity--;
+          if (remainingCapacity <= 0) break;
+        }
       } catch (error) {
         console.error(`Error saving transaction ${tx.tx_hash}:`, error);
         // Continue with next transaction

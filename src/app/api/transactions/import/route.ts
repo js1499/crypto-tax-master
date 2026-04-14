@@ -10,6 +10,7 @@ import * as Sentry from "@sentry/nextjs";
 import { logBuffer } from "@/lib/log-buffer";
 import { recomputeCostBasis } from "@/lib/compute-cost-basis";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
+import { getUserPlan, countUserTransactions } from "@/lib/plan-limits";
 
 // Increase body size limit for large CSV uploads (50MB)
 export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
@@ -397,6 +398,29 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    // Check transaction limit for user's plan
+    const userPlan = await getUserPlan(user.id);
+    const currentTxCount = await countUserTransactions(user.id);
+    let remainingCapacity = userPlan.transactionLimit === Infinity
+      ? Infinity
+      : Math.max(0, userPlan.transactionLimit - currentTxCount);
+
+    if (remainingCapacity <= 0 && userPlan.transactionLimit !== Infinity) {
+      return NextResponse.json(
+        {
+          status: "error",
+          error: `Transaction limit reached (${userPlan.transactionLimit.toLocaleString()} for ${userPlan.planName} plan). Upgrade your plan to import more transactions.`,
+        },
+        { status: 403 }
+      );
+    }
+
+    // Truncate parsed transactions to remaining capacity
+    if (remainingCapacity !== Infinity && parsedTransactions.length > remainingCapacity) {
+      logBuffer.log(`[Import] Truncating ${parsedTransactions.length} transactions to ${remainingCapacity} (plan limit: ${userPlan.transactionLimit})`);
+      parsedTransactions = parsedTransactions.slice(0, remainingCapacity);
     }
 
     // Store transactions in database using batch operations for better performance

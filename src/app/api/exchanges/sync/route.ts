@@ -13,6 +13,7 @@ import {
 import { getCoinbaseTransactions, getCoinbaseTransactionsWithApiKey } from "@/lib/coinbase-transactions";
 import { recomputeCostBasis } from "@/lib/compute-cost-basis";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
+import { getUserPlan, countUserTransactions } from "@/lib/plan-limits";
 
 // Encryption key - REQUIRED for decrypting exchange credentials
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
@@ -96,6 +97,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "No connected exchanges found" },
         { status: 400 }
+      );
+    }
+
+    // Check transaction limit for user's plan
+    const userPlan = await getUserPlan(user.id);
+    const currentTxCount = await countUserTransactions(user.id);
+    let remainingCapacity = userPlan.transactionLimit === Infinity
+      ? Infinity
+      : Math.max(0, userPlan.transactionLimit - currentTxCount);
+
+    if (remainingCapacity <= 0 && userPlan.transactionLimit !== Infinity) {
+      return NextResponse.json(
+        { error: `Transaction limit reached (${userPlan.transactionLimit.toLocaleString()} for ${userPlan.planName} plan). Upgrade your plan to sync more transactions.` },
+        { status: 403 }
       );
     }
 
@@ -268,6 +283,12 @@ export async function POST(request: NextRequest) {
               continue;
             }
 
+            // Check transaction limit before inserting
+            if (remainingCapacity !== Infinity && remainingCapacity <= 0) {
+              console.log(`[Exchange Sync] Transaction limit reached for ${exchange.name}, stopping`);
+              break;
+            }
+
             // Create transaction
             await prisma.transaction.create({
               data: {
@@ -293,6 +314,7 @@ export async function POST(request: NextRequest) {
 
             dbSaveCount++;
             totalAdded++;
+            if (remainingCapacity !== Infinity) remainingCapacity--;
           } catch (error) {
             dbErrorCount++;
             // Check if this is a unique constraint violation (duplicate tx_hash)
