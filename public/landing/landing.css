@@ -2634,6 +2634,277 @@
       }
     }
 
+    /* CPA Filing Contact Page */
+    .cpa-contact-hero {
+      min-height: 100vh;
+      padding-top: 9rem;
+      padding-bottom: 5rem;
+      align-items: flex-start;
+    }
+
+    .cpa-contact {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+      gap: 2rem;
+      align-items: stretch;
+      width: 100%;
+    }
+
+    .cpa-contact__content {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .cpa-contact__title {
+      max-width: 12ch;
+    }
+
+    .cpa-contact__desc {
+      max-width: 46rem;
+      margin: 0;
+    }
+
+    .cpa-contact__highlights {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .cpa-contact__highlight {
+      padding: 1.125rem 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.66);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 16px 40px rgba(16, 24, 18, 0.06);
+    }
+
+    [data-theme="dark"] .cpa-contact__highlight {
+      background: rgba(15, 26, 20, 0.72);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24);
+    }
+
+    .cpa-contact__highlight-label {
+      display: block;
+      font-size: 0.875rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.45rem;
+    }
+
+    .cpa-contact__highlight strong {
+      display: block;
+      font-size: 1.25rem;
+      line-height: 1.35;
+      color: var(--text-primary);
+    }
+
+    .cpa-contact__details {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+
+    .cpa-contact__detail-card {
+      position: relative;
+      overflow: hidden;
+      padding: 1.5rem;
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at top right, var(--accent-glow-strong), transparent 55%),
+        var(--bg-card);
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 48px rgba(16, 24, 18, 0.08);
+    }
+
+    [data-theme="dark"] .cpa-contact__detail-card {
+      box-shadow: 0 20px 48px rgba(0, 0, 0, 0.26);
+    }
+
+    .cpa-contact__detail-index {
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      margin-bottom: 0.8rem;
+    }
+
+    .cpa-contact__detail-title {
+      font-size: 1.5rem;
+      line-height: 1.2;
+      margin-bottom: 0.75rem;
+      color: var(--text-primary);
+    }
+
+    .cpa-contact__detail-copy {
+      font-size: 1.125rem;
+      line-height: 1.7;
+      color: var(--text-secondary);
+    }
+
+    .cpa-contact__form-card {
+      position: relative;
+      overflow: hidden;
+      padding: 2rem;
+      border-radius: 28px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.82) 0%, rgba(255,255,255,0.96) 100%);
+      border: 1px solid var(--border);
+      box-shadow: 0 28px 70px rgba(16, 24, 18, 0.12);
+      backdrop-filter: blur(20px);
+    }
+
+    .cpa-contact__form-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto auto 0;
+      width: 100%;
+      height: 6px;
+      background: linear-gradient(90deg, var(--accent), #3b82f6);
+    }
+
+    [data-theme="dark"] .cpa-contact__form-card {
+      background:
+        linear-gradient(180deg, rgba(15, 26, 20, 0.9) 0%, rgba(12, 22, 16, 0.96) 100%);
+      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.34);
+    }
+
+    .cpa-contact__form-head {
+      margin-bottom: 1.5rem;
+    }
+
+    .cpa-contact__eyebrow {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.875rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.8rem;
+    }
+
+    .cpa-contact__form-title {
+      font-size: clamp(2rem, 4vw, 2.6rem);
+      line-height: 1.05;
+      color: var(--text-primary);
+      margin-bottom: 0.85rem;
+    }
+
+    .cpa-contact__form-copy {
+      font-size: 1.125rem;
+      line-height: 1.7;
+      color: var(--text-secondary);
+    }
+
+    .cpa-contact__form {
+      display: grid;
+      gap: 1rem;
+    }
+
+    .cpa-contact__field {
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    .cpa-contact__label {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .cpa-contact__input {
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-primary);
+      padding: 0.95rem 1rem;
+      font-size: 1.0625rem;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+    }
+
+    .cpa-contact__input::placeholder {
+      color: var(--text-muted);
+    }
+
+    .cpa-contact__input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-glow);
+    }
+
+    .cpa-contact__submit {
+      width: 100%;
+      justify-content: center;
+      margin-top: 0.5rem;
+      border-radius: 14px;
+      min-height: 56px;
+      font-weight: 700;
+    }
+
+    .cpa-contact__submit:disabled {
+      opacity: 0.7;
+      cursor: wait;
+      transform: none;
+    }
+
+    .cpa-contact__footnote,
+    .cpa-contact__status {
+      font-size: 1rem;
+      line-height: 1.6;
+      margin-top: 0.25rem;
+    }
+
+    .cpa-contact__footnote {
+      color: var(--text-muted);
+    }
+
+    .cpa-contact__status--success {
+      color: var(--accent-dim);
+    }
+
+    .cpa-contact__status--error {
+      color: var(--danger);
+    }
+
+    @media (max-width: 1080px) {
+      .cpa-contact {
+        grid-template-columns: 1fr;
+      }
+
+      .cpa-contact__title {
+        max-width: 16ch;
+      }
+    }
+
+    @media (max-width: 840px) {
+      .cpa-contact__highlights,
+      .cpa-contact__details {
+        grid-template-columns: 1fr;
+      }
+
+      .cpa-contact-hero {
+        min-height: auto;
+        padding-top: 8rem;
+      }
+    }
+
+    @media (max-width: 640px) {
+      .cpa-contact__form-card,
+      .cpa-contact__detail-card,
+      .cpa-contact__highlight {
+        padding: 1.25rem;
+      }
+
+      .cpa-contact__title {
+        max-width: none;
+      }
+    }
+
     /* Side arrow — starts at the LEFT edge of the Starter card, runs down to where the feature table begins */
     .pricing-wrap {
       position: relative;
