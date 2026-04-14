@@ -1081,7 +1081,7 @@
 
         if (glideLogo && glideLogo.complete && glideLogo.naturalWidth > 0) {
           // Draw the Glide logo centered at the hub, scaled to fit aspect ratio
-          var logoH = 48;
+          var logoH = 72;
           var logoW = logoH * (glideLogo.naturalWidth / glideLogo.naturalHeight);
           ctx.drawImage(glideLogo, hub.x - logoW / 2, hub.y - logoH / 2, logoW, logoH);
         } else {
