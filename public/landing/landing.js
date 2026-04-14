@@ -2198,7 +2198,9 @@
     function getC(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
 
     icons.forEach(function(canvas) {
+      if (typeof canvas.getContext !== 'function') return; // skip SVGs
       var ctx = canvas.getContext('2d');
+      if (!ctx) return;
       var dpr = window.devicePixelRatio || 1;
       canvas.width = 80 * dpr;
       canvas.height = 80 * dpr;
@@ -2575,44 +2577,46 @@
 
 // ============================================================
 // STRIPE CHECKOUT — wire pricing buttons to checkout API
+// Uses event delegation so handlers survive React DOM regeneration
 // ============================================================
 (function() {
-  document.querySelectorAll('[data-plan]').forEach(function(btn) {
-    btn.addEventListener('click', async function(e) {
-      e.preventDefault();
-      var planKey = btn.getAttribute('data-plan');
-      if (!planKey) return;
+  document.addEventListener('click', async function(e) {
+    var btn = e.target.closest('[data-plan]');
+    if (!btn) return;
+    e.preventDefault();
 
-      // Disable button and show loading
-      btn.disabled = true;
-      var originalText = btn.textContent;
-      btn.textContent = 'Redirecting...';
+    var planKey = btn.getAttribute('data-plan');
+    if (!planKey) return;
 
-      try {
-        var res = await fetch('/api/stripe/checkout', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ planKey: planKey }),
-        });
+    // Disable button and show loading
+    btn.disabled = true;
+    var originalText = btn.textContent;
+    btn.textContent = 'Redirecting...';
 
-        var data = await res.json();
+    try {
+      var res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ planKey: planKey }),
+      });
 
-        if (data.url) {
-          window.location.href = data.url;
-        } else if (res.status === 401) {
-          // Not authenticated — register first, then checkout
-          window.location.href = '/register?plan=' + planKey;
-        } else {
-          // Show error to user
-          alert(data.error || 'Something went wrong. Please try again.');
-          btn.textContent = originalText;
-          btn.disabled = false;
-        }
-      } catch (err) {
-        // Network error — redirect to register with plan param
+      var data = await res.json();
+
+      if (data.url) {
+        window.location.href = data.url;
+      } else if (res.status === 401) {
+        // Not authenticated — register first, then checkout
         window.location.href = '/register?plan=' + planKey;
+      } else {
+        // Show error to user
+        alert(data.error || 'Something went wrong. Please try again.');
+        btn.textContent = originalText;
+        btn.disabled = false;
       }
-    });
+    } catch (err) {
+      // Network error — redirect to register with plan param
+      window.location.href = '/register?plan=' + planKey;
+    }
   });
 })();

@@ -11,15 +11,10 @@ export async function middleware(request: NextRequest) {
     secret: process.env.NEXTAUTH_SECRET,
   });
 
-  // Not authenticated → redirect to login (unless already on login/register)
+  // Not authenticated → redirect to login
   if (!token) {
     const loginUrl = new URL("/login", request.url);
     return NextResponse.redirect(loginUrl);
-  }
-
-  // Authenticated user hitting root → redirect to accounts
-  if (pathname === "/") {
-    return NextResponse.redirect(new URL("/accounts", request.url));
   }
 
   return NextResponse.next();

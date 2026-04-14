@@ -22,6 +22,6 @@ export function LandingPage({ bodyHtml }: { bodyHtml: string }) {
   }, []);
 
   return (
-    <div dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+    <div suppressHydrationWarning dangerouslySetInnerHTML={{ __html: bodyHtml }} />
   );
 }
