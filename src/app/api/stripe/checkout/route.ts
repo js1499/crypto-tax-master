@@ -6,6 +6,8 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 /**
  * POST /api/stripe/checkout
  * Creates a Stripe Checkout session for a given plan.
+ * Requires authentication — unauthenticated users get 401 and the
+ * frontend redirects them to /register?plan=<key>.
  * Body: { planKey: "starter" | "active" | ... | "cpa_filing" }
  */
 export async function POST(request: NextRequest) {
@@ -64,15 +66,14 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  // Determine success/cancel URLs
-  const origin = request.headers.get("origin") || "http://localhost:3000";
+  const origin = request.headers.get("origin") || "https://crypto-tax-master.vercel.app";
 
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     mode: "subscription",
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${origin}/pricing?success=true&plan=${planKey}`,
-    cancel_url: `${origin}/pricing?canceled=true`,
+    success_url: `${origin}/accounts?success=true&plan=${planKey}`,
+    cancel_url: `${origin}/#pricing`,
     metadata: { userId: user.id, planKey },
   });
 
