@@ -1,6 +1,6 @@
-# Crypto Tax Calculator — Comprehensive Progress Document
+# Glide — Comprehensive Progress Document
 
-*Last updated: April 2026*
+*Last updated: April 14, 2026*
 
 ---
 
@@ -79,12 +79,21 @@ All exchange API credentials are encrypted at rest using AES-256-GCM with PBKDF2
 | Vercel | Hosting, deployment, edge functions (13-min max duration) |
 | GitHub | Version control, CI/CD trigger |
 
+### Billing & Payments
+| Technology | Purpose |
+|---|---|
+| Stripe | Subscription management, Checkout, Customer Portal, webhook events |
+| 9 Stripe products | 4 software plans (Starter/Active/Pro/Prime), 4 DFY plans, CPA Filing add-on |
+
+### Email
+| Technology | Purpose |
+|---|---|
+| Resend | Transactional emails (welcome, password reset) |
+
 ### Not Yet Integrated
 | Service | Would Enable |
 |---|---|
-| Stripe | Paid plans, subscription management, billing portal |
 | Cloudflare | DDoS protection, WAF, edge caching |
-| Resend | Transactional emails (verification, alerts, reminders) |
 | Upstash Redis | Shared rate limiting across serverless instances, faster caching |
 
 ---
@@ -128,8 +137,10 @@ All exchange API credentials are encrypted at rest using AES-256-GCM with PBKDF2
 ### Public
 | Route | Purpose |
 |---|---|
+| `/` | Landing page (unauthenticated) — hero, features, pricing, comparison table, particle animations, dark mode. Authenticated users redirect to `/accounts`. |
 | `/login` | Email/password + OAuth login |
-| `/register` | Account creation (resets onboarding for same-device new accounts) |
+| `/register` | Account creation. Resets onboarding for same-device new accounts. If `?plan=` param present, auto-redirects to Stripe Checkout after registration. |
+| `/reset-password` | Password reset form (token + email from URL params) |
 
 ### Crypto
 | Route | Purpose |
@@ -149,17 +160,18 @@ All exchange API credentials are encrypted at rest using AES-256-GCM with PBKDF2
 ### Reports & Tools
 | Route | Purpose |
 |---|---|
-| `/tax-reports` | Unified report hub. Year picker, engine filter (Crypto/Securities/Combined). Generates fillable PDFs (Form 8949, Schedule D, Schedule 1) and CSV exports (TurboTax, Capital Gains, Income Report). Per-form download buttons with spinner. |
-| `/tax-ai` | Claude-powered chat. SQL generation against transaction DB. File upload (10MB) for CSV reformatting. Streaming responses. CSV download blocks suppressed from chat stream. |
-| `/tutorial` | 8-step getting started guide (Connect → Sync → Enrich → Review → Compute → Add Brokerages → Compute Lots → Download Reports). Section filter tabs. Restart Interactive Guide button. |
-| `/settings` | Country, timezone, cost basis method |
+| `/tax-reports` | Unified report hub. Year picker (default 2025), engine filter (Crypto/Securities/Combined). Generates fillable PDFs and CSV exports. Free plan: blurred stats, locked download buttons with "Upgrade" text. |
+| `/tax-ai` | Claude-powered chat. SQL generation against transaction DB. File upload (10MB) for CSV reformatting. Streaming responses. CSV download blocks suppressed from chat stream. Requires Active plan or higher. |
+| `/tutorial` | Video walkthrough (guided-mode.mp4) + 10-step written instructions matching the interactive tutorial. "Start Interactive Guide" button. Tax AI callout. |
+| `/settings` | 4 tabs: Preferences (country, cost basis method), Billing (current plan, Manage Billing via Stripe Portal), Profile (email, name, timezone), Security (reset password email, delete account). |
+| `/dashboard` | Legacy dashboard page (analytics, P&L charts). |
 
 ---
 
-## 5. API Routes (58 total)
+## 5. API Routes (65+ total)
 
-### Authentication (8)
-Registration, login, logout, session check, Coinbase OAuth flow.
+### Authentication (11)
+Registration, login, logout, session check, Coinbase OAuth flow, forgot password (sends reset email via Resend), reset password (validates token, updates hash), delete account (cancels Stripe, deletes all user data).
 
 ### Wallets (3)
 - `GET/POST/DELETE /api/wallets` — CRUD + wallet suggestions
@@ -188,7 +200,13 @@ CRUD, CSV import (6 exchange formats + custom), export, categorize, resolve symb
 Import, compute (lot engine + wash sales + dividends + Sections 1256/475/988), reports, settings, brokerages, lots, wash sales, equivalence groups, Section 1256 symbols.
 
 ### Tax AI (1)
-- `POST /api/tax-ai` — Claude Opus with streaming. 32K tokens when file attached. System prompt includes both crypto and securities CSV format specs for reformatting. CSV download blocks suppressed from stream.
+- `POST /api/tax-ai` — Claude Opus with streaming. 32K tokens when file attached. System prompt includes both crypto and securities CSV format specs for reformatting. CSV download blocks suppressed from stream. Requires Active plan or higher.
+
+### Stripe Billing (4)
+- `POST /api/stripe/checkout` — creates Stripe Checkout session for any of 9 plans. Creates Stripe customer on first purchase. CPA Filing requires active subscription.
+- `POST /api/stripe/webhook` — verifies signature, handles 6 event types (checkout completed, subscription created/updated/deleted, invoice succeeded/failed). Updates DB plan status. CPA Filing tracked as separate boolean.
+- `POST /api/stripe/portal` — creates Customer Portal session for self-service billing management.
+- `GET /api/stripe/status` — returns current plan, limits, features, subscription status, CPA filing flag.
 
 ---
 
@@ -320,9 +338,44 @@ The unique constraint on wallets is `(address, provider, userId)` — multiple u
 ### Exchange API Normalization
 All 5 exchange clients normalize to a common `ExchangeTransaction` interface. Non-USD trading pairs (e.g., ETH/BTC on Kraken) set `value_usd = 0` and `price_per_unit = null` so price enrichment fills correct USD values — prevents storing BTC costs as USD. Coinbase swap transactions pair both sides via `trade.id` to populate `incoming_asset_symbol`.
 
+### Client-Side Navigation (SPA)
+The sidebar uses `router.push()` (Next.js client-side navigation) instead of `window.location.href`. Pages transition instantly without full browser reloads. All React state (pipeline progress, tutorial, plan status) survives across navigations. The pipeline provider's `refreshKey` triggers data refetches on the accounts, transactions, and tax reports pages when the pipeline completes.
+
+### Landing Page Integration
+The landing page from the `glide-landing-page` repo is integrated as the `/` route for unauthenticated users. It has its own CSS/JS/fonts loaded separately from the app's Tailwind styles to avoid conflicts. CSS and fonts are loaded via `<link>` tags in the server component (no flash of unstyled content). Authenticated users on `/` are redirected to `/accounts` via server-side session check.
+
 ---
 
-## 8. Security Measures
+## 8. Billing & Plans
+
+### Plan Structure
+| Plan | Price | Transactions | Key Features |
+|------|-------|-------------|--------------|
+| Trial (free) | $0 | Unlimited | Connect wallets, view transactions (values blurred), no reports |
+| Starter | $49/yr | 300 | All reports, email support |
+| Active | $99/yr | 1,000 | + Tax AI, chat support |
+| Pro | $299/yr | 10,000 | + Securities, advanced analytics |
+| Prime | $699/yr | 100,000 | Built for high-frequency traders |
+| DFY variants | $399–$1,999/yr | Same as above | Tax experts reconcile + software license included |
+| CPA Filing | $750/yr | Add-on | Requires active plan |
+
+### Feature Gating
+- `src/lib/plan-limits.ts` — centralized config with `getUserPlan()`, returns limits + feature flags
+- `src/lib/stripe.ts` — plan definitions, `getPriceId()`, `getPlanByPriceId()`
+- Free plan: unlimited wallets + transactions, but values blurred (`blur-lg` on P&L stats, `blur-md` on gain/loss column), reports locked (lock icon + "Upgrade"), Tax AI blocked (403)
+- Plan badge in sidebar shows "Trial" (gray) or plan name (blue)
+- Upgrade prompts: blue banners on transactions + tax reports pages, "View Plans" opens landing page pricing in new tab
+
+### Stripe Integration
+- 9 Stripe products created programmatically via API
+- Checkout: `POST /api/stripe/checkout` creates session, redirects to Stripe
+- Webhook: `POST /api/stripe/webhook` handles subscription lifecycle events, updates DB
+- Portal: `POST /api/stripe/portal` opens self-service billing management
+- Schema: User has `stripeCustomerId`, `subscriptionId`, `subscriptionStatus`, `planId`, `currentPeriodEnd`, `hasCpaFiling`
+
+---
+
+## 9. Security Measures
 
 ### Authentication
 - Passwords hashed with bcryptjs (10 rounds)
@@ -439,10 +492,33 @@ Auto-creates brokerage accounts from the `account` column during import.
 - [x] Transaction edit history with version tracking + revert
 - [x] Multi-wallet bulk add (row-based, mixed types, pipeline sync)
 - [x] Sync pipeline (chained sync → enrich → compute with floating progress bar)
-- [x] Tutorial page (8-step guide)
-- [x] Onboarding tooltips (resets for new accounts on same device)
+- [x] Tutorial page with video + 10-step written instructions
+- [x] Interactive spotlight tutorial (10-step guided walkthrough with data-state detection)
+- [x] "Tutorial Mode" button in header with shine animation
 - [x] Rate limiting + security headers
 - [x] Sentry error tracking
+- [x] Stripe billing (9 products: 4 software, 4 DFY, CPA Filing add-on)
+- [x] Stripe Checkout, webhook handler, Customer Portal
+- [x] Feature gating (Tax AI, PDF reports, CSV exports blocked for free plan)
+- [x] Free plan: blurred values (blur-lg on P&L stats, gain/loss, charts), locked download buttons with "Upgrade" text, upgrade banners
+- [x] Landing page integrated (hero, features, pricing, comparison table, particle animations, dark mode toggle)
+- [x] Pricing buttons wired to Stripe Checkout (9 plans + trial)
+- [x] Post-registration Stripe Checkout redirect (/register?plan=starter → auto-checkout)
+- [x] Plan badge in sidebar (Trial/plan name)
+- [x] Settings: Billing tab (current plan, renewal date, Manage Billing via Stripe Portal)
+- [x] Settings: cleaned up (removed fake Account tab, removed non-functional notifications, removed 2FA)
+- [x] Client-side navigation (router.push — SPA, no page reloads, state preserved)
+- [x] Reactive data refresh (pipeline completion auto-updates accounts, transactions, tax reports pages)
+- [x] Activity log in header bell icon (sync, enrich, compute events with timestamps)
+- [x] Welcome email on registration (Resend, fire-and-forget)
+- [x] Forgot password / reset password flow (Resend email with 1-hour token)
+- [x] Delete account (cancels Stripe subscriptions, deletes all user data)
+- [x] Custom 404/500 error pages
+- [x] CSV exports use DB data (single source of truth — no independent tax calculator)
+- [x] All IRS forms use DB data (single source of truth)
+- [x] Clean build (zero warnings — fixed authOptions import)
+- [x] Dev files cleaned (removed scripts/, .bak, test CSVs, ui-inspo/)
+- [x] Landing page images compressed to webp
 
 ### Phase 2 Securities (Planned)
 - [ ] Corporate actions (splits, mergers, spinoffs with fractional shares)
@@ -459,24 +535,6 @@ Auto-creates brokerage accounts from the `account` column during import.
 - [ ] Section 1092 straddle detection
 - [ ] Worthless securities deduction
 - [ ] Multi-year data reconstruction
-
-### Recently Completed
-- [x] Stripe billing (9 products, checkout, webhook, portal, feature gating)
-- [x] Landing page integrated from separate repo (glide-landing-page)
-- [x] Pricing buttons wired to Stripe Checkout
-- [x] Plan badge in sidebar + billing tab in settings
-- [x] Free plan: blurred values, locked reports, upgrade prompts
-- [x] Interactive tutorial (8-step spotlight walkthrough)
-- [x] Client-side navigation (SPA, no page reloads)
-- [x] Reactive data refresh (pipeline completion auto-updates pages)
-- [x] Activity log in header bell icon
-- [x] Welcome email on registration (Resend)
-- [x] Forgot password / reset password flow (Resend)
-- [x] Delete account with Stripe subscription cancellation
-- [x] Post-registration Stripe Checkout redirect
-- [x] Custom 404/500 error pages
-- [x] CSV exports use DB data (single source of truth)
-- [x] All IRS forms use DB data (single source of truth)
 
 ### Infrastructure (Planned)
 - [ ] Upstash Redis for shared rate limiting + faster caching
