@@ -2572,6 +2572,7 @@
   })();
   
 
+
 // ============================================================
 // STRIPE CHECKOUT — wire pricing buttons to checkout API
 // ============================================================
@@ -2599,15 +2600,14 @@
 
         if (data.url) {
           window.location.href = data.url;
-        } else if (data.error) {
-          // Not authenticated or other error — redirect to register
-          if (res.status === 401) {
-            window.location.href = '/register?plan=' + planKey;
-          } else {
-            alert(data.error);
-            btn.textContent = originalText;
-            btn.disabled = false;
-          }
+        } else if (res.status === 401) {
+          // Not authenticated — register first, then checkout
+          window.location.href = '/register?plan=' + planKey;
+        } else {
+          // Show error to user
+          alert(data.error || 'Something went wrong. Please try again.');
+          btn.textContent = originalText;
+          btn.disabled = false;
         }
       } catch (err) {
         // Network error — redirect to register with plan param

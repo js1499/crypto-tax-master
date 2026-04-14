@@ -1,5 +1,3 @@
-import { redirect } from "next/navigation";
-import { getServerSession } from "next-auth";
 import fs from "fs";
 import path from "path";
 import { LandingPage } from "./landing-page";
@@ -11,11 +9,6 @@ export const metadata = {
 };
 
 export default async function HomePage() {
-  const session = await getServerSession();
-  if (session?.user) {
-    redirect("/accounts");
-  }
-
   const htmlPath = path.join(process.cwd(), "src", "app", "landing-body.html");
   const bodyHtml = fs.readFileSync(htmlPath, "utf-8");
 
