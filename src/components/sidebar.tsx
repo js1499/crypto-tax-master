@@ -99,25 +99,17 @@ export function AppSidebar() {
 
   return (
     <ShadcnSidebar>
-      <SidebarHeader className="px-4 py-5">
+      <SidebarHeader className="px-4 py-4">
         <button
           onClick={() => handleNavigation("/")}
-          className="flex items-center gap-2"
+          className="flex flex-col items-start"
         >
-          <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-            <span className="text-white font-bold text-sm">CT</span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[15px] font-semibold text-sidebar-foreground">Crypto Tax</span>
-              {planName && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${planName === "Trial" ? "bg-[#F0F0EB] text-[#6B7280]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
-                  {planName}
-                </span>
-              )}
-            </div>
-            <div className="text-xs text-muted-foreground">Tax Calculator</div>
-          </div>
+          <img src="/landing/logos/glide-logo.png" alt="Glide" className="h-8 w-auto" />
+          {planName && (
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded mt-1.5 ${planName === "Trial" ? "bg-[#F0F0EB] text-[#6B7280]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
+              {planName}
+            </span>
+          )}
         </button>
       </SidebarHeader>
 
