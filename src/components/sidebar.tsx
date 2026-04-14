@@ -106,7 +106,7 @@ export function AppSidebar() {
         >
           <img src="/landing/logos/glide-logo.png" alt="Glide" className="h-14 w-auto" />
           {planName && (
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded mt-1.5 ${planName === "Trial" ? "bg-[#F0F0EB] text-[#6B7280]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
+            <span className={`text-[12px] font-bold px-2 py-1 rounded mt-2 ${planName === "Trial" ? "bg-[#F0F0EB] text-[#6B7280]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
               {planName}
             </span>
           )}
