@@ -104,7 +104,7 @@ export function AppSidebar() {
           onClick={() => handleNavigation("/")}
           className="flex flex-col items-start"
         >
-          <img src="/landing/logos/glide-logo.png" alt="Glide" className="h-8 w-auto" />
+          <img src="/landing/logos/glide-logo.png" alt="Glide" className="h-14 w-auto" />
           {planName && (
             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded mt-1.5 ${planName === "Trial" ? "bg-[#F0F0EB] text-[#6B7280]" : "bg-[#EFF6FF] text-[#2563EB]"}`}>
               {planName}
