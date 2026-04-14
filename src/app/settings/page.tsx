@@ -350,7 +350,7 @@ export default function SettingsPage() {
                       Manage Billing
                     </Button>
                   ) : (
-                    <Button onClick={() => window.open("/#pricing", "_blank")}>
+                    <Button onClick={() => window.open(window.location.origin + "/#pricing", "_blank")}>
                       View Plans
                     </Button>
                   )}

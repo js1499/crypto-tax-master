@@ -2176,7 +2176,7 @@ function TransactionsContent() {
               <p className="text-[13px] text-[#6B7280] mt-0.5">Upgrade to see exact values, cost basis, gain/loss, and download tax reports.</p>
             </div>
             <button
-              onClick={() => window.open("/#pricing", "_blank")}
+              onClick={() => window.open(window.location.origin + "/#pricing", "_blank")}
               className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#2563EB] text-white text-[14px] font-medium hover:bg-[#1D4ED8] transition-colors"
             >
               View Plans

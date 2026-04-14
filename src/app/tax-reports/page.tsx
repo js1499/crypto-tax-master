@@ -873,7 +873,7 @@ export default function TaxReportsPage() {
               <p className="text-[13px] text-[#6B7280] mt-0.5">PDF forms (Schedule D, Form 8949, Schedule 1) and CSV exports require a paid plan.</p>
             </div>
             <button
-              onClick={() => window.open("/#pricing", "_blank")}
+              onClick={() => window.open(window.location.origin + "/#pricing", "_blank")}
               className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#2563EB] text-white text-[14px] font-medium hover:bg-[#1D4ED8] transition-colors"
             >
               View Plans
@@ -964,7 +964,7 @@ export default function TaxReportsPage() {
                     </span>
                   ) : (
                     <button
-                      onClick={() => isPaidPlan ? handleFormDownload(form) : (window.open("/#pricing", "_blank"))}
+                      onClick={() => isPaidPlan ? handleFormDownload(form) : (window.open(window.location.origin + "/#pricing", "_blank"))}
                       disabled={!!generatingFormId}
                       className={cn(
                         "inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50",
