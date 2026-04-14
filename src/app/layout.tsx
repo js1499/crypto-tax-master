@@ -9,6 +9,7 @@ import { OnboardingProvider } from "@/components/onboarding/onboarding-provider"
 import { SyncPipelineProvider } from "@/components/sync-pipeline/pipeline-provider";
 import { PipelineProgress } from "@/components/sync-pipeline/pipeline-progress";
 import { Toaster } from "sonner";
+import Script from "next/script";
 
 // Initialize Sentry on the client side
 if (typeof window !== "undefined") {
@@ -59,6 +60,9 @@ export default function RootLayout({
             </ThemeProvider>
           </NextAuthSessionProvider>
         </ErrorBoundary>
+        <Script id="crisp-chat" strategy="afterInteractive">{`
+          window.$crisp=[];window.CRISP_WEBSITE_ID="0e3fe389-7c1c-4d87-828f-46ddfeff34e4";(function(){var d=document;var s=d.createElement("script");s.src="https://client.crisp.chat/l.js";s.async=1;d.getElementsByTagName("head")[0].appendChild(s);})();
+        `}</Script>
       </body>
     </html>
   );

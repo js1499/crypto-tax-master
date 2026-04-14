@@ -191,9 +191,9 @@ export function ContactPage() {
                 </p>
 
                 <div className="cpa-contact__highlights">
-                  <div className="cpa-contact__highlight">
+                  <div className="cpa-contact__highlight" style={{ overflow: "hidden" }}>
                     <span className="cpa-contact__highlight-label">Email</span>
-                    <strong>
+                    <strong style={{ fontSize: "1rem", wordBreak: "break-all" }}>
                       <a href="mailto:contact@glidetaxes.com" style={{ color: "inherit", textDecoration: "none" }}>
                         contact@glidetaxes.com
                       </a>
