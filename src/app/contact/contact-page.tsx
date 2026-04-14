@@ -11,10 +11,11 @@ type SubmitState = "idle" | "success" | "error";
 const INITIAL_FORM = {
   name: "",
   email: "",
-  phone: "",
+  subject: "",
+  message: "",
 };
 
-export function CpaFilingContactPage() {
+export function ContactPage() {
   const [theme, setTheme] = useState<Theme>("light");
   const [isScrolled, setIsScrolled] = useState(false);
   const [formData, setFormData] = useState(INITIAL_FORM);
@@ -26,10 +27,8 @@ export function CpaFilingContactPage() {
     const savedTheme =
       typeof window !== "undefined" ? window.localStorage.getItem("theme") : null;
     const nextTheme: Theme = savedTheme === "dark" ? "dark" : "light";
-
     setTheme(nextTheme);
     document.documentElement.setAttribute("data-theme", nextTheme);
-
     return () => {
       document.documentElement.removeAttribute("data-theme");
     };
@@ -41,24 +40,15 @@ export function CpaFilingContactPage() {
   }, [theme]);
 
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 40);
-    };
-
+    const handleScroll = () => setIsScrolled(window.scrollY > 40);
     handleScroll();
     window.addEventListener("scroll", handleScroll, { passive: true });
-
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-    };
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    if (isSubmitting) {
-      return;
-    }
+    if (isSubmitting) return;
 
     setIsSubmitting(true);
     setSubmitState("idle");
@@ -71,36 +61,34 @@ export function CpaFilingContactPage() {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, _source: "contact_page" }),
       });
 
       if (!response.ok) {
         let errorMessage =
-          "We could not send your details right now. Please try again in a moment.";
-
+          "We could not send your message right now. Please try again in a moment.";
         try {
           const payload = await response.json();
           if (payload?.message && typeof payload.message === "string") {
             errorMessage = payload.message;
           }
         } catch {
-          // Ignore non-JSON responses and use the default message.
+          /* ignore */
         }
-
         throw new Error(errorMessage);
       }
 
       setFormData(INITIAL_FORM);
       setSubmitState("success");
       setSubmitMessage(
-        "Thanks. We received your information and will reach out about CPA filing shortly.",
+        "Thanks for reaching out! We'll get back to you as soon as possible.",
       );
     } catch (error) {
       setSubmitState("error");
       setSubmitMessage(
         error instanceof Error
           ? error.message
-          : "We could not send your details right now. Please try again in a moment.",
+          : "We could not send your message right now. Please try again in a moment.",
       );
     } finally {
       setIsSubmitting(false);
@@ -192,34 +180,32 @@ export function CpaFilingContactPage() {
             <div className="cpa-contact">
               <div className="cpa-contact__content">
                 <span className="section__label section__label--accent">
-                  CPA Filing
+                  Contact
                 </span>
-                <h1 className="section__title cpa-contact__title">
-                  Talk to us about getting your filing over the finish line.
+                <h1 className="section__title cpa-contact__title" style={{ maxWidth: "16ch" }}>
+                  We&apos;d love to hear from you.
                 </h1>
                 <p className="section__desc cpa-contact__desc">
-                  If you want hands-on filing support from Glide&apos;s team, send
-                  your details and we&apos;ll follow up with next steps.
+                  Have a question, need help, or want to share feedback?
+                  Reach out and our team will get back to you.
                 </p>
 
                 <div className="cpa-contact__highlights">
                   <div className="cpa-contact__highlight">
-                    <span className="cpa-contact__highlight-label">
-                      Add-on
-                    </span>
-                    <strong>Add CPA filing to any plan</strong>
+                    <span className="cpa-contact__highlight-label">Email</span>
+                    <strong>
+                      <a href="mailto:contact@glidetaxes.com" style={{ color: "inherit", textDecoration: "none" }}>
+                        contact@glidetaxes.com
+                      </a>
+                    </strong>
                   </div>
                   <div className="cpa-contact__highlight">
-                    <span className="cpa-contact__highlight-label">
-                      Starting price
-                    </span>
-                    <strong>$750 per year</strong>
+                    <span className="cpa-contact__highlight-label">Response time</span>
+                    <strong>Within 1 business day</strong>
                   </div>
                   <div className="cpa-contact__highlight">
-                    <span className="cpa-contact__highlight-label">
-                      What to expect
-                    </span>
-                    <strong>A direct follow-up from our team</strong>
+                    <span className="cpa-contact__highlight-label">Support</span>
+                    <strong>Available for all plans</strong>
                   </div>
                 </div>
 
@@ -227,21 +213,21 @@ export function CpaFilingContactPage() {
                   <div className="cpa-contact__detail-card">
                     <div className="cpa-contact__detail-index">01</div>
                     <h2 className="cpa-contact__detail-title">
-                      Share your contact info
+                      General inquiries
                     </h2>
                     <p className="cpa-contact__detail-copy">
-                      Just name, email address, and phone number. No long intake
-                      form to start.
+                      Questions about plans, features, or how Glide works?
+                      Fill out the form and we&apos;ll point you in the right direction.
                     </p>
                   </div>
                   <div className="cpa-contact__detail-card">
                     <div className="cpa-contact__detail-index">02</div>
                     <h2 className="cpa-contact__detail-title">
-                      We reach out directly
+                      Technical support
                     </h2>
                     <p className="cpa-contact__detail-copy">
-                      We&apos;ll follow up to walk through fit, timing, and next
-                      steps for filing support.
+                      Running into an issue with your account, transactions, or
+                      reports? Describe what&apos;s happening and we&apos;ll help resolve it.
                     </p>
                   </div>
                 </div>
@@ -249,11 +235,10 @@ export function CpaFilingContactPage() {
 
               <div className="cpa-contact__form-card">
                 <div className="cpa-contact__form-head">
-                  <span className="cpa-contact__eyebrow">Request information</span>
-                  <h2 className="cpa-contact__form-title">Get in touch</h2>
+                  <span className="cpa-contact__eyebrow">Get in touch</span>
+                  <h2 className="cpa-contact__form-title">Send us a message</h2>
                   <p className="cpa-contact__form-copy">
-                    We&apos;ll use this information only to contact you about CPA
-                    filing.
+                    We&apos;ll respond to your message as quickly as we can.
                   </p>
                 </div>
 
@@ -273,12 +258,10 @@ export function CpaFilingContactPage() {
                       name="name"
                       type="text"
                       autoComplete="name"
+                      placeholder="Your full name"
                       value={formData.name}
-                      onChange={(event) =>
-                        setFormData((current) => ({
-                          ...current,
-                          name: event.target.value,
-                        }))
+                      onChange={(e) =>
+                        setFormData((c) => ({ ...c, name: e.target.value }))
                       }
                       required
                     />
@@ -294,35 +277,49 @@ export function CpaFilingContactPage() {
                       name="email"
                       type="email"
                       autoComplete="email"
+                      placeholder="you@example.com"
                       value={formData.email}
-                      onChange={(event) =>
-                        setFormData((current) => ({
-                          ...current,
-                          email: event.target.value,
-                        }))
+                      onChange={(e) =>
+                        setFormData((c) => ({ ...c, email: e.target.value }))
                       }
                       required
                     />
                   </div>
 
                   <div className="cpa-contact__field">
-                    <label className="cpa-contact__label" htmlFor="contact-phone">
-                      Phone number
+                    <label className="cpa-contact__label" htmlFor="contact-subject">
+                      Subject
                     </label>
                     <input
                       className="cpa-contact__input"
-                      id="contact-phone"
-                      name="phone"
-                      type="tel"
-                      autoComplete="tel"
-                      value={formData.phone}
-                      onChange={(event) =>
-                        setFormData((current) => ({
-                          ...current,
-                          phone: event.target.value,
-                        }))
+                      id="contact-subject"
+                      name="subject"
+                      type="text"
+                      placeholder="What is this about?"
+                      value={formData.subject}
+                      onChange={(e) =>
+                        setFormData((c) => ({ ...c, subject: e.target.value }))
                       }
                       required
+                    />
+                  </div>
+
+                  <div className="cpa-contact__field">
+                    <label className="cpa-contact__label" htmlFor="contact-message">
+                      Message
+                    </label>
+                    <textarea
+                      className="cpa-contact__input"
+                      id="contact-message"
+                      name="message"
+                      rows={5}
+                      placeholder="Tell us how we can help..."
+                      value={formData.message}
+                      onChange={(e) =>
+                        setFormData((c) => ({ ...c, message: e.target.value }))
+                      }
+                      required
+                      style={{ resize: "vertical", minHeight: "120px" }}
                     />
                   </div>
 
@@ -332,12 +329,18 @@ export function CpaFilingContactPage() {
                     disabled={isSubmitting}
                     aria-busy={isSubmitting}
                   >
-                    {isSubmitting ? "Sending..." : "Request CPA filing info"}
+                    {isSubmitting ? "Sending..." : "Send message"}
                   </button>
 
                   {submitState === "idle" ? (
                     <p className="cpa-contact__footnote">
-                      We typically follow up within one business day.
+                      Or email us directly at{" "}
+                      <a
+                        href="mailto:contact@glidetaxes.com"
+                        style={{ color: "var(--accent)", textDecoration: "none" }}
+                      >
+                        contact@glidetaxes.com
+                      </a>
                     </p>
                   ) : (
                     <p
