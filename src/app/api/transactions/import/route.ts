@@ -10,7 +10,7 @@ import * as Sentry from "@sentry/nextjs";
 import { logBuffer } from "@/lib/log-buffer";
 import { recomputeCostBasis } from "@/lib/compute-cost-basis";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
-import { getUserPlan, countUserTransactions } from "@/lib/plan-limits";
+import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
 
 // Increase body size limit for large CSV uploads (50MB)
 export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
@@ -411,7 +411,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           status: "error",
-          error: `Transaction limit reached (${userPlan.transactionLimit.toLocaleString()} for ${userPlan.planName} plan). Upgrade your plan to import more transactions.`,
+          error: `${LIMIT_TAX_YEAR} transaction limit reached (${userPlan.transactionLimit.toLocaleString()} for ${userPlan.planName} plan). Upgrade your plan to import more transactions.`,
         },
         { status: 403 }
       );

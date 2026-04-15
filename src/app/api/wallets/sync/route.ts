@@ -5,7 +5,7 @@ import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/ra
 import * as Sentry from "@sentry/nextjs";
 import { recomputeCostBasis } from "@/lib/compute-cost-basis";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
-import { getUserPlan, countUserTransactions } from "@/lib/plan-limits";
+import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
 import {
   getWalletTransactions,
   getWalletTransactionsAllChains,
@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
 
     if (remainingCapacity <= 0 && userPlan.transactionLimit !== Infinity) {
       return NextResponse.json(
-        { error: `Transaction limit reached (${userPlan.transactionLimit.toLocaleString()} for ${userPlan.planName} plan). Upgrade your plan to sync more transactions.` },
+        { error: `${LIMIT_TAX_YEAR} transaction limit reached (${userPlan.transactionLimit.toLocaleString()} for ${userPlan.planName} plan). Upgrade your plan to sync more transactions.` },
         { status: 403 }
       );
     }

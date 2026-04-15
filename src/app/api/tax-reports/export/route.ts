@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { TaxReport, TaxableEvent, IncomeEvent } from "@/lib/tax-calculator";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
+import { getUserPlan } from "@/lib/plan-limits";
 
 /**
  * GET /api/tax-reports/export?year=2023&type=capital-gains-csv
@@ -115,6 +116,10 @@ export async function GET(request: NextRequest) {
       tx_timestamp: { gte: yearStart, lte: yearEnd },
     };
 
+    // Enforce plan transaction limit on export rows
+    const userPlan = await getUserPlan(user.id);
+    const txLimit = userPlan.transactionLimit === Infinity ? undefined : userPlan.transactionLimit;
+
     // Fetch disposal transactions (for capital gains reports)
     const disposalTxns = await prisma.transaction.findMany({
       where: { ...yearFilter, gain_loss_usd: { not: null } },
@@ -124,6 +129,7 @@ export async function GET(request: NextRequest) {
         date_acquired: true, tx_timestamp: true, source: true, type: true,
       },
       orderBy: { tx_timestamp: "asc" },
+      ...(txLimit ? { take: txLimit } : {}),
     });
 
     // Fetch income transactions
@@ -134,6 +140,7 @@ export async function GET(request: NextRequest) {
         tx_timestamp: true, type: true, source: true, chain: true, tx_hash: true,
       },
       orderBy: { tx_timestamp: "asc" },
+      ...(txLimit ? { take: txLimit } : {}),
     });
 
     // Fetch ALL transactions (for transaction history export)
@@ -147,6 +154,7 @@ export async function GET(request: NextRequest) {
         incoming_asset_symbol: true, incoming_amount_value: true, incoming_value_usd: true,
       },
       orderBy: { tx_timestamp: "asc" },
+      ...(txLimit ? { take: txLimit } : {}),
     });
 
     // Build TaxableEvent objects from DB

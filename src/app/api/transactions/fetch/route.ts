@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
-import { getUserPlan, countUserTransactions } from "@/lib/plan-limits";
+import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
 
 // Configure for long-running operations on Vercel
 export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
 
     if (remainingCapacity <= 0 && userPlan.transactionLimit !== Infinity) {
       return NextResponse.json(
-        { error: `Transaction limit reached (${userPlan.transactionLimit.toLocaleString()} for ${userPlan.planName} plan). Upgrade your plan to fetch more transactions.` },
+        { error: `${LIMIT_TAX_YEAR} transaction limit reached (${userPlan.transactionLimit.toLocaleString()} for ${userPlan.planName} plan). Upgrade your plan to fetch more transactions.` },
         { status: 403 }
       );
     }

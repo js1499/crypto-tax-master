@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
+import { getUserPlan } from "@/lib/plan-limits";
 
 /**
  * GET /api/tax-reports?year=2025
@@ -112,6 +113,10 @@ export async function GET(request: NextRequest) {
       tx_timestamp: { gte: yearStart, lte: yearEnd },
     };
 
+    // Enforce plan transaction limit
+    const userPlan = await getUserPlan(user.id);
+    const txLimit = userPlan.transactionLimit === Infinity ? undefined : userPlan.transactionLimit;
+
     // Fetch transactions for this year
     const transactions = await prisma.transaction.findMany({
       where: whereFilter,
@@ -121,6 +126,8 @@ export async function GET(request: NextRequest) {
         is_income: true,
         type: true,
       },
+      orderBy: { tx_timestamp: "asc" },
+      ...(txLimit ? { take: txLimit } : {}),
     });
 
     // Aggregate — same data source as transactions page & dashboard

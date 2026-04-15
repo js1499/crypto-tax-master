@@ -1,6 +1,12 @@
 import prisma from "@/lib/prisma";
 import { PLANS, PlanKey } from "@/lib/stripe";
 
+/** The tax year that transaction limits apply to. */
+export const LIMIT_TAX_YEAR = 2025;
+
+const TAX_YEAR_START = new Date(`${LIMIT_TAX_YEAR}-01-01T00:00:00Z`);
+const TAX_YEAR_END = new Date(`${LIMIT_TAX_YEAR}-12-31T23:59:59.999Z`);
+
 export interface UserPlan {
   planKey: PlanKey;
   planName: string;
@@ -49,33 +55,45 @@ export async function checkWalletLimit(userId: string): Promise<{ allowed: boole
 }
 
 /**
- * Count ALL transactions belonging to a user (wallet, exchange, CSV).
+ * Build the ownership OR filter for a user's transactions.
  */
-export async function countUserTransactions(userId: string): Promise<number> {
+async function buildOwnershipFilter(userId: string) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { wallets: true },
+    include: { wallets: true, exchanges: true },
   });
   const walletAddresses = user?.wallets.map(w => w.address) || [];
+  const exchangeNames = user?.exchanges.map(e => e.name) || [];
 
-  // Count wallet-based transactions
-  const walletTxCount = walletAddresses.length > 0
-    ? await prisma.transaction.count({ where: { wallet_address: { in: walletAddresses } } })
-    : 0;
+  const conditions: any[] = [];
+  if (walletAddresses.length > 0) {
+    conditions.push({ wallet_address: { in: walletAddresses } });
+  }
+  conditions.push({ source_type: "csv_import", userId });
+  if (exchangeNames.length > 0) {
+    conditions.push({ source_type: "exchange_api", source: { in: exchangeNames } });
+  }
 
-  // Count user-owned transactions (CSV imports and exchange transactions tied to userId)
-  const userTxCount = await prisma.transaction.count({ where: { userId } });
-
-  // Total = wallet-based (no userId) + user-owned (with userId), avoiding double-count
-  const walletWithUserCount = walletAddresses.length > 0
-    ? await prisma.transaction.count({ where: { wallet_address: { in: walletAddresses }, userId } })
-    : 0;
-
-  return walletTxCount + userTxCount - walletWithUserCount;
+  return conditions.length > 0 ? conditions : [{ userId }];
 }
 
 /**
- * Check if a user has exceeded their transaction limit.
+ * Count a user's transactions for the current tax year (2025).
+ * Only tax-year transactions count against the plan limit.
+ */
+export async function countUserTransactions(userId: string): Promise<number> {
+  const orConditions = await buildOwnershipFilter(userId);
+
+  return prisma.transaction.count({
+    where: {
+      OR: orConditions,
+      tx_timestamp: { gte: TAX_YEAR_START, lte: TAX_YEAR_END },
+    },
+  });
+}
+
+/**
+ * Check if a user has exceeded their transaction limit for the tax year.
  */
 export async function checkTransactionLimit(userId: string): Promise<{ allowed: boolean; current: number; limit: number }> {
   const plan = await getUserPlan(userId);

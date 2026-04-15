@@ -8,6 +8,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { findField, setTextField, checkCheckbox, formatDate, formatCurrency } from "@/lib/pdf-helpers";
+import { getUserPlan } from "@/lib/plan-limits";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -600,12 +601,17 @@ export async function GET(request: NextRequest) {
 
     const totalIncome = Number(dbIncomeAgg._sum.value_usd || 0);
 
+    // Enforce plan transaction limit on report rows
+    const userPlan = await getUserPlan(user.id);
+    const txLimit = userPlan.transactionLimit === Infinity ? undefined : userPlan.transactionLimit;
+
     // Also fetch individual disposal rows for Form 8949 detail lines
     const disposalTxns = await prisma.transaction.findMany({
       where: {
         ...yearFilter,
         gain_loss_usd: { not: null },
       },
+      ...(txLimit ? { take: txLimit } : {}),
       select: {
         id: true,
         asset_symbol: true,
