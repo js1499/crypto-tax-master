@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { stripe } from "@/lib/stripe";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
+import {
+  createManagedBillingPortalSession,
+  getBillingReturnUrl,
+  normalizeOrigin,
+} from "@/lib/stripe-billing";
 
 /**
  * POST /api/stripe/portal
@@ -19,15 +23,17 @@ export async function POST(request: NextRequest) {
   });
 
   if (!dbUser?.stripeCustomerId) {
-    return NextResponse.json({ error: "No billing account found" }, { status: 400 });
+    return NextResponse.json(
+      { error: "No billing account found" },
+      { status: 400 },
+    );
   }
 
-  const origin = request.headers.get("origin") || "http://localhost:3000";
-
-  const session = await stripe.billingPortal.sessions.create({
-    customer: dbUser.stripeCustomerId,
-    return_url: `${origin}/settings`,
+  const origin = normalizeOrigin(request.headers.get("origin"));
+  const sessionUrl = await createManagedBillingPortalSession({
+    customerId: dbUser.stripeCustomerId,
+    returnUrl: getBillingReturnUrl(origin),
   });
 
-  return NextResponse.json({ url: session.url });
+  return NextResponse.json({ url: sessionUrl });
 }
