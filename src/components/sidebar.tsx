@@ -269,14 +269,14 @@ export function AppSidebar() {
 
                 <div className="mt-3 h-3 overflow-hidden rounded-full bg-black/20 ring-1 ring-white/15">
                   <div
-                    className={`h-full rounded-full transition-all duration-500 ${usage?.isOverLimit ? "bg-[linear-gradient(90deg,#FF6B6B_0%,#DC2626_100%)]" : "bg-[linear-gradient(90deg,#34D399_0%,#16A34A_100%)]"}`}
+                    className="h-full rounded-full bg-[linear-gradient(90deg,#F59E0B_0%,#D97706_100%)] transition-all duration-500"
                     style={{ width: `${progressWidth}%` }}
                   />
                 </div>
 
                 <button
                   onClick={() => handleNavigation("/#pricing")}
-                  className="relative mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[14px] bg-[linear-gradient(180deg,#D97706_0%,#B45309_100%)] px-3 py-3 text-[15px] font-semibold text-white shadow-[0_14px_24px_rgba(180,83,9,0.34)] transition-transform hover:translate-y-[-1px] overflow-hidden"
+                  className="relative mt-4 inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-[14px] bg-[linear-gradient(180deg,#1DB78A_0%,#1BA87D_55%,#168A66_100%)] px-3 py-3 text-[15px] font-semibold text-white shadow-[0_14px_24px_rgba(27,168,125,0.32)] transition-transform hover:translate-y-[-1px]"
                 >
                   <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.18)_0%,transparent_38%,transparent_100%)]" />
                   <span className="relative">Upgrade Plan</span>
