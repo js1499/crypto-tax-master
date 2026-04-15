@@ -23,12 +23,18 @@ function escapeHtml(value: string) {
 function getSignedInButtonMarkup(email: string, href: string, compact = false) {
   const safeEmail = escapeHtml(email);
   const safeHref = escapeHtml(href);
+  const emailMaxWidth = compact ? "128px" : "188px";
+  const emailFontSize = compact ? "0.72rem" : "0.82rem";
+  const labelFontSize = compact ? "0.68rem" : "0.76rem";
 
   return `
           <a href="${safeHref}" class="btn btn--primary" style="display:inline-flex;align-items:center;justify-content:center;padding:${compact ? "0.82rem 1.05rem" : "1rem 1.35rem"};min-width:${compact ? "210px" : "250px"};text-align:center;">
-            <span style="display:flex;flex-direction:column;align-items:center;line-height:1.08;">
+            <span style="display:flex;flex-direction:column;align-items:center;line-height:1.08;max-width:100%;">
               <span style="font-size:inherit;font-weight:700;">Open Glide</span>
-              <span style="font-size:${compact ? "0.62rem" : "0.7rem"};opacity:0.88;font-weight:500;margin-top:0.24rem;">Signed in as: ${safeEmail}</span>
+              <span style="display:inline-flex;align-items:center;gap:0.38rem;max-width:100%;margin-top:0.34rem;padding:${compact ? "0.24rem 0.52rem" : "0.28rem 0.62rem"};border-radius:999px;background:rgba(255,255,255,0.16);box-shadow:inset 0 1px 0 rgba(255,255,255,0.14);line-height:1;">
+                <span style="font-size:${labelFontSize};opacity:0.84;font-weight:600;white-space:nowrap;">Signed in as</span>
+                <span title="${safeEmail}" style="display:block;max-width:${emailMaxWidth};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:'DM Mono',monospace;font-size:${emailFontSize};font-weight:500;letter-spacing:-0.01em;">${safeEmail}</span>
+              </span>
             </span>
           </a>`;
 }
