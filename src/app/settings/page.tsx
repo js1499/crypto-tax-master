@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -84,7 +83,6 @@ const PLAN_RANK: Record<string, number> = {
 
 export default function SettingsPage() {
   const { data: session } = useSession();
-  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [billingPlan, setBillingPlan] = useState<BillingPlanState | null>(null);
@@ -92,14 +90,16 @@ export default function SettingsPage() {
   const [costBasisMethod, setCostBasisMethod] = useState("FIFO");
   const [country, setCountry] = useState("US");
   const [isSaving, setIsSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState(
-    searchParams.get("tab") || "preferences",
-  );
+  const [activeTab, setActiveTab] = useState("preferences");
   const [planLoading, setPlanLoading] = useState<string | null>(null);
-  const requestedPlan = searchParams.get("plan");
+  const [requestedPlan, setRequestedPlan] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
+    const urlParams = new URLSearchParams(window.location.search);
+    setActiveTab(urlParams.get("tab") || "preferences");
+    setRequestedPlan(urlParams.get("plan"));
+
     // Load settings from API
     fetch("/api/settings")
       .then((res) => res.json())
@@ -126,13 +126,6 @@ export default function SettingsPage() {
       })
       .catch(() => {});
   }, []);
-
-  useEffect(() => {
-    const tab = searchParams.get("tab");
-    if (tab) {
-      setActiveTab(tab);
-    }
-  }, [searchParams]);
 
   const handleSave = async () => {
     setIsSaving(true);

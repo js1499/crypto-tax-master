@@ -3,6 +3,8 @@ import path from "path";
 import { LandingPage } from "./landing-page";
 import { getCurrentUser } from "@/lib/auth-helpers";
 
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "Glide | Crypto Tax Software",
   description:
