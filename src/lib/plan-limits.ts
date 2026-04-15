@@ -7,7 +7,9 @@ const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
  * Returns the current filing tax year.
  * Example: in calendar year 2026, users are generally filing for 2025.
  */
-export function getCurrentFilingTaxYear(referenceDate: Date = new Date()): number {
+export function getCurrentFilingTaxYear(
+  referenceDate: Date = new Date(),
+): number {
   return referenceDate.getUTCFullYear() - 1;
 }
 
@@ -29,7 +31,9 @@ function isSubscriptionEntitled(status: string | null | undefined): boolean {
  * Annual subscriptions unlock the most recently completed tax year.
  * Example: a term ending in 2027 unlocks tax year 2025; renewal to 2028 unlocks 2026.
  */
-export function getLicensedThroughTaxYear(currentPeriodEnd: Date | null | undefined): number | null {
+export function getLicensedThroughTaxYear(
+  currentPeriodEnd: Date | null | undefined,
+): number | null {
   if (!currentPeriodEnd) return null;
   return currentPeriodEnd.getUTCFullYear() - 2;
 }
@@ -48,6 +52,16 @@ export interface UserPlan {
   isPaid: boolean;
 }
 
+export interface TransactionUsageSummary {
+  taxYear: number;
+  used: number;
+  limit: number;
+  isUnlimited: boolean;
+  remaining: number | null;
+  percentUsed: number;
+  isOverLimit: boolean;
+}
+
 export function getPlanTransactionLimitTaxYear(
   plan: Pick<UserPlan, "isPaid" | "licensedThroughTaxYear">,
 ): number {
@@ -64,7 +78,9 @@ export function canAccessTaxYear(
     return true;
   }
 
-  return plan.licensedThroughTaxYear !== null && year <= plan.licensedThroughTaxYear;
+  return (
+    plan.licensedThroughTaxYear !== null && year <= plan.licensedThroughTaxYear
+  );
 }
 
 export function getTaxYearAccessMessage(
@@ -92,8 +108,11 @@ export async function getUserPlan(userId: string): Promise<UserPlan> {
   const billingPlan = PLANS[billingPlanKey] || PLANS.free;
   const subscriptionStatus = user?.subscriptionStatus || null;
   const currentPeriodEnd = user?.currentPeriodEnd || null;
-  const isPaid = billingPlanKey !== "free" && isSubscriptionEntitled(subscriptionStatus);
-  const licensedThroughTaxYear = isPaid ? getLicensedThroughTaxYear(currentPeriodEnd) : null;
+  const isPaid =
+    billingPlanKey !== "free" && isSubscriptionEntitled(subscriptionStatus);
+  const licensedThroughTaxYear = isPaid
+    ? getLicensedThroughTaxYear(currentPeriodEnd)
+    : null;
   const effectivePlan = isPaid ? billingPlan : PLANS.free;
 
   return {
@@ -114,7 +133,9 @@ export async function getUserPlan(userId: string): Promise<UserPlan> {
 /**
  * Check if a user has exceeded their wallet limit.
  */
-export async function checkWalletLimit(userId: string): Promise<{ allowed: boolean; current: number; limit: number }> {
+export async function checkWalletLimit(
+  userId: string,
+): Promise<{ allowed: boolean; current: number; limit: number }> {
   const plan = await getUserPlan(userId);
   const walletCount = await prisma.wallet.count({ where: { userId } });
   return {
@@ -132,8 +153,8 @@ async function buildOwnershipFilter(userId: string) {
     where: { id: userId },
     include: { wallets: true, exchanges: true },
   });
-  const walletAddresses = user?.wallets.map(w => w.address) || [];
-  const exchangeNames = user?.exchanges.map(e => e.name) || [];
+  const walletAddresses = user?.wallets.map((w) => w.address) || [];
+  const exchangeNames = user?.exchanges.map((e) => e.name) || [];
 
   const conditions: any[] = [];
   if (walletAddresses.length > 0) {
@@ -141,7 +162,10 @@ async function buildOwnershipFilter(userId: string) {
   }
   conditions.push({ source_type: "csv_import", userId });
   if (exchangeNames.length > 0) {
-    conditions.push({ source_type: "exchange_api", source: { in: exchangeNames } });
+    conditions.push({
+      source_type: "exchange_api",
+      source: { in: exchangeNames },
+    });
   }
 
   return conditions.length > 0 ? conditions : [{ userId }];
@@ -151,7 +175,10 @@ async function buildOwnershipFilter(userId: string) {
  * Count a user's transactions for a specific tax year.
  * Only tax-year transactions count against the plan limit.
  */
-export async function countUserTransactions(userId: string, taxYear: number = LIMIT_TAX_YEAR): Promise<number> {
+export async function countUserTransactions(
+  userId: string,
+  taxYear: number = LIMIT_TAX_YEAR,
+): Promise<number> {
   const orConditions = await buildOwnershipFilter(userId);
   const { start, end } = getTaxYearBounds(taxYear);
 
@@ -163,16 +190,42 @@ export async function countUserTransactions(userId: string, taxYear: number = LI
   });
 }
 
+export async function getTransactionUsageSummary(
+  userId: string,
+  plan?: UserPlan,
+): Promise<TransactionUsageSummary> {
+  const resolvedPlan = plan ?? (await getUserPlan(userId));
+  const taxYear = getPlanTransactionLimitTaxYear(resolvedPlan);
+  const used = await countUserTransactions(userId, taxYear);
+  const limit = resolvedPlan.transactionLimit;
+  const isUnlimited = !Number.isFinite(limit);
+
+  return {
+    taxYear,
+    used,
+    limit,
+    isUnlimited,
+    remaining: isUnlimited ? null : Math.max(limit - used, 0),
+    percentUsed:
+      isUnlimited || limit <= 0
+        ? 0
+        : Math.min(Math.round((used / limit) * 100), 100),
+    isOverLimit: !isUnlimited && used > limit,
+  };
+}
+
 /**
  * Check if a user has exceeded their transaction limit for the tax year.
  */
-export async function checkTransactionLimit(userId: string): Promise<{ allowed: boolean; current: number; limit: number }> {
+export async function checkTransactionLimit(
+  userId: string,
+): Promise<{ allowed: boolean; current: number; limit: number }> {
   const plan = await getUserPlan(userId);
-  const txCount = await countUserTransactions(userId, getPlanTransactionLimitTaxYear(plan));
+  const usage = await getTransactionUsageSummary(userId, plan);
 
   return {
-    allowed: txCount < plan.transactionLimit,
-    current: txCount,
+    allowed: usage.isUnlimited || usage.used < plan.transactionLimit,
+    current: usage.used,
     limit: plan.transactionLimit,
   };
 }

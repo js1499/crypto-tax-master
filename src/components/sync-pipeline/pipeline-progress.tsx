@@ -2,7 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useSyncPipeline } from "./pipeline-provider";
-import { Check, X, Loader2, ChevronDown, ChevronUp, AlertCircle } from "lucide-react";
+import {
+  Check,
+  X,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  AlertCircle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const PHASE_LABELS: Record<string, string> = {
@@ -32,7 +39,10 @@ export function PipelineProgress() {
   const phaseLabel = PHASE_LABELS[state.phase] || state.phase;
 
   return (
-    <div data-onboarding="pipeline-progress" className="fixed bottom-4 right-4 z-50 w-[380px] rounded-xl border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] shadow-xl overflow-hidden">
+    <div
+      data-onboarding="pipeline-progress"
+      className="fixed bottom-4 right-4 sm:right-24 z-50 w-[380px] rounded-xl border border-[#E5E5E0] dark:border-[#333] bg-white dark:bg-[#1A1A1A] shadow-xl overflow-hidden"
+    >
       {/* Header bar */}
       <div
         className={cn(
@@ -55,7 +65,10 @@ export function PipelineProgress() {
             <span className="text-[13px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5] truncate">
               {phaseLabel}
             </span>
-            <span className="text-[12px] font-bold text-[#6B7280] ml-2 shrink-0" style={{ fontVariantNumeric: "tabular-nums" }}>
+            <span
+              className="text-[12px] font-bold text-[#6B7280] ml-2 shrink-0"
+              style={{ fontVariantNumeric: "tabular-nums" }}
+            >
               {state.overallProgress}%
             </span>
           </div>
@@ -63,7 +76,11 @@ export function PipelineProgress() {
             <div
               className={cn(
                 "h-full rounded-full transition-all duration-500",
-                isDone ? "bg-[#16A34A]" : isError ? "bg-[#DC2626]" : "bg-[#2563EB]",
+                isDone
+                  ? "bg-[#16A34A]"
+                  : isError
+                    ? "bg-[#DC2626]"
+                    : "bg-[#2563EB]",
               )}
               style={{ width: `${state.overallProgress}%` }}
             />
@@ -73,7 +90,10 @@ export function PipelineProgress() {
         <div className="flex items-center gap-1 shrink-0">
           {isRunning && (
             <button
-              onClick={(e) => { e.stopPropagation(); cancel(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                cancel();
+              }}
               className="p-1 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] text-[#9CA3AF] hover:text-[#DC2626] transition-colors"
               title="Cancel"
             >
@@ -82,7 +102,10 @@ export function PipelineProgress() {
           )}
           {(isDone || isError) && (
             <button
-              onClick={(e) => { e.stopPropagation(); dismiss(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                dismiss();
+              }}
               className="p-1 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] text-[#9CA3AF] hover:text-[#1A1A1A] transition-colors"
               title="Dismiss"
             >
@@ -105,7 +128,8 @@ export function PipelineProgress() {
               key={i}
               className={cn(
                 "py-2",
-                i < state.steps.length - 1 && "border-b border-[#F0F0EB] dark:border-[#2A2A2A]",
+                i < state.steps.length - 1 &&
+                  "border-b border-[#F0F0EB] dark:border-[#2A2A2A]",
               )}
             >
               <div className="flex items-center gap-2.5">
@@ -123,23 +147,33 @@ export function PipelineProgress() {
                 {/* Label + detail */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <p className={cn(
-                      "text-[12px] truncate",
-                      step.status === "running" ? "font-medium text-[#1A1A1A] dark:text-[#F5F5F5]" :
-                      step.status === "done" ? "text-[#6B7280]" :
-                      step.status === "error" ? "text-[#DC2626]" :
-                      "text-[#9CA3AF]"
-                    )}>
+                    <p
+                      className={cn(
+                        "text-[12px] truncate",
+                        step.status === "running"
+                          ? "font-medium text-[#1A1A1A] dark:text-[#F5F5F5]"
+                          : step.status === "done"
+                            ? "text-[#6B7280]"
+                            : step.status === "error"
+                              ? "text-[#DC2626]"
+                              : "text-[#9CA3AF]",
+                      )}
+                    >
                       {step.label}
                     </p>
                     {step.status === "running" && (
-                      <span className="text-[10px] font-bold text-[#2563EB] ml-2 shrink-0" style={{ fontVariantNumeric: "tabular-nums" }}>
+                      <span
+                        className="text-[10px] font-bold text-[#2563EB] ml-2 shrink-0"
+                        style={{ fontVariantNumeric: "tabular-nums" }}
+                      >
                         {step.progress}%
                       </span>
                     )}
                   </div>
                   {step.detail && (
-                    <p className="text-[10px] text-[#9CA3AF] truncate mt-0.5">{step.detail}</p>
+                    <p className="text-[10px] text-[#9CA3AF] truncate mt-0.5">
+                      {step.detail}
+                    </p>
                   )}
                 </div>
               </div>

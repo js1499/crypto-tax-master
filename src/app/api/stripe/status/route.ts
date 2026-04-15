@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
-import { getUserPlan } from "@/lib/plan-limits";
+import { getTransactionUsageSummary, getUserPlan } from "@/lib/plan-limits";
 import { PLANS, PlanKey } from "@/lib/stripe";
 
 /**
@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
   }
 
   const effectivePlan = await getUserPlan(user.id);
+  const usage = await getTransactionUsageSummary(user.id, effectivePlan);
   const billingPlanKey = (dbUser.planId || "free") as PlanKey;
   const billingPlan = PLANS[billingPlanKey] || PLANS.free;
 
@@ -45,8 +46,21 @@ export async function GET(request: NextRequest) {
     hasCpaFiling: dbUser.hasCpaFiling,
     hasStripeAccount: !!dbUser.stripeCustomerId,
     limits: {
-      transactions: effectivePlan.transactionLimit,
-      wallets: effectivePlan.walletLimit,
+      transactions: Number.isFinite(effectivePlan.transactionLimit)
+        ? effectivePlan.transactionLimit
+        : null,
+      wallets: Number.isFinite(effectivePlan.walletLimit)
+        ? effectivePlan.walletLimit
+        : null,
+    },
+    usage: {
+      taxYear: usage.taxYear,
+      used: usage.used,
+      limit: usage.isUnlimited ? null : usage.limit,
+      isUnlimited: usage.isUnlimited,
+      remaining: usage.remaining,
+      percentUsed: usage.percentUsed,
+      isOverLimit: usage.isOverLimit,
     },
     features: effectivePlan.features,
   });
