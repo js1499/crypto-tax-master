@@ -155,7 +155,7 @@ export function AppSidebar() {
     ? "Unlimited"
     : usage?.limit?.toLocaleString() || "0";
   const usageLabel = usage
-    ? `${usage.used.toLocaleString()} txns used of ${limitLabel} limit for ${usage.taxYear}`
+    ? `${usage.used.toLocaleString()} transactions used of ${limitLabel} limit for ${usage.taxYear}`
     : null;
   const progressWidth = usage
     ? usage.isUnlimited
@@ -256,14 +256,14 @@ export function AppSidebar() {
 
       <SidebarFooter className="gap-0">
         {usageLabel && (
-          <div className="px-4 pb-4">
+          <div className="px-2 pb-4">
             <div className="relative overflow-hidden rounded-[22px] bg-[linear-gradient(135deg,#143C9A_0%,#1E60D6_36%,#082A6A_68%,#041832_100%)] px-4 py-4 text-white shadow-[0_20px_40px_rgba(3,20,56,0.28)]">
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.35),transparent_34%)]" />
-              <div className="pointer-events-none absolute -right-5 top-3 h-24 w-24 rounded-full border border-white/20" />
-              <div className="pointer-events-none absolute right-8 top-0 h-20 w-28 rotate-[-18deg] rounded-full bg-white/10 blur-2xl" />
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.18)_0%,transparent_34%,transparent_100%)]" />
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-[linear-gradient(180deg,rgba(255,255,255,0.14)_0%,transparent_100%)]" />
+              <div className="pointer-events-none absolute right-6 top-1 h-20 w-32 rotate-[-18deg] bg-white/10 blur-2xl" />
 
               <div className="relative">
-                <p className="max-w-[200px] text-[12px] font-semibold leading-5 text-white">
+                <p className="text-[14px] font-semibold leading-6 text-white">
                   {usageLabel}
                 </p>
 
@@ -276,10 +276,11 @@ export function AppSidebar() {
 
                 <button
                   onClick={() => handleNavigation("/#pricing")}
-                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[14px] bg-[linear-gradient(180deg,#FF9F2E_0%,#FF8A1C_100%)] px-3 py-3 text-[14px] font-semibold text-white shadow-[0_14px_24px_rgba(255,138,28,0.35)] transition-transform hover:translate-y-[-1px]"
+                  className="relative mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[14px] bg-[linear-gradient(180deg,#D97706_0%,#B45309_100%)] px-3 py-3 text-[15px] font-semibold text-white shadow-[0_14px_24px_rgba(180,83,9,0.34)] transition-transform hover:translate-y-[-1px] overflow-hidden"
                 >
-                  Upgrade Plan
-                  <ArrowUpRight className="h-4 w-4" />
+                  <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.18)_0%,transparent_38%,transparent_100%)]" />
+                  <span className="relative">Upgrade Plan</span>
+                  <ArrowUpRight className="relative h-[18px] w-[18px]" />
                 </button>
               </div>
             </div>
