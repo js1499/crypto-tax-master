@@ -2,7 +2,15 @@
 
 import { useEffect } from "react";
 
-export function LandingPage({ bodyHtml }: { bodyHtml: string }) {
+export function LandingPage({
+  bodyHtml,
+  isAuthenticated,
+  billingHref,
+}: {
+  bodyHtml: string;
+  isAuthenticated: boolean;
+  billingHref: string;
+}) {
   useEffect(() => {
     // Set theme attribute for landing page CSS
     document.documentElement.setAttribute("data-theme", "light");
@@ -16,12 +24,20 @@ export function LandingPage({ bodyHtml }: { bodyHtml: string }) {
     return () => {
       try {
         document.body.removeChild(script);
-      } catch { /* already removed */ }
+      } catch {
+        /* already removed */
+      }
       document.documentElement.removeAttribute("data-theme");
     };
   }, []);
 
   return (
-    <div suppressHydrationWarning dangerouslySetInnerHTML={{ __html: bodyHtml }} />
+    <div
+      data-landing-authenticated={isAuthenticated ? "true" : "false"}
+      data-landing-billing-href={billingHref}
+      data-landing-root="true"
+      suppressHydrationWarning
+      dangerouslySetInnerHTML={{ __html: bodyHtml }}
+    />
   );
 }

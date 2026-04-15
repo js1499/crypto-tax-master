@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
   try {
     const response = NextResponse.json(
       { message: "Logged out successfully" },
-      { status: 200 }
+      { status: 200 },
     );
 
     // Clear NextAuth session cookie (primary authentication system)
@@ -25,6 +25,26 @@ export async function POST(request: NextRequest) {
     // Also clear secure variant if used in production
     response.cookies.set({
       name: "__Secure-next-auth.session-token",
+      value: "",
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+      expires: new Date(0),
+      path: "/",
+    });
+
+    response.cookies.set({
+      name: "authjs.session-token",
+      value: "",
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      expires: new Date(0),
+      path: "/",
+    });
+
+    response.cookies.set({
+      name: "__Secure-authjs.session-token",
       value: "",
       httpOnly: true,
       secure: true,
@@ -71,7 +91,7 @@ export async function POST(request: NextRequest) {
         error: "Failed to logout",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

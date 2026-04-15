@@ -4,6 +4,20 @@ import { authOptions } from "./auth-config";
 import prisma from "./prisma";
 import type { NextRequest } from "next/server";
 
+function getSessionCookieNames(isProduction: boolean) {
+  const primaryNames = isProduction
+    ? ["__Secure-next-auth.session-token", "__Secure-authjs.session-token"]
+    : ["next-auth.session-token", "authjs.session-token"];
+
+  return [
+    ...primaryNames,
+    "next-auth.session-token",
+    "__Secure-next-auth.session-token",
+    "authjs.session-token",
+    "__Secure-authjs.session-token",
+  ];
+}
+
 /**
  * Get the current authenticated user from NextAuth session
  * Works in both API routes and server components in App Router
@@ -20,7 +34,9 @@ export async function getCurrentUser(request?: NextRequest) {
       console.error("=" + "=".repeat(70));
       console.error("CRITICAL ERROR: NEXTAUTH_SECRET is not set!");
       console.error("=" + "=".repeat(70));
-      console.error("Without NEXTAUTH_SECRET, JWT session validation will ALWAYS fail.");
+      console.error(
+        "Without NEXTAUTH_SECRET, JWT session validation will ALWAYS fail.",
+      );
       console.error("");
       console.error("To fix this:");
       console.error("1. Open your .env file");
@@ -28,7 +44,9 @@ export async function getCurrentUser(request?: NextRequest) {
       console.error("   NEXTAUTH_SECRET=your-secret-here");
       console.error("");
       console.error("Generate a new secret with:");
-      console.error('   node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64\'))"');
+      console.error(
+        "   node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"",
+      );
       console.error("=" + "=".repeat(70));
 
       // In production, throw an error to make the issue obvious
@@ -46,16 +64,26 @@ export async function getCurrentUser(request?: NextRequest) {
         // This is more reliable than getServerSession in serverless environments
         // because it doesn't require a mock req/res object
         const isProduction = process.env.NODE_ENV === "production";
-        const token = await getToken({
+        let token = await getToken({
           req: request,
           secret: process.env.NEXTAUTH_SECRET,
-          // In production (HTTPS), NextAuth uses __Secure- prefixed cookies
-          // We must explicitly tell getToken to look for secure cookies on Vercel
           secureCookie: isProduction,
-          cookieName: isProduction
-            ? "__Secure-next-auth.session-token"
-            : "next-auth.session-token",
         });
+
+        if (!token?.email) {
+          for (const cookieName of getSessionCookieNames(isProduction)) {
+            token = await getToken({
+              req: request,
+              secret: process.env.NEXTAUTH_SECRET,
+              secureCookie: isProduction,
+              cookieName,
+            });
+
+            if (token?.email) {
+              break;
+            }
+          }
+        }
 
         if (token?.email) {
           userEmail = token.email as string;
@@ -66,9 +94,12 @@ export async function getCurrentUser(request?: NextRequest) {
           console.log("[Auth] No token found in request");
           // Log cookie info for debugging
           const cookieHeader = request.headers.get("cookie") || "";
-          const hasSessionToken = cookieHeader.includes("next-auth.session-token") ||
-                                  cookieHeader.includes("__Secure-next-auth.session-token");
-          console.log(`[Auth] Session token cookie present: ${hasSessionToken}`);
+          const hasSessionToken = getSessionCookieNames(isProduction).some(
+            (cookieName) => cookieHeader.includes(cookieName),
+          );
+          console.log(
+            `[Auth] Session token cookie present: ${hasSessionToken}`,
+          );
         }
       } else {
         // For server components: getServerSession automatically accesses cookies via Next.js context
@@ -81,7 +112,8 @@ export async function getCurrentUser(request?: NextRequest) {
       }
     } catch (sessionError) {
       console.error("[Auth] Error getting session/token:", sessionError);
-      const errorMsg = sessionError instanceof Error ? sessionError.message : "Unknown error";
+      const errorMsg =
+        sessionError instanceof Error ? sessionError.message : "Unknown error";
       if (errorMsg.includes("NEXTAUTH_SECRET") || errorMsg.includes("secret")) {
         console.error("[Auth] NEXTAUTH_SECRET might be invalid or missing");
       }
@@ -106,7 +138,9 @@ export async function getCurrentUser(request?: NextRequest) {
     });
 
     if (!user) {
-      console.warn(`[Auth] Session exists for ${userEmail} but user not found in database`);
+      console.warn(
+        `[Auth] Session exists for ${userEmail} but user not found in database`,
+      );
       return null;
     }
 
@@ -119,8 +153,12 @@ export async function getCurrentUser(request?: NextRequest) {
     console.error("[Auth] Error in getCurrentUser:", error);
 
     // Re-throw database connection errors
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    if (errorMessage.includes("Can't reach database") || errorMessage.includes("P1001")) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    if (
+      errorMessage.includes("Can't reach database") ||
+      errorMessage.includes("P1001")
+    ) {
       throw error;
     }
 

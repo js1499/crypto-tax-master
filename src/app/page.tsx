@@ -18,6 +18,19 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;");
 }
 
+function getSignedInButtonMarkup(email: string, href: string, compact = false) {
+  const safeEmail = escapeHtml(email);
+  const safeHref = escapeHtml(href);
+
+  return `
+          <a href="${safeHref}" class="btn btn--primary" style="display:inline-flex;align-items:flex-start;justify-content:flex-start;padding:${compact ? "0.82rem 1rem" : "1rem 1.2rem"};min-width:${compact ? "210px" : "250px"};text-align:left;">
+            <span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.05;">
+              <span style="font-size:${compact ? "0.98rem" : "1.05rem"};font-weight:700;">Open Glide</span>
+              <span style="font-size:${compact ? "0.68rem" : "0.75rem"};opacity:0.88;font-weight:500;margin-top:0.28rem;">Signed in as ${safeEmail}</span>
+            </span>
+          </a>`;
+}
+
 function getLandingNavAuthMarkup(email?: string | null) {
   if (!email) {
     return `
@@ -25,14 +38,7 @@ function getLandingNavAuthMarkup(email?: string | null) {
           <a href="#pricing" class="btn btn--primary">Get started</a>`;
   }
 
-  const safeEmail = escapeHtml(email);
-
-  return `
-          <div style="display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;">
-            <span class="nav__link" style="white-space:nowrap;margin:0;">Signed in</span>
-            <span style="font-size:0.85rem;color:var(--text-secondary);white-space:nowrap;">${safeEmail}</span>
-          </div>
-          <a href="/accounts" class="btn btn--primary">Open app</a>`;
+  return getSignedInButtonMarkup(email, "/accounts", true);
 }
 
 function getLandingHeroCtaMarkup(email?: string | null) {
@@ -40,13 +46,7 @@ function getLandingHeroCtaMarkup(email?: string | null) {
     return `<a href="#pricing" class="btn btn--primary">Get started</a>`;
   }
 
-  const safeEmail = escapeHtml(email);
-
-  return `
-          <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:14px;">
-            <a href="/accounts" class="btn btn--primary">Open your dashboard</a>
-            <span style="font-size:0.95rem;color:var(--text-secondary);font-weight:600;">Signed in as ${safeEmail}</span>
-          </div>`;
+  return getSignedInButtonMarkup(email, "/accounts");
 }
 
 export default async function HomePage() {
@@ -68,7 +68,11 @@ export default async function HomePage() {
         rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap"
       />
-      <LandingPage bodyHtml={bodyHtml} />
+      <LandingPage
+        billingHref="/settings?tab=billing"
+        bodyHtml={bodyHtml}
+        isAuthenticated={!!user?.email}
+      />
     </>
   );
 }
