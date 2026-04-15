@@ -12,28 +12,45 @@ import {
  * Creates a Stripe Customer Portal session for billing management.
  */
 export async function POST(request: NextRequest) {
-  const user = await getCurrentUser(request);
-  if (!user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
+  try {
+    const user = await getCurrentUser(request);
+    if (!user) {
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+    }
 
-  const dbUser = await prisma.user.findUnique({
-    where: { id: user.id },
-    select: { stripeCustomerId: true },
-  });
+    const dbUser = await prisma.user.findUnique({
+      where: { id: user.id },
+      select: { stripeCustomerId: true },
+    });
 
-  if (!dbUser?.stripeCustomerId) {
+    if (!dbUser?.stripeCustomerId) {
+      return NextResponse.json(
+        { error: "No billing account found" },
+        { status: 400 },
+      );
+    }
+
+    const origin = normalizeOrigin(request.headers.get("origin"));
+    const sessionUrl = await createManagedBillingPortalSession({
+      customerId: dbUser.stripeCustomerId,
+      returnUrl: getBillingReturnUrl(origin),
+    });
+
+    return NextResponse.json({ url: sessionUrl });
+  } catch (error) {
+    console.error(
+      "[Stripe Portal] Failed to create billing portal session:",
+      error,
+    );
+
     return NextResponse.json(
-      { error: "No billing account found" },
-      { status: 400 },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to open billing portal",
+      },
+      { status: 500 },
     );
   }
-
-  const origin = normalizeOrigin(request.headers.get("origin"));
-  const sessionUrl = await createManagedBillingPortalSession({
-    customerId: dbUser.stripeCustomerId,
-    returnUrl: getBillingReturnUrl(origin),
-  });
-
-  return NextResponse.json({ url: sessionUrl });
 }

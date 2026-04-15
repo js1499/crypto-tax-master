@@ -275,7 +275,7 @@ export function AppSidebar() {
                 </div>
 
                 <button
-                  onClick={() => handleNavigation("/#pricing")}
+                  onClick={() => handleNavigation("/settings?tab=billing")}
                   className="relative mt-4 inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-[14px] bg-[linear-gradient(180deg,#1DB78A_0%,#1BA87D_55%,#168A66_100%)] px-3 py-3 text-[15px] font-semibold text-white shadow-[0_14px_24px_rgba(27,168,125,0.32)] transition-transform hover:translate-y-[-1px]"
                 >
                   <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(145deg,rgba(255,255,255,0.18)_0%,transparent_38%,transparent_100%)]" />

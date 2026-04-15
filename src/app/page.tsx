@@ -25,10 +25,10 @@ function getSignedInButtonMarkup(email: string, href: string, compact = false) {
   const safeHref = escapeHtml(href);
 
   return `
-          <a href="${safeHref}" class="btn btn--primary" style="display:inline-flex;align-items:flex-start;justify-content:flex-start;padding:${compact ? "0.82rem 1rem" : "1rem 1.2rem"};min-width:${compact ? "210px" : "250px"};text-align:left;">
-            <span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.05;">
-              <span style="font-size:${compact ? "0.98rem" : "1.05rem"};font-weight:700;">Open Glide</span>
-              <span style="font-size:${compact ? "0.68rem" : "0.75rem"};opacity:0.88;font-weight:500;margin-top:0.28rem;">Signed in as ${safeEmail}</span>
+          <a href="${safeHref}" class="btn btn--primary" style="display:inline-flex;align-items:center;justify-content:center;padding:${compact ? "0.82rem 1.05rem" : "1rem 1.35rem"};min-width:${compact ? "210px" : "250px"};text-align:center;">
+            <span style="display:flex;flex-direction:column;align-items:center;line-height:1.08;">
+              <span style="font-size:inherit;font-weight:700;">Open Glide</span>
+              <span style="font-size:${compact ? "0.62rem" : "0.7rem"};opacity:0.88;font-weight:500;margin-top:0.24rem;">Signed in as: ${safeEmail}</span>
             </span>
           </a>`;
 }

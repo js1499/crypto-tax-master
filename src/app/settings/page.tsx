@@ -38,10 +38,19 @@ type BillingPlanState = {
   hasStripeAccount: boolean;
 };
 
+async function readJsonSafely(response: Response) {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 const PLAN_OPTIONS = [
   {
     key: "starter",
     name: "Starter",
+    category: "software",
     priceLabel: "$49 / year",
     description: "Casual traders",
     transactions: "Up to 300 transactions",
@@ -49,6 +58,7 @@ const PLAN_OPTIONS = [
   {
     key: "active",
     name: "Active",
+    category: "software",
     priceLabel: "$99 / year",
     description: "Active traders",
     transactions: "Up to 1,000 transactions",
@@ -56,6 +66,7 @@ const PLAN_OPTIONS = [
   {
     key: "pro",
     name: "Pro",
+    category: "software",
     priceLabel: "$299 / year",
     description: "Serious traders",
     transactions: "Up to 10,000 transactions",
@@ -63,8 +74,41 @@ const PLAN_OPTIONS = [
   {
     key: "prime",
     name: "Prime",
+    category: "software",
     priceLabel: "$699 / year",
     description: "High volume",
+    transactions: "Up to 100,000 transactions",
+  },
+  {
+    key: "starter_dfy",
+    name: "Starter DFY",
+    category: "dfy",
+    priceLabel: "$399 / year",
+    description: "Casual traders with Glide done-for-you support",
+    transactions: "Up to 300 transactions",
+  },
+  {
+    key: "active_dfy",
+    name: "Active DFY",
+    category: "dfy",
+    priceLabel: "$399 / year",
+    description: "Active traders with done-for-you support",
+    transactions: "Up to 1,000 transactions",
+  },
+  {
+    key: "pro_dfy",
+    name: "Pro DFY",
+    category: "dfy",
+    priceLabel: "$999 / year",
+    description: "Serious traders with done-for-you support",
+    transactions: "Up to 10,000 transactions",
+  },
+  {
+    key: "prime_dfy",
+    name: "Prime DFY",
+    category: "dfy",
+    priceLabel: "$1,999 / year",
+    description: "High volume traders with done-for-you support",
     transactions: "Up to 100,000 transactions",
   },
 ] as const;
@@ -135,8 +179,8 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ timezone, costBasisMethod, country }),
       });
-      const data = await res.json();
-      if (data.status === "success") {
+      const data = await readJsonSafely(res);
+      if (data?.status === "success") {
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 3000);
       }
@@ -157,9 +201,9 @@ export default function SettingsPage() {
         body: JSON.stringify({ planKey }),
       });
 
-      const data = await res.json();
+      const data = await readJsonSafely(res);
 
-      if (data.url) {
+      if (data?.url) {
         window.location.href = data.url;
         return;
       }
@@ -169,9 +213,29 @@ export default function SettingsPage() {
         return;
       }
 
-      toast.error(data.error || "Failed to open billing flow");
+      toast.error(data?.error || "Failed to open billing flow");
     } catch {
       toast.error("Failed to open billing flow");
+    } finally {
+      setPlanLoading(null);
+    }
+  };
+
+  const handleManageBilling = async () => {
+    setPlanLoading("billing_portal");
+    try {
+      const res = await fetch("/api/stripe/portal", {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = await readJsonSafely(res);
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+      toast.error(data?.error || "Failed to open billing portal");
+    } catch {
+      toast.error("Failed to open billing portal");
     } finally {
       setPlanLoading(null);
     }
@@ -180,6 +244,10 @@ export default function SettingsPage() {
   const currentBillingPlanKey = billingPlan?.billingPlanKey || "free";
   const normalizedCurrentPlanKey = currentBillingPlanKey.replace("_dfy", "");
   const currentPlanRank = PLAN_RANK[currentBillingPlanKey] || 0;
+  const softwarePlans = PLAN_OPTIONS.filter(
+    (plan) => plan.category === "software",
+  );
+  const dfyPlans = PLAN_OPTIONS.filter((plan) => plan.category === "dfy");
 
   if (!mounted) {
     return null;
@@ -236,7 +304,7 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label>Email Address</Label>
                   <p className="text-sm text-[#1A1A1A] dark:text-[#F5F5F5]">
-                    {session?.user?.email || "—"}
+                    {session?.user?.email || "-"}
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -478,27 +546,12 @@ export default function SettingsPage() {
                     </p>
                     <p className="text-[13px] text-[#6B7280] mt-0.5">
                       {billingPlan
-                        ? `${billingPlan.planName}${billingPlan.subscriptionStatus === "active" && billingPlan.currentPeriodEnd ? ` — renews ${new Date(billingPlan.currentPeriodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}`
+                        ? `${billingPlan.planName}${billingPlan.subscriptionStatus === "active" && billingPlan.currentPeriodEnd ? ` - renews ${new Date(billingPlan.currentPeriodEnd).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : ""}`
                         : "Loading..."}
                     </p>
                   </div>
                   {billingPlan?.hasStripeAccount ? (
-                    <Button
-                      variant="outline"
-                      onClick={async () => {
-                        try {
-                          const res = await fetch("/api/stripe/portal", {
-                            method: "POST",
-                            credentials: "include",
-                          });
-                          const data = await res.json();
-                          if (data.url) window.location.href = data.url;
-                          else if (data.error) toast.error(data.error);
-                        } catch {
-                          toast.error("Failed to open billing portal");
-                        }
-                      }}
-                    >
+                    <Button variant="outline" onClick={handleManageBilling}>
                       <ExternalLink className="mr-2 h-4 w-4" />
                       Manage Billing
                     </Button>
@@ -533,78 +586,172 @@ export default function SettingsPage() {
                   className="space-y-4 rounded-xl border border-[#E5E5E0] bg-[#FBFBF8] p-4 dark:border-[#333] dark:bg-[#171717]"
                   id="billing-plans"
                 >
-                  <div className="space-y-1">
-                    <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
-                      Change Plan
-                    </p>
-                    <p className="text-[13px] text-[#6B7280]">
-                      Upgrades are prorated immediately. Downgrades take effect
-                      at the next annual renewal.
-                    </p>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+                    <div className="space-y-1">
+                      <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
+                        Change Plan
+                      </p>
+                      <p className="text-[13px] text-[#6B7280]">
+                        Upgrades are prorated immediately. Downgrades take
+                        effect at the next annual renewal.
+                      </p>
+                    </div>
+
+                    <Button
+                      className="gap-2 self-start"
+                      onClick={() => {
+                        window.location.href = "/#pricing";
+                      }}
+                      variant="outline"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      See Full Plan Details
+                    </Button>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                    {PLAN_OPTIONS.map((plan) => {
-                      const isCurrent = normalizedCurrentPlanKey === plan.key;
-                      const isHighlighted = requestedPlan === plan.key;
-                      const isUpgrade = PLAN_RANK[plan.key] > currentPlanRank;
-                      const buttonLabel = isCurrent
-                        ? "Manage Plan"
-                        : billingPlan?.hasStripeAccount
-                          ? isUpgrade
-                            ? `Upgrade to ${plan.name}`
-                            : `Switch to ${plan.name}`
-                          : `Start ${plan.name}`;
+                  <div className="space-y-3">
+                    <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-[#6B7280]">
+                      Software Plans
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {softwarePlans.map((plan) => {
+                        const isCurrent = normalizedCurrentPlanKey === plan.key;
+                        const isHighlighted = requestedPlan === plan.key;
+                        const isUpgrade = PLAN_RANK[plan.key] > currentPlanRank;
+                        const buttonLabel = isCurrent
+                          ? "Manage Billing"
+                          : billingPlan?.hasStripeAccount
+                            ? isUpgrade
+                              ? `Upgrade to ${plan.name}`
+                              : `Switch to ${plan.name}`
+                            : `Start ${plan.name}`;
 
-                      return (
-                        <div
-                          key={plan.key}
-                          className={`rounded-xl border p-4 transition-all ${
-                            isCurrent
-                              ? "border-[#10B981] bg-[#F3FBF7] dark:border-[#10B981] dark:bg-[#10241D]"
-                              : "border-[#E5E5E0] bg-white dark:border-[#333] dark:bg-[#111]"
-                          } ${isHighlighted ? "ring-2 ring-[#F59E0B] ring-offset-2 dark:ring-offset-[#111]" : ""}`}
-                        >
-                          <div className="mb-4 space-y-1">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
-                                {plan.name}
-                              </p>
-                              {isCurrent ? (
-                                <span className="rounded-full bg-[#10B981] px-2 py-0.5 text-[11px] font-semibold text-white">
-                                  Current
-                                </span>
-                              ) : null}
-                            </div>
-                            <p className="text-[13px] text-[#6B7280]">
-                              {plan.description}
-                            </p>
-                            <p className="text-[20px] font-semibold text-[#111827] dark:text-[#F5F5F5]">
-                              {plan.priceLabel}
-                            </p>
-                            <p className="text-[12px] text-[#6B7280]">
-                              {plan.transactions}
-                            </p>
-                          </div>
-
-                          <Button
-                            className="w-full"
-                            disabled={planLoading !== null}
-                            onClick={() => handlePlanSelection(plan.key)}
-                            variant={isCurrent ? "outline" : "default"}
+                        return (
+                          <div
+                            key={plan.key}
+                            className={`rounded-xl border p-4 transition-all ${
+                              isCurrent
+                                ? "border-[#10B981] bg-[#F3FBF7] dark:border-[#10B981] dark:bg-[#10241D]"
+                                : "border-[#E5E5E0] bg-white dark:border-[#333] dark:bg-[#111]"
+                            } ${isHighlighted ? "ring-2 ring-[#F59E0B] ring-offset-2 dark:ring-offset-[#111]" : ""}`}
                           >
-                            {planLoading === plan.key
-                              ? "Opening..."
-                              : buttonLabel}
-                          </Button>
-                        </div>
-                      );
-                    })}
+                            <div className="mb-4 space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
+                                  {plan.name}
+                                </p>
+                                {isCurrent ? (
+                                  <span className="rounded-full bg-[#10B981] px-2 py-0.5 text-[11px] font-semibold text-white">
+                                    Current
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="text-[13px] text-[#6B7280]">
+                                {plan.description}
+                              </p>
+                              <p className="text-[20px] font-semibold text-[#111827] dark:text-[#F5F5F5]">
+                                {plan.priceLabel}
+                              </p>
+                              <p className="text-[12px] text-[#6B7280]">
+                                {plan.transactions}
+                              </p>
+                            </div>
+
+                            <Button
+                              className="w-full"
+                              disabled={planLoading !== null}
+                              onClick={() =>
+                                isCurrent
+                                  ? handleManageBilling()
+                                  : handlePlanSelection(plan.key)
+                              }
+                              variant={isCurrent ? "outline" : "default"}
+                            >
+                              {planLoading === plan.key ||
+                              (isCurrent && planLoading === "billing_portal")
+                                ? "Opening..."
+                                : buttonLabel}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-[#6B7280]">
+                      Done For You Plans
+                    </p>
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {dfyPlans.map((plan) => {
+                        const isCurrent = currentBillingPlanKey === plan.key;
+                        const isHighlighted = requestedPlan === plan.key;
+                        const isUpgrade =
+                          PLAN_RANK[plan.key] >= currentPlanRank;
+                        const buttonLabel = isCurrent
+                          ? "Manage Billing"
+                          : billingPlan?.hasStripeAccount
+                            ? isUpgrade
+                              ? `Upgrade to ${plan.name}`
+                              : `Switch to ${plan.name}`
+                            : `Start ${plan.name}`;
+
+                        return (
+                          <div
+                            key={plan.key}
+                            className={`rounded-xl border p-4 transition-all ${
+                              isCurrent
+                                ? "border-[#10B981] bg-[#F3FBF7] dark:border-[#10B981] dark:bg-[#10241D]"
+                                : "border-[#E5E5E0] bg-white dark:border-[#333] dark:bg-[#111]"
+                            } ${isHighlighted ? "ring-2 ring-[#F59E0B] ring-offset-2 dark:ring-offset-[#111]" : ""}`}
+                          >
+                            <div className="mb-4 space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-[15px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
+                                  {plan.name}
+                                </p>
+                                {isCurrent ? (
+                                  <span className="rounded-full bg-[#10B981] px-2 py-0.5 text-[11px] font-semibold text-white">
+                                    Current
+                                  </span>
+                                ) : null}
+                              </div>
+                              <p className="text-[13px] text-[#6B7280]">
+                                {plan.description}
+                              </p>
+                              <p className="text-[20px] font-semibold text-[#111827] dark:text-[#F5F5F5]">
+                                {plan.priceLabel}
+                              </p>
+                              <p className="text-[12px] text-[#6B7280]">
+                                {plan.transactions}
+                              </p>
+                            </div>
+
+                            <Button
+                              className="w-full"
+                              disabled={planLoading !== null}
+                              onClick={() =>
+                                isCurrent
+                                  ? handleManageBilling()
+                                  : handlePlanSelection(plan.key)
+                              }
+                              variant={isCurrent ? "outline" : "default"}
+                            >
+                              {planLoading === plan.key ||
+                              (isCurrent && planLoading === "billing_portal")
+                                ? "Opening..."
+                                : buttonLabel}
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
 
                   <p className="text-[12px] text-[#9CA3AF]">
-                    Done-for-you plans and CPA filing add-ons continue through
-                    the hosted billing flow after plan selection.
+                    You can still open the marketing page to compare every plan
+                    in full detail. Choosing a plan there will use your current
+                    account when you're signed in.
                   </p>
                 </div>
               </CardContent>

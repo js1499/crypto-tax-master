@@ -42,6 +42,45 @@ function isManagedConfig(configuration: Stripe.BillingPortal.Configuration) {
   );
 }
 
+function getStripeAuthHeader() {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error("STRIPE_SECRET_KEY is not configured");
+  }
+
+  return `Basic ${Buffer.from(`${process.env.STRIPE_SECRET_KEY}:`).toString("base64")}`;
+}
+
+async function stripeDashboardRequest<T>(
+  path: string,
+  options?: {
+    method?: "GET" | "POST";
+    body?: URLSearchParams;
+  },
+): Promise<T> {
+  const response = await fetch(`https://api.stripe.com/v1${path}`, {
+    method: options?.method || "GET",
+    headers: {
+      Authorization: getStripeAuthHeader(),
+      ...(options?.body
+        ? { "Content-Type": "application/x-www-form-urlencoded" }
+        : {}),
+    },
+    body: options?.body?.toString(),
+    cache: "no-store",
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    const message =
+      data?.error?.message ||
+      `Stripe dashboard request failed for ${options?.method || "GET"} ${path}`;
+    throw new Error(message);
+  }
+
+  return data as T;
+}
+
 function isManagedPlanSubscription(subscription: Stripe.Subscription) {
   const priceId = subscription.items.data[0]?.price.id;
 
@@ -65,9 +104,10 @@ async function buildManagedPortalProducts(): Promise<
         return;
       }
 
-      const price = await stripe.prices.retrieve(priceId);
-      const productId =
-        typeof price.product === "string" ? price.product : price.product?.id;
+      const price = await stripeDashboardRequest<{ product: string }>(
+        `/prices/${priceId}`,
+      );
+      const productId = price.product;
 
       if (!productId) {
         return;
@@ -91,60 +131,83 @@ async function ensureManagedPortalConfiguration() {
   }
 
   const products = await buildManagedPortalProducts();
-  const params: Stripe.BillingPortal.ConfigurationCreateParams = {
-    name: MANAGED_PORTAL_CONFIG_NAME,
-    default_return_url: `${FALLBACK_ORIGIN}/settings`,
-    business_profile: {
-      headline:
-        "Manage your Glide annual license, renewals, and payment details.",
-    },
-    features: {
-      customer_update: {
-        enabled: false,
-      },
-      invoice_history: {
-        enabled: true,
-      },
-      payment_method_update: {
-        enabled: true,
-      },
-      subscription_cancel: {
-        enabled: true,
-        mode: "at_period_end",
-      },
-      subscription_update: {
-        enabled: true,
-        default_allowed_updates: ["price"],
-        products,
-        proration_behavior: "always_invoice",
-        billing_cycle_anchor: "unchanged",
-        schedule_at_period_end: {
-          conditions: [{ type: "decreasing_item_amount" }],
-        },
-        trial_update_behavior: "continue_trial",
-      },
-    },
-    metadata: MANAGED_PORTAL_CONFIG_METADATA,
-  };
+  const params = new URLSearchParams();
 
-  const configurations = await stripe.billingPortal.configurations.list({
-    limit: 20,
+  params.set("name", MANAGED_PORTAL_CONFIG_NAME);
+  params.set("default_return_url", `${FALLBACK_ORIGIN}/settings`);
+  params.set(
+    "business_profile[headline]",
+    "Manage your Glide plan and renewals.",
+  );
+  params.set("features[customer_update][enabled]", "false");
+  params.set("features[invoice_history][enabled]", "true");
+  params.set("features[payment_method_update][enabled]", "true");
+  params.set("features[subscription_cancel][enabled]", "true");
+  params.set("features[subscription_cancel][mode]", "at_period_end");
+  params.set("features[subscription_update][enabled]", "true");
+  params.set(
+    "features[subscription_update][default_allowed_updates][0]",
+    "price",
+  );
+  params.set(
+    "features[subscription_update][proration_behavior]",
+    "always_invoice",
+  );
+  params.set(
+    "features[subscription_update][billing_cycle_anchor]",
+    "unchanged",
+  );
+  params.set(
+    "features[subscription_update][schedule_at_period_end][conditions][0][type]",
+    "decreasing_item_amount",
+  );
+  params.set(
+    "features[subscription_update][trial_update_behavior]",
+    "continue_trial",
+  );
+  params.set("metadata[app]", MANAGED_PORTAL_CONFIG_METADATA.app);
+  params.set("metadata[purpose]", MANAGED_PORTAL_CONFIG_METADATA.purpose);
+
+  products.forEach((product, productIndex) => {
+    params.set(
+      `features[subscription_update][products][${productIndex}][product]`,
+      product.product,
+    );
+
+    product.prices.forEach((price, priceIndex) => {
+      params.set(
+        `features[subscription_update][products][${productIndex}][prices][${priceIndex}]`,
+        price,
+      );
+    });
   });
+
+  const configurations = await stripeDashboardRequest<{
+    data: Stripe.BillingPortal.Configuration[];
+  }>("/billing_portal/configurations?limit=20");
   const existing = configurations.data.find(isManagedConfig);
 
   if (existing) {
-    const updated = await stripe.billingPortal.configurations.update(
-      existing.id,
-      {
-        ...params,
-        active: true,
-      },
-    );
+    const updated =
+      await stripeDashboardRequest<Stripe.BillingPortal.Configuration>(
+        `/billing_portal/configurations/${existing.id}`,
+        {
+          method: "POST",
+          body: new URLSearchParams([...params.entries(), ["active", "true"]]),
+        },
+      );
 
     return updated.id;
   }
 
-  const created = await stripe.billingPortal.configurations.create(params);
+  const created =
+    await stripeDashboardRequest<Stripe.BillingPortal.Configuration>(
+      "/billing_portal/configurations",
+      {
+        method: "POST",
+        body: params,
+      },
+    );
   return created.id;
 }
 
@@ -219,10 +282,8 @@ export async function createManagedBillingPortalSession(options: {
   returnUrl: string;
 }) {
   const { customerId, returnUrl } = options;
-  const configuration = await ensureManagedPortalConfiguration();
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
-    configuration,
     return_url: returnUrl,
   });
 

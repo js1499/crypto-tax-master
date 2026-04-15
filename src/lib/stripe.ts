@@ -5,7 +5,7 @@ export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
 });
 
 /**
- * Plan configuration — maps plan keys to Stripe price IDs and feature limits.
+ * Plan configuration - maps plan keys to Stripe price IDs and feature limits.
  * The single source of truth for what each plan includes.
  */
 export type PlanKey =
@@ -107,7 +107,7 @@ export const PLANS: Record<PlanKey, PlanConfig> = {
     },
   },
   starter_dfy: {
-    name: "Starter — Done For You",
+    name: "Starter - Done For You",
     priceEnvKey: "STRIPE_PRICE_STARTER_DFY",
     transactionLimit: 300,
     walletLimit: 5,
@@ -121,7 +121,7 @@ export const PLANS: Record<PlanKey, PlanConfig> = {
     },
   },
   active_dfy: {
-    name: "Active — Done For You",
+    name: "Active - Done For You",
     priceEnvKey: "STRIPE_PRICE_ACTIVE_DFY",
     transactionLimit: 1000,
     walletLimit: 10,
@@ -135,7 +135,7 @@ export const PLANS: Record<PlanKey, PlanConfig> = {
     },
   },
   pro_dfy: {
-    name: "Pro — Done For You",
+    name: "Pro - Done For You",
     priceEnvKey: "STRIPE_PRICE_PRO_DFY",
     transactionLimit: 10000,
     walletLimit: 50,
@@ -149,7 +149,7 @@ export const PLANS: Record<PlanKey, PlanConfig> = {
     },
   },
   prime_dfy: {
-    name: "Prime — Done For You",
+    name: "Prime - Done For You",
     priceEnvKey: "STRIPE_PRICE_PRIME_DFY",
     transactionLimit: 100000,
     walletLimit: 100,
@@ -175,11 +175,21 @@ export const PAID_PLAN_KEYS: PaidPlanKey[] = [
   "prime_dfy",
 ];
 
+function getRequiredEnvValue(key: string): string | null {
+  const value = process.env[key];
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 /** Get the Stripe price ID for a plan */
 export function getPriceId(planKey: PlanKey): string | null {
   const plan = PLANS[planKey];
   if (!plan || !plan.priceEnvKey) return null;
-  return process.env[plan.priceEnvKey] || null;
+  return getRequiredEnvValue(plan.priceEnvKey);
 }
 
 /** Get a plan config by its Stripe price ID */
@@ -188,7 +198,7 @@ export function getPlanByPriceId(
 ): { key: PlanKey; config: PlanConfig } | null {
   for (const [key, config] of Object.entries(PLANS)) {
     const envKey = config.priceEnvKey;
-    if (envKey && process.env[envKey] === priceId) {
+    if (envKey && getRequiredEnvValue(envKey) === priceId.trim()) {
       return { key: key as PlanKey, config };
     }
   }
