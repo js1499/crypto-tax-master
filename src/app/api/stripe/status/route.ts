@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
+import { getUserPlan } from "@/lib/plan-limits";
 import { PLANS, PlanKey } from "@/lib/stripe";
 
 /**
@@ -28,20 +29,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  const planKey = (dbUser.planId || "free") as PlanKey;
-  const plan = PLANS[planKey] || PLANS.free;
+  const effectivePlan = await getUserPlan(user.id);
+  const billingPlanKey = (dbUser.planId || "free") as PlanKey;
+  const billingPlan = PLANS[billingPlanKey] || PLANS.free;
 
   return NextResponse.json({
-    planKey,
-    planName: plan.name,
-    subscriptionStatus: dbUser.subscriptionStatus || "none",
-    currentPeriodEnd: dbUser.currentPeriodEnd,
+    planKey: effectivePlan.planKey,
+    planName: effectivePlan.planName,
+    billingPlanKey,
+    billingPlanName: billingPlan.name,
+    isPaid: effectivePlan.isPaid,
+    subscriptionStatus: effectivePlan.subscriptionStatus || "none",
+    currentPeriodEnd: effectivePlan.currentPeriodEnd,
+    licensedThroughTaxYear: effectivePlan.licensedThroughTaxYear,
     hasCpaFiling: dbUser.hasCpaFiling,
     hasStripeAccount: !!dbUser.stripeCustomerId,
     limits: {
-      transactions: plan.transactionLimit,
-      wallets: plan.walletLimit,
+      transactions: effectivePlan.transactionLimit,
+      wallets: effectivePlan.walletLimit,
     },
-    features: plan.features,
+    features: effectivePlan.features,
   });
 }

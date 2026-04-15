@@ -33,7 +33,21 @@ import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { useSyncPipeline } from "@/components/sync-pipeline/pipeline-provider";
 
-const taxForms = [
+type TaxFormCategory = "irs" | "csv" | "tax-software";
+type TaxFormStatus = "ready" | "needs-pdf";
+type TaxFormEngine = "crypto" | "securities" | "combined";
+
+interface TaxFormDefinition {
+  id: number;
+  name: string;
+  description: string;
+  category: TaxFormCategory;
+  status: TaxFormStatus;
+  country?: string;
+  engine: TaxFormEngine;
+}
+
+const taxForms: TaxFormDefinition[] = [
   // Crypto forms
   {
     id: 1,
@@ -252,14 +266,27 @@ interface TaxReportData {
   currencySymbol?: string; // "$", "£", "€"
 }
 
+interface StripeStatusResponse {
+  planKey: string;
+  isPaid?: boolean;
+  licensedThroughTaxYear?: number | null;
+}
+
 export default function TaxReportsPage() {
   const { refreshKey } = useSyncPipeline();
   const [isPaidPlan, setIsPaidPlan] = useState<boolean | null>(null); // null = loading
+  const [licensedThroughTaxYear, setLicensedThroughTaxYear] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/stripe/status", { credentials: "include" })
       .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setIsPaidPlan(d.planKey !== "free"); })
+      .then((d: StripeStatusResponse | null) => {
+        if (!d) return;
+        setIsPaidPlan(d.isPaid ?? d.planKey !== "free");
+        setLicensedThroughTaxYear(
+          typeof d.licensedThroughTaxYear === "number" ? d.licensedThroughTaxYear : null,
+        );
+      })
       .catch(() => {});
   }, []);
   const [mounted, setMounted] = useState(false);
@@ -278,11 +305,23 @@ export default function TaxReportsPage() {
 
   useEffect(() => {
     setMounted(true);
-    const currentYear = new Date().getFullYear().toString();
-    if (currentYear !== selectedYear) {
-      setSelectedYear(currentYear);
+    const filingYear = (new Date().getFullYear() - 1).toString();
+    if (filingYear !== selectedYear) {
+      setSelectedYear(filingYear);
     }
   }, []);
+
+  useEffect(() => {
+    if (!mounted || licensedThroughTaxYear === null) return;
+
+    setSelectedYear((currentYear) => {
+      const parsedYear = parseInt(currentYear, 10);
+      if (isNaN(parsedYear) || parsedYear > licensedThroughTaxYear) {
+        return licensedThroughTaxYear.toString();
+      }
+      return currentYear;
+    });
+  }, [licensedThroughTaxYear, mounted]);
 
   // Fetch tax report + settings on mount / year change
   useEffect(() => {
@@ -677,6 +716,7 @@ export default function TaxReportsPage() {
   const currencySymbol = displayData.currencySymbol || "$";
   const currencyCode = displayData.currency || "USD";
   const isNonUsd = currencyCode !== "USD";
+  const nextRenewalTaxYear = licensedThroughTaxYear !== null ? licensedThroughTaxYear + 1 : null;
 
   const totalGains = parseCurrency(displayData.shortTermGains); // API puts total gains here
   const totalLosses = parseCurrency(displayData.shortTermLosses); // API puts total losses here (negative)
@@ -720,7 +760,13 @@ export default function TaxReportsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {Array.from({ length: new Date().getFullYear() - 2020 + 1 }, (_, i) => new Date().getFullYear() - i).map(y => (
-                    <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
+                    <SelectItem
+                      key={y}
+                      value={y.toString()}
+                      disabled={isPaidPlan === true && licensedThroughTaxYear !== null && y > licensedThroughTaxYear}
+                    >
+                      {y}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -768,6 +814,13 @@ export default function TaxReportsPage() {
             </Dialog>
           </div>
         </div>
+
+        {isPaidPlan === true && licensedThroughTaxYear !== null && nextRenewalTaxYear !== null && (
+          <div className="rounded-lg border border-[#A7F3D0] bg-[#ECFDF5] px-5 py-4">
+            <p className="text-[15px] font-semibold text-[#065F46]">Annual access currently covers tax year {licensedThroughTaxYear} and earlier.</p>
+            <p className="mt-0.5 text-[13px] text-[#047857]">Your next renewal unlocks tax year {nextRenewalTaxYear}.</p>
+          </div>
+        )}
 
         {/* Row 1: Tax Summary + Breakdown */}
         <div className={cn("grid grid-cols-[1fr_340px] gap-5", isPaidPlan === false && "blur-lg select-none pointer-events-none")}>

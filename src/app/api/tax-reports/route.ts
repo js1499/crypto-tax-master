@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
-import { getUserPlan } from "@/lib/plan-limits";
+import { canAccessTaxYear, getTaxYearAccessMessage, getUserPlan } from "@/lib/plan-limits";
 
 /**
  * GET /api/tax-reports?year=2025
@@ -115,6 +115,12 @@ export async function GET(request: NextRequest) {
 
     // Enforce plan transaction limit
     const userPlan = await getUserPlan(user.id);
+    if (!canAccessTaxYear(userPlan, year)) {
+      return NextResponse.json(
+        { error: getTaxYearAccessMessage(userPlan, year) },
+        { status: 403 },
+      );
+    }
     const txLimit = userPlan.transactionLimit === Infinity ? undefined : userPlan.transactionLimit;
 
     // Fetch transactions for this year

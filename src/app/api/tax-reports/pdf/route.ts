@@ -8,7 +8,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 import { findField, setTextField, checkCheckbox, formatDate, formatCurrency } from "@/lib/pdf-helpers";
-import { getUserPlan } from "@/lib/plan-limits";
+import { canAccessTaxYear, getTaxYearAccessMessage, getUserPlan } from "@/lib/plan-limits";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -504,11 +504,17 @@ export async function GET(request: NextRequest) {
     }
 
     // Check plan — PDF reports require a paid plan
-    const { getUserPlan } = await import("@/lib/plan-limits");
     const plan = await getUserPlan(user.id);
     if (!plan.features.allReports) {
       return NextResponse.json(
         { error: "PDF reports require a paid plan. Upgrade to download Schedule D, Form 8949, and Schedule 1." },
+        { status: 403 },
+      );
+    }
+
+    if (!canAccessTaxYear(plan, year)) {
+      return NextResponse.json(
+        { error: getTaxYearAccessMessage(plan, year) },
         { status: 403 },
       );
     }
@@ -602,8 +608,7 @@ export async function GET(request: NextRequest) {
     const totalIncome = Number(dbIncomeAgg._sum.value_usd || 0);
 
     // Enforce plan transaction limit on report rows
-    const userPlan = await getUserPlan(user.id);
-    const txLimit = userPlan.transactionLimit === Infinity ? undefined : userPlan.transactionLimit;
+    const txLimit = plan.transactionLimit === Infinity ? undefined : plan.transactionLimit;
 
     // Also fetch individual disposal rows for Form 8949 detail lines
     const disposalTxns = await prisma.transaction.findMany({
@@ -648,21 +653,44 @@ export async function GET(request: NextRequest) {
         };
       });
 
+    const shortTermGains = stNetGain > 0 ? stNetGain : 0;
+    const shortTermLosses = stNetGain < 0 ? stNetGain : 0;
+    const longTermGains = ltNetGain > 0 ? ltNetGain : 0;
+    const longTermLosses = ltNetGain < 0 ? ltNetGain : 0;
+    const totalNetLoss = Math.max(0, -(stNetGain + ltNetGain));
+    const deductibleLosses = Math.min(totalNetLoss, 3000);
+    const lossCarryover = Math.max(0, totalNetLoss - 3000);
+    const totalTaxableGain = (stNetGain + ltNetGain) >= 0
+      ? (stNetGain + ltNetGain)
+      : -deductibleLosses;
+
     const report: TaxReport = {
+      year,
+      shortTermGains,
+      longTermGains,
+      shortTermLosses,
+      longTermLosses,
+      totalIncome,
       taxableEvents: dbEvents,
       incomeEvents: [],
-      totalIncome,
       netShortTermGain: stNetGain,
       netLongTermGain: ltNetGain,
-      summary: {
-        shortTermGain: stNetGain > 0 ? stNetGain : 0,
-        shortTermLoss: stNetGain < 0 ? stNetGain : 0,
-        longTermGain: ltNetGain > 0 ? ltNetGain : 0,
-        longTermLoss: ltNetGain < 0 ? ltNetGain : 0,
-        netGain: stNetGain + ltNetGain,
-        totalProceeds: stProceeds + ltProceeds,
-        totalCostBasis: stCostBasis + ltCostBasis,
-      },
+      totalTaxableGain,
+      deductibleLosses,
+      lossCarryover,
+      form8949Data: dbEvents.map((event) => ({
+        description: `${event.amount} ${event.asset}`,
+        dateAcquired: event.dateAcquired || event.date,
+        dateSold: event.date,
+        proceeds: event.proceeds,
+        costBasis: event.costBasis,
+        code: event.washSale ? "W" : "",
+        gainLoss: event.gainLoss,
+        holdingPeriod: event.holdingPeriod,
+      })),
+      annualExemption: 0,
+      currency: "USD",
+      currencySymbol: "$",
     };
 
     // ---- Generate the PDF ----

@@ -4,6 +4,7 @@ import { calculateTaxReport } from "@/lib/tax-calculator";
 import { generateForm8949PDF } from "@/lib/form8949-pdf";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
+import { canAccessTaxYear, getTaxYearAccessMessage, getUserPlan } from "@/lib/plan-limits";
 import * as Sentry from "@sentry/nextjs";
 
 /**
@@ -61,6 +62,21 @@ export async function GET(request: NextRequest) {
           details: "Please log in to generate tax reports."
         },
         { status: 401 }
+      );
+    }
+
+    const plan = await getUserPlan(user.id);
+    if (!plan.features.allReports) {
+      return NextResponse.json(
+        { error: "Form 8949 downloads require a paid plan." },
+        { status: 403 }
+      );
+    }
+
+    if (!canAccessTaxYear(plan, year)) {
+      return NextResponse.json(
+        { error: getTaxYearAccessMessage(plan, year) },
+        { status: 403 }
       );
     }
 

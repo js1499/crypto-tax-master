@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import { calculateTaxReport } from "@/lib/tax-calculator";
 import { generateSecuritiesTaxReport } from "@/lib/securities-report-generator";
+import { canAccessTaxYear, getTaxYearAccessMessage, getUserPlan } from "@/lib/plan-limits";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -91,6 +92,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: `Invalid form parameter. Must be one of: ${validForms.join(", ")}` },
         { status: 400 },
+      );
+    }
+
+    const plan = await getUserPlan(user.id);
+    if (!plan.features.allReports) {
+      return NextResponse.json(
+        { error: "Combined tax reports require a paid plan." },
+        { status: 403 },
+      );
+    }
+
+    if (!canAccessTaxYear(plan, year)) {
+      return NextResponse.json(
+        { error: getTaxYearAccessMessage(plan, year) },
+        { status: 403 },
       );
     }
 

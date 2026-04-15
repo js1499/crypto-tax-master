@@ -4,7 +4,7 @@ import prisma from "@/lib/prisma";
 import { TaxReport, TaxableEvent, IncomeEvent } from "@/lib/tax-calculator";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
-import { getUserPlan } from "@/lib/plan-limits";
+import { canAccessTaxYear, getTaxYearAccessMessage, getUserPlan } from "@/lib/plan-limits";
 
 /**
  * GET /api/tax-reports/export?year=2023&type=capital-gains-csv
@@ -77,6 +77,21 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    const userPlan = await getUserPlan(user.id);
+    if (!userPlan.features.allReports) {
+      return NextResponse.json(
+        { error: "CSV tax report exports require a paid plan." },
+        { status: 403 }
+      );
+    }
+
+    if (!canAccessTaxYear(userPlan, year)) {
+      return NextResponse.json(
+        { error: getTaxYearAccessMessage(userPlan, year) },
+        { status: 403 }
+      );
+    }
+
     // Get user with wallets
     const userWithWallets = await prisma.user.findUnique({
       where: { id: user.id },
@@ -117,7 +132,6 @@ export async function GET(request: NextRequest) {
     };
 
     // Enforce plan transaction limit on export rows
-    const userPlan = await getUserPlan(user.id);
     const txLimit = userPlan.transactionLimit === Infinity ? undefined : userPlan.transactionLimit;
 
     // Fetch disposal transactions (for capital gains reports)
@@ -193,23 +207,46 @@ export async function GET(request: NextRequest) {
     const stEvents = taxableEvents.filter(e => e.holdingPeriod === "short");
     const ltEvents = taxableEvents.filter(e => e.holdingPeriod === "long");
 
+    const shortTermGains = stEvents.filter(e => e.gainLoss > 0).reduce((s, e) => s + e.gainLoss, 0);
+    const shortTermLosses = stEvents.filter(e => e.gainLoss < 0).reduce((s, e) => s + e.gainLoss, 0);
+    const longTermGains = ltEvents.filter(e => e.gainLoss > 0).reduce((s, e) => s + e.gainLoss, 0);
+    const longTermLosses = ltEvents.filter(e => e.gainLoss < 0).reduce((s, e) => s + e.gainLoss, 0);
+    const netShortTermGain = stEvents.reduce((s, e) => s + e.gainLoss, 0);
+    const netLongTermGain = ltEvents.reduce((s, e) => s + e.gainLoss, 0);
+    const totalNetLoss = Math.max(0, -(netShortTermGain + netLongTermGain));
+    const deductibleLosses = Math.min(totalNetLoss, 3000);
+    const lossCarryover = Math.max(0, totalNetLoss - 3000);
+    const totalTaxableGain = (netShortTermGain + netLongTermGain) >= 0
+      ? (netShortTermGain + netLongTermGain)
+      : -deductibleLosses;
+
     const report: TaxReport = {
+      year,
+      shortTermGains,
+      longTermGains,
+      shortTermLosses,
+      longTermLosses,
+      totalIncome: incomeEvents.reduce((s, e) => s + e.valueUsd, 0),
       taxableEvents,
       incomeEvents,
-      totalIncome: incomeEvents.reduce((s, e) => s + e.valueUsd, 0),
-      netShortTermGain: stEvents.reduce((s, e) => s + e.gainLoss, 0),
-      netLongTermGain: ltEvents.reduce((s, e) => s + e.gainLoss, 0),
-      summary: {
-        shortTermGain: stEvents.filter(e => e.gainLoss > 0).reduce((s, e) => s + e.gainLoss, 0),
-        shortTermLoss: stEvents.filter(e => e.gainLoss < 0).reduce((s, e) => s + e.gainLoss, 0),
-        longTermGain: ltEvents.filter(e => e.gainLoss > 0).reduce((s, e) => s + e.gainLoss, 0),
-        longTermLoss: ltEvents.filter(e => e.gainLoss < 0).reduce((s, e) => s + e.gainLoss, 0),
-        netGain: taxableEvents.reduce((s, e) => s + e.gainLoss, 0),
-        totalProceeds: taxableEvents.reduce((s, e) => s + e.proceeds, 0),
-        totalCostBasis: taxableEvents.reduce((s, e) => s + e.costBasis, 0),
-      },
-      // Pass raw transactions for history/income exports
-      _allTransactions: allTxns as any,
+      netShortTermGain,
+      netLongTermGain,
+      totalTaxableGain,
+      deductibleLosses,
+      lossCarryover,
+      form8949Data: taxableEvents.map((event) => ({
+        description: `${event.amount} ${event.asset}`,
+        dateAcquired: event.dateAcquired || event.date,
+        dateSold: event.date,
+        proceeds: event.proceeds,
+        costBasis: event.costBasis,
+        code: event.washSale ? "W" : "",
+        gainLoss: event.gainLoss,
+        holdingPeriod: event.holdingPeriod,
+      })),
+      annualExemption: 0,
+      currency: "USD",
+      currencySymbol: "$",
     };
 
     // Generate CSV based on export type

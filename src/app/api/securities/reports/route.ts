@@ -12,6 +12,7 @@ import {
   generateSection475SummaryCSV,
   generateSecuritiesTurboTaxCSV,
 } from "@/lib/securities-csv-exports";
+import { canAccessTaxYear, getTaxYearAccessMessage, getUserPlan } from "@/lib/plan-limits";
 
 /**
  * GET /api/securities/reports?year=2025&type=realized-gains
@@ -83,6 +84,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         { error: "Invalid year parameter" },
         { status: 400 },
+      );
+    }
+
+    const plan = await getUserPlan(user.id);
+    if (!plan.features.allReports) {
+      return NextResponse.json(
+        { error: "Securities report exports require a paid plan." },
+        { status: 403 },
+      );
+    }
+
+    if (!canAccessTaxYear(plan, year)) {
+      return NextResponse.json(
+        { error: getTaxYearAccessMessage(plan, year) },
+        { status: 403 },
       );
     }
 
