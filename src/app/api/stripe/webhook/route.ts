@@ -74,12 +74,12 @@ export async function POST(request: NextRequest) {
 
           if (isCpa) {
             // CPA filing: just flag the user, don't change their plan
-            await prisma.user.update({
+            await prisma.user.updateMany({
               where: { stripeCustomerId: customerId },
               data: { hasCpaFiling: true },
             });
           } else {
-            await prisma.user.update({
+            await prisma.user.updateMany({
               where: { stripeCustomerId: customerId },
               data: {
                 subscriptionId,
@@ -105,14 +105,14 @@ export async function POST(request: NextRequest) {
         const isCpa = priceId === process.env.STRIPE_PRICE_CPA_FILING;
 
         if (isCpa) {
-          await prisma.user.update({
+          await prisma.user.updateMany({
             where: { stripeCustomerId: customerId },
             data: {
               hasCpaFiling: subscription.status === "active",
             },
           });
         } else {
-          await prisma.user.update({
+          await prisma.user.updateMany({
             where: { stripeCustomerId: customerId },
             data: {
               subscriptionId: subscription.id,
@@ -135,12 +135,12 @@ export async function POST(request: NextRequest) {
         const isCpa = priceId === process.env.STRIPE_PRICE_CPA_FILING;
 
         if (isCpa) {
-          await prisma.user.update({
+          await prisma.user.updateMany({
             where: { stripeCustomerId: customerId },
             data: { hasCpaFiling: false },
           });
         } else {
-          await prisma.user.update({
+          await prisma.user.updateMany({
             where: { stripeCustomerId: customerId },
             data: {
               subscriptionId: null,
@@ -164,7 +164,7 @@ export async function POST(request: NextRequest) {
           if (!customerId) {
             break;
           }
-          await prisma.user.update({
+          await prisma.user.updateMany({
             where: { stripeCustomerId: customerId },
             data: {
               subscriptionStatus: "active",
@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
           if (!customerId) {
             break;
           }
-          await prisma.user.update({
+          await prisma.user.updateMany({
             where: { stripeCustomerId: customerId },
             data: { subscriptionStatus: "past_due" },
           });
@@ -200,7 +200,14 @@ export async function POST(request: NextRequest) {
     }
   } catch (err) {
     console.error("[Stripe Webhook] Error processing event:", event.type, err);
-    // Return 200 anyway so Stripe doesn't retry (we logged the error)
+    // Return 500 so Stripe retries with backoff. A transient failure (e.g. a
+    // dropped DB connection) must not be silently acknowledged, or Stripe and
+    // our DB drift permanently out of sync. Events for unknown customers are
+    // handled by updateMany above (no-op, no throw), so they won't loop here.
+    return NextResponse.json(
+      { error: "Webhook processing failed" },
+      { status: 500 },
+    );
   }
 
   return NextResponse.json({ received: true });

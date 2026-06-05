@@ -3,6 +3,13 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { stripe } from "@/lib/stripe";
 
+// Subscriptions in these states are already finished and cannot be canceled
+// again; everything else is still (potentially) billable and must be canceled.
+const TERMINAL_SUBSCRIPTION_STATUSES = new Set<string>([
+  "canceled",
+  "incomplete_expired",
+]);
+
 /**
  * DELETE /api/auth/delete-account
  * Permanently deletes the user's account and all associated data.
@@ -16,22 +23,29 @@ export async function DELETE(request: NextRequest) {
   try {
     const dbUser = await prisma.user.findUnique({
       where: { id: user.id },
-      select: { stripeCustomerId: true },
-      include: { wallets: true },
+      // `select` and `include` are mutually exclusive in Prisma (passing both
+      // throws at runtime), so select the wallets relation here instead.
+      select: { stripeCustomerId: true, wallets: true },
     });
 
     if (!dbUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Cancel Stripe subscription if exists
+    // Cancel any still-billable Stripe subscription if one exists. We list
+    // "all" and skip only terminal statuses, so trialing/past_due/unpaid/
+    // incomplete/paused subscriptions are also canceled — otherwise a deleted
+    // account could keep getting billed.
     if (dbUser.stripeCustomerId) {
       try {
         const subscriptions = await stripe.subscriptions.list({
           customer: dbUser.stripeCustomerId,
-          status: "active",
+          status: "all",
         });
         for (const sub of subscriptions.data) {
+          if (TERMINAL_SUBSCRIPTION_STATUSES.has(sub.status)) {
+            continue;
+          }
           await stripe.subscriptions.cancel(sub.id);
         }
       } catch {
