@@ -110,8 +110,14 @@ export async function getUserPlan(userId: string): Promise<UserPlan> {
   const currentPeriodEnd = user?.currentPeriodEnd || null;
   const isPaid =
     billingPlanKey !== "free" && isSubscriptionEntitled(subscriptionStatus);
+  // A free trial's period end is only ~30 days out, which would otherwise
+  // license a stale tax year. Grant the current filing year during the trial
+  // so it delivers full access to this season's reports.
+  const isTrialing = subscriptionStatus === "trialing";
   const licensedThroughTaxYear = isPaid
-    ? getLicensedThroughTaxYear(currentPeriodEnd)
+    ? isTrialing
+      ? getCurrentFilingTaxYear()
+      : getLicensedThroughTaxYear(currentPeriodEnd)
     : null;
   const effectivePlan = isPaid ? billingPlan : PLANS.free;
 
