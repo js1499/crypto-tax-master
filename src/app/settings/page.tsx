@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { Layout } from "@/components/layout";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -136,6 +137,7 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState("preferences");
   const [planLoading, setPlanLoading] = useState<string | null>(null);
+  const [discountCode, setDiscountCode] = useState("");
   const [requestedPlan, setRequestedPlan] = useState<string | null>(null);
 
   useEffect(() => {
@@ -198,7 +200,10 @@ export default function SettingsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ planKey }),
+        body: JSON.stringify({
+          planKey,
+          code: discountCode.trim() || undefined,
+        }),
       });
 
       const data = await readJsonSafely(res);
@@ -607,6 +612,25 @@ export default function SettingsPage() {
                       <ExternalLink className="h-4 w-4" />
                       See Full Plan Details
                     </Button>
+                  </div>
+
+                  <div className="space-y-2 rounded-xl border border-[#E5E5E0] bg-white p-4 dark:border-[#333] dark:bg-[#111]">
+                    <Label
+                      htmlFor="discount-code"
+                      className="text-[13px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]"
+                    >
+                      Discount code
+                    </Label>
+                    <Input
+                      id="discount-code"
+                      placeholder="Enter a code (optional)"
+                      value={discountCode}
+                      onChange={(e) => setDiscountCode(e.target.value)}
+                      className="max-w-xs"
+                    />
+                    <p className="text-[12px] text-[#6B7280]">
+                      Applied automatically when you choose a plan below.
+                    </p>
                   </div>
 
                   <div className="space-y-3">

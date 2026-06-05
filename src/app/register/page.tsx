@@ -90,13 +90,14 @@ export default function RegisterPage() {
         // Check if they came from a pricing plan — redirect to checkout
         const params = new URLSearchParams(window.location.search);
         const planKey = params.get("plan");
+        const code = params.get("code");
         if (planKey && planKey !== "free") {
           try {
             const checkoutRes = await fetch("/api/stripe/checkout", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               credentials: "include",
-              body: JSON.stringify({ planKey }),
+              body: JSON.stringify({ planKey, code: code || undefined }),
             });
             const checkoutData = await checkoutRes.json();
             if (checkoutData.url) {

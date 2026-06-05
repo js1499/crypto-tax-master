@@ -38,7 +38,28 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { planKey } = body as { planKey: string };
+    const { planKey, code } = body as { planKey: string; code?: string };
+    const isCpaFiling = planKey === "cpa_filing";
+
+    // Discount / comp codes:
+    //  - the free-trial secret starts a no-card 30-day trial (subscriptions only)
+    //  - any other code is resolved as a Stripe promotion code ($1 comps)
+    const submittedCode = code?.trim() ?? "";
+    const freeTrialCode = process.env.STRIPE_FREE_TRIAL_CODE?.trim() || null;
+    const isFreeTrial =
+      submittedCode.length > 0 &&
+      freeTrialCode !== null &&
+      submittedCode === freeTrialCode;
+
+    if (isFreeTrial && isCpaFiling) {
+      return NextResponse.json(
+        {
+          error:
+            "The free-trial code applies to subscription plans, not CPA Filing.",
+        },
+        { status: 400 },
+      );
+    }
 
     // Get the price ID
     let priceId: string | null = null;
@@ -105,7 +126,9 @@ export async function POST(request: NextRequest) {
     const currentFilingTaxYear = getCurrentFilingTaxYear();
     const nextRenewalTaxYear = currentFilingTaxYear + 1;
 
-    if (planKey !== "cpa_filing" && customerId) {
+    // When a comp code is supplied, always create a fresh checkout session so
+    // the trial/discount is honored, rather than diverting to the plan-change portal.
+    if (!isCpaFiling && customerId && !submittedCode) {
       const existingSubscription = await getPrimaryPlanSubscription({
         customerId,
         preferredSubscriptionId: dbUser?.subscriptionId,
@@ -132,10 +155,26 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Resolve a $1 comp code to a Stripe promotion code. Each $1 coupon is
+    // restricted to one product, so Stripe rejects a code used on the wrong plan.
+    let promotionCodeId: string | null = null;
+    if (submittedCode && !isFreeTrial) {
+      const matches = await stripe.promotionCodes.list({
+        code: submittedCode,
+        active: true,
+        limit: 1,
+      });
+      if (matches.data.length === 0) {
+        return NextResponse.json(
+          { error: "That discount code isn't valid or has expired." },
+          { status: 400 },
+        );
+      }
+      promotionCodeId = matches.data[0].id;
+    }
+
     // CPA Filing is a one-time service, not a recurring plan, so it checks out
     // in payment mode. Everything else is an annual subscription.
-    const isCpaFiling = planKey === "cpa_filing";
-
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       customer: customerId,
       mode: isCpaFiling ? "payment" : "subscription",
@@ -152,9 +191,24 @@ export async function POST(request: NextRequest) {
       },
     };
 
-    // Auto-renew choice and annual-term messaging only make sense for
-    // subscriptions, not the one-time CPA Filing purchase.
-    if (!isCpaFiling) {
+    if (promotionCodeId) {
+      sessionParams.discounts = [{ promotion_code: promotionCodeId }];
+    }
+
+    // Free-trial code: a 30-day, no-card trial that auto-cancels at the end.
+    if (isFreeTrial) {
+      sessionParams.payment_method_collection = "if_required";
+      sessionParams.subscription_data = {
+        trial_period_days: 30,
+        trial_settings: {
+          end_behavior: { missing_payment_method: "cancel" },
+        },
+      };
+    }
+
+    // Auto-renew choice and annual-term messaging only make sense for a normal
+    // paid subscription — not the one-time CPA Filing purchase or a free trial.
+    if (!isCpaFiling && !isFreeTrial) {
       sessionParams.custom_fields = [
         {
           key: "auto_renew",

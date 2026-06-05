@@ -2892,6 +2892,10 @@ function showTab(btn, tabId) {
     var planKey = btn.getAttribute("data-plan");
     if (!planKey) return;
 
+    var codeInput = document.getElementById("landing-discount-code");
+    var discountCode =
+      codeInput && codeInput.value ? codeInput.value.trim() : "";
+
     // Disable button and show loading
     btn.disabled = true;
     var originalText = btn.textContent;
@@ -2902,7 +2906,11 @@ function showTab(btn, tabId) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ planKey: planKey }),
+        body: JSON.stringify(
+          discountCode
+            ? { planKey: planKey, code: discountCode }
+            : { planKey: planKey },
+        ),
       });
 
       var data = await res.json();
@@ -2915,7 +2923,10 @@ function showTab(btn, tabId) {
           window.location.href =
             billingHref + "&plan=" + encodeURIComponent(planKey);
         } else {
-          window.location.href = "/register?plan=" + planKey;
+          window.location.href =
+          "/register?plan=" +
+          planKey +
+          (discountCode ? "&code=" + encodeURIComponent(discountCode) : "");
         }
       } else {
         // Show error to user
@@ -2929,7 +2940,10 @@ function showTab(btn, tabId) {
         window.location.href =
           billingHref + "&plan=" + encodeURIComponent(planKey);
       } else {
-        window.location.href = "/register?plan=" + planKey;
+        window.location.href =
+          "/register?plan=" +
+          planKey +
+          (discountCode ? "&code=" + encodeURIComponent(discountCode) : "");
       }
     }
   });
