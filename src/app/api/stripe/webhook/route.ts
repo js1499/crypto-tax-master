@@ -50,6 +50,22 @@ export async function POST(request: NextRequest) {
         const session = await stripe.checkout.sessions.retrieve(rawSession.id, {}, {
           apiVersion: CHECKOUT_STRIPE_VERSION,
         });
+
+        // One-time CPA Filing purchase: no subscription is created, so flag the
+        // user directly once payment is confirmed.
+        if (session.mode === "payment") {
+          if (
+            session.payment_status === "paid" &&
+            session.metadata?.planKey === "cpa_filing"
+          ) {
+            await prisma.user.updateMany({
+              where: { stripeCustomerId: customerId },
+              data: { hasCpaFiling: true },
+            });
+          }
+          break;
+        }
+
         const subscriptionId = typeof session.subscription === "string"
           ? session.subscription
           : session.subscription?.id || null;

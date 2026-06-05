@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import Stripe from "stripe";
 import { stripe, getPriceId, PlanKey } from "@/lib/stripe";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
@@ -131,49 +132,57 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const session = await stripe.checkout.sessions.create(
-      {
-        customer: customerId,
-        mode: "subscription",
-        line_items: [{ price: priceId, quantity: 1 }],
-        success_url: `${origin}/accounts?success=true&plan=${planKey}`,
-        cancel_url: `${origin}/#pricing`,
-        metadata: { userId: user.id, planKey },
-        custom_fields: [
-          {
-            key: "auto_renew",
-            label: {
-              type: "custom",
-              custom: "Auto-renew next year? (Optional)",
-            },
-            type: "dropdown",
-            optional: true,
-            dropdown: {
-              default_value: "yes",
-              options: [
-                { label: "Yes, renew automatically", value: "yes" },
-                { label: "No, end after this term", value: "no" },
-              ],
-            },
-          },
-        ],
-        custom_text: {
-          submit: {
-            message: `Annual access covers tax year ${currentFilingTaxYear} and earlier. Auto-renew defaults to yes, and renewal unlocks tax year ${nextRenewalTaxYear}.`,
-          },
-        },
-        branding_settings: {
-          ...CHECKOUT_BRANDING,
-          logo: {
-            type: "url",
-            url: `${assetOrigin}/landing/logos/glide-logo-checkout.png`,
-          },
+    // CPA Filing is a one-time service, not a recurring plan, so it checks out
+    // in payment mode. Everything else is an annual subscription.
+    const isCpaFiling = planKey === "cpa_filing";
+
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
+      customer: customerId,
+      mode: isCpaFiling ? "payment" : "subscription",
+      line_items: [{ price: priceId, quantity: 1 }],
+      success_url: `${origin}/accounts?success=true&plan=${planKey}`,
+      cancel_url: `${origin}/#pricing`,
+      metadata: { userId: user.id, planKey },
+      branding_settings: {
+        ...CHECKOUT_BRANDING,
+        logo: {
+          type: "url",
+          url: `${assetOrigin}/landing/logos/glide-logo-checkout.png`,
         },
       },
-      {
-        apiVersion: CHECKOUT_STRIPE_VERSION,
-      },
-    );
+    };
+
+    // Auto-renew choice and annual-term messaging only make sense for
+    // subscriptions, not the one-time CPA Filing purchase.
+    if (!isCpaFiling) {
+      sessionParams.custom_fields = [
+        {
+          key: "auto_renew",
+          label: {
+            type: "custom",
+            custom: "Auto-renew next year? (Optional)",
+          },
+          type: "dropdown",
+          optional: true,
+          dropdown: {
+            default_value: "yes",
+            options: [
+              { label: "Yes, renew automatically", value: "yes" },
+              { label: "No, end after this term", value: "no" },
+            ],
+          },
+        },
+      ];
+      sessionParams.custom_text = {
+        submit: {
+          message: `Annual access covers tax year ${currentFilingTaxYear} and earlier. Auto-renew defaults to yes, and renewal unlocks tax year ${nextRenewalTaxYear}.`,
+        },
+      };
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams, {
+      apiVersion: CHECKOUT_STRIPE_VERSION,
+    });
 
     return NextResponse.json({ url: session.url });
   } catch (error) {
