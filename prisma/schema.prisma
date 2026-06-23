@@ -165,6 +165,8 @@ model Transaction {
   @@index([source_type])
   @@index([userId])
   @@index([needs_cost_basis_review])
+  @@index([userId, tx_timestamp])
+  @@index([wallet_address, tx_timestamp])
   @@map("transactions")
 }
 

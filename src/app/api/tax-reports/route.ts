@@ -5,6 +5,9 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import { canAccessTaxYear, getTaxYearAccessMessage, getUserPlan } from "@/lib/plan-limits";
 
+// On a cache miss this loads a full year of transactions — raise above the ~15s default.
+export const maxDuration = 300;
+
 /**
  * GET /api/tax-reports?year=2025
  *

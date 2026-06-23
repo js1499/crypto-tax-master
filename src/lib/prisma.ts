@@ -34,9 +34,19 @@ const prisma = global.prisma || new PrismaClient({
  */
 function appendConnectionLimit(url: string | undefined): string | undefined {
   if (!url) return url;
-  if (url.includes("connection_limit")) return url;
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}connection_limit=1`;
+  let result = url;
+  // Each serverless instance should hold at most 1 pooled connection.
+  if (!result.includes("connection_limit")) {
+    result += (result.includes("?") ? "&" : "?") + "connection_limit=1";
+  }
+  // Behind a Supabase/PgBouncer pooler, disable prepared statements so the
+  // TRANSACTION-mode pooler (port 6543 — the correct serverless port) works.
+  // Harmless on session mode (5432); makes the 6543 switch robust even if the
+  // pgbouncer param is omitted from DATABASE_URL.
+  if (result.includes("pooler") && !result.includes("pgbouncer")) {
+    result += "&pgbouncer=true";
+  }
+  return result;
 }
 
 // In development, store the instance globally to prevent

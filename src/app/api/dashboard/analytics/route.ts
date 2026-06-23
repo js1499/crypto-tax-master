@@ -5,6 +5,9 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 
+// Loads a year of transactions in memory — raise above the ~15s default.
+export const maxDuration = 60;
+
 /**
  * Known transaction types used to calculate the "identified" percentage.
  * Any transaction whose type falls outside this list is considered unidentified.

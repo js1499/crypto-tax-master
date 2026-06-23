@@ -10,6 +10,9 @@ import * as Sentry from "@sentry/nextjs";
 import { findField, setTextField, checkCheckbox, formatDate, formatCurrency } from "@/lib/pdf-helpers";
 import { canAccessTaxYear, getTaxYearAccessMessage, getUserPlan } from "@/lib/plan-limits";
 
+// PDF generation over a full tax year — raise above the ~15s platform default.
+export const maxDuration = 300;
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------

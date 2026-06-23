@@ -5,6 +5,10 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
 
+// Loads a user's full transaction set in memory today — raise above the ~15s
+// default so power users don't 504. (Real fix: aggregate in SQL — see follow-ups.)
+export const maxDuration = 60;
+
 /**
  * GET /api/dashboard/stats
  * Fetch dashboard statistics including portfolio value, gains, asset allocation, etc.

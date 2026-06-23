@@ -19,6 +19,9 @@ import { computeSection475 } from "@/lib/securities-section-475";
 import { computeSection988 } from "@/lib/securities-section-988";
 import { Decimal } from "@prisma/client/runtime/library";
 
+// Full securities recompute — raise above the ~15s platform default.
+export const maxDuration = 300;
+
 /**
  * POST /api/securities/compute
  * Full recompute of securities tax lots, taxable events, wash sales, and dividends.

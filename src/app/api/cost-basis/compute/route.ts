@@ -4,6 +4,10 @@ import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/ra
 import { recomputeCostBasis } from "@/lib/compute-cost-basis";
 import * as Sentry from "@sentry/nextjs";
 
+// Heavy compute over a user's full transaction set — raise above the ~15s
+// platform default so large accounts aren't hard-killed (504) mid-write.
+export const maxDuration = 300;
+
 /**
  * POST /api/cost-basis/compute
  * Run the cost basis engine on all user transactions and persist results.
