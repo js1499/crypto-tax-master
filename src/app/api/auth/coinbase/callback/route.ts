@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exchangeCodeForTokens, getCoinbaseUser, getCoinbaseAccounts } from "@/lib/coinbase";
 import prisma from "@/lib/prisma";
-import { encode } from "next-auth/jwt";
-import { authOptions } from "@/lib/auth-config";
+import { getCurrentUser } from "@/lib/auth-helpers";
 import { encryptApiKey } from "@/lib/exchange-clients";
 
 // Encryption key for OAuth tokens (PRD requires AES-256-GCM encryption at rest)
@@ -55,31 +54,27 @@ export async function GET(request: NextRequest) {
     const accounts = await getCoinbaseAccounts(tokens.access_token);
     console.log("[Coinbase Callback] Retrieved accounts:", accounts.length);
     
-    // Find or create the user in our database
-    let user = await prisma.user.findUnique({
-      where: { email: userData.email }
-    });
-    
+    // SECURITY: Coinbase OAuth must LINK to the already-signed-in user. We never
+    // create or log into an account from the Coinbase-provided email — doing so
+    // allowed account takeover when a Coinbase email was unverified or reused.
+    const user = await getCurrentUser(request);
     if (!user) {
-      user = await prisma.user.create({
-        data: {
-          email: userData.email,
-          name: userData.name || userData.username || 'Coinbase User'
-        }
-      });
-      console.log("[Coinbase Callback] Created new user:", user.id);
-    } else {
-      console.log("[Coinbase Callback] Found existing user:", user.id);
+      console.warn("[Coinbase Callback] No signed-in user; refusing to link Coinbase by email.");
+      return NextResponse.redirect(
+        new URL('/login?error=signin_required&message=Please+sign+in+before+connecting+Coinbase', request.nextUrl.origin)
+      );
     }
+    console.log("[Coinbase Callback] Linking Coinbase to signed-in user:", user.id);
     
     // Store the Coinbase accounts as wallets in our database
     for (const account of accounts) {
       // Create or update the wallet in our database
       await prisma.wallet.upsert({
         where: {
-          address_provider: {
+          address_provider_userId: {
             address: account.id,
-            provider: 'coinbase'
+            provider: 'coinbase',
+            userId: user.id,
           }
         },
         update: {
@@ -134,50 +129,9 @@ export async function GET(request: NextRequest) {
 
     console.log(`[Coinbase Callback] Stored Coinbase exchange connection for user ${user.id}`);
 
-    // Create a NextAuth session for the user by generating a JWT token
-    // This allows users to be logged in automatically after Coinbase OAuth
-    const secret = process.env.NEXTAUTH_SECRET;
-    if (!secret) {
-      console.error("[Coinbase Callback] NEXTAUTH_SECRET not set, cannot create session");
-      return NextResponse.redirect(new URL('/login?error=config_error&message=Missing+NEXTAUTH_SECRET', request.nextUrl.origin));
-    }
-
-    // Create JWT token for NextAuth session
-    const sessionToken = await encode({
-      token: {
-        id: user.id,
-        sub: user.id,
-        email: user.email,
-        name: user.name,
-        picture: user.image || null,
-        iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60), // 30 days
-      },
-      secret,
-      maxAge: 30 * 24 * 60 * 60, // 30 days
-    });
-
-    console.log(`[Coinbase Callback] Created NextAuth session for user ${user.id}`);
-
-    // Redirect to accounts page with success
+    // The user is already signed in (we LINK Coinbase, we don't log anyone in),
+    // so just redirect back to the accounts page — no session is minted here.
     const response = NextResponse.redirect(new URL('/accounts?success=true&coinbase_connected=true', request.nextUrl.origin));
-
-    // Set NextAuth session cookie
-    // Use __Secure- prefix in production for enhanced security
-    const isProduction = process.env.NODE_ENV === 'production';
-    const cookieName = isProduction
-      ? '__Secure-next-auth.session-token'
-      : 'next-auth.session-token';
-
-    response.cookies.set({
-      name: cookieName,
-      value: sessionToken,
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'lax',
-      maxAge: 30 * 24 * 60 * 60, // 30 days
-      path: '/'
-    });
 
     // Clear the state cookie
     response.cookies.set({

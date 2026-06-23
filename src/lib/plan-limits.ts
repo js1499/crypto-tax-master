@@ -155,26 +155,20 @@ export async function checkWalletLimit(
  * Build the ownership OR filter for a user's transactions.
  */
 async function buildOwnershipFilter(userId: string) {
+  // Tenant isolation: a row is the user's if it's from one of their wallets
+  // (wallet_address) OR explicitly owned by them (userId, for CSV/exchange).
+  // Drops the leaky exchange `source`-name branch (a name is not user-unique) but
+  // keeps wallet_address scoping, which is safe (a user only matches addresses they
+  // added) and preserves rows on wallets shared between users.
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { wallets: true, exchanges: true },
+    include: { wallets: true },
   });
   const walletAddresses = user?.wallets.map((w) => w.address) || [];
-  const exchangeNames = user?.exchanges.map((e) => e.name) || [];
-
-  const conditions: any[] = [];
-  if (walletAddresses.length > 0) {
-    conditions.push({ wallet_address: { in: walletAddresses } });
-  }
-  conditions.push({ source_type: "csv_import", userId });
-  if (exchangeNames.length > 0) {
-    conditions.push({
-      source_type: "exchange_api",
-      source: { in: exchangeNames },
-    });
-  }
-
-  return conditions.length > 0 ? conditions : [{ userId }];
+  return [
+    { wallet_address: { in: walletAddresses } },
+    { userId },
+  ];
 }
 
 /**

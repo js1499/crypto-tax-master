@@ -74,6 +74,7 @@ export async function GET(request: NextRequest) {
     const hideZeroTransactions = searchParams.get("hideZeroTransactions") === "true";
     const hideSpamTransactions = searchParams.get("hideSpamTransactions") === "true";
     const onlyWithGainLoss = searchParams.get("onlyWithGainLoss") === "true";
+    const onlyNeedsReview = searchParams.get("needsReview") === "true";
     const walletFilter = searchParams.get("wallet") || "";
     const dateFrom = searchParams.get("dateFrom") || "";
     const dateTo = searchParams.get("dateTo") || "";
@@ -99,34 +100,11 @@ export async function GET(request: NextRequest) {
     const walletAddresses = userWithWallets?.wallets.map((w) => w.address) || [];
     
     // Build OR conditions for wallet transactions, CSV imports, and exchange API imports
-    const userTransactionConditions: Prisma.TransactionWhereInput[] = [];
-
-    if (walletAddresses.length > 0) {
-      userTransactionConditions.push({ wallet_address: { in: walletAddresses } });
-    }
-
-    // Include CSV imports — scoped to this user via userId
-    userTransactionConditions.push({
-      AND: [
-        { source_type: "csv_import" },
-        { userId: user.id },
-      ],
-    });
-
-    // Include exchange API imports — scoped to user's connected exchanges
-    const userExchanges = await prisma.exchange.findMany({
-      where: { userId: user.id },
-      select: { name: true },
-    });
-    const exchangeNames = userExchanges.map(e => e.name);
-    if (exchangeNames.length > 0) {
-      userTransactionConditions.push({
-        AND: [
-          { source_type: "exchange_api" },
-          { source: { in: exchangeNames } },
-        ],
-      });
-    }
+    // Tenant isolation: rows from the user's wallets OR owned by them (userId).
+    const userTransactionConditions: Prisma.TransactionWhereInput[] = [
+      { wallet_address: { in: walletAddresses } },
+      { userId: user.id },
+    ];
 
     if (userTransactionConditions.length > 0) {
       whereConditions.push({ OR: userTransactionConditions });
@@ -212,6 +190,11 @@ export async function GET(request: NextRequest) {
     // Apply gain/loss filter
     if (onlyWithGainLoss) {
       whereConditions.push({ gain_loss_usd: { not: null } });
+    }
+
+    // Cost-basis review filter: disposals the engine couldn't assign a basis to.
+    if (onlyNeedsReview) {
+      whereConditions.push({ needs_cost_basis_review: true });
     }
 
     // Build stats-only where (before cosmetic filters like hideZero/hideSpam)
@@ -324,6 +307,7 @@ export async function GET(request: NextRequest) {
           notes: true, // BUG-010/BUG-017 fix: Include notes in select
           cost_basis_usd: true,
           gain_loss_usd: true,
+          needs_cost_basis_review: true,
           incoming_asset_symbol: true,
           incoming_amount_value: true,
           incoming_value_usd: true,
@@ -513,10 +497,10 @@ export async function GET(request: NextRequest) {
         COUNT(*)::bigint as txn_count,
         SUM(CASE WHEN gain_loss_usd IS NOT NULL THEN gain_loss_usd ELSE 0 END)::float as net_gl
       FROM transactions t
-      WHERE ${walletAddresses.length > 0 ? `(t.wallet_address = ANY($1) OR (t.source_type = 'csv_import' AND t.user_id = $2))` : `(t.source_type = 'csv_import' AND t.user_id = $1)`}
+      WHERE t.wallet_address = ANY($1) OR t.user_id = $2
       GROUP BY date_trunc('week', tx_timestamp)
       ORDER BY week_start
-    `, ...(walletAddresses.length > 0 ? [walletAddresses, user.id] : [user.id]));
+    `, walletAddresses, user.id);
 
     const weeklyActivity = weeklyRaw.map(w => ({
       weekStart: new Date(w.week_start).toISOString(),

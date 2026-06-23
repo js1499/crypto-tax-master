@@ -30,6 +30,15 @@ model User {
   exchanges       Exchange[]
   sessions        Session[]
   wallets         Wallet[]
+  transactions                Transaction[]
+  brokerages                  Brokerage[]
+  securitiesTransactions      SecuritiesTransaction[]
+  securitiesLots              SecuritiesLot[]
+  securitiesTaxableEvents     SecuritiesTaxableEvent[]
+  securitiesWashSales         SecuritiesWashSale[]
+  securitiesDividends         SecuritiesDividend[]
+  securitiesEquivalenceGroups SecuritiesEquivalenceGroup[]
+  securitiesTaxSettings       SecuritiesTaxSettings[]
 }
 
 model Account {
@@ -142,9 +151,11 @@ model Transaction {
   is_income              Boolean  @default(false)
   helius_raw_id          Int?
   edit_version           Int      @default(0)
+  needs_cost_basis_review Boolean @default(false)
   userId                 String?  @map("user_id")
 
   heliusRaw              HeliusRawTransaction? @relation(fields: [helius_raw_id], references: [id])
+  user                   User?                 @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([wallet_address])
   @@index([tx_timestamp])
@@ -153,6 +164,7 @@ model Transaction {
   @@index([chain])
   @@index([source_type])
   @@index([userId])
+  @@index([needs_cost_basis_review])
   @@map("transactions")
 }
 
@@ -239,6 +251,7 @@ model Brokerage {
   isConnected           Boolean  @default(false) @map("is_connected")
   lastSyncAt            DateTime? @map("last_sync_at") @db.Timestamptz(6)
   createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("brokerages")
@@ -252,6 +265,7 @@ model SecuritiesTaxSettings {
   section988Election        Boolean @default(false) @map("section_988_election")
   substantiallyIdenticalMethod String @default("METHOD_1") @map("substantially_identical_method")
   createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, year])
   @@index([userId])
@@ -289,6 +303,7 @@ model SecuritiesTransaction {
   isCovered           Boolean  @default(true) @map("is_covered")
   notes               String?
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([symbol])
@@ -320,6 +335,7 @@ model SecuritiesLot {
   section988              Boolean  @default(false) @map("section_988")
   status                  String   @default("OPEN") @db.VarChar(20)
   createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user                    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([symbol])
@@ -349,7 +365,9 @@ model SecuritiesTaxableEvent {
   form8949Box                 String?  @map("form_8949_box") @db.VarChar(5)
   formDestination             String   @default("8949") @map("form_destination") @db.VarChar(20)
   isDeemedSale                Boolean  @default(false) @map("is_deemed_sale")
+  needsCostBasisReview        Boolean  @default(false) @map("needs_cost_basis_review")
   createdAt                   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user                        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([year])
@@ -371,6 +389,7 @@ model SecuritiesWashSale {
   year                      Int
   carryForward              Boolean  @default(false) @map("carry_forward")
   createdAt                 DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user                      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([year])
@@ -388,6 +407,7 @@ model SecuritiesDividend {
   foreignTaxPaid  Decimal  @default(0) @map("foreign_tax_paid") @db.Decimal(20, 4)
   year            Int
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([year])
@@ -400,6 +420,7 @@ model SecuritiesEquivalenceGroup {
   groupName String   @map("group_name")
   symbols   String[]
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("securities_equivalence_groups")

@@ -538,7 +538,9 @@ export async function POST(request: NextRequest) {
           console.warn("[Import] Batch insert failed, trying individual inserts:", error);
           for (const data of transactionsToCreate) {
             try {
-              await prisma.transaction.create({ data });
+              // Ensure ownership on the fallback path too (transactionsToCreate
+              // entries lack userId; createManyData is out of scope in this catch).
+              await prisma.transaction.create({ data: { ...data, userId: user.id } as Prisma.TransactionUncheckedCreateInput });
               added++;
             } catch (individualError) {
               // Check if it's a duplicate error

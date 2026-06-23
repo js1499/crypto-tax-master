@@ -8,6 +8,8 @@ import {
   ChevronRight,
   FileText,
   Landmark,
+  Layers,
+  Repeat,
   Settings,
   Sparkles,
   Wallet,
@@ -67,6 +69,16 @@ const navGroups: NavGroup[] = [
         icon: Wallet,
         onboarding: "nav-transactions",
       },
+    ],
+  },
+  {
+    title: "Securities",
+    items: [
+      { title: "Accounts", href: "/securities/accounts", icon: Landmark },
+      { title: "Transactions", href: "/securities/transactions", icon: Wallet },
+      { title: "Tax Lots", href: "/securities/lots", icon: Layers },
+      { title: "Wash Sales", href: "/securities/wash-sales", icon: Repeat },
+      { title: "Settings", href: "/securities/settings", icon: Settings },
     ],
   },
 ];

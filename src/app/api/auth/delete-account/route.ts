@@ -55,25 +55,34 @@ export async function DELETE(request: NextRequest) {
 
     const walletAddresses = dbUser.wallets.map((w: any) => w.address);
 
-    // Delete all user data in order (respecting foreign keys)
-    if (walletAddresses.length > 0) {
-      await prisma.transaction.deleteMany({
-        where: { wallet_address: { in: walletAddresses } },
-      });
-    }
-    await prisma.transaction.deleteMany({
-      where: { userId: user.id },
-    });
-    await prisma.taxReportCache.deleteMany({ where: { userId: user.id } });
-    await prisma.securitiesTransaction.deleteMany({ where: { userId: user.id } });
-    await prisma.brokerage.deleteMany({ where: { userId: user.id } });
-    await prisma.wallet.deleteMany({ where: { userId: user.id } });
-    await prisma.exchange.deleteMany({ where: { userId: user.id } });
-    await prisma.session.deleteMany({ where: { userId: user.id } });
-    await prisma.account.deleteMany({ where: { userId: user.id } });
+    // Delete all user data atomically. The new owner foreign keys cascade most of
+    // this on user.delete(), but we still delete explicitly so (a) deletion is
+    // complete even before the FK migration is applied, and (b) transaction rows
+    // whose user_id was never backfilled are removed via wallet_address.
+    await prisma.$transaction(async (tx) => {
+      if (walletAddresses.length > 0) {
+        await tx.transaction.deleteMany({ where: { wallet_address: { in: walletAddresses } } });
+      }
+      await tx.transaction.deleteMany({ where: { userId: user.id } });
+      await tx.taxReportCache.deleteMany({ where: { userId: user.id } });
 
-    // Delete the user
-    await prisma.user.delete({ where: { id: user.id } });
+      // Securities domain — previously NOT deleted here, so it orphaned on delete.
+      await tx.securitiesWashSale.deleteMany({ where: { userId: user.id } });
+      await tx.securitiesTaxableEvent.deleteMany({ where: { userId: user.id } });
+      await tx.securitiesDividend.deleteMany({ where: { userId: user.id } });
+      await tx.securitiesLot.deleteMany({ where: { userId: user.id } });
+      await tx.securitiesEquivalenceGroup.deleteMany({ where: { userId: user.id } });
+      await tx.securitiesTaxSettings.deleteMany({ where: { userId: user.id } });
+      await tx.securitiesTransaction.deleteMany({ where: { userId: user.id } });
+      await tx.brokerage.deleteMany({ where: { userId: user.id } });
+
+      await tx.wallet.deleteMany({ where: { userId: user.id } });
+      await tx.exchange.deleteMany({ where: { userId: user.id } });
+      await tx.session.deleteMany({ where: { userId: user.id } });
+      await tx.account.deleteMany({ where: { userId: user.id } });
+
+      await tx.user.delete({ where: { id: user.id } });
+    });
 
     return NextResponse.json({ status: "success" });
   } catch (error) {

@@ -486,45 +486,15 @@ export async function calculateTaxReport(
     },
   };
 
-  // Filter by wallet addresses OR CSV imports
-  // Strategy: Include transactions with user's wallet addresses OR CSV imports
-  // This matches the logic used in delete-all endpoint
-  const orConditions: Prisma.TransactionWhereInput[] = [];
-  
-  if (walletAddresses.length > 0) {
-    orConditions.push({ wallet_address: { in: walletAddresses } });
-  }
-  
-  // Include CSV imports — scoped to this user via userId column
-  if (userId) {
-    orConditions.push({
-      AND: [
-        { source_type: "csv_import" },
-        { userId },
-      ],
-    });
-  }
-
-  // Include exchange API imports — scoped to user's connected exchanges
-  if (userId) {
-    const userExchanges = await prisma.exchange.findMany({
-      where: { userId },
-      select: { name: true },
-    });
-    const exchangeNames = userExchanges.map(e => e.name);
-    if (exchangeNames.length > 0) {
-      orConditions.push({
-        AND: [
-          { source_type: "exchange_api" },
-          { source: { in: exchangeNames } },
-        ],
-      });
-    }
-  }
-
-  if (orConditions.length > 0) {
-    whereClause.OR = orConditions;
-  }
+  // Tenant isolation: a row is the user's if it's from one of their wallets
+  // (wallet_address) OR explicitly owned by them (userId, for CSV/exchange).
+  // wallet_address scoping is safe and keeps shared-wallet rows visible; the leaky
+  // exchange source-name branch is gone. The "__no_user__" guard ensures a missing
+  // userId never widens the filter to other users' rows.
+  whereClause.OR = [
+    { wallet_address: { in: walletAddresses } },
+    { userId: userId ?? "__no_user__" },
+  ];
 
   // Filter by status - include both confirmed and completed transactions
   // Also include pending transactions (some CSV imports might be pending)
@@ -573,8 +543,9 @@ export async function calculateTaxReport(
     console.warn(`  4. Transactions are outside the date range (before ${endDate.toISOString()})`);
     console.warn(`  5. Transactions have wrong status (not in: confirmed, completed, pending)`);
     
-    // Try to find ANY transactions for debugging
+    // Try to find ANY transactions for debugging (scoped to this user)
     const anyTransactions = await prisma.transaction.findMany({
+      where: { OR: [{ wallet_address: { in: walletAddresses } }, { userId: userId ?? "__no_user__" }] },
       take: 5,
       orderBy: { tx_timestamp: "desc" },
     });

@@ -292,6 +292,7 @@ export async function POST(request: NextRequest) {
             // Create transaction
             await prisma.transaction.create({
               data: {
+                userId: user.id,
                 type: tx.type,
                 status: "confirmed",
                 source: exchange.name,

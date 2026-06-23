@@ -18,7 +18,8 @@ export async function GET(request: NextRequest) {
     if (!rateLimitResult.success) {
       return createRateLimitResponse(
         rateLimitResult.remaining,
-        rateLimitResult.reset
+        rateLimitResult.reset,
+        10
       );
     }
 
@@ -114,16 +115,18 @@ export async function GET(request: NextRequest) {
       userWithWallets.country || "US"
     );
 
-    // Optional: Get taxpayer info from request (for future enhancement)
+    // Optional: taxpayer name for the PDF.
+    // SECURITY: SSN is intentionally NOT read from the query string — a GET param
+    // lands in server logs, proxies, and browser history. If SSN support is added,
+    // accept it via an encrypted POST body, never a URL parameter.
     const taxpayerName = searchParams.get("name") || user.name || undefined;
-    const ssn = searchParams.get("ssn") || undefined; // Should be encrypted in production
 
     // Generate PDF
     const pdfBuffer = await generateForm8949PDF(
       report.form8949Data,
       year,
       taxpayerName,
-      ssn
+      undefined
     );
 
     // Return PDF as download

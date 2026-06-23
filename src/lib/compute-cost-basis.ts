@@ -7,50 +7,39 @@ import { computeCostBasisForTransactions } from "@/lib/tax-calculator";
  * Called automatically after sync/import, and manually via /api/cost-basis/compute.
  * Fire-and-forget safe — errors are logged but never thrown.
  */
-export async function recomputeCostBasis(userId: string, perWallet?: boolean): Promise<void> {
+export async function recomputeCostBasis(
+  userId: string,
+  perWallet?: boolean,
+): Promise<{ computed: number; needsReview: number }> {
+  const EMPTY = { computed: 0, needsReview: 0 };
   try {
     const userWithWallets = await prisma.user.findUnique({
       where: { id: userId },
       include: { wallets: true },
     });
 
-    if (!userWithWallets) return;
+    if (!userWithWallets) return EMPTY;
 
     const walletAddresses = userWithWallets.wallets.map(w => w.address);
     const costBasisMethod = (userWithWallets.costBasisMethod || "FIFO") as "FIFO" | "LIFO" | "HIFO";
     const country = (userWithWallets as any).country || "US";
 
-    // Build query conditions (same logic as cost-basis/compute endpoint)
-    const orConditions: Prisma.TransactionWhereInput[] = [];
-
-    if (walletAddresses.length > 0) {
-      orConditions.push({ wallet_address: { in: walletAddresses } });
-    }
-
-    orConditions.push({
-      AND: [{ source_type: "csv_import" }, { userId }],
-    });
-
-    const userExchanges = await prisma.exchange.findMany({
-      where: { userId },
-      select: { name: true },
-    });
-    const exchangeNames = userExchanges.map(e => e.name);
-    if (exchangeNames.length > 0) {
-      orConditions.push({
-        AND: [{ source_type: "exchange_api" }, { source: { in: exchangeNames } }],
-      });
-    }
-
+    // Tenant isolation: a row is the user's if it's from one of their wallets
+    // (wallet_address) OR explicitly owned by them (userId, for CSV/exchange). The
+    // leaky exchange `source`-name branch is gone; wallet_address scoping is safe
+    // (a user only matches addresses they added) and keeps shared wallets working.
     const allTransactions = await prisma.transaction.findMany({
       where: {
-        OR: orConditions,
+        OR: [
+          { wallet_address: { in: walletAddresses } },
+          { userId },
+        ],
         status: { in: ["confirmed", "completed", "pending"] },
       },
       orderBy: { tx_timestamp: "asc" },
     });
 
-    if (allTransactions.length === 0) return;
+    if (allTransactions.length === 0) return EMPTY;
 
     const results = computeCostBasisForTransactions(
       allTransactions,
@@ -62,7 +51,17 @@ export async function recomputeCostBasis(userId: string, perWallet?: boolean): P
 
     // Bulk update via single raw SQL using VALUES list
     // This replaces 77+ sequential Prisma batch calls with one DB round trip
-    if (results.length === 0) return;
+    if (results.length === 0) return EMPTY;
+
+    // Flag disposals whose cost basis could not be determined, so the UI / sync
+    // progress bar can surface them for review. "Missing" = the engine produced a
+    // disposal (gain/loss is not null) but with NO basis, or a ZERO basis while
+    // booking a positive gain (i.e. the full proceeds were taxed). Stablecoins get
+    // basis forced = proceeds, so they never match this.
+    const needsReview = (r: { costBasisUsd: number | null; gainLossUsd: number | null }) =>
+      r.gainLossUsd !== null &&
+      (r.costBasisUsd === null || (r.costBasisUsd === 0 && r.gainLossUsd > 0));
+    const needsReviewCount = results.filter(needsReview).length;
 
     const CHUNK_SIZE = 5000; // Postgres can handle large VALUES lists efficiently
     for (let i = 0; i < results.length; i += CHUNK_SIZE) {
@@ -72,25 +71,29 @@ export async function recomputeCostBasis(userId: string, perWallet?: boolean): P
         const gl = r.gainLossUsd !== null ? r.gainLossUsd.toString() : 'NULL';
         const hp = r.holdingPeriod ? `'${r.holdingPeriod}'` : 'NULL';
         const da = r.dateAcquired ? `'${r.dateAcquired.toISOString()}'::timestamptz` : 'NULL';
-        return `(${r.transactionId}, ${cb}::numeric(30,15), ${gl}::numeric(30,15), ${hp}::varchar(10), ${da})`;
+        const ncbr = needsReview(r) ? 'true' : 'false';
+        return `(${r.transactionId}, ${cb}::numeric(30,15), ${gl}::numeric(30,15), ${hp}::varchar(10), ${da}, ${ncbr}::boolean)`;
       }).join(',\n');
 
       await prisma.$executeRawUnsafe(`
         UPDATE transactions AS t
-        SET cost_basis_usd = v.cb, gain_loss_usd = v.gl, holding_period = v.hp, date_acquired = v.da
-        FROM (VALUES ${valuesList}) AS v(id, cb, gl, hp, da)
+        SET cost_basis_usd = v.cb, gain_loss_usd = v.gl, holding_period = v.hp, date_acquired = v.da, needs_cost_basis_review = v.ncbr
+        FROM (VALUES ${valuesList}) AS v(id, cb, gl, hp, da, ncbr)
         WHERE t.id = v.id
       `);
     }
 
-    console.log(`[Cost Basis] Auto-computed for ${results.length} transactions (${costBasisMethod})`);
+    console.log(`[Cost Basis] Auto-computed for ${results.length} transactions (${costBasisMethod}); ${needsReviewCount} need cost-basis review`);
 
     // ── Auto-detect income (airdrops, rewards, vesting claims) ──
     await detectIncomeTransactions(walletAddresses, country);
     await detectGamblingTransactions(walletAddresses);
+
+    return { computed: results.length, needsReview: needsReviewCount };
   } catch (error) {
     // Never throw — this runs as a background step after sync/import
     console.error("[Cost Basis] Auto-compute failed:", error);
+    return EMPTY;
   }
 }
 

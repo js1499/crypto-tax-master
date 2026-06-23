@@ -125,6 +125,7 @@ export async function POST(request: NextRequest) {
         // Create new transaction
         await prisma.transaction.create({
           data: {
+            userId: user.id,
             type: tx.type,
             status: tx.status,
             source: chain === "ethereum" ? "Etherscan" : "Solscan",
@@ -167,9 +168,10 @@ export async function POST(request: NextRequest) {
     const walletProvider = chain === "ethereum" ? "ethereum" : "solana";
     await prisma.wallet.upsert({
       where: {
-        address_provider: {
+        address_provider_userId: {
           address: address,
           provider: walletProvider,
+          userId: user.id,
         },
       },
       update: {

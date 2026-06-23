@@ -207,21 +207,14 @@ export async function POST(request: NextRequest) {
     });
     const exchangeNames = userExchanges.map((e) => e.name);
 
-    // Build SQL ownership filter (used server-side in CTE wrapper)
-    const ownershipClauses: string[] = [];
-    if (walletAddresses.length > 0) {
-      ownershipClauses.push(
-        `wallet_address IN (${walletAddresses.map((a) => `'${a.replace(/'/g, "''")}'`).join(", ")})`
-      );
-    }
-    ownershipClauses.push(`(source_type = 'csv_import' AND user_id = '${user.id.replace(/'/g, "''")}')`);
-
-    if (exchangeNames.length > 0) {
-      ownershipClauses.push(
-        `(source_type = 'exchange_api' AND source IN (${exchangeNames.map((n) => `'${n.replace(/'/g, "''")}'`).join(", ")}))`
-      );
-    }
-    const ownershipFilter = ownershipClauses.join(" OR ");
+    // Build SQL ownership filter (used server-side in the CTE wrapper). A row is the
+    // user's if it's from one of their wallets (wallet_address) OR explicitly owned
+    // (user_id). This drops the previous exchange `source IN (...)` branch, which
+    // leaked rows from other users who connected the same exchange name.
+    const walletClause = walletAddresses.length > 0
+      ? `wallet_address IN (${walletAddresses.map((a) => `'${a.replace(/'/g, "''")}'`).join(", ")}) OR `
+      : "";
+    const ownershipFilter = `(${walletClause}user_id = '${user.id.replace(/'/g, "''")}')`;
 
     // Build user context summary for the AI
     const userContext = `
@@ -243,7 +236,7 @@ The user has ${walletAddresses.length} wallet(s)${walletAddresses.length > 0 ? `
 
     // ── Step 1: Generate SQL ───────────────────────────────────────
     const sqlResponse = await anthropic.messages.create({
-      model: "claude-opus-4-20250514",
+      model: "claude-opus-4-8",
       max_tokens: 1024,
       system: `${SCHEMA_CONTEXT}
 ${userContext}
@@ -385,7 +378,7 @@ When reformatting, always output the full result as a csv-download block. Map th
               typeof m.content === "string" && m.content.includes("attached a file")
             );
             const streamResponse = anthropic.messages.stream({
-              model: "claude-opus-4-20250514",
+              model: "claude-opus-4-8",
               max_tokens: hasFile ? 32768 : 4096,
               system: answerSystemPrompt,
               messages: answerMessages,
@@ -489,7 +482,7 @@ When reformatting, always output the full result as a csv-download block. Map th
       typeof m.content === "string" && m.content.includes("attached a file")
     );
     const answerResponse = await anthropic.messages.create({
-      model: "claude-opus-4-20250514",
+      model: "claude-opus-4-8",
       max_tokens: hasFileNonStream ? 32768 : 4096,
       system: answerSystemPrompt,
       messages: answerMessages,

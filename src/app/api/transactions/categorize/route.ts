@@ -18,7 +18,8 @@ export async function POST(request: NextRequest) {
     if (!rateLimitResult.success) {
       return createRateLimitResponse(
         rateLimitResult.remaining,
-        rateLimitResult.reset
+        rateLimitResult.reset,
+        10
       );
     }
 
@@ -72,9 +73,16 @@ export async function POST(request: NextRequest) {
       ],
     });
 
-    // Also include exchange API imports
+    // Also include exchange API imports — scoped to this user via userId.
+    // Mirrors the safe pattern in /api/transactions/delete-all and prevents this
+    // endpoint from writing the `identified` flag on OTHER users' transactions.
+    // NOTE: exchange-sync does not yet set userId on these rows, so they won't be
+    // matched until a userId backfill is done (tracked as a follow-up).
     whereClause.OR.push({
-      source_type: "exchange_api",
+      AND: [
+        { source_type: "exchange_api" },
+        { userId: user.id },
+      ],
     });
 
     if (whereClause.OR.length === 0) {

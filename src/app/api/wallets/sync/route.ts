@@ -258,6 +258,7 @@ export async function POST(request: NextRequest) {
             continue;
           }
           toInsert.push({
+            userId: user.id,
             type: tx.type,
             status: "confirmed",
             source: tx.source,

@@ -111,20 +111,11 @@ export async function GET(request: NextRequest) {
     const yearStart = new Date(`${year}-01-01T00:00:00Z`);
     const yearEnd = new Date(`${year}-12-31T23:59:59.999Z`);
 
-    const orConditions: Prisma.TransactionWhereInput[] = [];
-    if (walletAddresses.length > 0) {
-      orConditions.push({ wallet_address: { in: walletAddresses } });
-    }
-    orConditions.push({ AND: [{ source_type: "csv_import" }, { userId: user.id }] });
-    const userExchanges = await prisma.exchange.findMany({
-      where: { userId: user.id },
-      select: { name: true },
-    });
-    if (userExchanges.length > 0) {
-      orConditions.push({
-        AND: [{ source_type: "exchange_api" }, { source: { in: userExchanges.map(e => e.name) } }],
-      });
-    }
+    // Tenant isolation: rows from the user's wallets OR owned by them (userId).
+    const orConditions: Prisma.TransactionWhereInput[] = [
+      { wallet_address: { in: walletAddresses } },
+      { userId: user.id },
+    ];
 
     const yearFilter: Prisma.TransactionWhereInput = {
       OR: orConditions,
@@ -385,23 +376,11 @@ async function generateTransactionHistoryCSV(
   });
   const exchangeNames = userExchanges.map(e => e.name);
 
-  // Build where clause (same logic as tax calculator)
-  const orConditions: any[] = [];
-  if (walletAddresses.length > 0) {
-    orConditions.push({ wallet_address: { in: walletAddresses } });
-  }
-  orConditions.push({
-    AND: [
-      { source_type: "csv_import" },
-      { userId },
-    ],
-  });
-  // Also include exchange API imports (Coinbase, Binance, etc.) - filtered by user's exchanges
-  if (exchangeNames.length > 0) {
-    orConditions.push({
-      AND: [{ source_type: "exchange_api" }, { source: { in: exchangeNames } }],
-    });
-  }
+  // Tenant isolation: rows from the user's wallets OR owned by them (userId).
+  const orConditions: any[] = [
+    { wallet_address: { in: walletAddresses } },
+    { userId },
+  ];
 
   const transactions = await prisma.transaction.findMany({
     where: {

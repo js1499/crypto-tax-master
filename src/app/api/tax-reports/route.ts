@@ -91,18 +91,13 @@ export async function GET(request: NextRequest) {
     const exchangeNames = userExchanges.map((e) => e.name);
 
     // Build ownership filter (same logic as dashboard analytics)
-    const orConditions: Prisma.TransactionWhereInput[] = [];
-    if (walletAddresses.length > 0) {
-      orConditions.push({ wallet_address: { in: walletAddresses } });
-    }
-    orConditions.push({
-      AND: [{ source_type: "csv_import" }, { userId: user.id }],
-    });
-    if (exchangeNames.length > 0) {
-      orConditions.push({
-        AND: [{ source_type: "exchange_api" }, { source: { in: exchangeNames } }],
-      });
-    }
+    // Tenant isolation: rows from the user's wallets (wallet_address) OR owned by
+    // them (userId, for CSV/exchange). Drops the leaky exchange source-name branch;
+    // wallet scoping is safe and keeps shared-wallet rows visible.
+    const orConditions: Prisma.TransactionWhereInput[] = [
+      { wallet_address: { in: walletAddresses } },
+      { userId: user.id },
+    ];
 
     const yearStart = new Date(`${year}-01-01T00:00:00Z`);
     const yearEnd = new Date(`${year}-12-31T23:59:59.999Z`);
@@ -131,26 +126,36 @@ export async function GET(request: NextRequest) {
         value_usd: true,
         is_income: true,
         type: true,
+        holding_period: true,
       },
       orderBy: { tx_timestamp: "asc" },
       ...(txLimit ? { take: txLimit } : {}),
     });
 
     // Aggregate — same data source as transactions page & dashboard
-    let totalGains = 0;
-    let totalLosses = 0;
+    // Split realized gains/losses by holding period (persisted on each row by the
+    // cost-basis engine as "short" | "long"). Previously every gain was reported
+    // as short-term with long-term hardcoded to $0 — overstating the short-term
+    // (higher-rate) bucket and disagreeing with the PDF/engine.
+    let shortTermGainsTotal = 0;
+    let shortTermLossesTotal = 0;
+    let longTermGainsTotal = 0;
+    let longTermLossesTotal = 0;
     let totalIncome = 0;
     let taxableEventCount = 0;
     let incomeEventCount = 0;
 
     for (const tx of transactions) {
       const gainLoss = tx.gain_loss_usd ? Number(tx.gain_loss_usd) : 0;
+      const isLong = tx.holding_period === "long";
 
       if (gainLoss > 0) {
-        totalGains += gainLoss;
+        if (isLong) longTermGainsTotal += gainLoss;
+        else shortTermGainsTotal += gainLoss;
         taxableEventCount++;
       } else if (gainLoss < 0) {
-        totalLosses += gainLoss; // negative
+        if (isLong) longTermLossesTotal += gainLoss; // negative
+        else shortTermLossesTotal += gainLoss; // negative
         taxableEventCount++;
       }
 
@@ -160,6 +165,10 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    const totalGains = shortTermGainsTotal + longTermGainsTotal;
+    const totalLosses = shortTermLossesTotal + longTermLossesTotal;
+    const netShortTerm = shortTermGainsTotal + shortTermLossesTotal;
+    const netLongTerm = longTermGainsTotal + longTermLossesTotal;
     const netGainLoss = totalGains + totalLosses;
 
     // Format currency helper using user's currency symbol
@@ -171,15 +180,14 @@ export async function GET(request: NextRequest) {
     const zero = `${sym}0.00`;
 
     const reportPayload = {
-      // The transactions page doesn't distinguish ST/LT — show totals
-      // ST/LT breakdown is only available via the tax calculator (used in PDF generation)
-      shortTermGains: fmtSigned(totalGains),
-      shortTermLosses: fmtSigned(totalLosses),
-      longTermGains: zero,
-      longTermLosses: zero,
+      // Short/long-term split derived from each row's persisted holding_period.
+      shortTermGains: fmtSigned(shortTermGainsTotal),
+      shortTermLosses: fmtSigned(shortTermLossesTotal),
+      longTermGains: fmtSigned(longTermGainsTotal),
+      longTermLosses: fmtSigned(longTermLossesTotal),
       totalIncome: fmt(totalIncome),
-      netShortTermGain: fmtSigned(netGainLoss),
-      netLongTermGain: zero,
+      netShortTermGain: fmtSigned(netShortTerm),
+      netLongTermGain: fmtSigned(netLongTerm),
       totalTaxableGain: fmtSigned(netGainLoss),
       taxableEvents: taxableEventCount,
       incomeEvents: incomeEventCount,

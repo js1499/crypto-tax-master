@@ -544,24 +544,18 @@ export async function GET(request: NextRequest) {
     console.log(`[Tax PDF API] Generating ${formParam} for year ${year}, user ${user.id}`);
 
     const taxpayerName = searchParams.get("name") || user.name || undefined;
-    const ssn = searchParams.get("ssn") || undefined;
+    // SECURITY: SSN is intentionally NOT read from the query string — a GET param
+    // lands in server logs, proxies, and browser history. If SSN support is needed,
+    // accept it via an encrypted POST body, never a URL parameter.
+    const ssn: string | undefined = undefined;
 
     const yearStart = new Date(`${year}-01-01T00:00:00Z`);
     const yearEnd = new Date(`${year}-12-31T23:59:59.999Z`);
-    const orConditions: any[] = [];
-    if (walletAddresses.length > 0) {
-      orConditions.push({ wallet_address: { in: walletAddresses } });
-    }
-    orConditions.push({ AND: [{ source_type: "csv_import" }, { userId: user.id }] });
-    const userExchanges = await prisma.exchange.findMany({
-      where: { userId: user.id },
-      select: { name: true },
-    });
-    if (userExchanges.length > 0) {
-      orConditions.push({
-        AND: [{ source_type: "exchange_api" }, { source: { in: userExchanges.map(e => e.name) } }],
-      });
-    }
+    // Tenant isolation: rows from the user's wallets OR owned by them (userId).
+    const orConditions: any[] = [
+      { wallet_address: { in: walletAddresses } },
+      { userId: user.id },
+    ];
     const yearFilter: any = {
       OR: orConditions,
       tx_timestamp: { gte: yearStart, lte: yearEnd },

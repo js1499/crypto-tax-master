@@ -37,6 +37,8 @@ export interface PipelineState {
   currentStepIndex: number;
   overallProgress: number; // 0-100
   error: string | null;
+  /** # of transactions still without a cost basis after the last compute (review needed) */
+  needsReviewCount?: number;
 }
 
 interface PipelineContextType {
@@ -60,6 +62,7 @@ const IDLE_STATE: PipelineState = {
   currentStepIndex: -1,
   overallProgress: 0,
   error: null,
+  needsReviewCount: 0,
 };
 
 const PipelineContext = createContext<PipelineContextType>({
@@ -277,11 +280,15 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
       const cbData = await cbRes.json();
       stopTicker();
 
+      const needsReviewCount: number =
+        cbRes.ok && typeof cbData.needsReviewCount === "number" ? cbData.needsReviewCount : 0;
+
       if (!cbRes.ok) {
         stepsRef.current[cbIdx] = { ...stepsRef.current[cbIdx], status: "error", detail: cbData.error || "Failed", progress: 100 };
         addActivityEntry({ type: "error", message: "Cost basis computation failed", detail: cbData.error });
       } else {
-        stepsRef.current[cbIdx] = { ...stepsRef.current[cbIdx], status: "done", detail: cbData.message || "Done", progress: 100 };
+        const detail = needsReviewCount > 0 ? `${needsReviewCount} need cost-basis review` : (cbData.message || "Done");
+        stepsRef.current[cbIdx] = { ...stepsRef.current[cbIdx], status: "done", detail, progress: 100 };
         addActivityEntry({ type: "compute", message: "Computed cost basis", detail: cbData.message });
       }
 
@@ -291,6 +298,7 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
         currentStepIndex: totalSteps - 1,
         overallProgress: 100,
         error: null,
+        needsReviewCount,
       });
       // Signal all pages to refetch their data
       setRefreshKey(k => k + 1);

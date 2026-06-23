@@ -209,6 +209,7 @@ function TransactionsContent() {
   const [perWalletTracking, setPerWalletTracking] = useState(true);
   const [hideSpamTransactions, setHideSpamTransactions] = useState(false);
   const [onlyWithGainLoss, setOnlyWithGainLoss] = useState(false);
+  const [onlyNeedsReview, setOnlyNeedsReview] = useState(false);
   const [isAddTransactionOpen, setIsAddTransactionOpen] = useState(false);
   const [isComputingCostBasis, setIsComputingCostBasis] = useState(false);
 
@@ -369,6 +370,7 @@ function TransactionsContent() {
           ...(hideZeroTransactions && { hideZeroTransactions: "true" }),
           ...(hideSpamTransactions && { hideSpamTransactions: "true" }),
           ...(onlyWithGainLoss && { onlyWithGainLoss: "true" }),
+          ...(onlyNeedsReview && { needsReview: "true" }),
           ...(walletFilter && { wallet: walletFilter }),
           ...(dateFrom && { dateFrom: format(dateFrom, "yyyy-MM-dd") }),
           ...(dateTo && { dateTo: format(dateTo, "yyyy-MM-dd") }),
@@ -474,6 +476,7 @@ function TransactionsContent() {
     hideZeroTransactions,
     hideSpamTransactions,
     onlyWithGainLoss,
+    onlyNeedsReview,
     groupBy,
     walletFilter,
     dateFrom,
@@ -618,6 +621,7 @@ function TransactionsContent() {
     hideZeroTransactions,
     hideSpamTransactions,
     onlyWithGainLoss,
+    onlyNeedsReview,
     sortOption !== "date-desc",
     chainFilter !== "",
     sourceFilter !== "",
@@ -725,6 +729,7 @@ function TransactionsContent() {
         ...(hideZeroTransactions && { hideZeroTransactions: "true" }),
         ...(hideSpamTransactions && { hideSpamTransactions: "true" }),
         ...(onlyWithGainLoss && { onlyWithGainLoss: "true" }),
+        ...(onlyNeedsReview && { needsReview: "true" }),
         ...(walletFilter && { wallet: walletFilter }),
         ...(dateFrom && { dateFrom: format(dateFrom, "yyyy-MM-dd") }),
         ...(dateTo && { dateTo: format(dateTo, "yyyy-MM-dd") }),
@@ -1951,6 +1956,10 @@ function TransactionsContent() {
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-medium">Only with Gain/Loss</Label>
                     <Checkbox checked={onlyWithGainLoss} onCheckedChange={() => { setOnlyWithGainLoss(!onlyWithGainLoss); setCurrentPage(1); }} />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-medium">Needs cost-basis review</Label>
+                    <Checkbox checked={onlyNeedsReview} onCheckedChange={() => { setOnlyNeedsReview(!onlyNeedsReview); setCurrentPage(1); }} />
                   </div>
                 </div>
 

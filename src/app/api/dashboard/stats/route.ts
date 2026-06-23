@@ -74,31 +74,11 @@ export async function GET(request: NextRequest) {
 
     // Build where clause for transactions - include CSV imports and exchange API imports
     const whereClause: Prisma.TransactionWhereInput = {};
-    const orConditions: Prisma.TransactionWhereInput[] = [];
-
-    if (walletAddresses.length > 0) {
-      orConditions.push({ wallet_address: { in: walletAddresses } });
-    }
-    // Include CSV imports — scoped to this user via userId
-    orConditions.push({
-      AND: [{ source_type: "csv_import" }, { userId: user.id }],
-    });
-    // Include exchange API imports — scoped to user's connected exchanges
-    const userExchanges = await prisma.exchange.findMany({
-      where: { userId: user.id },
-      select: { name: true },
-    });
-    const exchangeNames = userExchanges.map(e => e.name);
-    if (exchangeNames.length > 0) {
-      orConditions.push({
-        AND: [
-          { source_type: "exchange_api" },
-          { source: { in: exchangeNames } },
-        ],
-      });
-    }
-
-    whereClause.OR = orConditions;
+    // Tenant isolation: rows from the user's wallets OR owned by them (userId).
+    whereClause.OR = [
+      { wallet_address: { in: walletAddresses } },
+      { userId: user.id },
+    ];
 
     // Fetch all transactions
     const allTransactions = await prisma.transaction.findMany({

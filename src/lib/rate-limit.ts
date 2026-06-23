@@ -191,7 +191,8 @@ export function rateLimitByUser(
  */
 export function createRateLimitResponse(
   remaining: number,
-  reset: number
+  reset: number,
+  limit: number = 60
 ): Response {
   return new Response(
     JSON.stringify({
@@ -202,7 +203,7 @@ export function createRateLimitResponse(
       status: 429,
       headers: {
         "Content-Type": "application/json",
-        "X-RateLimit-Limit": "60",
+        "X-RateLimit-Limit": limit.toString(),
         "X-RateLimit-Remaining": remaining.toString(),
         "X-RateLimit-Reset": new Date(reset).toISOString(),
         "Retry-After": Math.ceil((reset - Date.now()) / 1000).toString(),

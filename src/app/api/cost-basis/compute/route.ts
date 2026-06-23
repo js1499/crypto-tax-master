@@ -35,12 +35,18 @@ export async function POST(request: NextRequest) {
       // No body or invalid JSON — use default
     }
 
-    await recomputeCostBasis(user.id, perWallet);
+    const summary = await recomputeCostBasis(user.id, perWallet);
+
+    const reviewNote = summary.needsReview > 0
+      ? ` — ${summary.needsReview} transaction${summary.needsReview === 1 ? "" : "s"} need cost-basis review`
+      : "";
 
     return NextResponse.json({
       status: "success",
-      message: `Cost basis computed successfully (${perWallet ? "per-wallet" : "universal"})`,
+      message: `Cost basis computed successfully (${perWallet ? "per-wallet" : "universal"})${reviewNote}`,
       method: perWallet ? "per-wallet" : "universal",
+      computed: summary.computed,
+      needsReviewCount: summary.needsReview,
     });
   } catch (error) {
     console.error("[Cost Basis Compute] Error:", error);

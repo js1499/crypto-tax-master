@@ -26,11 +26,14 @@ export function PipelineProgress() {
 
   // Auto-dismiss after completion (so advanceWhenGone tutorial step detects it)
   useEffect(() => {
-    if (state.phase === "done" || state.phase === "error") {
+    // Keep the panel up if some transactions still need cost-basis review, so the
+    // user notices it; otherwise auto-dismiss shortly after completion.
+    const hasReview = state.phase === "done" && (state.needsReviewCount ?? 0) > 0;
+    if ((state.phase === "done" || state.phase === "error") && !hasReview) {
       const t = setTimeout(() => dismiss(), 5000);
       return () => clearTimeout(t);
     }
-  }, [state.phase, dismiss]);
+  }, [state.phase, state.needsReviewCount, dismiss]);
 
   if (state.phase === "idle") return null;
 
@@ -119,6 +122,16 @@ export function PipelineProgress() {
           )}
         </div>
       </div>
+
+      {/* Needs-review banner — transactions left without a cost basis */}
+      {isDone && (state.needsReviewCount ?? 0) > 0 && (
+        <div className="flex items-start gap-2 px-4 py-2.5 bg-[#FFFBEB] dark:bg-[rgba(217,119,6,0.08)] border-t border-[#FDE68A] dark:border-[rgba(217,119,6,0.2)]">
+          <AlertCircle className="h-4 w-4 text-[#D97706] shrink-0 mt-0.5" />
+          <span className="text-[12px] text-[#92400E] dark:text-[#FBBF24] leading-snug">
+            {state.needsReviewCount} transaction{state.needsReviewCount === 1 ? "" : "s"} still have no cost basis and were taxed on the full proceeds. Add the missing purchase or price info to correct them.
+          </span>
+        </div>
+      )}
 
       {/* Expanded step list */}
       {expanded && (

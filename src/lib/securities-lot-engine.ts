@@ -81,6 +81,7 @@ export interface SecuritiesTaxEvent {
   formDestination: string;
   washSaleCode?: string;
   washSaleAdjustment: number;
+  needsCostBasisReview?: boolean; // B5: true when cost basis is unknown (unmatched sell)
   year: number;
 }
 
@@ -543,6 +544,10 @@ export function computeSecuritiesLots(
               form8949Box: determineForm8949Box(holdPeriod, tx.isCovered),
               formDestination: tx.isSection1256 ? "6781" : "8949",
               washSaleAdjustment: 0,
+              // B5: no matching purchase lot — basis is unknown (taxed at 100% of
+              // proceeds until the user supplies it), so flag it for review
+              // instead of silently filing the full proceeds as gain.
+              needsCostBasisReview: true,
               year,
             });
           }

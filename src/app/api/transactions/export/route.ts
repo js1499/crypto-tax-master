@@ -86,31 +86,11 @@ export async function GET(request: NextRequest) {
     const walletAddresses =
       userWithWallets?.wallets.map((w) => w.address) || [];
 
-    const userTransactionConditions: Prisma.TransactionWhereInput[] = [];
-
-    if (walletAddresses.length > 0) {
-      userTransactionConditions.push({
-        wallet_address: { in: walletAddresses },
-      });
-    }
-
-    userTransactionConditions.push({
-      AND: [{ source_type: "csv_import" }, { userId: user.id }],
-    });
-
-    const userExchanges = await prisma.exchange.findMany({
-      where: { userId: user.id },
-      select: { name: true },
-    });
-    const exchangeNames = userExchanges.map((e) => e.name);
-    if (exchangeNames.length > 0) {
-      userTransactionConditions.push({
-        AND: [
-          { source_type: "exchange_api" },
-          { source: { in: exchangeNames } },
-        ],
-      });
-    }
+    // Tenant isolation: rows from the user's wallets OR owned by them (userId).
+    const userTransactionConditions: Prisma.TransactionWhereInput[] = [
+      { wallet_address: { in: walletAddresses } },
+      { userId: user.id },
+    ];
 
     if (userTransactionConditions.length > 0) {
       whereConditions.push({ OR: userTransactionConditions });

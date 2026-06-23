@@ -108,24 +108,11 @@ export async function GET(request: NextRequest) {
     const exchangeNames = userExchanges.map((e) => e.name);
 
     // ── Build OR conditions for ownership filtering ────────────────
-    const orConditions: Prisma.TransactionWhereInput[] = [];
-
-    if (walletAddresses.length > 0) {
-      orConditions.push({ wallet_address: { in: walletAddresses } });
-    }
-    // CSV imports — scoped to this user via userId
-    orConditions.push({
-      AND: [{ source_type: "csv_import" }, { userId: user.id }],
-    });
-    // Exchange API imports scoped to user's exchanges
-    if (exchangeNames.length > 0) {
-      orConditions.push({
-        AND: [
-          { source_type: "exchange_api" },
-          { source: { in: exchangeNames } },
-        ],
-      });
-    }
+    // Tenant isolation: rows from the user's wallets OR owned by them (userId).
+    const orConditions: Prisma.TransactionWhereInput[] = [
+      { wallet_address: { in: walletAddresses } },
+      { userId: user.id },
+    ];
 
     const ownershipFilter: Prisma.TransactionWhereInput = {
       OR: orConditions,
