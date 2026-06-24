@@ -182,6 +182,12 @@ export async function POST(request: NextRequest) {
       success_url: `${origin}/accounts?success=true&plan=${planKey}`,
       cancel_url: `${origin}/#pricing`,
       metadata: { userId: user.id, planKey },
+      // Collect the billing address (needed for sales-tax compliance and stored on
+      // the customer). customer_update[address]=auto is REQUIRED here because we pass
+      // an existing `customer` — it lets Checkout write the collected address back to
+      // the customer so Stripe Tax and invoices can use it.
+      billing_address_collection: "required",
+      customer_update: { address: "auto", name: "auto" },
       branding_settings: {
         ...CHECKOUT_BRANDING,
         logo: {
@@ -190,6 +196,16 @@ export async function POST(request: NextRequest) {
         },
       },
     };
+
+    // Automatic sales-tax calculation via Stripe Tax. Gated behind an env flag
+    // because automatic_tax REQUIRES Dashboard setup first — activate Stripe Tax,
+    // set your origin address, add a New York `state_sales_tax` registration, and
+    // set product tax codes / a default tax behavior. Without that, Stripe rejects
+    // the session and checkout breaks for everyone. Flip STRIPE_TAX_ENABLED=true
+    // once the Dashboard setup is complete. (Address collection above is always on.)
+    if (process.env.STRIPE_TAX_ENABLED === "true") {
+      sessionParams.automatic_tax = { enabled: true };
+    }
 
     if (promotionCodeId) {
       sessionParams.discounts = [{ promotion_code: promotionCodeId }];
