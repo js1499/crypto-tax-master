@@ -1235,13 +1235,14 @@ function TransactionsContent() {
   const transactionTypes = typeCategories.flatMap(c => c.types.map(t => ({ value: t, label: t })));
 
   // Transaction-DATA access is per-year: any paid plan unlocks ALL years
-  // retroactively, while a free user can view only the current filing year.
-  // (Tax FORMS stay gated per-year separately via canAccessTaxYear / the
-  // allReports feature — buying a year unlocks data for all years but forms
-  // only for the licensed year.)
+  // retroactively. A free user can view the current filing year and earlier
+  // (their full history); only later / in-progress years (beyond the current
+  // filing year, e.g. 2026) are blurred. (Tax FORMS stay gated per-year
+  // separately via canAccessTaxYear / the allReports feature — buying a year
+  // unlocks data for all years but forms only for the licensed year.)
   const currentFilingYear = new Date().getUTCFullYear() - 1;
   const canViewYear = (year: number) =>
-    isPaidPlan !== false || year === currentFilingYear;
+    isPaidPlan !== false || year <= currentFilingYear;
 
   // Blur wrapper for monetary values. Pass the transaction's `year` to blur only
   // the years a user isn't entitled to view; omit `year` to fall back to the
