@@ -1234,9 +1234,21 @@ function TransactionsContent() {
   // Flat list for Select components (detail sheet, etc.)
   const transactionTypes = typeCategories.flatMap(c => c.types.map(t => ({ value: t, label: t })));
 
-  // Blur wrapper for monetary values on free plan
-  const BlurValue = ({ children }: { children: React.ReactNode }) => {
-    if (isPaidPlan !== false) return <>{children}</>;
+  // Transaction-DATA access is per-year: any paid plan unlocks ALL years
+  // retroactively, while a free user can view only the current filing year.
+  // (Tax FORMS stay gated per-year separately via canAccessTaxYear / the
+  // allReports feature — buying a year unlocks data for all years but forms
+  // only for the licensed year.)
+  const currentFilingYear = new Date().getUTCFullYear() - 1;
+  const canViewYear = (year: number) =>
+    isPaidPlan !== false || year === currentFilingYear;
+
+  // Blur wrapper for monetary values. Pass the transaction's `year` to blur only
+  // the years a user isn't entitled to view; omit `year` to fall back to the
+  // plan-level gate (used for cross-year summary values).
+  const BlurValue = ({ children, year }: { children: React.ReactNode; year?: number }) => {
+    const viewable = year === undefined ? isPaidPlan !== false : canViewYear(year);
+    if (viewable) return <>{children}</>;
     return <span className="blur-md select-none">{children}</span>;
   };
 
@@ -1658,7 +1670,7 @@ function TransactionsContent() {
           <div className="flex items-center justify-between">
 
             {/* Left group — glowing border */}
-            <div className={cn("glow-border", isPaidPlan === false && "blur-lg select-none")}>
+            <div className={cn("glow-border", isPaidPlan === false && (yearValue === "all" || !canViewYear(parseInt(yearValue))) && "blur-lg select-none")}>
             <div className="flex items-center px-5 py-4">
             <div className="pr-7">
               <p className={cn(
@@ -1715,7 +1727,7 @@ function TransactionsContent() {
 
             {/* Right group — Activity heatmap */}
             {stats?.weeklyActivity && stats.weeklyActivity.length > 0 && (
-              <div className={cn("flex-1", isPaidPlan === false && "blur-lg select-none pointer-events-none")}>
+              <div className={cn("flex-1", isPaidPlan === false && (yearValue === "all" || !canViewYear(parseInt(yearValue))) && "blur-lg select-none pointer-events-none")}>
                 <YearHeatmap
                   weeklyActivity={stats.weeklyActivity}
                   year={yearValue !== "all" ? parseInt(yearValue) : undefined}
@@ -1735,7 +1747,7 @@ function TransactionsContent() {
 
         {/* ── P&L Breakdown by Asset ── */}
         {stats?.pnl && (stats.pnl.gainsByAsset.length > 0 || stats.pnl.lossesByAsset.length > 0) && (
-          <div className={cn("space-y-2", isPaidPlan === false && "blur-lg select-none pointer-events-none")}>
+          <div className={cn("space-y-2", isPaidPlan === false && (yearValue === "all" || !canViewYear(parseInt(yearValue))) && "blur-lg select-none pointer-events-none")}>
             <div className="flex items-center gap-3">
               <h2 className="text-[13px] font-semibold text-[#4B5563] tracking-wide uppercase">P&L + Income by Asset</h2>
               <div className="flex items-center gap-1 bg-[#F5F5F0] dark:bg-[#222] rounded-md p-0.5">
@@ -2388,7 +2400,7 @@ function TransactionsContent() {
 
                       {/* Gain/Loss */}
                       <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
-                        <BlurValue>
+                        <BlurValue year={new Date(transaction.date).getUTCFullYear()}>
                         {transaction.gainLossUsd != null ? (
                           <span className={cn(
                             "inline-flex items-center gap-1 rounded-md px-2.5 py-[4px] text-[13px] font-medium",
@@ -2411,7 +2423,7 @@ function TransactionsContent() {
                       {advancedView && (
                         <>
                           <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
-                            <BlurValue>
+                            <BlurValue year={new Date(transaction.date).getUTCFullYear()}>
                             <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                               {transaction.outPricePerUnit != null
                                 ? `$${transaction.outPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`
@@ -2420,7 +2432,7 @@ function TransactionsContent() {
                             </BlurValue>
                           </TableCell>
                           <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
-                            <BlurValue>
+                            <BlurValue year={new Date(transaction.date).getUTCFullYear()}>
                             <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                               {transaction.costBasisUsd != null && transaction.costBasisUsd > 0
                                 ? `$${transaction.costBasisUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -2429,7 +2441,7 @@ function TransactionsContent() {
                             </BlurValue>
                           </TableCell>
                           <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
-                            <BlurValue>
+                            <BlurValue year={new Date(transaction.date).getUTCFullYear()}>
                             <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>
                               {transaction.valueUsd != null && transaction.valueUsd !== 0
                                 ? `$${Math.abs(transaction.valueUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
