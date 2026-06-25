@@ -262,6 +262,8 @@ interface TaxReportData {
   totalTaxableGain: string;
   taxableEvents: number;
   incomeEvents: number;
+  needsReviewCount?: number; // disposals with no matched cost basis (taxed as 100% gain)
+  needsReviewGain?: string; // formatted sum of that at-risk gain
   currency?: string; // "USD", "GBP", "EUR"
   currencySymbol?: string; // "$", "£", "€"
 }
@@ -709,6 +711,8 @@ export default function TaxReportsPage() {
     totalTaxableGain: "$0.00",
     taxableEvents: 0,
     incomeEvents: 0,
+    needsReviewCount: 0,
+    needsReviewGain: "$0.00",
   };
 
   const parseCurrency = (value: string): number => parseFloat(value.replace(/[$\u00a3\u20ac,]/g, "")) || 0;
@@ -726,6 +730,10 @@ export default function TaxReportsPage() {
 
   const fmtUsd = (n: number) => `${currencySymbol}${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtSign = (n: number) => n >= 0 ? `+${fmtUsd(n)}` : `-${fmtUsd(n)}`;
+
+  // Disposals the engine couldn't match to an acquisition (taxed as 100% gain).
+  const needsReviewCount = displayData.needsReviewCount || 0;
+  const needsReviewGain = displayData.needsReviewGain || fmtUsd(0);
 
   // Bar widths for breakdown
   const maxBar = Math.max(totalGains, Math.abs(totalLosses), totalIncome, 1);
@@ -821,6 +829,25 @@ export default function TaxReportsPage() {
             <p className="mt-0.5 text-[13px] text-[#047857]">Your next renewal unlocks tax year {nextRenewalTaxYear}.</p>
           </div>
         )}
+
+        {/* Phantom-gain warning: disposals with no matched cost basis are taxed on
+            the full proceeds, so the headline totals can be wildly overstated until
+            the user connects the source wallet/exchange. Rendered OUTSIDE the blurred
+            grid so free users see it too. */}
+        {needsReviewCount > 0 && (
+          <div className="rounded-lg border border-[#FCD34D] bg-[#FFFBEB] px-5 py-4">
+            <p className="text-[15px] font-semibold text-[#92400E]">
+              {needsReviewCount.toLocaleString()} disposal{needsReviewCount === 1 ? "" : "s"} have no matched cost basis and are taxed as 100% gain ({needsReviewGain}).
+            </p>
+            <p className="mt-0.5 text-[13px] text-[#B45309]">
+              This usually means the wallet or exchange those funds came from isn&apos;t connected yet. Add every source account and re-sync so this gain isn&apos;t overstated &mdash; you can review the affected rows on the Transactions page.
+            </p>
+          </div>
+        )}
+
+        <p className="text-[12px] text-[#9CA3AF]">
+          Estimates only &mdash; not tax advice. Accuracy depends on a complete transaction history; &quot;Est. Tax&quot; is a simplified flat-rate estimate.
+        </p>
 
         {/* Row 1: Tax Summary + Breakdown */}
         <div className={cn("grid grid-cols-[1fr_340px] gap-5", isPaidPlan === false && "blur-lg select-none pointer-events-none")}>

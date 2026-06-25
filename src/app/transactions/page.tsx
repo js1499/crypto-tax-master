@@ -1520,10 +1520,9 @@ function TransactionsContent() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setIsAddTransactionOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Transaction
-                </DropdownMenuItem>
+                {/* "Add Transaction" is hidden until a real manual-entry endpoint
+                    exists — handleAddTransaction was a no-op stub that faked success
+                    and persisted nothing. */}
                 <DropdownMenuItem onClick={handleExport} disabled={isExporting}>
                   <Download className="mr-2 h-4 w-4" />
                   {isExporting ? "Exporting..." : "Export CSV"}

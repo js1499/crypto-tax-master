@@ -612,9 +612,30 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
           {csvFile && (
             <div className="mt-4">
               <p className="text-sm font-medium">Selected: {csvFile.name}</p>
-              <Button className="mt-2" onClick={() => {
-                if (onConnect) onConnect("csv", { success: true, provider: "csv", fileName: csvFile.name, timestamp: new Date().toISOString() });
-                setCsvFile(null);
+              <Button className="mt-2" onClick={async () => {
+                if (!csvFile) return;
+                const formData = new FormData();
+                formData.append("file", csvFile);
+                // Generic transaction CSV → the "custom" parser (the app's standard
+                // CSV format). getParser() only knows coinbase/binance/kraken/kucoin/
+                // gemini/custom, so we must send a recognized value, not "csv".
+                formData.append("exchange", "custom");
+                try {
+                  const res = await fetch("/api/transactions/import", {
+                    method: "POST",
+                    body: formData,
+                  });
+                  const data = await res.json();
+                  if (!res.ok) {
+                    toast.error(`${csvFile.name}: ${data.error || "Import failed"}`);
+                    return;
+                  }
+                  toast.success(`${csvFile.name}: ${data.transactionsAdded || 0} transactions imported`);
+                  if (onConnect) onConnect("csv", { success: true, provider: "csv", fileName: csvFile.name, timestamp: new Date().toISOString() });
+                  setCsvFile(null);
+                } catch {
+                  toast.error(`${csvFile.name}: Import failed`);
+                }
               }}>
                 Upload and Import
               </Button>

@@ -130,6 +130,7 @@ export async function GET(request: NextRequest) {
         is_income: true,
         type: true,
         holding_period: true,
+        needs_cost_basis_review: true,
       },
       orderBy: { tx_timestamp: "asc" },
       ...(txLimit ? { take: txLimit } : {}),
@@ -147,6 +148,8 @@ export async function GET(request: NextRequest) {
     let totalIncome = 0;
     let taxableEventCount = 0;
     let incomeEventCount = 0;
+    let needsReviewCount = 0;
+    let needsReviewGain = 0;
 
     for (const tx of transactions) {
       const gainLoss = tx.gain_loss_usd ? Number(tx.gain_loss_usd) : 0;
@@ -165,6 +168,14 @@ export async function GET(request: NextRequest) {
       if (tx.is_income) {
         totalIncome += Number(tx.value_usd);
         incomeEventCount++;
+      }
+
+      // Disposals the cost-basis engine couldn't match to an acquisition: no basis
+      // was found, so the full proceeds are booked as gain. Surfaced to the user so
+      // an inflated headline total isn't presented as fact.
+      if (tx.needs_cost_basis_review) {
+        needsReviewCount++;
+        if (gainLoss > 0) needsReviewGain += gainLoss;
       }
     }
 
@@ -195,6 +206,8 @@ export async function GET(request: NextRequest) {
       taxableEvents: taxableEventCount,
       incomeEvents: incomeEventCount,
       totalTransactions: transactions.length,
+      needsReviewCount,
+      needsReviewGain: fmt(needsReviewGain),
       currency: currencyCode,
       currencySymbol: sym,
     };
