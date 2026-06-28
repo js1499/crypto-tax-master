@@ -13,6 +13,9 @@
 /** Public Google Ads conversion ID. Inlined intentionally (single source of truth). */
 export const GOOGLE_ADS_ID = "AW-18275931897";
 
+/** Public Google Ads PURCHASE conversion label (server-verified post-payment). Inlined like the ID. */
+export const GOOGLE_ADS_PURCHASE_LABEL = "RRi4CJy30MYcEPmt0opE";
+
 type GtagFn = (...args: unknown[]) => void;
 
 // Runtime config, populated by <GoogleAds> (which receives the label from the
@@ -38,6 +41,31 @@ function getGtag(): GtagFn | null {
   return typeof w.gtag === "function" ? w.gtag : null;
 }
 
+/**
+ * Run `fn(gtag)` as soon as window.gtag exists. The base tag loads via next/script
+ * `afterInteractive` in the root layout, which may not be ready at the exact moment
+ * a freshly-loaded page's effect runs (e.g. the post-payment success page) — so we
+ * poll briefly rather than silently miss the conversion. Gives up after ~3s. Fail-safe.
+ */
+function whenGtagReady(fn: (gtag: GtagFn) => void): void {
+  if (typeof window === "undefined") return;
+  let tries = 0;
+  const attempt = () => {
+    try {
+      const gtag = getGtag();
+      if (gtag) {
+        fn(gtag);
+        return;
+      }
+    } catch {
+      return;
+    }
+    if (++tries > 15) return; // ~3s at 200ms intervals
+    setTimeout(attempt, 200);
+  };
+  attempt();
+}
+
 /** Called once by <GoogleAds> with the server-provided signup conversion label. */
 export function configureGoogleAds(opts: { signupLabel?: string | null }): void {
   config.signupLabel = (opts.signupLabel || "").trim();
@@ -46,8 +74,9 @@ export function configureGoogleAds(opts: { signupLabel?: string | null }): void 
 /**
  * Provide user-supplied data for enhanced conversions (email at minimum). Stored
  * in memory only and attached to the next conversion via gtag('set','user_data').
+ * Shared by both the signup and purchase conversions.
  */
-export function setSignupUserData(data: {
+export function setUserData(data: {
   email?: string | null;
   phone?: string | null;
   firstName?: string | null;
@@ -67,6 +96,9 @@ export function setSignupUserData(data: {
     pendingUserData = null;
   }
 }
+
+/** @deprecated alias kept for the signup flow — use setUserData. */
+export const setSignupUserData = setUserData;
 
 /**
  * Fire the signup conversion. INERT unless a label was configured. Fully
@@ -90,7 +122,58 @@ export function fireSignupConversion(transactionId?: string): void {
       send_to: `${GOOGLE_ADS_ID}/${label}`,
       ...(transactionId ? { transaction_id: transactionId } : {}),
     });
+    pendingUserData = null; // clear so a later conversion can't reuse this user's data
   } catch {
     // Never let a tracking error affect account creation.
+  }
+}
+
+/**
+ * Fire the server-verified PURCHASE conversion. The /checkout/success Server
+ * Component only renders the component that calls this AFTER Stripe confirmed the
+ * payment is paid AND a server-side fire-once claim succeeded — so the gating is
+ * entirely server-side. Fully fail-safe; never blocks the page.
+ *
+ * @param value         actual amount paid in major units (e.g. 49.0) — never 1.0
+ * @param currency      ISO currency from Stripe (e.g. "USD")
+ * @param transactionId the canonical Stripe Checkout Session id (cs_...). The future
+ *                      server-side upload MUST use this same id so Google dedupes the
+ *                      web event against the offline upload (zero double-count).
+ */
+export function firePurchaseConversion(opts: {
+  value: number;
+  currency: string;
+  transactionId: string;
+  /** Runs after gtag confirms the event was sent — used to record the fire-once guard. */
+  onSent?: () => void;
+}): void {
+  try {
+    if (!opts.transactionId) return; // never fire with an empty transaction_id
+    // Wait for gtag in case the base tag hasn't finished loading on this fresh page.
+    whenGtagReady((gtag) => {
+      try {
+        // Enhanced conversions: hand gtag the user-provided data to hash client-side.
+        if (pendingUserData) {
+          gtag("set", "user_data", pendingUserData);
+        }
+        gtag("event", "conversion", {
+          send_to: `${GOOGLE_ADS_ID}/${GOOGLE_ADS_PURCHASE_LABEL}`,
+          value: opts.value,
+          currency: opts.currency,
+          transaction_id: opts.transactionId,
+          // event_callback fires after gtag sends the hit — used to mark the guard
+          // only once the send is confirmed (a failed send leaves the guard unclaimed
+          // so the conversion can retry; Google dedupes any retry by transaction_id).
+          ...(opts.onSent ? { event_callback: opts.onSent } : {}),
+          // Extension point: add `new_customer: true|false` here once first-vs-returning
+          // is determined server-side (intentionally omitted for now per the brief).
+        });
+        pendingUserData = null; // clear so a later conversion can't reuse this user's data
+      } catch {
+        // ignore — never interrupt the post-payment page
+      }
+    });
+  } catch {
+    // Never let a tracking error interrupt the post-payment page.
   }
 }
