@@ -22,7 +22,7 @@ export const GOOGLE_ADS_PURCHASE_LABEL = "RRi4CJy30MYcEPmt0opE";
  * call) and is for analytics + audiences ONLY — it is never routed into Ads as a
  * bidding signal and does not touch the Ads conversion tracking.
  */
-export const GA4_MEASUREMENT_ID = "G-MPYQLJXN8X";
+export const GA4_MEASUREMENT_ID = "G-4YLLBY4ZM0";
 
 type GtagFn = (...args: unknown[]) => void;
 

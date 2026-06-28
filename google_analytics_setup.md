@@ -68,3 +68,11 @@ single gtag.js load. No second library; the Ads conversions are untouched.
    `/accounts`, `/transactions`) → confirm GA4 records a `page_view` for each, with no
    duplicate library load.
 4. Confirm the Ads conversions still fire on their own events (signup / purchase) — unchanged.
+
+---
+
+### Update (2026-06-28): GA4 ID changed
+GA4 measurement ID replaced **`G-MPYQLJXN8X` → `G-4YLLBY4ZM0`** per follow-up request.
+The single source of truth is `GA4_MEASUREMENT_ID` in `src/lib/google-ads.ts`, which now
+holds `G-4YLLBY4ZM0`; the `gtag('config', …)` call and all verification use that ID.
+(Mentions of `G-MPYQLJXN8X` above reflect the original ID.) Still inlined, no env var.
