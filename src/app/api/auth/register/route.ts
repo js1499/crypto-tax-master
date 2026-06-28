@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       );
     }
     const body = await request.json();
-    const { email, password, name } = body;
+    const { email, password, name, adTracking } = body;
 
     // Validate input
     if (!email || !password) {
@@ -65,12 +65,36 @@ export async function POST(request: NextRequest) {
     // Hash password
     const passwordHash = await hashPassword(password);
 
+    // Optional Google Ads click-ID / UTM captured client-side and sent in the
+    // signup POST body. Coerced to strings + length-capped; organic users send
+    // nothing (these stay null). Never affects validation (only email+password
+    // are required) and cannot break account creation.
+    const at = adTracking && typeof adTracking === "object" ? adTracking : {};
+    const trimStr = (v: unknown, max = 512): string | null =>
+      typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
+    const clickType = trimStr(at.clickIdType, 16);
+    const capturedRaw = trimStr(at.capturedAt, 40);
+    const adClickCapturedAt =
+      capturedRaw && !isNaN(new Date(capturedRaw).getTime())
+        ? new Date(capturedRaw)
+        : null;
+
     // Create user
     const user = await prisma.user.create({
       data: {
         email: email.toLowerCase().trim(),
         passwordHash,
         name: name?.trim() || null,
+        adClickId: trimStr(at.clickId),
+        adClickIdType:
+          clickType === "gclid" || clickType === "gbraid" || clickType === "wbraid"
+            ? clickType
+            : null,
+        adClickCapturedAt,
+        utmSource: trimStr(at.utmSource),
+        utmMedium: trimStr(at.utmMedium),
+        utmCampaign: trimStr(at.utmCampaign),
+        landingPath: trimStr(at.landingPath),
       },
       select: {
         id: true,

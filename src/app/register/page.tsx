@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { getStoredClickId } from "@/lib/click-id";
+import { fireSignupConversion, setSignupUserData } from "@/lib/google-ads";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -66,6 +68,8 @@ export default function RegisterPage() {
           email: formData.email,
           password: formData.password,
           name: formData.name || undefined,
+          // Google click ID (gclid/gbraid/wbraid) + UTM captured on landing, if any.
+          adTracking: getStoredClickId() || undefined,
         }),
       });
 
@@ -74,6 +78,20 @@ export default function RegisterPage() {
       if (!response.ok) {
         throw new Error(data.error || "Registration failed");
       }
+
+      // Account exists at this point regardless of the auto sign-in outcome, so
+      // fire the Google Ads signup conversion here (before any redirect). Inert
+      // until GOOGLE_ADS_SIGNUP_CONVERSION_LABEL is set; fully fail-safe.
+      const [firstName, ...restName] = (formData.name || "")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      setSignupUserData({
+        email: formData.email,
+        firstName: firstName || undefined,
+        lastName: restName.length ? restName.join(" ") : undefined,
+      });
+      fireSignupConversion(data?.user?.id);
 
       // Automatically sign in after registration
       const result = await signIn("credentials", {

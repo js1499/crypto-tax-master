@@ -26,6 +26,14 @@ model User {
   planId                 String     @default("free") @map("plan_id")
   currentPeriodEnd       DateTime?  @map("current_period_end") @db.Timestamptz(6)
   hasCpaFiling           Boolean    @default(false) @map("has_cpa_filing")
+  adClickId              String?    @map("ad_click_id")
+  adClickIdType          String?    @map("ad_click_id_type")
+  adClickCapturedAt      DateTime?  @map("ad_click_captured_at") @db.Timestamptz(6)
+  // First-touch attribution (optional — drop these + the matching migration columns if unwanted)
+  utmSource              String?    @map("utm_source")
+  utmMedium              String?    @map("utm_medium")
+  utmCampaign            String?    @map("utm_campaign")
+  landingPath            String?    @map("landing_path")
   accounts        Account[]
   exchanges       Exchange[]
   sessions        Session[]
