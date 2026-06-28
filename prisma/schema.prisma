@@ -49,6 +49,16 @@ model User {
   securitiesTaxSettings       SecuritiesTaxSettings[]
 }
 
+/// Fire-once guard for the Google Ads Purchase conversion: one row per Stripe
+/// Checkout Session whose web conversion has already fired (prevents refresh/reopen
+/// double-counting). session_id is also the transaction_id sent to Google.
+model AdsPurchaseConversion {
+  sessionId String   @id @map("session_id")
+  firedAt   DateTime @default(now()) @map("fired_at") @db.Timestamptz(6)
+
+  @@map("ads_purchase_conversion")
+}
+
 model Account {
   id                String  @id @default(cuid())
   userId            String

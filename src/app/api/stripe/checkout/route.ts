@@ -179,7 +179,9 @@ export async function POST(request: NextRequest) {
       customer: customerId,
       mode: isCpaFiling ? "payment" : "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
-      success_url: `${origin}/accounts?success=true&plan=${planKey}`,
+      // Post-payment success page: fires the server-verified Google Ads Purchase
+      // conversion. Stripe substitutes {CHECKOUT_SESSION_ID} with the real cs_... id.
+      success_url: `${origin}/checkout/success?session_id={CHECKOUT_SESSION_ID}&plan=${planKey}`,
       cancel_url: `${origin}/#pricing`,
       metadata: { userId: user.id, planKey },
       // Collect the billing address (needed for sales-tax compliance and stored on
