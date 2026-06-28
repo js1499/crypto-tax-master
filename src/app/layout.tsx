@@ -10,6 +10,7 @@ import { SyncPipelineProvider } from "@/components/sync-pipeline/pipeline-provid
 import { PipelineProgress } from "@/components/sync-pipeline/pipeline-progress";
 import { Toaster } from "sonner";
 import Script from "next/script";
+import { GoogleAds } from "@/components/google-ads";
 
 // Initialize Sentry on the client side
 if (typeof window !== "undefined") {
@@ -63,6 +64,11 @@ export default function RootLayout({
         <Script id="crisp-chat" strategy="afterInteractive">{`
           window.$crisp=[];window.CRISP_WEBSITE_ID="0e3fe389-7c1c-4d87-828f-46ddfeff34e4";(function(){var d=document;var s=d.createElement("script");s.src="https://client.crisp.chat/l.js";s.async=1;d.getElementsByTagName("head")[0].appendChild(s);})();
         `}</Script>
+        {/* Sitewide Google Ads tag (gtag.js) + Google click-ID capture, loaded once
+            here so it persists across client-side navigation. The signup conversion
+            label is read server-side and stays inert until
+            GOOGLE_ADS_SIGNUP_CONVERSION_LABEL is set. */}
+        <GoogleAds signupLabel={process.env.GOOGLE_ADS_SIGNUP_CONVERSION_LABEL || ""} />
       </body>
     </html>
   );
