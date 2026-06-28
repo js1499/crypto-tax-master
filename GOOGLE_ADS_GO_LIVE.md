@@ -104,3 +104,44 @@ To remove: delete the UTM block in `src/lib/click-id.ts`, the four `utm*`/`landi
 fields in `prisma/schema.prisma` (`model User`) and the matching lines in the register
 route, then drop the columns (`utm_source`, `utm_medium`, `utm_campaign`, `landing_path`)
 from `"User"`. The click-ID capture is independent and unaffected.
+
+---
+
+# Purchase conversion (post-payment) — label `RRi4CJy30MYcEPmt0opE`
+
+**Route:** `/checkout/success` — Stripe's `success_url` now points here
+(`/checkout/success?session_id={CHECKOUT_SESSION_ID}&plan=…`; Stripe substitutes the
+real `cs_…` id). After the conversion fires, the page CTA sends the user to `/accounts`.
+
+**How it's verified (server-side, anti-spoof):** the page retrieves the Checkout
+Session from Stripe and only proceeds when `payment_status === 'paid'`. `value` =
+`amount_total / 100` (the real per-plan amount, from Stripe — never the URL),
+`currency` from Stripe, and `transaction_id` = the **Checkout Session id (`cs_…`)**.
+A one-time guard table (`ads_purchase_conversion`, PK `session_id`) is written
+**after** gtag confirms the send (`POST /api/ads/purchase-fired`), so a refresh/reopen
+after a successful fire never double-fires, while a failed send doesn't consume the
+guard (it can retry; Google dedupes any retry by `transaction_id`). Free trials are
+`no_payment_required` and never fire.
+
+**`transaction_id` used:** the Stripe **Checkout Session id (`cs_…`)**. The future
+server-side offline upload MUST send conversion `RRi4CJy30MYcEPmt0opE` with this same
+id so Google dedupes the web event against the offline upload (no double-count). The
+server-side Ads API upload is intentionally **not** built yet.
+
+**No new env var** — the purchase label is inlined in `src/lib/google-ads.ts`
+(`GOOGLE_ADS_PURCHASE_LABEL`), matching the inlined conversion ID.
+
+## What you do in the Google Ads UI (Purchase action)
+1. Create a conversion action: category **Purchase**.
+2. Value: **"Use different values for each conversion."**
+3. Count: **One**.
+4. Leave it **Secondary** for now.
+   (The label `RRi4CJy30MYcEPmt0opE` is already wired in code — no env var to set.)
+
+## Verify (Stripe test mode)
+- Complete a real test purchase → Google Tag Assistant shows the Purchase conversion
+  firing **exactly once**, with a **non-1.0** value matching the plan price, a populated
+  `transaction_id` (the `cs_…` id), and enhanced-conversion `user_data` present.
+- **Refresh** the success page → does **not** fire again.
+- Hit `/checkout/success` **directly** (no/invalid `session_id`) → does **not** fire.
+- **Organic signup** → does **not** fire the purchase (signup conversion is separate).

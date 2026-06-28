@@ -79,3 +79,45 @@ This is a living log. Status legend: `[ ]` not started · `[~]` in progress · `
 - **Conversion:** after the label is set + redeploy, Tag Assistant shows a conversion to `AW-18275931897/<label>` with `transaction_id` + `user_data`; before it's set, none fires.
 
 ## Status: ✅ Code complete and pushed. Remaining is the user's Google Ads UI config (above) to activate the signup conversion.
+
+---
+
+# Task 2 — Post-payment success page + Purchase conversion (page-load, server-verified)
+
+**Purchase conversion label:** `RRi4CJy30MYcEPmt0opE` (inlined, like the ID).
+
+## Step 0 — Discovery (✅)
+- **Stripe = Checkout (redirect).** Single creation point `src/app/api/stripe/checkout/route.ts`. `success_url` changed from `/accounts?success=true&plan=…` → `/checkout/success?session_id={CHECKOUT_SESSION_ID}&plan=…`. Mode: `payment` (cpa_filing) / `subscription` (plans).
+- **Canonical paid object = Checkout Session `cs_…`.** The webhook (`checkout.session.completed`) retrieves by `session.id` and gates on `payment_status==='paid'` — so `session.id` is the dedup key a future offline upload must reuse.
+- **Conversion model = free-signup-then-pay** (signup creates a free account; payment is a separate Checkout). Signup and purchase are distinct events.
+- **Value/identity:** from the retrieved session — `amount_total/100`, `currency`, `customer_details.email`. Real per-plan price flows through (not flat). Trials = `no_payment_required` → excluded.
+- **Prior module reused:** extended `src/lib/google-ads.ts` (added `GOOGLE_ADS_PURCHASE_LABEL`, generalized `setUserData`, added `firePurchaseConversion`); did not duplicate the tag/click-ID work.
+
+## Implementation (✅ all phases)
+- **Phase 1 — success page:** `src/app/checkout/success/page.tsx` (Server Component, `force-dynamic`). Retrieves the session, verifies `payment_status==='paid'`, renders a success card + CTA to `/accounts`. Reachable only via Stripe's success_url; never fires on a bare render.
+- **Phase 2 — fire with real data:** `src/components/purchase-conversion.tsx` (client) fires `firePurchaseConversion({ value = amount_total/100, currency, transaction_id = session.id })` with `user_data` (email) for enhanced conversions. Never `1.0`; never an empty `transaction_id`.
+- **Phase 3 — fire-once guard:** `AdsPurchaseConversion` table (PK `session_id`). The server **reads** the guard and renders `<PurchaseConversion>` only if it's unset; the row is written **after** gtag confirms the send (client → `POST /api/ads/purchase-fired`, via `event_callback`). So a failed client send does NOT consume the guard (it can retry), while a sequential refresh/reopen/back after a successful fire finds the row and does NOT re-fire. The `transaction_id` (session id) is Google's second dedup layer for a rare concurrent double-load. Free/organic/unpaid never fire.
+- **Phase 4 — forward-compat:** `transaction_id = the Checkout Session id (cs_…)` — the SAME id the webhook sees, so a later server-side upload of `RRi4CJy30MYcEPmt0opE` + that id dedupes web vs server. `new_customer` left as a clearly-marked extension point.
+- **Reconciliation:** signup (`bqRjCNOjo8ccEPmt0opE`) and purchase (`RRi4CJy30MYcEPmt0opE`) are separate events on separate pages; neither suppresses or double-fires the other.
+- Migration `20260628010000_add_ads_purchase_conversion` applied to the DB.
+
+## What the user sets in Google Ads (Purchase action)
+- Category **Purchase**; value = **"Use different values for each conversion"**; Count = **One**; leave it **Secondary** for now. (Label already provided: `RRi4CJy30MYcEPmt0opE`.)
+
+## Verification (Stripe test mode)
+- Complete a real test purchase → Tag Assistant shows the Purchase conversion firing **once**, value = the plan price (not 1.0), `transaction_id` = the `cs_…` id, `user_data` present.
+- Refresh the success page → does NOT fire again. Hit `/checkout/success` directly (no/invalid session) → does NOT fire. Organic signup → does NOT fire the purchase.
+
+## Env / config (Task 2)
+- **No new env var** (purchase label inlined). New routes `/checkout/success` (page) and `/api/ads/purchase-fired` (fire-once marker). New table `ads_purchase_conversion`. `success_url` changed in `checkout/route.ts`.
+
+## Adversarial review (Task 2)
+A focused independent review found **no blockers** and verified: fires only on server-verified-paid; real value (never 1.0) + non-empty `transaction_id`; `transaction_id` = session id matches the webhook; fail-safe (never breaks checkout); no third-party PII leak; correct gtag ordering (config before event); the `success_url` change is non-breaking.
+**Addressed:** the one MAJOR finding (claim-before-fire → permanent miss if the client never fired) → switched to **mark-after-fire** (guard written only after gtag confirms the send, via `/api/ads/purchase-fired`); cleared `pendingUserData` after each conversion (no cross-event reuse); narrowed the guard-write error catch to log non-PII codes on unexpected errors.
+
+### Open decisions for you (intentionally NOT auto-changed)
+- **$1 comp codes** currently fire as real `value:1.0` purchases. If those are staff/friend comps, they'll pollute Ads + Smart Bidding — say the word and I'll gate them out (skip when a promotion-code discount is present, or via a `comp` metadata flag).
+- **Trial→paid and renewals** don't fire a web conversion (they convert via `invoice.payment_succeeded`, no new Checkout Session). The planned server-side offline upload (next stage, same `transaction_id`) is the intended path for trial→paid; renewals are typically excluded.
+- **Confirm the label** `RRi4CJy30MYcEPmt0opE` matches the real Purchase action in `AW-18275931897` (a wrong label = silent 100% miss).
+
+## Status: ✅ Task 2 code complete. Remaining: create the Purchase conversion action in Google Ads (settings above), decide the open items, and verify in Stripe test mode.
