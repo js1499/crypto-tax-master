@@ -16,6 +16,14 @@ export const GOOGLE_ADS_ID = "AW-18275931897";
 /** Public Google Ads PURCHASE conversion label (server-verified post-payment). Inlined like the ID. */
 export const GOOGLE_ADS_PURCHASE_LABEL = "RRi4CJy30MYcEPmt0opE";
 
+/**
+ * Public GA4 measurement ID. Inlined to match how the Ads conversion ID is handled.
+ * GA4 shares the SAME gtag.js library as Google Ads (one library, a second config
+ * call) and is for analytics + audiences ONLY — it is never routed into Ads as a
+ * bidding signal and does not touch the Ads conversion tracking.
+ */
+export const GA4_MEASUREMENT_ID = "G-MPYQLJXN8X";
+
 type GtagFn = (...args: unknown[]) => void;
 
 // Runtime config, populated by <GoogleAds> (which receives the label from the
