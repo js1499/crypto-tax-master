@@ -254,10 +254,16 @@ export function computeSecuritiesLots(
   transactions: SecuritiesTransaction[],
   method: string,
   accountType: string,
+  mtm?: {
+    taxStatus?: string;
+    electionYear?: number;
+    segregatedSymbols?: Set<string>;
+  },
 ): {
   lots: SecuritiesLotData[];
   taxableEvents: SecuritiesTaxEvent[];
   dividends: SecuritiesDividendRecord[];
+  section481OrdinaryGainLoss: number;
 } {
   // Sort by date ASC, then by id for stable ordering
   const sorted = [...transactions].sort((a, b) => {
@@ -282,6 +288,11 @@ export function computeSecuritiesLots(
     brokerageId?: string;
   }
   const openShorts: Record<string, ShortPosition[]> = {};
+  // Year-end FMV keyed by `${symbol}|${year}`, so a later §475 election year can
+  // reference the PRIOR year-end FMV for its §481(a) transition figure (#18).
+  const fmvBySymYear = new Map<string, number>();
+  // §475(f) transition §481(a) ordinary adjustment (disclosure; not double-counted).
+  let section481OrdinaryGainLoss = 0;
   // All lots (open + closed) for output
   const allLots: SecuritiesLotData[] = [];
   const taxableEvents: SecuritiesTaxEvent[] = [];
@@ -874,6 +885,9 @@ export function computeSecuritiesLots(
       // Year-end FMV: record for Section 1256 / 475 mark-to-market
       // ------------------------------------------------------------------
       case "YEAR_END_FMV": {
+        // Record this symbol's year-end FMV for later §481(a) prior-year lookups (#18).
+        fmvBySymYear.set(`${sym}|${year}`, price);
+
         // For Section 1256 contracts: treated as sold at FMV on last business day
         if (tx.isSection1256) {
           const fmvPrice = price;
@@ -992,6 +1006,97 @@ export function computeSecuritiesLots(
             shortPos.proceeds = buyback;
             shortPos.proceedsPerShare = fmvPrice;
           }
+        } else if (
+          mtm?.taxStatus === "TRADER_MTM" &&
+          year >= (mtm.electionYear ?? year)
+        ) {
+          // §475(f) trader mark-to-market: deemed-sell ALL open (non-§1256, non-
+          // segregated) positions at FMV as ORDINARY income (Form 4797), then reset
+          // basis to FMV so the next year recognizes only the increment. §1256
+          // contracts keep their own 60/40 treatment (handled above).
+          const fmvPrice = price;
+          const isTransition =
+            mtm.electionYear !== undefined && year === mtm.electionYear;
+          const priorFmv = fmvBySymYear.get(`${sym}|${year - 1}`);
+          const jan1 = Date.UTC(year, 0, 1);
+          const segregated = mtm.segregatedSymbols?.has(sym) ?? false;
+
+          if (!segregated) {
+            for (const lot of openLots[sym] ?? []) {
+              const proceeds = lot.quantity * fmvPrice;
+              const gainLoss = proceeds - lot.totalCostBasis;
+
+              if (!isTaxDeferred && Math.abs(gainLoss) > 0.005) {
+                taxableEvents.push({
+                  transactionId: tx.id,
+                  lotId: lot.id,
+                  symbol: sym,
+                  assetClass: tx.assetClass,
+                  quantity: lot.quantity,
+                  dateAcquired: lot.dateAcquired,
+                  dateSold: txDate,
+                  proceeds: round2(proceeds),
+                  costBasis: round2(lot.totalCostBasis),
+                  gainLoss: round2(gainLoss),
+                  holdingPeriod: "SHORT_TERM",
+                  gainType: "ORDINARY",
+                  formDestination: "4797",
+                  washSaleAdjustment: 0,
+                  year,
+                });
+              }
+
+              // §481(a) transition disclosure: pre-election unrealized gain measured
+              // against the PRIOR year-end FMV (#18). It is already inside the
+              // deemed-sale ordinary amount above, so it is NOT added to income
+              // again (#9) — this figure is for Form 3115 reporting only.
+              if (
+                isTransition &&
+                priorFmv !== undefined &&
+                new Date(lot.dateAcquired).getTime() < jan1
+              ) {
+                section481OrdinaryGainLoss += round2(
+                  lot.quantity * priorFmv - lot.totalCostBasis,
+                );
+              }
+
+              // Reset basis to FMV for next year's incremental MTM.
+              lot.totalCostBasis = proceeds;
+              lot.costBasisPerShare = fmvPrice;
+              const allLotEntry = allLots.find((l) => l.id === lot.id);
+              if (allLotEntry) {
+                allLotEntry.totalCostBasis = proceeds;
+                allLotEntry.costBasisPerShare = fmvPrice;
+              }
+            }
+
+            for (const shortPos of openShorts[sym] ?? []) {
+              const buyback = shortPos.quantity * fmvPrice;
+              const gainLoss = shortPos.proceeds - buyback;
+
+              if (!isTaxDeferred && Math.abs(gainLoss) > 0.005) {
+                taxableEvents.push({
+                  transactionId: tx.id,
+                  symbol: sym,
+                  assetClass: tx.assetClass,
+                  quantity: shortPos.quantity,
+                  dateAcquired: shortPos.dateOpened,
+                  dateSold: txDate,
+                  proceeds: round2(shortPos.proceeds),
+                  costBasis: round2(buyback),
+                  gainLoss: round2(gainLoss),
+                  holdingPeriod: "SHORT_TERM",
+                  gainType: "ORDINARY",
+                  formDestination: "4797",
+                  washSaleAdjustment: 0,
+                  year,
+                });
+              }
+
+              shortPos.proceeds = buyback;
+              shortPos.proceedsPerShare = fmvPrice;
+            }
+          }
         }
         break;
       }
@@ -1042,5 +1147,5 @@ export function computeSecuritiesLots(
     }
   }
 
-  return { lots: allLots, taxableEvents, dividends };
+  return { lots: allLots, taxableEvents, dividends, section481OrdinaryGainLoss };
 }

@@ -65,3 +65,16 @@ export function runWashSales(txns: SecuritiesTransaction[], method = "FIFO") {
   applyWashSaleAdjustments(washSales, lots, taxableEvents);
   return { lots, taxableEvents, washSales, dividends };
 }
+
+/** Run the lot engine under a §475(f) trader mark-to-market election. */
+export function runMtm(
+  txns: SecuritiesTransaction[],
+  electionYear?: number,
+  segregatedSymbols?: Set<string>,
+) {
+  return computeSecuritiesLots(txns, "FIFO" as never, "TAXABLE", {
+    taxStatus: "TRADER_MTM",
+    electionYear,
+    segregatedSymbols,
+  });
+}

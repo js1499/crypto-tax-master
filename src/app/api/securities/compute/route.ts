@@ -15,7 +15,8 @@ import {
   computeSection1256,
   getQualifyingSymbols,
 } from "@/lib/securities-section-1256";
-import { computeSection475 } from "@/lib/securities-section-475";
+// §475(f) mark-to-market is now computed in-stream by the lot engine
+// (securities-section-475.ts is superseded).
 import { computeSection988 } from "@/lib/securities-section-988";
 import { Decimal } from "@prisma/client/runtime/library";
 
@@ -82,6 +83,22 @@ export async function POST(request: NextRequest) {
         userId_year: { userId: user.id, year: taxYear },
       },
     });
+    const taxStatus = taxSettings?.taxStatus || "INVESTOR";
+
+    // §475(f) election year = the start of the consecutive TRADER_MTM streak ending
+    // at taxYear, so the lot engine marks every election year in its single
+    // chronological pass and carries marked basis across years.
+    let mtmElectionYear: number | undefined;
+    if (taxStatus === "TRADER_MTM") {
+      const mtmYears = await prisma.securitiesTaxSettings.findMany({
+        where: { userId: user.id, taxStatus: "TRADER_MTM" },
+        select: { year: true },
+      });
+      const yearsSet = new Set(mtmYears.map((s) => s.year));
+      let ey = taxYear;
+      while (yearsSet.has(ey - 1)) ey -= 1;
+      mtmElectionYear = ey;
+    }
 
     // Per-brokerage account types so retirement accounts (IRA/401k/HSA/529) are
     // excluded from taxable events; "TAXABLE" is the fallback for transactions with
@@ -141,12 +158,12 @@ export async function POST(request: NextRequest) {
         : null,
     }));
 
-    // Run the lot engine
-    const { lots, taxableEvents, dividends } = computeSecuritiesLots(
-      transactions,
-      costBasisMethod,
-      accountType,
-    );
+    // Run the lot engine (with §475 MTM config so deemed sales are emitted in-stream)
+    const { lots, taxableEvents, dividends, section481OrdinaryGainLoss } =
+      computeSecuritiesLots(transactions, costBasisMethod, accountType, {
+        taxStatus,
+        electionYear: mtmElectionYear,
+      });
 
     // -----------------------------------------------------------------------
     // Section 1256 symbol tagging — MUST run BEFORE wash-sale detection, because
@@ -169,7 +186,6 @@ export async function POST(request: NextRequest) {
     // -----------------------------------------------------------------------
     // Wash sale detection
     // -----------------------------------------------------------------------
-    const taxStatus = taxSettings?.taxStatus || "INVESTOR";
     const substantiallyIdenticalMethod =
       taxSettings?.substantiallyIdenticalMethod || "METHOD_1";
 
@@ -210,63 +226,42 @@ export async function POST(request: NextRequest) {
     );
 
     // -----------------------------------------------------------------------
-    // Section 475 MTM: for TRADER_MTM status only
+    // Section 475 MTM (TRADER_MTM): the lot engine already emitted the year-end
+    // deemed-sale events as ORDINARY / Form 4797 and reset basis across years, and
+    // computed the §481(a) transition figure from the PRIOR year-end FMV. Here we
+    // only convert the trader's CLOSED-position events to ordinary too, then total.
     // -----------------------------------------------------------------------
-    let section475Result = null;
+    let section475Result: {
+      ordinaryGainLoss: number;
+      section481OrdinaryGainLoss: number;
+      deemedSaleEventsCount: number;
+      hasSection481Adjustment: boolean;
+    } | null = null;
     if (taxStatus === "TRADER_MTM") {
-      // Build year-end FMV map from YEAR_END_FMV transactions
-      const yearEndFmvMap = new Map<string, number>();
-      for (const tx of transactions) {
-        if (
-          tx.type === "YEAR_END_FMV" &&
-          new Date(tx.date).getFullYear() === taxYear
-        ) {
-          yearEndFmvMap.set(
-            tx.symbol.toUpperCase(),
-            Number(tx.price),
-          );
-        }
-      }
-
-      // Detect transition year: check if prior year had a different tax status
-      // by looking at prior year settings. If no prior settings exist, treat
-      // this as a transition year.
-      let isTransitionYear = false;
-      try {
-        const priorSettings = await prisma.securitiesTaxSettings.findUnique({
-          where: {
-            userId_year: { userId: user.id, year: taxYear - 1 },
-          },
-        });
-        isTransitionYear =
-          !priorSettings || priorSettings.taxStatus !== "TRADER_MTM";
-      } catch {
-        isTransitionYear = true;
-      }
-
-      section475Result = computeSection475(
-        taxableEvents,
-        openLots,
-        taxYear,
-        isTransitionYear,
-        yearEndFmvMap,
-      );
-
-      // Convert non-segregated events to ordinary gain type and Form 4797
+      let deemedSaleEventsCount = 0;
       for (const ev of taxableEvents) {
         if (ev.year !== taxYear) continue;
-        // Skip segregated investment events (they retain capital treatment)
-        const isSegregated = section475Result.segregatedInvestmentEvents.some(
-          (se) =>
-            se.transactionId === ev.transactionId && se.lotId === ev.lotId,
-        );
-        if (isSegregated) continue;
-        // Skip Section 1256 events — they have their own treatment
-        if (ev.gainType === "SECTION_1256") continue;
-
+        if (ev.gainType === "SECTION_1256") continue; // keep 60/40 treatment
+        if (ev.gainType === "ORDINARY") {
+          deemedSaleEventsCount++; // already a lot-engine deemed sale
+          continue;
+        }
         ev.gainType = "ORDINARY";
         ev.formDestination = "4797";
       }
+      const ordinaryGainLoss =
+        Math.round(
+          taxableEvents
+            .filter((ev) => ev.year === taxYear && ev.gainType === "ORDINARY")
+            .reduce((s, ev) => s + Number(ev.gainLoss), 0) * 100,
+        ) / 100;
+      section475Result = {
+        ordinaryGainLoss,
+        section481OrdinaryGainLoss:
+          Math.round(section481OrdinaryGainLoss * 100) / 100,
+        deemedSaleEventsCount,
+        hasSection481Adjustment: Math.abs(section481OrdinaryGainLoss) > 0.005,
+      };
     }
 
     // -----------------------------------------------------------------------
@@ -420,10 +415,10 @@ export async function POST(request: NextRequest) {
         ? {
             section475: {
               ordinaryGainLoss: section475Result.ordinaryGainLoss,
-              deemedSaleEventsCount: section475Result.deemedSaleEvents.length,
-              hasSection481Adjustment: !!section475Result.section481Adjustment,
-              segregatedEventsCount:
-                section475Result.segregatedInvestmentEvents.length,
+              section481OrdinaryGainLoss:
+                section475Result.section481OrdinaryGainLoss,
+              deemedSaleEventsCount: section475Result.deemedSaleEventsCount,
+              hasSection481Adjustment: section475Result.hasSection481Adjustment,
             },
           }
         : {}),
