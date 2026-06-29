@@ -169,19 +169,24 @@ export async function generateSecuritiesTaxReport(
       continue;
     }
 
-    // Regular capital gains/losses (Form 8949 / Schedule D)
+    // Regular capital gains/losses (Form 8949 / Schedule D). Wash-sale disallowed
+    // losses are ADDED BACK here (allowed = gainLoss + washSaleAdjustment) so the
+    // Schedule D summary reflects the deductible amount; the raw gainLoss stays on
+    // the per-line event for Form 8949 (col g shows the adjustment).
+    const wsAdj = toNum(evt.washSaleAdjustment);
+    const allowed = gainLoss + wsAdj;
     const hp = evt.holdingPeriod;
     if (hp === "SHORT_TERM") {
-      if (gainLoss >= 0) {
-        shortTermGains += gainLoss;
+      if (allowed >= 0) {
+        shortTermGains += allowed;
       } else {
-        shortTermLosses += gainLoss;
+        shortTermLosses += allowed;
       }
     } else {
-      if (gainLoss >= 0) {
-        longTermGains += gainLoss;
+      if (allowed >= 0) {
+        longTermGains += allowed;
       } else {
-        longTermLosses += gainLoss;
+        longTermLosses += allowed;
       }
     }
 

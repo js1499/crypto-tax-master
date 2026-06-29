@@ -353,6 +353,7 @@ function findWindowAcquisitions(
   bySymbol: Map<string, AcquisitionRecord[]>,
   byUnderlying: Map<string, AcquisitionRecord[]>,
   lossTransactionId: number,
+  lossLotId: number | undefined,
 ): AcquisitionRecord[] {
   const windowStart = new Date(saleDate.getTime() - WASH_SALE_WINDOW_DAYS * MILLIS_PER_DAY);
   const windowEnd = new Date(saleDate.getTime() + WASH_SALE_WINDOW_DAYS * MILLIS_PER_DAY);
@@ -384,6 +385,8 @@ function findWindowAcquisitions(
       const acq = arr[i];
       if (seenTxIds.has(acq.transactionId)) continue;
       if (acq.transactionId === lossTransactionId) continue;
+      // The loss lot's OWN originating buy is never its own wash-sale replacement (#1).
+      if (lossLotId !== undefined && acq.lotId === lossLotId) continue;
       if (acq.remainingQty <= 1e-10) continue;
 
       if (isSubstantiallyIdentical(
@@ -408,6 +411,8 @@ function findWindowAcquisitions(
         const acq = underlyingArr[i];
         if (seenTxIds.has(acq.transactionId)) continue;
         if (acq.transactionId === lossTransactionId) continue;
+        // The loss lot's OWN originating buy is never its own wash-sale replacement (#1).
+        if (lossLotId !== undefined && acq.lotId === lossLotId) continue;
         if (acq.remainingQty <= 1e-10) continue;
 
         if (isSubstantiallyIdentical(
@@ -539,6 +544,21 @@ export function detectWashSales(
   // Build mutable lot map for basis adjustments
   const lotMap = buildLotMap(lots);
 
+  // Link each acquisition record to the lot it created (via the lot engine's
+  // originatingTransactionId), so the loss lot's OWN buy can be excluded as its
+  // replacement (#1) and replacement-lot basis carryover can run (#5).
+  const txToLotId = new Map<number, number>();
+  for (const lot of lots) {
+    if (lot.originatingTransactionId != null) {
+      txToLotId.set(lot.originatingTransactionId, lot.id);
+    }
+  }
+  for (const arr of bySymbol.values()) {
+    for (const rec of arr) {
+      if (rec.lotId === undefined) rec.lotId = txToLotId.get(rec.transactionId);
+    }
+  }
+
   // Transaction lookup for option details
   const txById = new Map<number, SecuritiesTransaction>();
   for (const tx of allTransactions) {
@@ -563,6 +583,13 @@ export function detectWashSales(
   for (const ev of lossEvents) {
     const key = `${ev.transactionId}-${ev.lotId || 0}`;
     lossRemainingAmounts.set(key, Math.abs(ev.gainLoss));
+  }
+
+  // Loss keys processed across ALL daisy-chain iterations (never re-process one,
+  // which would double-count a synthetic loss).
+  const seenLossKeys = new Set<string>();
+  for (const ev of lossEvents) {
+    seenLossKeys.add(`${ev.transactionId}-${ev.lotId || 0}`);
   }
 
   // Daisy chain loop
@@ -612,19 +639,22 @@ export function detectWashSales(
         bySymbol,
         byUnderlying,
         lossEvent.transactionId,
+        lossEvent.lotId,
       );
 
       if (candidates.length === 0) continue;
 
       // Match acquisitions FIFO within window (already sorted with lookback priority)
       let lossRemaining = remainingLoss;
+      let lossQtyRemaining = totalLossQty; // #6: match against the REMAINING loss qty
 
       for (const acq of candidates) {
-        if (lossRemaining <= 0.005) break;
+        if (lossRemaining <= 0.005 || lossQtyRemaining <= 1e-10) break;
         if (acq.remainingQty <= 1e-10) continue;
 
-        // Determine how much of this acquisition matches
-        const matchedQty = Math.min(acq.remainingQty, totalLossQty);
+        // Match against the still-unmatched loss quantity so a replacement isn't
+        // over-consumed and starved from other loss events (#6).
+        const matchedQty = Math.min(acq.remainingQty, lossQtyRemaining);
 
         // Prorate the disallowed amount
         const disallowedAmount = totalLossQty > 0
@@ -666,8 +696,9 @@ export function detectWashSales(
         lossRemaining -= disallowedAmount;
         lossRemainingAmounts.set(lossKey, Math.max(0, lossRemaining));
 
-        // Consume from the acquisition
+        // Consume from the acquisition and from the remaining loss quantity.
         acq.remainingQty -= matchedQty;
+        lossQtyRemaining -= matchedQty;
 
         // Adjust replacement lot basis (if not permanent and lot exists)
         if (!isPermanent && acq.lotId) {
@@ -698,12 +729,7 @@ export function detectWashSales(
       }
     }
 
-    // Find new loss events from adjusted lots that weren't in the original set
-    const existingLossKeys = new Set<string>();
-    for (const ev of lossEvents) {
-      existingLossKeys.add(`${ev.transactionId}-${ev.lotId || 0}`);
-    }
-
+    // Find new loss events from adjusted lots not already processed in ANY iteration.
     const newLossEvents: SecuritiesTaxEvent[] = [];
     for (const ev of taxableEvents) {
       if (ev.gainType !== "CAPITAL") continue;
@@ -719,7 +745,8 @@ export function detectWashSales(
       if (adjustedGainLoss >= 0) continue;
 
       const key = `${ev.transactionId}-${ev.lotId}`;
-      if (existingLossKeys.has(key)) continue;
+      if (seenLossKeys.has(key)) continue;
+      seenLossKeys.add(key);
 
       // Create a synthetic loss event for the adjustment
       const newEv: SecuritiesTaxEvent = {

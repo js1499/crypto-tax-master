@@ -3,6 +3,10 @@ import {
   type SecuritiesTransaction,
   type SecuritiesLotData,
 } from "../../securities-lot-engine";
+import {
+  detectWashSales,
+  applyWashSaleAdjustments,
+} from "../../securities-wash-sale-engine";
 
 let _id = 1;
 
@@ -45,3 +49,19 @@ export const lotByAcq = (lots: SecuritiesLotData[], iso: string) =>
   lots.find(
     (l) => l.status === "OPEN" && l.dateAcquired.getTime() === d(iso).getTime(),
   );
+
+/** Run the full lot -> wash-sale pipeline (no DB), as compute/route.ts does. */
+export function runWashSales(txns: SecuritiesTransaction[], method = "FIFO") {
+  const { lots, taxableEvents, dividends } = runLots(txns, method);
+  const washSales = detectWashSales(
+    taxableEvents,
+    lots,
+    txns,
+    { substantiallyIdenticalMethod: "METHOD_1" } as never,
+    [] as never,
+    "INVESTOR",
+    new Map<string, string>(),
+  );
+  applyWashSaleAdjustments(washSales, lots, taxableEvents);
+  return { lots, taxableEvents, washSales, dividends };
+}

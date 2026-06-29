@@ -63,6 +63,8 @@ export interface SecuritiesLotData {
   brokerageId?: string;
   washSaleAdjustment: number;
   adjustedAcquisitionDate?: Date;
+  /** Transaction id of the acquisition that created this lot (wash-sale lot linkage). */
+  originatingTransactionId?: number;
   status: "OPEN" | "CLOSED";
   dateSold?: Date;
   holdingPeriod?: string;
@@ -116,6 +118,7 @@ interface MutableLot {
   brokerageId?: string;
   washSaleAdjustment: number;
   adjustedAcquisitionDate?: Date;
+  originatingTransactionId?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -332,6 +335,7 @@ export function computeSecuritiesLots(
           isSection1256: tx.isSection1256,
           brokerageId: tx.brokerageId ?? undefined,
           washSaleAdjustment: 0,
+          originatingTransactionId: tx.id,
         };
 
         openLots[sym].push(lot);
@@ -374,6 +378,7 @@ export function computeSecuritiesLots(
           isSection1256: tx.isSection1256,
           brokerageId: tx.brokerageId ?? undefined,
           washSaleAdjustment: 0,
+          originatingTransactionId: tx.id,
         };
 
         openLots[sym].push(lot);
