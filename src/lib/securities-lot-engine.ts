@@ -877,8 +877,7 @@ export function computeSecuritiesLots(
         // For Section 1256 contracts: treated as sold at FMV on last business day
         if (tx.isSection1256) {
           const fmvPrice = price;
-          const symLots = openLots[sym];
-          if (!symLots) break;
+          const symLots = openLots[sym] ?? [];
 
           for (const lot of symLots) {
             const proceeds = lot.quantity * fmvPrice;
@@ -934,6 +933,64 @@ export function computeSecuritiesLots(
             // Reset basis to FMV for next year
             lot.totalCostBasis = proceeds;
             lot.costBasisPerShare = fmvPrice;
+          }
+
+          // #15: §1256 SHORT positions are marked to market too (60/40), same as
+          // longs. Without this a shorted §1256 contract held across year-end was
+          // never marked — and the early `break` above used to skip shorts entirely
+          // when the symbol had no open long lots.
+          const symShorts = openShorts[sym] ?? [];
+          for (const shortPos of symShorts) {
+            if (!shortPos.isSection1256) continue;
+            const buyback = shortPos.quantity * fmvPrice; // cost to close at FMV
+            const gainLoss = shortPos.proceeds - buyback; // short gains if FMV < short price
+
+            if (!isTaxDeferred && Math.abs(gainLoss) > 0.005) {
+              const longTermPortion = gainLoss * 0.6;
+              const shortTermPortion = gainLoss * 0.4;
+
+              if (Math.abs(shortTermPortion) > 0.005) {
+                taxableEvents.push({
+                  transactionId: tx.id,
+                  symbol: sym,
+                  assetClass: tx.assetClass,
+                  quantity: shortPos.quantity,
+                  dateAcquired: shortPos.dateOpened,
+                  dateSold: txDate,
+                  proceeds: shortPos.proceeds * 0.4,
+                  costBasis: buyback * 0.4,
+                  gainLoss: shortTermPortion,
+                  holdingPeriod: "SHORT_TERM",
+                  gainType: "SECTION_1256",
+                  formDestination: "6781",
+                  washSaleAdjustment: 0,
+                  year,
+                });
+              }
+
+              if (Math.abs(longTermPortion) > 0.005) {
+                taxableEvents.push({
+                  transactionId: tx.id,
+                  symbol: sym,
+                  assetClass: tx.assetClass,
+                  quantity: shortPos.quantity,
+                  dateAcquired: shortPos.dateOpened,
+                  dateSold: txDate,
+                  proceeds: shortPos.proceeds * 0.6,
+                  costBasis: buyback * 0.6,
+                  gainLoss: longTermPortion,
+                  holdingPeriod: "LONG_TERM",
+                  gainType: "SECTION_1256",
+                  formDestination: "6781",
+                  washSaleAdjustment: 0,
+                  year,
+                });
+              }
+            }
+
+            // Reset the short's mark to FMV for next year's incremental MTM.
+            shortPos.proceeds = buyback;
+            shortPos.proceedsPerShare = fmvPrice;
           }
         }
         break;
