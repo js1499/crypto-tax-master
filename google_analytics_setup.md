@@ -76,3 +76,73 @@ GA4 measurement ID replaced **`G-MPYQLJXN8X` → `G-4YLLBY4ZM0`** per follow-up 
 The single source of truth is `GA4_MEASUREMENT_ID` in `src/lib/google-ads.ts`, which now
 holds `G-4YLLBY4ZM0`; the `gtag('config', …)` call and all verification use that ID.
 (Mentions of `G-MPYQLJXN8X` above reflect the original ID.) Still inlined, no env var.
+
+
+*MICROSOFT CLARITY TAG*
+# Task: Add Microsoft Clarity sitewide
+
+In the Glide codebase, add the Microsoft Clarity tracking script (project id
+xema6mwgl2). Install it once, sitewide, so it loads in the <head> on EVERY page and
+persists across client-side navigation (SPA route changes), the same way the existing
+Google tag is loaded.
+
+This is the snippet Clarity gave me:
+
+  <script type="text/javascript">
+    (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+    })(window, document, "clarity", "script", "xema6mwgl2");
+  </script>
+
+Requirements:
+- Load it sitewide via the framework's idiomatic method for injecting a head script
+  across all pages (the same mechanism/location used for the Google tag
+  AW-18275931897). Do not add it to a single page only.
+- Load the Clarity library only ONCE; ensure SPA navigation does not re-inject or
+  duplicate it.
+- Read the Clarity project id (xema6mwgl2) from a client-exposed env var to match repo
+  convention, or inline it if that's the existing pattern for similar tags; be
+  consistent. The id is not a secret (it's visible in page source).
+- Do not modify or interfere with the existing Google Ads tag, GA4, conversion
+  tracking, or enhanced conversions. Clarity is independent analytics; it should sit
+  alongside them without touching them.
+- Fail safe: a Clarity load failure must never block rendering or break the page.
+
+Deliverable: the change by file, the env var if used, and how to verify (load a few
+pages, confirm the Clarity script loads once, and confirm sessions start appearing in
+the Clarity dashboard).
+
+---
+
+## ✅ Microsoft Clarity — Execution log (2026-06-29)
+
+**Done.** Installed Microsoft Clarity (project `xema6mwgl2`) sitewide, loaded once,
+independent of the Google tag.
+
+### Change by file
+- `src/app/layout.tsx` — added a `<Script id="ms-clarity" strategy="afterInteractive">`
+  in the root-layout `<body>` (alongside the Crisp + Google tags) running Clarity's
+  standard IIFE loader with project id `xema6mwgl2` inlined.
+
+### Env var
+- **None.** The Clarity project id is inlined, consistent with the inlined Crisp website
+  id and the Ads/GA4 ids. The id is public (visible in page source).
+
+### Design notes
+- **Loaded once, sitewide, SPA-safe** — mounted in the App Router root layout (which does
+  not remount on client navigation), so the loader runs once and Clarity persists across
+  route changes without re-injecting. `next/script` also dedupes by the `id="ms-clarity"`.
+  Mirrors the existing Crisp `<Script>` precedent.
+- **Independent** — it is a standalone `<Script>`; it does not touch the Google Ads tag,
+  GA4, the signup/purchase conversions, or enhanced conversions.
+- **Fail-safe** — `afterInteractive` loads after the page is interactive (never blocks
+  render), and the loader only appends a script tag; a Clarity load failure can't break
+  the page.
+
+### Verify
+1. Load the site, DevTools → Network → confirm `https://www.clarity.ms/tag/xema6mwgl2`
+   loads **exactly once**; navigate a few routes in-app and confirm it is **not** re-requested.
+2. Clarity dashboard → Recordings/Sessions → confirm new sessions appear after browsing.
+3. Confirm the Google tag (`gtag/js?id=AW-18275931897`), GA4, and Ads conversions are unaffected.

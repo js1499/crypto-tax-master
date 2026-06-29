@@ -69,6 +69,17 @@ export default function RootLayout({
             label is read server-side and stays inert until
             GOOGLE_ADS_SIGNUP_CONVERSION_LABEL is set. */}
         <GoogleAds signupLabel={process.env.GOOGLE_ADS_SIGNUP_CONVERSION_LABEL || ""} />
+        {/* Microsoft Clarity (project xema6mwgl2) — independent analytics, loaded once
+            sitewide via afterInteractive (mirrors the Crisp pattern). Id inlined to match
+            the other tags; does not touch the Google tag / Ads conversions. Fail-safe:
+            afterInteractive never blocks render. */}
+        <Script id="ms-clarity" strategy="afterInteractive">{`
+          (function(c,l,a,r,i,t,y){
+              c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+              t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+              y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+          })(window, document, "clarity", "script", "xema6mwgl2");
+        `}</Script>
       </body>
     </html>
   );
