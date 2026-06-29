@@ -809,13 +809,19 @@ export function computeSecuritiesLots(
         const symLots = openLots[sym];
         if (!symLots || symLots.length === 0) break;
 
-        const totalBasis = symLots.reduce((s, l) => s + l.totalCostBasis, 0);
-        if (totalBasis <= 0) break;
+        // Return of capital is paid PER SHARE: reduce each lot's basis by its share
+        // of the distribution (quantity-weighted, not dollar-basis-weighted). The lot
+        // engine is the SINGLE owner of RoC basis handling (processDividends no longer
+        // touches it), so basis is reduced exactly once.
+        const totalQty = symLots.reduce((s, l) => s + l.quantity, 0);
+        if (totalQty <= 0) break;
+        const perShare = totalReturn / totalQty;
 
         for (const lot of symLots) {
-          // Pro-rata reduction
-          const proportion = lot.totalCostBasis / totalBasis;
-          const reduction = totalReturn * proportion;
+          const lotReturn = lot.quantity * perShare;
+          const reduction = Math.min(lotReturn, lot.totalCostBasis);
+          const excess = lotReturn - reduction; // RoC received beyond this lot's basis
+
           lot.totalCostBasis = Math.max(0, lot.totalCostBasis - reduction);
           lot.costBasisPerShare =
             lot.quantity > 0 ? lot.totalCostBasis / lot.quantity : 0;
@@ -825,6 +831,35 @@ export function computeSecuritiesLots(
           if (allLotEntry) {
             allLotEntry.totalCostBasis = lot.totalCostBasis;
             allLotEntry.costBasisPerShare = lot.costBasisPerShare;
+          }
+
+          // RoC in excess of basis is a capital gain (IRS Pub 550), characterized by
+          // the lot's own holding period — instead of being silently dropped.
+          if (excess > 0.005 && !isTaxDeferred) {
+            const holdPeriod = isLongTerm(
+              lot.adjustedAcquisitionDate ?? lot.dateAcquired,
+              txDate,
+            )
+              ? ("LONG_TERM" as const)
+              : ("SHORT_TERM" as const);
+            taxableEvents.push({
+              transactionId: tx.id,
+              lotId: lot.id,
+              symbol: sym,
+              assetClass: tx.assetClass,
+              quantity: lot.quantity,
+              dateAcquired: lot.dateAcquired,
+              dateSold: txDate,
+              proceeds: round2(excess),
+              costBasis: 0,
+              gainLoss: round2(excess),
+              holdingPeriod: holdPeriod,
+              gainType: "CAPITAL",
+              form8949Box: determineForm8949Box(holdPeriod, lot.isCovered),
+              formDestination: "8949",
+              washSaleAdjustment: 0,
+              year,
+            });
           }
         }
         break;

@@ -104,9 +104,6 @@ export function processDividends(
     });
   }
 
-  // Track cumulative return-of-capital per symbol for excess detection
-  const cumulativeRoC = new Map<string, number>();
-
   // Schedule B accumulators
   let totalOrdinary = 0;
   let totalQualified = 0;
@@ -200,60 +197,11 @@ export function processDividends(
       }
 
       // ----------------------------------------------------------------
-      // Return of capital: reduce basis across open lots for the symbol
+      // Return of capital: handled entirely by the lot engine (per-share basis
+      // reduction + excess-over-basis as a capital gain). It is NOT dividend income,
+      // so nothing is recorded here — a single owner avoids double-reducing basis.
       // ----------------------------------------------------------------
       case "RETURN_OF_CAPITAL": {
-        const symLots = lotsBySymbol.get(sym);
-        if (!symLots || symLots.length === 0) break;
-
-        const totalBasis = symLots.reduce((s, l) => s + l.basis, 0);
-        if (totalBasis <= 0) break;
-
-        // Track cumulative RoC
-        const prevCumulative = cumulativeRoC.get(sym) || 0;
-        const newCumulative = prevCumulative + amount;
-        cumulativeRoC.set(sym, newCumulative);
-
-        // If cumulative RoC exceeds total basis, the excess is a capital gain
-        let effectiveReduction = amount;
-        let excessGain = 0;
-
-        if (newCumulative > totalBasis) {
-          // Only reduce by whatever basis remains
-          const basisRemaining = Math.max(0, totalBasis - prevCumulative);
-          effectiveReduction = Math.min(amount, basisRemaining);
-          excessGain = amount - effectiveReduction;
-        }
-
-        // Apply pro-rata reduction across lots
-        if (effectiveReduction > 0) {
-          for (const lot of symLots) {
-            if (lot.basis <= 0) continue;
-            const proportion = lot.basis / totalBasis;
-            const reduction = round2(effectiveReduction * proportion);
-
-            lot.basis = Math.max(0, lot.basis - reduction);
-            lotAdjustments.push({
-              lotId: lot.lotId,
-              basisReduction: reduction,
-            });
-          }
-        }
-
-        // Record excess as a capital gain distribution dividend
-        if (excessGain > 0.005) {
-          dividends.push({
-            transactionId: tx.id,
-            symbol: sym,
-            payer,
-            amount: round2(excessGain),
-            dividendType: "ROC_EXCESS_GAIN",
-            foreignTaxPaid: 0,
-            year,
-          });
-          totalCapGainDistributions += excessGain;
-        }
-
         break;
       }
     }

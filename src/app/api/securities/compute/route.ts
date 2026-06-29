@@ -196,23 +196,9 @@ export async function POST(request: NextRequest) {
     // Advanced dividends processing (return-of-capital lot adjustments)
     // -----------------------------------------------------------------------
     const openLots = lots.filter((l) => l.status === "OPEN");
-    const {
-      dividends: advancedDividends,
-      lotAdjustments,
-    } = processDividends(transactions, openLots);
-
-    // Apply return-of-capital basis adjustments to lots
-    if (lotAdjustments.length > 0) {
-      const lotById = new Map(lots.map((l) => [l.id, l]));
-      for (const adj of lotAdjustments) {
-        const lot = lotById.get(adj.lotId);
-        if (lot) {
-          lot.totalCostBasis = Math.max(0, lot.totalCostBasis - adj.basisReduction);
-          lot.costBasisPerShare =
-            lot.quantity > 0 ? lot.totalCostBasis / lot.quantity : 0;
-        }
-      }
-    }
+    const { dividends: advancedDividends } = processDividends(transactions, openLots);
+    // Return-of-capital basis reduction (and excess-as-gain) is owned by the lot
+    // engine now, so there are no dividend-side lot adjustments to re-apply here.
 
     // -----------------------------------------------------------------------
     // Section 1256: tag qualifying events and compute summary
