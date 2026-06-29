@@ -4,6 +4,7 @@ import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import prisma from "@/lib/prisma";
 import { parseSecuritiesCSV } from "@/lib/securities-csv-parser";
 import { Decimal } from "@prisma/client/runtime/library";
+import { createHash } from "crypto";
 
 /**
  * POST /api/securities/import
@@ -130,28 +131,56 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Build records for createMany
-    const records = transactions.map((tx) => ({
-      userId: user.id,
-      brokerageId: tx.account ? accountBrokerageMap.get(tx.account) ?? null : null,
-      date: tx.date,
-      type: tx.type,
-      symbol: tx.symbol,
-      assetClass: tx.assetClass,
-      quantity: new Decimal(tx.quantity),
-      price: new Decimal(tx.price),
-      fees: new Decimal(tx.fees),
-      totalAmount: tx.totalAmount !== undefined ? new Decimal(tx.totalAmount) : null,
-      lotId: tx.lotId ?? null,
-      underlyingSymbol: tx.underlyingSymbol ?? null,
-      optionType: tx.optionType ?? null,
-      strikePrice: tx.strikePrice !== undefined ? new Decimal(tx.strikePrice) : null,
-      expirationDate: tx.expirationDate ?? null,
-      dividendType: tx.dividendType ?? null,
-      isCovered: tx.isCovered,
-      isSection1256: tx.isSection1256,
-      notes: tx.notes ?? null,
-    }));
+    // Build records for createMany, with a per-user dedupe hash so re-importing the
+    // same CSV is idempotent (skipDuplicates relies on a unique key). An in-file
+    // occurrence index keeps legitimately-identical same-day trades distinct.
+    const occurrence = new Map<string, number>();
+    const records = transactions.map((tx) => {
+      const brokerageId = tx.account
+        ? accountBrokerageMap.get(tx.account) ?? null
+        : null;
+      const baseKey = [
+        tx.date.toISOString().slice(0, 10),
+        tx.type,
+        tx.symbol,
+        tx.assetClass,
+        tx.quantity,
+        tx.price,
+        tx.fees,
+        tx.totalAmount ?? "",
+        tx.lotId ?? "",
+        brokerageId ?? "",
+      ].join("|");
+      const occ = occurrence.get(baseKey) ?? 0;
+      occurrence.set(baseKey, occ + 1);
+      const dedupeHash = createHash("sha256")
+        .update(`${user.id}|${baseKey}|#${occ}`)
+        .digest("hex");
+
+      return {
+        userId: user.id,
+        brokerageId,
+        date: tx.date,
+        type: tx.type,
+        symbol: tx.symbol,
+        assetClass: tx.assetClass,
+        quantity: new Decimal(tx.quantity),
+        price: new Decimal(tx.price),
+        fees: new Decimal(tx.fees),
+        totalAmount: tx.totalAmount !== undefined ? new Decimal(tx.totalAmount) : null,
+        lotId: tx.lotId ?? null,
+        originalAcquisitionDate: tx.originalAcquisitionDate ?? null,
+        underlyingSymbol: tx.underlyingSymbol ?? null,
+        optionType: tx.optionType ?? null,
+        strikePrice: tx.strikePrice !== undefined ? new Decimal(tx.strikePrice) : null,
+        expirationDate: tx.expirationDate ?? null,
+        dividendType: tx.dividendType ?? null,
+        isCovered: tx.isCovered,
+        isSection1256: tx.isSection1256,
+        notes: tx.notes ?? null,
+        dedupeHash,
+      };
+    });
 
     // Batch insert with skipDuplicates
     const result = await prisma.securitiesTransaction.createMany({

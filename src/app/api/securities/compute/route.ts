@@ -83,9 +83,18 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Default account type to TAXABLE — in the future, this could be
-    // per-brokerage. For now, use the broadest setting.
+    // Per-brokerage account types so retirement accounts (IRA/401k/HSA/529) are
+    // excluded from taxable events; "TAXABLE" is the fallback for transactions with
+    // no linked brokerage.
     const accountType = "TAXABLE";
+    const brokerages = await prisma.brokerage.findMany({
+      where: { userId: user.id },
+      select: { id: true, accountType: true },
+    });
+    const brokerageAccountTypes = new Map<string, string>();
+    for (const b of brokerages) {
+      brokerageAccountTypes.set(b.id, b.accountType);
+    }
 
     // Fetch all securities transactions for the user, ordered by date
     const rawTransactions = await prisma.securitiesTransaction.findMany({
@@ -126,6 +135,10 @@ export async function POST(request: NextRequest) {
       isCovered: tx.isCovered,
       isSection1256: tx.isSection1256,
       notes: tx.notes,
+      accountType: brokerageAccountTypes.get(tx.brokerageId ?? "") ?? "TAXABLE",
+      originalAcquisitionDate: tx.originalAcquisitionDate
+        ? new Date(tx.originalAcquisitionDate)
+        : null,
     }));
 
     // Run the lot engine
@@ -134,6 +147,24 @@ export async function POST(request: NextRequest) {
       costBasisMethod,
       accountType,
     );
+
+    // -----------------------------------------------------------------------
+    // Section 1256 symbol tagging — MUST run BEFORE wash-sale detection, because
+    // §1256 contracts are marked-to-market and exempt from wash-sale rules (the
+    // wash-sale engine skips events already tagged SECTION_1256).
+    // -----------------------------------------------------------------------
+    const qualifyingSymbols = new Set(
+      (await getQualifyingSymbols()).map((s) => s.toUpperCase()),
+    );
+    for (const ev of taxableEvents) {
+      if (
+        qualifyingSymbols.has(ev.symbol.toUpperCase()) &&
+        ev.gainType !== "SECTION_1256"
+      ) {
+        ev.gainType = "SECTION_1256";
+        ev.formDestination = "6781";
+      }
+    }
 
     // -----------------------------------------------------------------------
     // Wash sale detection
@@ -147,16 +178,6 @@ export async function POST(request: NextRequest) {
       where: { userId: user.id },
       select: { symbols: true },
     });
-
-    // Build brokerage account type map for IRA/retirement wash sale detection
-    const brokerages = await prisma.brokerage.findMany({
-      where: { userId: user.id },
-      select: { id: true, accountType: true },
-    });
-    const brokerageAccountTypes = new Map<string, string>();
-    for (const b of brokerages) {
-      brokerageAccountTypes.set(b.id, b.accountType);
-    }
 
     const washSales = detectWashSales(
       taxableEvents,
@@ -196,21 +217,6 @@ export async function POST(request: NextRequest) {
     // -----------------------------------------------------------------------
     // Section 1256: tag qualifying events and compute summary
     // -----------------------------------------------------------------------
-    const qualifyingSymbols = new Set(
-      (await getQualifyingSymbols()).map((s) => s.toUpperCase()),
-    );
-
-    // Tag taxable events whose symbols qualify as Section 1256
-    for (const ev of taxableEvents) {
-      if (
-        qualifyingSymbols.has(ev.symbol.toUpperCase()) &&
-        ev.gainType !== "SECTION_1256"
-      ) {
-        ev.gainType = "SECTION_1256";
-        ev.formDestination = "6781";
-      }
-    }
-
     const section1256Result = await computeSection1256(
       user.id,
       taxYear,

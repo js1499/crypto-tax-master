@@ -270,6 +270,11 @@ export async function generateSecuritiesTaxReport(
         dividendsByPayer[payer].ordinary += amount;
         break;
       case "CAPITAL_GAIN":
+      case "CAP_GAIN_DISTRIBUTION":
+      case "ROC_EXCESS_GAIN":
+        // Capital-gain distributions (1099-DIV box 2a) and excess return-of-capital
+        // gains flow to Schedule D as capital gains — NOT the ordinary-dividend
+        // default. (The dividends engine emits CAP_GAIN_DISTRIBUTION / ROC_EXCESS_GAIN.)
         totalCapGainDistributions += amount;
         break;
       case "INTEREST":

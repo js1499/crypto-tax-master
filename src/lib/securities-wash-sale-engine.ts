@@ -106,8 +106,10 @@ function daysBetween(a: Date, b: Date): number {
 }
 
 function startOfDay(d: Date): Date {
+  // Normalize to UTC midnight so the +/-30-day window arithmetic (fixed-ms) is exact
+  // and timezone/DST-independent (dates are stored as UTC @db.Date).
   const r = new Date(d);
-  r.setHours(0, 0, 0, 0);
+  r.setUTCHours(0, 0, 0, 0);
   return r;
 }
 

@@ -138,7 +138,9 @@ export function processDividends(
       // ----------------------------------------------------------------
       case "DIVIDEND":
       case "DIVIDEND_REINVEST": {
-        const divType = tx.dividendType || "QUALIFIED";
+        // Default to ORDINARY (non-qualified): qualified status requires a qualifying
+        // payer AND the >60-day holding-period test, so it must not be assumed.
+        const divType = tx.dividendType || "ORDINARY";
 
         const record: DividendRecord = {
           transactionId: tx.id,

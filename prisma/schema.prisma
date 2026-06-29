@@ -322,9 +322,15 @@ model SecuritiesTransaction {
   isSection1256       Boolean  @default(false) @map("is_section_1256")
   isCovered           Boolean  @default(true) @map("is_covered")
   notes               String?
+  originalAcquisitionDate DateTime? @map("original_acquisition_date") @db.Date
+  dedupeHash          String?  @map("dedupe_hash")
   createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // Idempotent re-import: a per-user content hash (with an in-file occurrence index)
+  // so createMany(skipDuplicates) actually drops re-uploaded rows without merging
+  // legitimately-identical same-day trades. NULL hashes (legacy rows) stay distinct.
+  @@unique([userId, dedupeHash])
   @@index([userId])
   @@index([symbol])
   @@index([date])

@@ -42,6 +42,10 @@ export interface SecuritiesTransaction {
   isCovered: boolean;
   isSection1256: boolean;
   notes?: string | null;
+  /** Brokerage account type (TAXABLE / IRA_* / 401K / HSA / 529); tax-deferred accounts emit no taxable events. */
+  accountType?: string | null;
+  /** Original acquisition date for TRANSFER_IN lots (preserves holding-period carryover). */
+  originalAcquisitionDate?: Date | null;
 }
 
 export interface SecuritiesLotData {
@@ -128,12 +132,20 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-/** Returns true if >1 year between two dates */
+/** Returns true if held MORE than one year (long-term). UTC-based; handles Feb-29. */
 function isLongTerm(acquired: Date, sold: Date): boolean {
-  const oneYearLater = new Date(acquired);
-  oneYearLater.setFullYear(oneYearLater.getFullYear() + 1);
-  // Must be held MORE than one year (sold date > one year anniversary)
-  return sold > oneYearLater;
+  const y = acquired.getUTCFullYear();
+  const mo = acquired.getUTCMonth();
+  const d = acquired.getUTCDate();
+  const oneYearLater = new Date(Date.UTC(y + 1, mo, d));
+  // Feb-29 has no anniversary in a non-leap year; JS overflows it to Mar-1. Pull it
+  // back to the last day of the intended month (Feb-28) so the long-term clock isn't
+  // shifted an extra day.
+  if (oneYearLater.getUTCMonth() !== mo) {
+    oneYearLater.setUTCDate(0);
+  }
+  // Must be held MORE than one year (sold strictly after the anniversary).
+  return sold.getTime() > oneYearLater.getTime();
 }
 
 function determineForm8949Box(
@@ -273,7 +285,6 @@ export function computeSecuritiesLots(
   const dividends: SecuritiesDividendRecord[] = [];
 
   let lotIdCounter = 1;
-  const isTaxDeferred = TAX_DEFERRED_ACCOUNTS.has(accountType);
 
   for (const tx of sorted) {
     const sym = tx.symbol;
@@ -282,7 +293,10 @@ export function computeSecuritiesLots(
     const fees = toNum(tx.fees);
     const totalOverride = tx.totalAmount ? toNum(tx.totalAmount) : null;
     const txDate = new Date(tx.date);
-    const year = txDate.getFullYear();
+    const year = txDate.getUTCFullYear();
+    // Per-transaction account type so retirement-account (IRA/401k/HSA/529) trades do
+    // NOT generate taxable events; falls back to the engine-level default.
+    const isTaxDeferred = TAX_DEFERRED_ACCOUNTS.has(tx.accountType ?? accountType);
 
     if (!openLots[sym]) openLots[sym] = [];
 
@@ -297,6 +311,13 @@ export function computeSecuritiesLots(
         const costBasis = totalOverride ?? qty * price + fees;
         const costPerShare = qty > 0 ? costBasis / qty : 0;
 
+        // Transferred-in shares keep their ORIGINAL acquisition date (holding-period
+        // carryover) when supplied; otherwise fall back to the transaction date.
+        const acquiredDate =
+          tx.type === "TRANSFER_IN" && tx.originalAcquisitionDate
+            ? new Date(tx.originalAcquisitionDate)
+            : txDate;
+
         const lot: MutableLot = {
           id: lotIdCounter++,
           symbol: sym,
@@ -305,7 +326,7 @@ export function computeSecuritiesLots(
           originalQuantity: qty,
           costBasisPerShare: costPerShare,
           totalCostBasis: costBasis,
-          dateAcquired: txDate,
+          dateAcquired: acquiredDate,
           source: tx.type,
           isCovered: tx.isCovered,
           isSection1256: tx.isSection1256,
@@ -334,7 +355,7 @@ export function computeSecuritiesLots(
           transactionId: tx.id,
           symbol: sym,
           amount: round2(costBasis),
-          dividendType: tx.dividendType ?? "QUALIFIED",
+          dividendType: tx.dividendType ?? "ORDINARY",
           year,
         });
 
@@ -614,6 +635,32 @@ export function computeSecuritiesLots(
 
           // Remove empty lots
           openLots[sym] = openLots[sym].filter((l) => l.quantity > 1e-10);
+
+          // Over-sell: more shares sold than held. Emit the uncovered residual as an
+          // unknown-basis disposal flagged for review (mirrors the no-lots branch)
+          // instead of silently dropping its proceeds.
+          if (remainingQty > 1e-10 && !isTaxDeferred) {
+            const resHold: "SHORT_TERM" | "LONG_TERM" = "SHORT_TERM";
+            const resProceeds = round2(qty > 0 ? proceeds * (remainingQty / qty) : 0);
+            taxableEvents.push({
+              transactionId: tx.id,
+              symbol: sym,
+              assetClass: tx.assetClass,
+              quantity: remainingQty,
+              dateAcquired: new Date(0),
+              dateSold: txDate,
+              proceeds: resProceeds,
+              costBasis: 0,
+              gainLoss: resProceeds,
+              holdingPeriod: resHold,
+              gainType: tx.isSection1256 ? "SECTION_1256" : "CAPITAL",
+              form8949Box: determineForm8949Box(resHold, tx.isCovered),
+              formDestination: tx.isSection1256 ? "6781" : "8949",
+              washSaleAdjustment: 0,
+              needsCostBasisReview: true,
+              year,
+            });
+          }
           break;
         }
 
@@ -675,6 +722,32 @@ export function computeSecuritiesLots(
 
         // Remove fully consumed lots
         openLots[sym] = openLots[sym].filter((l) => l.quantity > 1e-10);
+
+        // Over-sell: more shares sold than held. Emit the uncovered residual as an
+        // unknown-basis disposal flagged for review (mirrors the no-lots branch)
+        // instead of silently dropping its proceeds.
+        if (remainingQty > 1e-10 && !isTaxDeferred) {
+          const resHold: "SHORT_TERM" | "LONG_TERM" = "SHORT_TERM";
+          const resProceeds = round2(qty > 0 ? proceeds * (remainingQty / qty) : 0);
+          taxableEvents.push({
+            transactionId: tx.id,
+            symbol: sym,
+            assetClass: tx.assetClass,
+            quantity: remainingQty,
+            dateAcquired: new Date(0),
+            dateSold: txDate,
+            proceeds: resProceeds,
+            costBasis: 0,
+            gainLoss: resProceeds,
+            holdingPeriod: resHold,
+            gainType: tx.isSection1256 ? "SECTION_1256" : "CAPITAL",
+            form8949Box: determineForm8949Box(resHold, tx.isCovered),
+            formDestination: tx.isSection1256 ? "6781" : "8949",
+            washSaleAdjustment: 0,
+            needsCostBasisReview: true,
+            year,
+          });
+        }
         break;
       }
 
@@ -688,7 +761,7 @@ export function computeSecuritiesLots(
           transactionId: tx.id,
           symbol: sym,
           amount,
-          dividendType: tx.dividendType ?? (tx.type === "INTEREST" ? "ORDINARY" : "QUALIFIED"),
+          dividendType: tx.dividendType ?? "ORDINARY",
           year,
         });
         break;

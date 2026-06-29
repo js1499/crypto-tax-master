@@ -21,6 +21,8 @@ export interface ParsedSecuritiesTransaction {
   accountType: string;
   totalAmount?: number;
   lotId?: string;
+  /** Original acquisition date for TRANSFER_IN lots (preserves holding-period carryover). */
+  originalAcquisitionDate?: Date;
   underlyingSymbol?: string;
   optionType?: string;
   strikePrice?: number;
@@ -141,47 +143,61 @@ function parseDecimal(value: string): number | null {
   return num;
 }
 
+/**
+ * Parse a date to a TIMEZONE-STABLE calendar date at UTC midnight.
+ *
+ * All paths use Date.UTC so the stored @db.Date is identical regardless of the
+ * server timezone (previously ISO strings parsed as UTC midnight while slash dates
+ * parsed as LOCAL midnight, shifting the calendar day — and thus the tax year and
+ * the long/short-term boundary — on non-UTC servers). Components are range-checked
+ * and round-tripped, so out-of-range / day-first-invalid dates (e.g. 13/05/2023)
+ * are REJECTED (returned null) instead of silently overflowing into another month.
+ * Downstream consumers must read the year with getUTCFullYear().
+ *
+ * Slash/dash dates are interpreted as US MM/DD/YYYY.
+ */
 function parseDate(dateStr: string): Date | null {
   if (!dateStr || !dateStr.trim()) return null;
-  let cleaned = dateStr.trim().replace(/\s*\([^)]*\)\s*$/i, "");
+  const cleaned = dateStr.trim().replace(/\s*\([^)]*\)\s*$/i, "");
 
-  const formats = [
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
-    /^\d{4}-\d{2}-\d{2}/,
-    /^\d{2}\/\d{2}\/\d{4}/,
-    /^\d{2}-\d{2}-\d{4}/,
-    /^\d{1,2}\/\d{1,2}\/\d{4}/,
-    /^\d{1,2}-\d{1,2}-\d{4}/,
-  ];
-
-  for (const format of formats) {
-    if (format.test(cleaned)) {
-      const date = new Date(cleaned);
-      if (!isNaN(date.getTime())) return date;
+  // Build a UTC-midnight date, validating ranges and rejecting overflow.
+  const mkUTC = (y: number, m: number, d: number): Date | null => {
+    if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+    if (m < 1 || m > 12 || d < 1 || d > 31) return null;
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    // Reject overflow (e.g. Feb 30 -> Mar 2, or month/day out of range for the month).
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) {
+      return null;
     }
-  }
+    return dt;
+  };
 
-  const date = new Date(cleaned);
-  if (!isNaN(date.getTime())) return date;
+  // ISO 8601 (optionally with a time component) — take the date part only.
+  let m = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return mkUTC(+m[1], +m[2], +m[3]);
 
-  const mmddyyyy = cleaned.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
-  if (mmddyyyy) {
-    const month = parseInt(mmddyyyy[1]) - 1;
-    const day = parseInt(mmddyyyy[2]);
-    const year = parseInt(mmddyyyy[3]);
-    const parsedDate = new Date(year, month, day);
-    if (!isNaN(parsedDate.getTime())) return parsedDate;
-  }
+  // US slash/dash: MM/DD/YYYY or MM-DD-YYYY.
+  m = cleaned.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  if (m) return mkUTC(+m[3], +m[1], +m[2]);
 
   return null;
 }
 
+const TRUE_TOKENS = ["true", "t", "yes", "y", "1", "x", "checked"];
+const FALSE_TOKENS = ["false", "f", "no", "n", "0"];
+
 function parseBool(value: string, defaultValue: boolean): boolean {
   if (!value || !value.trim()) return defaultValue;
   const v = value.trim().toLowerCase();
-  if (["true", "yes", "1"].includes(v)) return true;
-  if (["false", "no", "0"].includes(v)) return false;
+  if (TRUE_TOKENS.includes(v)) return true;
+  if (FALSE_TOKENS.includes(v)) return false;
   return defaultValue;
+}
+
+/** Whether a non-empty string is a recognized boolean token (for warning on the rest). */
+function isRecognizedBool(value: string): boolean {
+  const v = value.trim().toLowerCase();
+  return TRUE_TOKENS.includes(v) || FALSE_TOKENS.includes(v);
 }
 
 // ---------------------------------------------------------------------------
@@ -271,7 +287,9 @@ export function parseSecuritiesCSV(csvText: string): {
   const typeIdx = findColumnIndex(headers, ["type", "transaction_type", "transaction type", "action"]);
   const symbolIdx = findColumnIndex(headers, ["symbol", "ticker", "asset"]);
   const assetClassIdx = findColumnIndex(headers, ["asset_class", "asset class", "security_type", "security type"]);
-  const quantityIdx = findColumnIndex(headers, ["quantity", "qty", "shares", "amount"]);
+  // NOTE: "amount" is intentionally NOT a quantity synonym — a dollar "Amount"
+  // column must never bind to share quantity (it would corrupt qty*price basis/proceeds).
+  const quantityIdx = findColumnIndex(headers, ["quantity", "qty", "shares"]);
   const priceIdx = findColumnIndex(headers, ["price", "price_per_share", "price per share", "unit_price"]);
 
   if (dateIdx === -1) errors.push("Missing required column: date");
@@ -289,6 +307,7 @@ export function parseSecuritiesCSV(csvText: string): {
   const accountTypeIdx = findColumnIndex(headers, ["account_type", "account type", "acct_type"]);
   const totalAmountIdx = findColumnIndex(headers, ["total_amount", "total amount", "total", "proceeds"]);
   const lotIdIdx = findColumnIndex(headers, ["lot_id", "lot id", "specific_lot"]);
+  const acqDateIdx = findColumnIndex(headers, ["acquisition_date", "original_acquisition_date", "date_acquired", "acquired"]);
   const underlyingIdx = findColumnIndex(headers, ["underlying_symbol", "underlying symbol", "underlying"]);
   const optionTypeIdx = findColumnIndex(headers, ["option_type", "option type", "put_call"]);
   const strikePriceIdx = findColumnIndex(headers, ["strike_price", "strike price", "strike"]);
@@ -357,6 +376,8 @@ export function parseSecuritiesCSV(csvText: string): {
 
     const lotIdVal = lotIdIdx >= 0 ? get(lotIdIdx).trim() || undefined : undefined;
 
+    const originalAcquisitionDateVal = acqDateIdx >= 0 ? parseDate(get(acqDateIdx)) ?? undefined : undefined;
+
     const underlyingVal = underlyingIdx >= 0 ? get(underlyingIdx).trim().toUpperCase() || undefined : undefined;
 
     const optionTypeRaw = optionTypeIdx >= 0 ? get(optionTypeIdx).trim().toUpperCase() : "";
@@ -384,7 +405,11 @@ export function parseSecuritiesCSV(csvText: string): {
     }
 
     const isCoveredVal = isCoveredIdx >= 0 ? parseBool(get(isCoveredIdx), true) : true;
-    const isSection1256Val = isSection1256Idx >= 0 ? parseBool(get(isSection1256Idx), false) : false;
+    const section1256Raw = isSection1256Idx >= 0 ? get(isSection1256Idx).trim() : "";
+    const isSection1256Val = parseBool(section1256Raw, false);
+    if (section1256Raw && !isRecognizedBool(section1256Raw)) {
+      warnings.push(`Row ${rowNum}: Unrecognized is_section_1256 value "${section1256Raw}", treating as false (no 60/40 treatment).`);
+    }
     const notesVal = notesIdx >= 0 ? get(notesIdx).trim() || undefined : undefined;
 
     transactions.push({
@@ -399,6 +424,7 @@ export function parseSecuritiesCSV(csvText: string): {
       accountType: VALID_ACCOUNT_TYPES.has(accountTypeVal) ? accountTypeVal : "TAXABLE",
       totalAmount: totalAmountVal,
       lotId: lotIdVal,
+      originalAcquisitionDate: originalAcquisitionDateVal,
       underlyingSymbol: underlyingVal,
       optionType: optionTypeVal,
       strikePrice: strikePriceVal,
