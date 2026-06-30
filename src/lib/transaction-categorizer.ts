@@ -375,13 +375,31 @@ for (const [rawType, category] of Object.entries(CATEGORY_MAP)) {
   _categoryIndex[category].push(rawType);
 }
 
+// Case-insensitive index built once from CATEGORY_MAP. Provider exports vary in
+// capitalization ("Withdrawal" vs "withdrawal", "DEPOSIT" vs "deposit", "Buy" vs
+// "buy"), so normalizing here means a casing we didn't pre-list never silently
+// falls to "other". First write wins (the map has no case-collisions that map to
+// different categories).
+const NORMALIZED_CATEGORY_MAP: Record<string, string> = {};
+for (const [rawType, category] of Object.entries(CATEGORY_MAP)) {
+  const key = rawType.toLowerCase();
+  if (!(key in NORMALIZED_CATEGORY_MAP)) NORMALIZED_CATEGORY_MAP[key] = category;
+}
+
 // ================================================================
 // Public helpers
 // ================================================================
 
-/** Look up the UI category for any raw type string. Falls back to "other". */
+/** Look up the UI category for any raw type string (case-insensitive). Falls back to "other". */
 export function getCategory(rawType: string): string {
-  return CATEGORY_MAP[rawType] || "other";
+  if (!rawType) return "other";
+  // Exact match first, then a trimmed/case-insensitive fallback so capitalization
+  // (e.g. "Withdrawal", "DEPOSIT", "Buy") never drops a known type to "other".
+  return (
+    CATEGORY_MAP[rawType] ??
+    NORMALIZED_CATEGORY_MAP[rawType.trim().toLowerCase()] ??
+    "other"
+  );
 }
 
 /** Return all raw type strings that belong to a given category. */
