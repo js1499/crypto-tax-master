@@ -16,6 +16,7 @@ const FIELDS: { key: CanonicalField; label: string; required?: boolean }[] = [
   { key: "quantity", label: "Quantity", required: true },
   { key: "type", label: "Transaction Type" },
   { key: "value", label: "USD Value (net +/-)" },
+  { key: "gainLoss", label: "Net gain / loss (USD)" },
   { key: "fee", label: "Fee (USD)" },
   { key: "time", label: "Time (separate column)" },
   { key: "incomingSymbol", label: "Received asset (trades)" },
@@ -411,7 +412,7 @@ export function CsvFieldMapper({
                 <table className="w-full text-xs">
                   <thead className="sticky top-0 bg-muted">
                     <tr>
-                      {["Date", "Type", "Asset", "Amount", "USD"].map((h) => (
+                      {["Date", "Type", "Asset", "Amount", "USD", "Gain/Loss"].map((h) => (
                         <th key={h} className="px-2 py-1.5 text-left font-medium">
                           {h}
                         </th>
@@ -426,6 +427,16 @@ export function CsvFieldMapper({
                         <td className="px-2 py-1">{p.asset_symbol}</td>
                         <td className="px-2 py-1 text-right font-mono">{p.amount}</td>
                         <td className="px-2 py-1 text-right font-mono">${p.value_usd?.toLocaleString()}</td>
+                        <td
+                          className={cn(
+                            "px-2 py-1 text-right font-mono",
+                            p.gain_loss != null && (p.gain_loss >= 0 ? "text-green-600" : "text-red-600"),
+                          )}
+                        >
+                          {p.gain_loss != null
+                            ? `${p.gain_loss >= 0 ? "+" : "-"}$${Math.abs(p.gain_loss).toLocaleString()}`
+                            : "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

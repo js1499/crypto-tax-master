@@ -89,6 +89,8 @@ export interface ParsedTransaction {
   amount_value: Decimal;
   price_per_unit?: Decimal;
   value_usd: Decimal;
+  /** Pre-computed realized gain/loss imported directly from a CSV (signed). */
+  gain_loss_usd?: Decimal;
   fee_usd?: Decimal;
   wallet_address?: string;
   counterparty_address?: string;

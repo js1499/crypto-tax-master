@@ -74,6 +74,11 @@ describe("suggestMapping", () => {
     const m = suggestMapping(["Timestamp", "Currency", "Quantity", "Transaction Type", "USD Value", "Fee"]);
     expect(m.columns).toMatchObject({ timestamp: 0, symbol: 1, quantity: 2, type: 3, value: 4, fee: 5 });
   });
+
+  it("auto-maps a net-gain column to gainLoss (not value)", () => {
+    const m = suggestMapping(["Date", "Asset", "Quantity", "Type", "Net Gain"]);
+    expect(m.columns.gainLoss).toBe(4);
+  });
 });
 
 describe("applyMapping", () => {
@@ -119,5 +124,20 @@ describe("applyMapping", () => {
     expect(transactions[0].type).toBe("sell"); // negative
     expect(transactions[0].amount_value.toNumber()).toBeCloseTo(3); // stored absolute
     expect(transactions[1].type).toBe("buy"); // positive
+  });
+
+  it("maps a net gain/loss column to gain_loss_usd (signed, CSV import P&L)", () => {
+    const csv = [
+      ["Date", "Asset", "Qty", "Side", "Net Gain"],
+      ["2025-03-14", "BTC", "0.5", "SELL", "1,234.56"],
+      ["2025-04-01", "ETH", "2", "SELL", "(300)"], // accounting-negative = loss
+    ];
+    const mapping: CsvFieldMapping = {
+      columns: { timestamp: 0, symbol: 1, quantity: 2, type: 3, gainLoss: 4 },
+      options: {},
+    };
+    const { transactions } = applyMapping(csv, mapping);
+    expect(transactions[0].gain_loss_usd?.toNumber()).toBeCloseTo(1234.56);
+    expect(transactions[1].gain_loss_usd?.toNumber()).toBeCloseTo(-300); // loss kept negative
   });
 });

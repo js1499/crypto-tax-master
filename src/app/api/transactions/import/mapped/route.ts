@@ -6,7 +6,8 @@ import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import { parseCSV } from "@/lib/csv-parser";
 import { applyMapping, type CsvFieldMapping } from "@/lib/csv-field-mapper";
 import { getCategory } from "@/lib/transaction-categorizer";
-import { recomputeCostBasis } from "@/lib/compute-cost-basis";
+// Note: CSV imports are intentionally NOT cost-basis-recomputed (recomputeCostBasis
+// skips source_type "csv_import") — P&L comes from the mapped "net gain/loss" column.
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
 
@@ -82,6 +83,7 @@ export async function POST(request: NextRequest) {
         asset_symbol: t.asset_symbol,
         amount: t.amount_value.toNumber(),
         value_usd: t.value_usd.toNumber(),
+        gain_loss: t.gain_loss_usd ? t.gain_loss_usd.toNumber() : null,
         fee_usd: t.fee_usd ? t.fee_usd.toNumber() : null,
         timestamp: t.tx_timestamp.toISOString(),
         incoming_asset_symbol: t.incoming_asset_symbol ?? null,
@@ -131,6 +133,7 @@ export async function POST(request: NextRequest) {
     amount_value: tx.amount_value as unknown as Prisma.Decimal,
     price_per_unit: (tx.price_per_unit as unknown as Prisma.Decimal) ?? null,
     value_usd: tx.value_usd as unknown as Prisma.Decimal,
+    gain_loss_usd: (tx.gain_loss_usd as unknown as Prisma.Decimal) ?? null,
     fee_usd: (tx.fee_usd as unknown as Prisma.Decimal) ?? null,
     tx_timestamp: tx.tx_timestamp,
     identified: getCategory(tx.type) !== "other",
@@ -152,9 +155,9 @@ export async function POST(request: NextRequest) {
   }
 
   await invalidateTaxReportCache(user.id);
-  // Cost basis can only be computed once values exist; run it now (rows with no USD
-  // value will need price enrichment to produce gains — separate step).
-  const recompute = await recomputeCostBasis(user.id);
+  // CSV imports are NOT cost-basis-recomputed — P&L comes from the mapped "net
+  // gain/loss" column written above. recomputeCostBasis skips source_type
+  // "csv_import", and the tax report reads gain_loss_usd straight from these rows.
 
   return NextResponse.json({
     status: "success",
@@ -163,6 +166,5 @@ export async function POST(request: NextRequest) {
     skippedRows: skipped.length,
     skippedSamples: skipped.slice(0, 10),
     truncated,
-    needsCostBasisReview: recompute.needsReview,
   });
 }

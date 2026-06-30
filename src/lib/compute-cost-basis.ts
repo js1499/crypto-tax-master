@@ -35,6 +35,9 @@ export async function recomputeCostBasis(
           { userId },
         ],
         status: { in: ["confirmed", "completed", "pending"] },
+        // CSV imports carry their own user-provided gain/loss (from the field
+        // mapper's "net gain/loss" column) — never recompute/overwrite them.
+        source_type: { not: "csv_import" },
       },
       orderBy: { tx_timestamp: "asc" },
     });

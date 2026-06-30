@@ -21,6 +21,7 @@ export type CanonicalField =
   | "quantity"
   | "type"
   | "value" // USD value of the transaction (proceeds for a sell, cost for a buy)
+  | "gainLoss" // pre-computed realized gain/loss (CSV import only) -> gain_loss_usd
   | "fee"
   | "incomingSymbol"
   | "incomingQuantity"
@@ -240,6 +241,7 @@ const SYNONYMS: Record<CanonicalField, string[]> = {
   quantity: ["quantity", "amount", "qty", "units", "size", "shares", "volume"],
   type: ["type", "transaction type", "action", "side", "operation", "activity"],
   value: ["value", "total", "usd", "usd value", "proceeds", "subtotal", "amount usd", "net", "total value"],
+  gainLoss: ["net gain", "net gain/loss", "gain/loss", "gain loss", "realized gain", "realized pnl", "pnl", "p&l", "profit", "gain"],
   fee: ["fee", "fees", "commission", "transaction fee"],
   incomingSymbol: ["received currency", "buy currency", "to asset", "incoming asset"],
   incomingQuantity: ["received amount", "buy amount", "to amount", "incoming amount"],
@@ -257,7 +259,8 @@ export function suggestMapping(headers: string[]): CsvFieldMapping {
 
   // Most-specific fields first so e.g. "amount usd" goes to value, not quantity.
   const order: CanonicalField[] = [
-    "timestamp", "symbol", "type", "value", "fee", "quantity",
+    // gainLoss before value so a "Net Gain" header isn't grabbed by value's "net".
+    "timestamp", "symbol", "type", "gainLoss", "value", "fee", "quantity",
     "incomingSymbol", "incomingQuantity", "incomingValue", "time",
   ];
   for (const field of order) {
@@ -356,6 +359,12 @@ export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyRe
       tx_timestamp: ts,
     };
     if (feeRaw != null) tx.fee_usd = new Decimal(Math.abs(feeRaw));
+
+    // Pre-computed realized gain/loss (CSV import only) — kept SIGNED (+ gain, - loss).
+    // This becomes the transaction's gain_loss_usd directly; the cost-basis engine
+    // does not recompute CSV imports.
+    const gainRaw = cleanNumber(cell(row, "gainLoss"));
+    if (gainRaw != null) tx.gain_loss_usd = new Decimal(gainRaw);
 
     // Optional incoming (two-sided trade) leg.
     const inSym = cleanSymbol(cell(row, "incomingSymbol"));
