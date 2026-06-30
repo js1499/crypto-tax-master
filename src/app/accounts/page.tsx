@@ -21,6 +21,7 @@ import {
   RefreshCw,
   RotateCw,
   Trash2,
+  FileText,
   Link2,
   DollarSign,
   Pencil,
@@ -137,6 +138,14 @@ function AccountsContent() {
   } | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [exchanges, setExchanges] = useState<ExchangeAccount[]>([]);
+  const [csvSources, setCsvSources] = useState<
+    Array<{
+      source: string;
+      transactionCount: number;
+      importedAt: string | null;
+      lastTransactionAt: string | null;
+    }>
+  >([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
@@ -227,6 +236,13 @@ function AccountsContent() {
 
       setAccounts(wallets);
       setExchanges(exchangeAccounts);
+      // CSV imports surface as their own "Imported CSV" accounts (derived from the
+      // transactions, so deleting them makes the account disappear). Non-blocking —
+      // a failure here must never break the wallets/exchanges list.
+      axios
+        .get("/api/transactions/csv-sources", { timeout: 10000 })
+        .then((r) => setCsvSources(r.data.sources || []))
+        .catch(() => setCsvSources([]));
       dispatchPlanStatusRefresh();
       console.log(
         "[Accounts] Loaded",
@@ -509,6 +525,34 @@ function AccountsContent() {
         error instanceof Error
           ? error.message
           : "Failed to disconnect exchange",
+      );
+    }
+  };
+
+  // Remove a CSV import "account" — deletes its transactions (the account is derived
+  // from them, so it disappears afterward).
+  const handleDeleteCsv = async (source: string) => {
+    if (
+      !confirm(
+        `Remove the "${source}" CSV import? Its transactions will be deleted from your account.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      const res = await axios.delete(
+        `/api/transactions/csv-sources?source=${encodeURIComponent(source)}`,
+      );
+      if (res.data.status === "success") {
+        toast.success(`CSV import removed — ${res.data.deleted} transaction(s) deleted.`);
+        fetchWallets();
+      } else {
+        throw new Error(res.data.error || "Failed to remove CSV import");
+      }
+    } catch (error) {
+      console.error("[Accounts] Error removing CSV import:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to remove CSV import",
       );
     }
   };

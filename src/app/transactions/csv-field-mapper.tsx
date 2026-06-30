@@ -3,6 +3,14 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { Loader2, Upload, Eye, ArrowLeft, FileText, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { getCategory } from "@/lib/transaction-categorizer";
@@ -24,7 +32,7 @@ const FIELDS: { key: CanonicalField; label: string; required?: boolean }[] = [
   { key: "incomingValue", label: "Received USD value (trades)" },
 ];
 
-const CATEGORIES = ["buy", "sell", "swap", "income", "transfer", "staking", "nft", "defi", "other"];
+const CATEGORIES = ["buy", "sell", "swap", "income", "staking", "transfer", "nft", "defi", "gambling", "other"];
 const DATE_FORMATS = [
   { v: "auto", l: "Auto-detect" },
   { v: "MDY", l: "MM/DD/YYYY (US)" },
@@ -36,6 +44,8 @@ const REQUIRED: CanonicalField[] = ["timestamp", "symbol", "quantity"];
 
 const selectClass =
   "w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
+
+const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export function CsvFieldMapper({
   onImportComplete,
@@ -295,15 +305,18 @@ export function CsvFieldMapper({
             </div>
           )}
 
-          {/* CSV preview with a field picker above each column */}
+          {/* Tag columns: your CSV preview with a field picker above each column */}
           <div className="max-h-[50vh] overflow-auto rounded-md border">
-            <table className="text-xs">
-              <thead className="sticky top-0 z-10 bg-muted">
-                <tr>
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
                   {headers.map((h, ci) => {
                     const assigned = fieldForColumn(ci);
                     return (
-                      <th key={ci} className="min-w-[160px] border-b p-2 align-top text-left">
+                      <TableHead
+                        key={ci}
+                        className="sticky top-0 z-10 min-w-[170px] border-b bg-muted align-top"
+                      >
                         <select
                           className={cn(selectClass, assigned && "border-primary ring-1 ring-primary/40")}
                           value={assigned}
@@ -317,33 +330,36 @@ export function CsvFieldMapper({
                             </option>
                           ))}
                         </select>
-                        <div className="mt-1 max-w-[220px] truncate font-medium" title={h}>
+                        <div
+                          className="mt-1.5 max-w-[220px] truncate font-medium text-foreground"
+                          title={h}
+                        >
                           {h || `Column ${ci + 1}`}
                         </div>
-                      </th>
+                      </TableHead>
                     );
                   })}
-                </tr>
-              </thead>
-              <tbody>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {sampleRows.map((row, ri) => (
-                  <tr key={ri} className="border-t">
+                  <TableRow key={ri}>
                     {headers.map((_, ci) => (
-                      <td
+                      <TableCell
                         key={ci}
                         className={cn(
-                          "max-w-[220px] truncate px-2 py-1 font-mono",
+                          "max-w-[220px] truncate font-mono text-xs",
                           fieldForColumn(ci) && "bg-primary/5",
                         )}
                         title={row[ci] ?? ""}
                       >
                         {row[ci] ?? ""}
-                      </td>
+                      </TableCell>
                     ))}
-                  </tr>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
 
           {/* Cleaning options */}
@@ -368,26 +384,45 @@ export function CsvFieldMapper({
           {columns.type != null ? (
             typeValues.length > 0 && (
               <div className="space-y-2">
-                <p className="text-sm font-medium">Map transaction types</p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {typeValues.map((v) => (
-                    <div key={v} className="flex items-center gap-2">
-                      <span className="flex-1 truncate font-mono text-xs" title={v}>
-                        {v}
-                      </span>
-                      <select
-                        className={cn(selectClass, "max-w-[140px]")}
-                        value={typeValueMap[v] ?? "other"}
-                        onChange={(e) => { setTypeValueMap((p) => ({ ...p, [v]: e.target.value })); setPreview(null); }}
-                      >
-                        {CATEGORIES.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
+                <div>
+                  <p className="text-sm font-medium">Map transaction types</p>
+                  <p className="text-xs text-muted-foreground">
+                    These are the distinct values in your{" "}
+                    <span className="font-medium">Transaction Type</span> column. Choose the tax
+                    category each one represents.
+                  </p>
+                </div>
+                <div className="overflow-hidden rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead>Value in your CSV</TableHead>
+                        <TableHead className="w-[220px]">Tax category</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {typeValues.map((v) => (
+                        <TableRow key={v}>
+                          <TableCell className="font-mono text-xs" title={v}>
+                            {v}
+                          </TableCell>
+                          <TableCell>
+                            <select
+                              className={selectClass}
+                              value={typeValueMap[v] ?? "other"}
+                              onChange={(e) => { setTypeValueMap((p) => ({ ...p, [v]: e.target.value })); setPreview(null); }}
+                            >
+                              {CATEGORIES.map((c) => (
+                                <option key={c} value={c}>
+                                  {titleCase(c)}
+                                </option>
+                              ))}
+                            </select>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
                 </div>
               </div>
             )
@@ -409,38 +444,39 @@ export function CsvFieldMapper({
                 Showing {preview.length} cleaned rows{previewSkipped ? ` · ${previewSkipped} rows would be skipped` : ""}
               </p>
               <div className="max-h-72 overflow-auto rounded-md border">
-                <table className="w-full text-xs">
-                  <thead className="sticky top-0 bg-muted">
-                    <tr>
-                      {["Date", "Type", "Asset", "Amount", "USD", "Gain/Loss"].map((h) => (
-                        <th key={h} className="px-2 py-1.5 text-left font-medium">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="sticky top-0 z-10 bg-muted">Date</TableHead>
+                      <TableHead className="sticky top-0 z-10 bg-muted">Type</TableHead>
+                      <TableHead className="sticky top-0 z-10 bg-muted">Asset</TableHead>
+                      <TableHead className="sticky top-0 z-10 bg-muted text-right">Amount</TableHead>
+                      <TableHead className="sticky top-0 z-10 bg-muted text-right">USD</TableHead>
+                      <TableHead className="sticky top-0 z-10 bg-muted text-right">Gain / Loss</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {preview.map((p, i) => (
-                      <tr key={i} className="border-t">
-                        <td className="px-2 py-1 font-mono">{p.timestamp?.slice(0, 10)}</td>
-                        <td className="px-2 py-1">{p.type}</td>
-                        <td className="px-2 py-1">{p.asset_symbol}</td>
-                        <td className="px-2 py-1 text-right font-mono">{p.amount}</td>
-                        <td className="px-2 py-1 text-right font-mono">${p.value_usd?.toLocaleString()}</td>
-                        <td
+                      <TableRow key={i}>
+                        <TableCell className="font-mono text-xs">{p.timestamp?.slice(0, 10)}</TableCell>
+                        <TableCell className="capitalize">{p.type}</TableCell>
+                        <TableCell>{p.asset_symbol}</TableCell>
+                        <TableCell className="text-right font-mono">{p.amount}</TableCell>
+                        <TableCell className="text-right font-mono">${p.value_usd?.toLocaleString()}</TableCell>
+                        <TableCell
                           className={cn(
-                            "px-2 py-1 text-right font-mono",
+                            "text-right font-mono",
                             p.gain_loss != null && (p.gain_loss >= 0 ? "text-green-600" : "text-red-600"),
                           )}
                         >
                           {p.gain_loss != null
                             ? `${p.gain_loss >= 0 ? "+" : "-"}$${Math.abs(p.gain_loss).toLocaleString()}`
                             : "—"}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             </div>
           )}

@@ -37,7 +37,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
-import { CSVImport } from "./csv-import";
+// CSVImport (add-account / import) now lives only on the Accounts page.
 import { toast } from "sonner";
 import {
   Sheet,
@@ -1496,25 +1496,8 @@ function TransactionsContent() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Sheet open={isImportOpen} onOpenChange={setIsImportOpen}>
-              <SheetTrigger asChild>
-                <Button data-onboarding="import-transactions">
-                  <Download className="mr-2 h-4 w-4" />
-                  <span>Import</span>
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="w-full sm:max-w-xl">
-                <SheetHeader>
-                  <SheetTitle>Import Transactions</SheetTitle>
-                  <SheetDescription>
-                    Import transactions from exchanges, wallets, or CSV files.
-                  </SheetDescription>
-                </SheetHeader>
-                <div className="mt-8">
-                  <CSVImport onImportComplete={handleImportComplete} />
-                </div>
-              </SheetContent>
-            </Sheet>
+            {/* Import / add-account moved to the Accounts page — the Transactions
+                page is view-only. Connect wallets/exchanges or import a CSV there. */}
 
             {/* Overflow menu. modal={false}: the "Delete All" item opens a Dialog,
                 and a modal DropdownMenu + Dialog combo leaves pointer-events:none stuck
