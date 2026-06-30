@@ -636,16 +636,22 @@ export async function calculateTaxReport(
 
   // Germany uses universal FIFO per-token. Per-wallet is US-only (IRS 2025+).
   const perWallet = country === "DE" ? false : year >= 2025;
+  // CSV imports are authoritative (user-provided P&L via the field mapper) and are
+  // NOT run through the cost-basis engine; their gains/income are appended below
+  // from the stored gain_loss_usd / value_usd.
+  const engineTransactions = allTransactions.filter(
+    (tx) => tx.source_type !== "csv_import",
+  );
   const unifiedReport = country === "UK"
     ? processTransactionsForTaxUK(
-        allTransactions,
+        engineTransactions,
         year,
         walletAddresses,
         undefined, // costBasisResults
         timezone,
       )
     : processTransactionsForTax(
-        allTransactions,
+        engineTransactions,
         year,
         method,
         walletAddresses,
@@ -686,6 +692,44 @@ export async function calculateTaxReport(
         event.valueUsd = 0;
       }
       debugLog(`[Tax Calculator] Germany Income Freigrenze: Total income EUR ${totalIncomeDE.toFixed(2)} < EUR 256 — all income events zeroed out.`);
+    }
+  }
+
+  // ── CSV imports: authoritative, pre-computed P&L (not engine-computed) ──
+  // Their gain_loss_usd came straight from the field mapper's "net gain/loss"
+  // column, so append them directly as taxable/income events for this tax year.
+  for (const tx of allTransactions) {
+    if (tx.source_type !== "csv_import") continue;
+    if (getTaxYear(tx.tx_timestamp, timezone) !== year) continue;
+    const gl = tx.gain_loss_usd != null ? Number(tx.gain_loss_usd) : null;
+    if (gl != null && gl !== 0) {
+      const proceeds = Number(tx.value_usd) || 0;
+      combinedTaxableEvents.push({
+        id: tx.id,
+        date: tx.tx_timestamp,
+        dateAcquired: tx.date_acquired || undefined,
+        asset: tx.asset_symbol,
+        amount: Math.abs(Number(tx.amount_value)),
+        proceeds,
+        costBasis: proceeds - gl, // keeps proceeds - costBasis === gainLoss
+        gainLoss: gl,
+        holdingPeriod: tx.holding_period === "long" ? "long" : "short",
+        chain: tx.chain || undefined,
+        txHash: tx.tx_hash || undefined,
+        source: tx.source || "CSV",
+      });
+    }
+    if (tx.is_income && Number(tx.value_usd) > 0) {
+      combinedIncomeEvents.push({
+        id: tx.id,
+        date: tx.tx_timestamp,
+        asset: tx.asset_symbol,
+        amount: Math.abs(Number(tx.amount_value)),
+        valueUsd: Number(tx.value_usd),
+        type: "other",
+        chain: tx.chain || undefined,
+        txHash: tx.tx_hash || undefined,
+      });
     }
   }
 
