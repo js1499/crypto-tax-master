@@ -11,6 +11,11 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Loader2, Upload, Eye, ArrowLeft, FileText, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { getCategory } from "@/lib/transaction-categorizer";
@@ -225,8 +230,17 @@ export function CsvFieldMapper({
     }
   }
 
-  if (step === "upload") {
-    return (
+  const missing = REQUIRED.filter((f) => columns[f] == null);
+
+  // The upload step lives inline in the CSV tab; the mapping step needs far more
+  // room (preview tables), so it opens as a NESTED Radix dialog. Radix renders that
+  // dialog through its own portal to <body>, which escapes the host dialog's CSS
+  // transform (translate-based centering). A position:fixed panel here would instead
+  // size to that transformed ancestor — which is why the old fixed-inset panel
+  // rendered tiny inside the Accounts "Add Account" dialog.
+  return (
+    <>
+      {/* Upload step — always mounted so closing the mapper returns here */}
       <div className="space-y-4">
         <div className="rounded-lg border-2 border-dashed border-muted p-6 text-center space-y-3">
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -261,19 +275,15 @@ export function CsvFieldMapper({
           )}
         </Button>
       </div>
-    );
-  }
 
-  const missing = REQUIRED.filter((f) => columns[f] == null);
-
-  // The mapping step needs room for the preview table, so it pops out into a
-  // near-fullscreen panel (small margin) regardless of the small dialog/sheet it's
-  // embedded in. z-[60] sits above Radix Dialog/Sheet (z-50); it's a DOM descendant
-  // of the dialog content, so focus-trapping still includes it.
-  return (
-    <>
-      <div className="fixed inset-0 z-[59] bg-black/50" aria-hidden="true" />
-      <div className="fixed inset-3 z-[60] flex flex-col overflow-hidden rounded-lg border bg-background shadow-2xl sm:inset-4">
+      {/* Mapping step — nested dialog sized to the viewport (its own portal escapes
+          the host dialog's transform). Closing it (X / Esc / overlay) returns to upload. */}
+      <Dialog open={step === "map"} onOpenChange={(o) => { if (!o) setStep("upload"); }}>
+        <DialogContent
+          aria-describedby={undefined}
+          className="flex h-[90vh] max-h-[90vh] w-[96vw] max-w-[96vw] flex-col gap-0 overflow-hidden p-0 [&>button]:hidden"
+        >
+          <DialogTitle className="sr-only">Map CSV columns</DialogTitle>
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
           <button
@@ -493,7 +503,8 @@ export function CsvFieldMapper({
             Import
           </Button>
         </div>
-      </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
