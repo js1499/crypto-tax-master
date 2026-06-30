@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { CsvFieldMapper } from "@/app/transactions/csv-field-mapper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -602,46 +603,19 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
 
       {/* ── CSV Tab ── */}
       <TabsContent value="csv" className="mt-4 space-y-4">
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-            <QrCode className="h-6 w-6 text-primary" />
-          </div>
-          <h3 className="mb-1 text-lg font-medium">Upload transaction CSV</h3>
-          <p className="mb-4 text-sm text-muted-foreground">Drag and drop your transaction CSV file or click to browse</p>
-          <Input id="csv-file" type="file" accept=".csv" onChange={(e) => setCsvFile(e.target.files?.[0] || null)} className="mx-auto max-w-sm cursor-pointer" />
-          {csvFile && (
-            <div className="mt-4">
-              <p className="text-sm font-medium">Selected: {csvFile.name}</p>
-              <Button className="mt-2" onClick={async () => {
-                if (!csvFile) return;
-                const formData = new FormData();
-                formData.append("file", csvFile);
-                // Generic transaction CSV → the "custom" parser (the app's standard
-                // CSV format). getParser() only knows coinbase/binance/kraken/kucoin/
-                // gemini/custom, so we must send a recognized value, not "csv".
-                formData.append("exchange", "custom");
-                try {
-                  const res = await fetch("/api/transactions/import", {
-                    method: "POST",
-                    body: formData,
-                  });
-                  const data = await res.json();
-                  if (!res.ok) {
-                    toast.error(`${csvFile.name}: ${data.error || "Import failed"}`);
-                    return;
-                  }
-                  toast.success(`${csvFile.name}: ${data.transactionsAdded || 0} transactions imported`);
-                  if (onConnect) onConnect("csv", { success: true, provider: "csv", fileName: csvFile.name, timestamp: new Date().toISOString() });
-                  setCsvFile(null);
-                } catch {
-                  toast.error(`${csvFile.name}: Import failed`);
-                }
-              }}>
-                Upload and Import
-              </Button>
-            </div>
-          )}
-        </div>
+        {/* All CSV uploads go through the interactive field mapper (preview + per-column
+            tagging + cleaning) — no brittle per-exchange auto-detection. */}
+        <CsvFieldMapper
+          source="CSV"
+          onImportComplete={(data) =>
+            onConnect?.("csv", {
+              success: true,
+              provider: "csv",
+              fileName: data.fileName,
+              timestamp: new Date().toISOString(),
+            })
+          }
+        />
       </TabsContent>
     </Tabs>
   );

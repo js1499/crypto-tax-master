@@ -488,7 +488,7 @@ function AccountsContent() {
 
   // Function to disconnect exchange
   const handleDisconnectExchange = async (exchangeId: string) => {
-    if (!confirm("Are you sure you want to disconnect this exchange?")) {
+    if (!confirm("Remove this exchange? It will be deleted from your account.")) {
       return;
     }
 
@@ -498,7 +498,7 @@ function AccountsContent() {
       );
 
       if (response.data.status === "success") {
-        toast.success("Exchange disconnected successfully");
+        toast.success("Exchange removed");
         fetchWallets(); // Refresh list
       } else {
         throw new Error(response.data.error || "Failed to disconnect");
@@ -517,7 +517,7 @@ function AccountsContent() {
   const handleDisconnectWallet = async (walletId: string) => {
     if (
       !confirm(
-        "Are you sure you want to disconnect this wallet? All associated transactions will be deleted.",
+        "Remove this wallet? It and all its transactions will be deleted from your account.",
       )
     ) {
       return;
@@ -528,7 +528,7 @@ function AccountsContent() {
 
       if (response.data.status === "success") {
         toast.success(
-          `Wallet disconnected. ${response.data.deletedTransactions} transaction(s) removed.`,
+          `Wallet removed. ${response.data.deletedTransactions} transaction(s) deleted.`,
         );
         fetchWallets();
       } else {
@@ -765,7 +765,7 @@ function AccountsContent() {
                   size="sm"
                   className="text-[#DC2626] border-[#DC2626]/30 hover:bg-[#FEF2F2] dark:hover:bg-[rgba(220,38,38,0.1)]"
                   onClick={async () => {
-                    if (!confirm(`Disconnect ${selectedIds.size} account(s)?`))
+                    if (!confirm(`Remove ${selectedIds.size} account(s)? They will be deleted from your account.`))
                       return;
                     for (const id of selectedIds) {
                       const acct = allAccounts.find((a) => a.id === id);
@@ -1704,7 +1704,7 @@ function AccountsContent() {
                         }}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Disconnect Account
+                        Remove Account
                       </Button>
                     </div>
                   </div>

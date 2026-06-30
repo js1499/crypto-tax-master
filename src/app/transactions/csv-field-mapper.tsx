@@ -3,20 +3,21 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Loader2, Upload, Eye, ArrowLeft, FileText } from "lucide-react";
+import { Loader2, Upload, Eye, ArrowLeft, FileText, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { getCategory } from "@/lib/transaction-categorizer";
+import { cn } from "@/lib/utils";
 import type { CsvFieldMapping, CanonicalField } from "@/lib/csv-field-mapper";
 import type { ImportedData } from "@/types/wallet";
 
 const FIELDS: { key: CanonicalField; label: string; required?: boolean }[] = [
   { key: "timestamp", label: "Date / Timestamp", required: true },
-  { key: "time", label: "Time (separate column)" },
   { key: "symbol", label: "Asset / Symbol", required: true },
   { key: "quantity", label: "Quantity", required: true },
   { key: "type", label: "Transaction Type" },
   { key: "value", label: "USD Value (net +/-)" },
   { key: "fee", label: "Fee (USD)" },
+  { key: "time", label: "Time (separate column)" },
   { key: "incomingSymbol", label: "Received asset (trades)" },
   { key: "incomingQuantity", label: "Received quantity (trades)" },
   { key: "incomingValue", label: "Received USD value (trades)" },
@@ -30,9 +31,10 @@ const DATE_FORMATS = [
   { v: "ISO", l: "YYYY-MM-DD" },
   { v: "UNIX", l: "Unix epoch" },
 ];
+const REQUIRED: CanonicalField[] = ["timestamp", "symbol", "quantity"];
 
 const selectClass =
-  "w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring";
+  "w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring";
 
 export function CsvFieldMapper({
   onImportComplete,
@@ -78,6 +80,39 @@ export function CsvFieldMapper({
     },
   });
 
+  /** Which canonical field (if any) is currently assigned to this CSV column. */
+  function fieldForColumn(ci: number): CanonicalField | "" {
+    return (Object.keys(columns) as CanonicalField[]).find((f) => columns[f] === ci) ?? "";
+  }
+
+  /** Assign a CSV column to a canonical field (each field maps to one column). */
+  function assignColumn(ci: number, fieldStr: string) {
+    const field = fieldStr as CanonicalField | "";
+    const next: Partial<Record<CanonicalField, number>> = {};
+    for (const [f, c] of Object.entries(columns) as [CanonicalField, number][]) {
+      if (c === ci) continue; // unassign whatever was on this column
+      if (field && f === field) continue; // a field maps to exactly one column
+      next[f] = c;
+    }
+    if (field) next[field] = ci;
+    setColumns(next);
+    setPreview(null);
+
+    // Refresh the type-value list from the (possibly new) Type column.
+    const typeCol = field === "type" ? ci : next.type ?? null;
+    if (typeCol == null) {
+      setTypeValues([]);
+    } else {
+      const vals = distinctTypeValuesFor(typeCol);
+      setTypeValues(vals);
+      setTypeValueMap((prev) => {
+        const n = { ...prev };
+        for (const v of vals) if (n[v] == null) n[v] = getCategory(v);
+        return n;
+      });
+    }
+  }
+
   async function analyze() {
     if (!file) {
       toast.error("Choose a CSV file first");
@@ -112,30 +147,6 @@ export function CsvFieldMapper({
     }
   }
 
-  function setColumn(field: CanonicalField, value: string) {
-    setColumns((prev) => {
-      const next = { ...prev };
-      if (value === "") delete next[field];
-      else next[field] = Number(value);
-      return next;
-    });
-    setPreview(null);
-    // Refresh the type-value list when the Type column changes.
-    if (field === "type") {
-      if (value === "") {
-        setTypeValues([]);
-      } else {
-        const vals = distinctTypeValuesFor(Number(value));
-        setTypeValues(vals);
-        setTypeValueMap((prev) => {
-          const next = { ...prev };
-          for (const v of vals) if (next[v] == null) next[v] = getCategory(v);
-          return next;
-        });
-      }
-    }
-  }
-
   async function callMapped(dryRun: boolean) {
     if (!file) return null;
     const fd = new FormData();
@@ -167,9 +178,9 @@ export function CsvFieldMapper({
   }
 
   async function runImport() {
-    const missing = (["timestamp", "symbol", "quantity"] as const).filter((f) => columns[f] == null);
+    const missing = REQUIRED.filter((f) => columns[f] == null);
     if (missing.length) {
-      toast.error(`Map the required field(s): ${missing.join(", ")}`);
+      toast.error(`Assign the required field(s): ${missing.join(", ")}`);
       return;
     }
     setBusy("import");
@@ -187,7 +198,6 @@ export function CsvFieldMapper({
         transactions: [],
         totalTransactions: data.added,
       });
-      // Background price enrichment (matches the standard import flow).
       fetch("/api/prices/enrich-historical", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -196,6 +206,7 @@ export function CsvFieldMapper({
       }).catch(() => {});
       setStep("upload");
       setFile(null);
+      setColumns({});
       setPreview(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Import failed");
@@ -204,8 +215,6 @@ export function CsvFieldMapper({
     }
   }
 
-  const colOptions = headers.map((h, i) => ({ value: String(i), label: `${i + 1}. ${h || "(blank)"}` }));
-
   if (step === "upload") {
     return (
       <div className="space-y-4">
@@ -213,10 +222,10 @@ export function CsvFieldMapper({
           <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
             <FileText className="h-6 w-6 text-primary" />
           </div>
-          <p className="text-sm font-medium">Upload any CSV — you'll map the columns next</p>
+          <p className="text-sm font-medium">Upload any CSV — you&apos;ll map the columns next</p>
           <p className="text-xs text-muted-foreground">
-            Works with any export. The next step lets you tell us which column is the date, asset,
-            quantity, etc., and cleans the values automatically.
+            Works with any export. The next step shows your file and lets you tag each column
+            (date, asset, quantity, …); values are cleaned automatically.
           </p>
           <input
             id="mapper-file"
@@ -245,8 +254,10 @@ export function CsvFieldMapper({
     );
   }
 
+  const missing = REQUIRED.filter((f) => columns[f] == null);
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <button
           onClick={() => setStep("upload")}
@@ -259,32 +270,69 @@ export function CsvFieldMapper({
         </span>
       </div>
 
-      {/* Column mapping */}
-      <div className="space-y-3">
-        <p className="text-sm font-medium">Map your columns</p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {FIELDS.map((f) => (
-            <div key={f.key} className="space-y-1">
-              <Label className="text-xs">
-                {f.label}
-                {f.required && <span className="text-red-500"> *</span>}
-              </Label>
-              <select
-                className={selectClass}
-                value={columns[f.key] != null ? String(columns[f.key]) : ""}
-                onChange={(e) => setColumn(f.key, e.target.value)}
-              >
-                <option value="">— not mapped —</option>
-                {colOptions.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
+      <p className="text-sm font-medium">Tag each column</p>
+      <p className="-mt-2 text-xs text-muted-foreground">
+        Pick what each column is using the dropdown above it. Required:{" "}
+        <span className="font-medium">Date, Asset, Quantity</span>.
+      </p>
+
+      {/* CSV preview with a field picker above each column */}
+      <div className="max-h-[360px] overflow-auto rounded-md border">
+        <table className="text-xs">
+          <thead className="sticky top-0 z-10 bg-muted">
+            <tr>
+              {headers.map((h, ci) => {
+                const assigned = fieldForColumn(ci);
+                return (
+                  <th key={ci} className="min-w-[150px] border-b p-2 align-top text-left">
+                    <select
+                      className={cn(selectClass, assigned && "border-primary ring-1 ring-primary/40")}
+                      value={assigned}
+                      onChange={(e) => assignColumn(ci, e.target.value)}
+                    >
+                      <option value="">— Ignore —</option>
+                      {FIELDS.map((f) => (
+                        <option key={f.key} value={f.key}>
+                          {f.label}
+                          {f.required ? " *" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="mt-1 max-w-[200px] truncate font-medium" title={h}>
+                      {h || `Column ${ci + 1}`}
+                    </div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {sampleRows.map((row, ri) => (
+              <tr key={ri} className="border-t">
+                {headers.map((_, ci) => (
+                  <td
+                    key={ci}
+                    className={cn(
+                      "max-w-[200px] truncate px-2 py-1 font-mono",
+                      fieldForColumn(ci) && "bg-primary/5",
+                    )}
+                    title={row[ci] ?? ""}
+                  >
+                    {row[ci] ?? ""}
+                  </td>
                 ))}
-              </select>
-            </div>
-          ))}
-        </div>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
+
+      {missing.length > 0 && (
+        <div className="flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          Still need to tag: {missing.map((f) => FIELDS.find((x) => x.key === f)?.label).join(", ")}
+        </div>
+      )}
 
       {/* Cleaning options */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -298,7 +346,7 @@ export function CsvFieldMapper({
             ))}
           </select>
         </div>
-        <label className="flex items-center gap-2 text-sm self-end pb-1.5">
+        <label className="flex items-center gap-2 self-end pb-1 text-sm">
           <input type="checkbox" checked={dateOnly} onChange={(e) => { setDateOnly(e.target.checked); setPreview(null); }} />
           Store date only (strip time)
         </label>
@@ -312,11 +360,11 @@ export function CsvFieldMapper({
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {typeValues.map((v) => (
                 <div key={v} className="flex items-center gap-2">
-                  <span className="flex-1 truncate text-xs font-mono" title={v}>
+                  <span className="flex-1 truncate font-mono text-xs" title={v}>
                     {v}
                   </span>
                   <select
-                    className={selectClass + " max-w-[140px]"}
+                    className={cn(selectClass, "max-w-[140px]")}
                     value={typeValueMap[v] ?? "other"}
                     onChange={(e) => { setTypeValueMap((p) => ({ ...p, [v]: e.target.value })); setPreview(null); }}
                   >
@@ -348,7 +396,7 @@ export function CsvFieldMapper({
           {busy === "preview" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
           Preview cleaned
         </Button>
-        <Button className="flex-1" onClick={runImport} disabled={busy != null}>
+        <Button className="flex-1" onClick={runImport} disabled={busy != null || missing.length > 0}>
           {busy === "import" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
           Import
         </Button>
