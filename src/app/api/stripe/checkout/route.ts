@@ -213,7 +213,12 @@ export async function POST(request: NextRequest) {
       sessionParams.discounts = [{ promotion_code: promotionCodeId }];
     }
 
-    // Free-trial code: a 30-day, no-card trial that auto-cancels at the end.
+    // Free-trial code: a 30-day trial that gives access then SHUTS OFF — it must
+    // never convert/rebill. `missing_payment_method: cancel` covers the no-card case;
+    // the metadata flag tells the webhook to set cancel_at_period_end on the created
+    // subscription so it also ends (instead of charging) even if a card is on file.
+    // (Stripe Checkout's subscription_data has no cancel_at_period_end field, so the
+    // actual cancel is scheduled in the webhook once the subscription exists.)
     if (isFreeTrial) {
       sessionParams.payment_method_collection = "if_required";
       sessionParams.subscription_data = {
@@ -221,6 +226,7 @@ export async function POST(request: NextRequest) {
         trial_settings: {
           end_behavior: { missing_payment_method: "cancel" },
         },
+        metadata: { glide_free_trial: "true" },
       };
     }
 

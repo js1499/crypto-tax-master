@@ -76,7 +76,16 @@ export async function POST(request: NextRequest) {
             (field) => field.key === AUTO_RENEW_FIELD_KEY,
           )?.dropdown?.value;
 
-          if (autoRenewPreference === AUTO_RENEW_DISABLED && !subscription.cancel_at_period_end) {
+          // Free-trial comp codes give 30 days of access then shut off — never
+          // convert or rebill, even if a card ended up on file. For a trialing
+          // subscription, current_period_end is the trial end, so scheduling the
+          // cancel at period end guarantees it ends at day 30 with no charge.
+          const isFreeTrialSub = subscription.metadata?.glide_free_trial === "true";
+
+          if (
+            (autoRenewPreference === AUTO_RENEW_DISABLED || isFreeTrialSub) &&
+            !subscription.cancel_at_period_end
+          ) {
             subscription = await stripe.subscriptions.update(subscriptionId, {
               cancel_at_period_end: true,
             }) as unknown as Stripe.Subscription;
