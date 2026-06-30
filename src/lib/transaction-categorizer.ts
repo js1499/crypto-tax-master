@@ -306,6 +306,14 @@ const CATEGORY_MAP: Record<string, string> = {
   "sell": "sell",
   "exchange": "swap",
   "trade": "swap",
+  // Coinbase raw reward/earn types are passed through verbatim by the importer and
+  // were previously uncategorized ("other") -> dropped from income. Map them here.
+  // (advanced_trade_fill is normalized to buy/sell at import time — it needs the
+  // signed amount to know direction — so it is intentionally NOT mapped here.)
+  "staking_reward": "income",
+  "earn_payout": "income",
+  "inflation_reward": "income",
+  "interest_payout": "income",
 
   // ================================================================
   // Exchange client types (Kraken, KuCoin, Gemini, Binance)

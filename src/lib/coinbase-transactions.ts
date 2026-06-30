@@ -294,7 +294,14 @@ export async function getCoinbaseTransactionsWithApiKey(
             if (feeAmount > 0) feeUsd = new Decimal(feeAmount);
           }
 
-          const type = tx.type || "transfer";
+          // advanced_trade_fill is a single-leg Advanced Trade execution — classify it
+          // by direction (+ amount = bought crypto, - amount = sold). The sign is only
+          // available here (the row stores ABS below), so resolve it at import; left
+          // as "advanced_trade_fill" it is uncategorized and the tax engine skips it.
+          let type = tx.type || "transfer";
+          if (type === "advanced_trade_fill") {
+            type = amount >= 0 ? "buy" : "sell";
+          }
 
           // For exchange/trade types, collect both sides for merging below
           if (isExchangeType) {
@@ -610,7 +617,14 @@ export async function getCoinbaseTransactions(
             if (feeAmount > 0) feeUsd = new Decimal(feeAmount);
           }
 
-          const type = tx.type || "transfer";
+          // advanced_trade_fill is a single-leg Advanced Trade execution — classify it
+          // by direction (+ amount = bought crypto, - amount = sold). The sign is only
+          // available here (the row stores ABS below), so resolve it at import; left
+          // as "advanced_trade_fill" it is uncategorized and the tax engine skips it.
+          let type = tx.type || "transfer";
+          if (type === "advanced_trade_fill") {
+            type = amount >= 0 ? "buy" : "sell";
+          }
 
           // Collect exchange/trade pairs for merging
           if (isExchangeType) {
