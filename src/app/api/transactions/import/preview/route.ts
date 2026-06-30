@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import { parseCSV } from "@/lib/csv-parser";
 import { suggestMapping, distinctTypeValues } from "@/lib/csv-field-mapper";
+import { getCategory } from "@/lib/transaction-categorizer";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -50,6 +51,10 @@ export async function POST(request: NextRequest) {
       ? distinctTypeValues(rows, suggestedMapping)
       : [];
 
+  // Pre-fill each distinct type value's category (the user can override in the UI).
+  const typeValueDefaults: Record<string, string> = {};
+  for (const v of typeValues) typeValueDefaults[v] = getCategory(v);
+
   return NextResponse.json({
     status: "success",
     headers,
@@ -57,5 +62,6 @@ export async function POST(request: NextRequest) {
     rowCount: rows.length - 1,
     suggestedMapping,
     typeValues,
+    typeValueDefaults,
   });
 }

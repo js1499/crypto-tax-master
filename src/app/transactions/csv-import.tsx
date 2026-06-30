@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { ImportedData } from "@/types/wallet"; // Updated import
 import axios from "axios";
+import { CsvFieldMapper } from "./csv-field-mapper";
 
 const exchangeTemplates = [
   { id: "wallet", name: "EVM Wallet" },
@@ -2113,6 +2114,10 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
           </div>
         )}
 
+        {selectedExchange === "custom" ? (
+          <CsvFieldMapper onImportComplete={onImportComplete} />
+        ) : (
+        <>
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label htmlFor="csv-file">Transaction File (CSV)</Label>
@@ -2226,6 +2231,8 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
             </Button>
           ))
         }
+        </>
+        )}
 
         <div className="rounded-md bg-amber-900/20 p-3 text-xs text-amber-500">
           <p className="font-medium">Important Notes:</p>

@@ -14,13 +14,18 @@ export function parseCSV(content: string): string[][] {
     const nextChar = content[i + 1];
 
     if (char === '"') {
+      // Preserve quote characters VERBATIM here — this pass only tracks quote
+      // state so a newline inside a quoted field doesn't split the line. The
+      // per-line column parser below does the real unquoting (comma splitting +
+      // "" unescaping). Previously this pass stripped the quotes, so a comma
+      // inside a quoted field (e.g. "$25,000.00") was no longer protected and got
+      // split into extra columns, corrupting every value after it.
       if (inQuotes && nextChar === '"') {
-        // Escaped quote
-        currentLine += '"';
+        currentLine += '""'; // keep the escaped pair intact
         i++; // Skip next quote
       } else {
-        // Toggle quote state
         inQuotes = !inQuotes;
+        currentLine += '"';
       }
     } else if (char === "\n" && !inQuotes) {
       // End of line

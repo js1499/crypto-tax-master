@@ -68,6 +68,27 @@ export async function POST(request: NextRequest) {
   const rows = parseCSV(content);
   const { transactions: parsed, skipped } = applyMapping(rows, mapping);
 
+  // Dry run: return a cleaned preview (no DB writes) so the UI can show the user
+  // exactly how their data will be cleaned before committing.
+  if (form.get("dryRun") === "true") {
+    return NextResponse.json({
+      status: "success",
+      dryRun: true,
+      parsed: parsed.length,
+      skippedRows: skipped.length,
+      skippedSamples: skipped.slice(0, 10),
+      preview: parsed.slice(0, 25).map((t) => ({
+        type: t.type,
+        asset_symbol: t.asset_symbol,
+        amount: t.amount_value.toNumber(),
+        value_usd: t.value_usd.toNumber(),
+        fee_usd: t.fee_usd ? t.fee_usd.toNumber() : null,
+        timestamp: t.tx_timestamp.toISOString(),
+        incoming_asset_symbol: t.incoming_asset_symbol ?? null,
+      })),
+    });
+  }
+
   if (parsed.length === 0) {
     return NextResponse.json(
       {
