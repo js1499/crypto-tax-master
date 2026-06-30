@@ -2114,8 +2114,15 @@ export function CSVImport({ onImportComplete }: CSVImportProps) {
           </div>
         )}
 
-        {selectedExchange === "custom" ? (
-          <CsvFieldMapper onImportComplete={onImportComplete} />
+        {selectedExchange &&
+        selectedExchange !== "wallet" &&
+        selectedExchange !== "solana-wallet" ? (
+          // All CSV uploads go through the interactive field mapper — no brittle
+          // per-exchange auto-detection (which mis-parsed Kraken and rejected Coinbase).
+          <CsvFieldMapper
+            onImportComplete={onImportComplete}
+            source={exchangeTemplates.find((e) => e.id === selectedExchange)?.name || "CSV"}
+          />
         ) : (
         <>
         <div className="space-y-2">

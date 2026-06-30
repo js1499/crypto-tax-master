@@ -36,8 +36,10 @@ const selectClass =
 
 export function CsvFieldMapper({
   onImportComplete,
+  source = "CSV (mapped)",
 }: {
   onImportComplete?: (data: ImportedData) => void;
+  source?: string;
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [step, setStep] = useState<"upload" | "map">("upload");
@@ -139,7 +141,7 @@ export function CsvFieldMapper({
     const fd = new FormData();
     fd.append("file", file);
     fd.append("mapping", JSON.stringify(buildMapping()));
-    fd.append("source", "CSV (mapped)");
+    fd.append("source", source);
     if (dryRun) fd.append("dryRun", "true");
     const res = await fetch("/api/transactions/import/mapped", {
       method: "POST",
@@ -179,7 +181,7 @@ export function CsvFieldMapper({
         }`,
       );
       onImportComplete?.({
-        source: "CSV (mapped)",
+        source,
         fileName: file?.name || "mapped.csv",
         timestamp: new Date().toISOString(),
         transactions: [],

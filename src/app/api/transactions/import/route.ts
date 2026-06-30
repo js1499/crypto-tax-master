@@ -569,28 +569,10 @@ export async function POST(request: NextRequest) {
       logBuffer.error(`[Import] WARNING: NO TRANSACTIONS HAVE NOTES! This will cause tax calculation to fail!`);
     }
 
-    // Create or update exchange record
-    const exchangeName = exchange.charAt(0).toUpperCase() + exchange.slice(1);
-    const existingExchange = await prisma.exchange.findFirst({
-      where: {
-        userId: user.id,
-        name: exchangeName,
-      },
-    });
-
-    if (existingExchange) {
-      await prisma.exchange.update({
-        where: { id: existingExchange.id },
-        data: { updatedAt: new Date() },
-      });
-    } else {
-      await prisma.exchange.create({
-        data: {
-          name: exchangeName,
-          userId: user.id,
-        },
-      });
-    }
+    // NOTE: A CSV upload is NOT an exchange connection — we intentionally do NOT
+    // create an Exchange ("connected source") record here. Doing so made CSV imports
+    // show up as a connected source on the Accounts page that persisted even after
+    // the transactions were deleted. Real connections are created via /api/exchanges/connect.
 
     // Auto-recompute cost basis after import
     await recomputeCostBasis(user.id);

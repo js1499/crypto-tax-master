@@ -707,6 +707,10 @@ function TransactionsContent() {
         setTransactions([]);
         setFilteredTransactions([]);
         setTotalCount(0);
+        // Clear the source/chain filter chips too — they're derived from the (now
+        // deleted) transactions and would otherwise linger until a reload.
+        setAvailableSources([]);
+        setAvailableChains([]);
       } else {
         throw new Error("Failed to delete transactions");
       }
@@ -1512,8 +1516,11 @@ function TransactionsContent() {
               </SheetContent>
             </Sheet>
 
-            {/* Overflow menu */}
-            <DropdownMenu>
+            {/* Overflow menu. modal={false}: the "Delete All" item opens a Dialog,
+                and a modal DropdownMenu + Dialog combo leaves pointer-events:none stuck
+                on <body> (Radix) after closing — which made the whole page, including
+                the sidebar, unclickable after deleting all transactions. */}
+            <DropdownMenu modal={false}>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon">
                   <MoreVertical className="h-4 w-4" />
