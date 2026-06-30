@@ -98,7 +98,6 @@ export function CsvFieldMapper({
     setColumns(next);
     setPreview(null);
 
-    // Refresh the type-value list from the (possibly new) Type column.
     const typeCol = field === "type" ? ci : next.type ?? null;
     if (typeCol == null) {
       setTypeValues([]);
@@ -178,9 +177,9 @@ export function CsvFieldMapper({
   }
 
   async function runImport() {
-    const missing = REQUIRED.filter((f) => columns[f] == null);
-    if (missing.length) {
-      toast.error(`Assign the required field(s): ${missing.join(", ")}`);
+    const miss = REQUIRED.filter((f) => columns[f] == null);
+    if (miss.length) {
+      toast.error(`Assign the required field(s): ${miss.join(", ")}`);
       return;
     }
     setBusy("import");
@@ -256,184 +255,198 @@ export function CsvFieldMapper({
 
   const missing = REQUIRED.filter((f) => columns[f] == null);
 
+  // The mapping step needs room for the preview table, so it pops out into a
+  // near-fullscreen panel (small margin) regardless of the small dialog/sheet it's
+  // embedded in. z-[60] sits above Radix Dialog/Sheet (z-50); it's a DOM descendant
+  // of the dialog content, so focus-trapping still includes it.
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <button
-          onClick={() => setStep("upload")}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-3 w-3" /> Back
-        </button>
-        <span className="text-xs text-muted-foreground">
-          {rowCount.toLocaleString()} rows · {headers.length} columns
-        </span>
-      </div>
-
-      <p className="text-sm font-medium">Tag each column</p>
-      <p className="-mt-2 text-xs text-muted-foreground">
-        Pick what each column is using the dropdown above it. Required:{" "}
-        <span className="font-medium">Date, Asset, Quantity</span>.
-      </p>
-
-      {/* CSV preview with a field picker above each column */}
-      <div className="max-h-[360px] overflow-auto rounded-md border">
-        <table className="text-xs">
-          <thead className="sticky top-0 z-10 bg-muted">
-            <tr>
-              {headers.map((h, ci) => {
-                const assigned = fieldForColumn(ci);
-                return (
-                  <th key={ci} className="min-w-[150px] border-b p-2 align-top text-left">
-                    <select
-                      className={cn(selectClass, assigned && "border-primary ring-1 ring-primary/40")}
-                      value={assigned}
-                      onChange={(e) => assignColumn(ci, e.target.value)}
-                    >
-                      <option value="">— Ignore —</option>
-                      {FIELDS.map((f) => (
-                        <option key={f.key} value={f.key}>
-                          {f.label}
-                          {f.required ? " *" : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="mt-1 max-w-[200px] truncate font-medium" title={h}>
-                      {h || `Column ${ci + 1}`}
-                    </div>
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {sampleRows.map((row, ri) => (
-              <tr key={ri} className="border-t">
-                {headers.map((_, ci) => (
-                  <td
-                    key={ci}
-                    className={cn(
-                      "max-w-[200px] truncate px-2 py-1 font-mono",
-                      fieldForColumn(ci) && "bg-primary/5",
-                    )}
-                    title={row[ci] ?? ""}
-                  >
-                    {row[ci] ?? ""}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {missing.length > 0 && (
-        <div className="flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          Still need to tag: {missing.map((f) => FIELDS.find((x) => x.key === f)?.label).join(", ")}
+    <>
+      <div className="fixed inset-0 z-[59] bg-black/50" aria-hidden="true" />
+      <div className="fixed inset-3 z-[60] flex flex-col overflow-hidden rounded-lg border bg-background shadow-2xl sm:inset-4">
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-3">
+          <button
+            onClick={() => setStep("upload")}
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" /> Back
+          </button>
+          <span className="text-sm font-semibold">Map CSV columns</span>
+          <span className="text-xs text-muted-foreground">
+            {rowCount.toLocaleString()} rows · {headers.length} columns
+          </span>
         </div>
-      )}
 
-      {/* Cleaning options */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <Label className="text-xs">Date format</Label>
-          <select className={selectClass} value={dateFormat} onChange={(e) => { setDateFormat(e.target.value); setPreview(null); }}>
-            {DATE_FORMATS.map((d) => (
-              <option key={d.v} value={d.v}>
-                {d.l}
-              </option>
-            ))}
-          </select>
-        </div>
-        <label className="flex items-center gap-2 self-end pb-1 text-sm">
-          <input type="checkbox" checked={dateOnly} onChange={(e) => { setDateOnly(e.target.checked); setPreview(null); }} />
-          Store date only (strip time)
-        </label>
-      </div>
-
-      {/* Type handling */}
-      {columns.type != null ? (
-        typeValues.length > 0 && (
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Map transaction types</p>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {typeValues.map((v) => (
-                <div key={v} className="flex items-center gap-2">
-                  <span className="flex-1 truncate font-mono text-xs" title={v}>
-                    {v}
-                  </span>
-                  <select
-                    className={cn(selectClass, "max-w-[140px]")}
-                    value={typeValueMap[v] ?? "other"}
-                    onChange={(e) => { setTypeValueMap((p) => ({ ...p, [v]: e.target.value })); setPreview(null); }}
-                  >
-                    {CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
+        {/* Scrollable body */}
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          <div>
+            <p className="text-sm font-medium">Tag each column</p>
+            <p className="text-xs text-muted-foreground">
+              Pick what each column is using the dropdown above it. Required:{" "}
+              <span className="font-medium">Date, Asset, Quantity</span>.
+            </p>
           </div>
-        )
-      ) : (
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={deriveTypeFromSign}
-            onChange={(e) => { setDeriveTypeFromSign(e.target.checked); setPreview(null); }}
-          />
-          No type column — treat positive amounts as buys, negative as sells
-        </label>
-      )}
 
-      {/* Actions */}
-      <div className="flex gap-2">
-        <Button variant="outline" className="flex-1" onClick={runPreview} disabled={busy != null}>
-          {busy === "preview" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
-          Preview cleaned
-        </Button>
-        <Button className="flex-1" onClick={runImport} disabled={busy != null || missing.length > 0}>
-          {busy === "import" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
-          Import
-        </Button>
-      </div>
+          {missing.length > 0 && (
+            <div className="flex items-center gap-2 rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              Still need to tag: {missing.map((f) => FIELDS.find((x) => x.key === f)?.label).join(", ")}
+            </div>
+          )}
 
-      {/* Cleaned preview */}
-      {preview && (
-        <div className="space-y-2">
-          <p className="text-xs text-muted-foreground">
-            Showing {preview.length} cleaned rows{previewSkipped ? ` · ${previewSkipped} rows would be skipped` : ""}
-          </p>
-          <div className="max-h-72 overflow-auto rounded-md border">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-muted">
+          {/* CSV preview with a field picker above each column */}
+          <div className="max-h-[50vh] overflow-auto rounded-md border">
+            <table className="text-xs">
+              <thead className="sticky top-0 z-10 bg-muted">
                 <tr>
-                  {["Date", "Type", "Asset", "Amount", "USD"].map((h) => (
-                    <th key={h} className="px-2 py-1.5 text-left font-medium">
-                      {h}
-                    </th>
-                  ))}
+                  {headers.map((h, ci) => {
+                    const assigned = fieldForColumn(ci);
+                    return (
+                      <th key={ci} className="min-w-[160px] border-b p-2 align-top text-left">
+                        <select
+                          className={cn(selectClass, assigned && "border-primary ring-1 ring-primary/40")}
+                          value={assigned}
+                          onChange={(e) => assignColumn(ci, e.target.value)}
+                        >
+                          <option value="">— Ignore —</option>
+                          {FIELDS.map((f) => (
+                            <option key={f.key} value={f.key}>
+                              {f.label}
+                              {f.required ? " *" : ""}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="mt-1 max-w-[220px] truncate font-medium" title={h}>
+                          {h || `Column ${ci + 1}`}
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
-                {preview.map((p, i) => (
-                  <tr key={i} className="border-t">
-                    <td className="px-2 py-1 font-mono">{p.timestamp?.slice(0, 10)}</td>
-                    <td className="px-2 py-1">{p.type}</td>
-                    <td className="px-2 py-1">{p.asset_symbol}</td>
-                    <td className="px-2 py-1 text-right font-mono">{p.amount}</td>
-                    <td className="px-2 py-1 text-right font-mono">${p.value_usd?.toLocaleString()}</td>
+                {sampleRows.map((row, ri) => (
+                  <tr key={ri} className="border-t">
+                    {headers.map((_, ci) => (
+                      <td
+                        key={ci}
+                        className={cn(
+                          "max-w-[220px] truncate px-2 py-1 font-mono",
+                          fieldForColumn(ci) && "bg-primary/5",
+                        )}
+                        title={row[ci] ?? ""}
+                      >
+                        {row[ci] ?? ""}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          {/* Cleaning options */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Date format</Label>
+              <select className={selectClass} value={dateFormat} onChange={(e) => { setDateFormat(e.target.value); setPreview(null); }}>
+                {DATE_FORMATS.map((d) => (
+                  <option key={d.v} value={d.v}>
+                    {d.l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <label className="flex items-center gap-2 self-end pb-1 text-sm">
+              <input type="checkbox" checked={dateOnly} onChange={(e) => { setDateOnly(e.target.checked); setPreview(null); }} />
+              Store date only (strip time)
+            </label>
+          </div>
+
+          {/* Type handling */}
+          {columns.type != null ? (
+            typeValues.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Map transaction types</p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {typeValues.map((v) => (
+                    <div key={v} className="flex items-center gap-2">
+                      <span className="flex-1 truncate font-mono text-xs" title={v}>
+                        {v}
+                      </span>
+                      <select
+                        className={cn(selectClass, "max-w-[140px]")}
+                        value={typeValueMap[v] ?? "other"}
+                        onChange={(e) => { setTypeValueMap((p) => ({ ...p, [v]: e.target.value })); setPreview(null); }}
+                      >
+                        {CATEGORIES.map((c) => (
+                          <option key={c} value={c}>
+                            {c}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          ) : (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={deriveTypeFromSign}
+                onChange={(e) => { setDeriveTypeFromSign(e.target.checked); setPreview(null); }}
+              />
+              No type column — treat positive amounts as buys, negative as sells
+            </label>
+          )}
+
+          {/* Cleaned preview */}
+          {preview && (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                Showing {preview.length} cleaned rows{previewSkipped ? ` · ${previewSkipped} rows would be skipped` : ""}
+              </p>
+              <div className="max-h-72 overflow-auto rounded-md border">
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-muted">
+                    <tr>
+                      {["Date", "Type", "Asset", "Amount", "USD"].map((h) => (
+                        <th key={h} className="px-2 py-1.5 text-left font-medium">
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.map((p, i) => (
+                      <tr key={i} className="border-t">
+                        <td className="px-2 py-1 font-mono">{p.timestamp?.slice(0, 10)}</td>
+                        <td className="px-2 py-1">{p.type}</td>
+                        <td className="px-2 py-1">{p.asset_symbol}</td>
+                        <td className="px-2 py-1 text-right font-mono">{p.amount}</td>
+                        <td className="px-2 py-1 text-right font-mono">${p.value_usd?.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-    </div>
+
+        {/* Sticky footer actions */}
+        <div className="flex shrink-0 gap-2 border-t px-4 py-3">
+          <Button variant="outline" className="flex-1" onClick={runPreview} disabled={busy != null}>
+            {busy === "preview" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}
+            Preview cleaned
+          </Button>
+          <Button className="flex-1" onClick={runImport} disabled={busy != null || missing.length > 0}>
+            {busy === "import" ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+            Import
+          </Button>
+        </div>
+      </div>
+    </>
   );
 }
