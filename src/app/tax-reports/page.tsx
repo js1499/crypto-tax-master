@@ -726,14 +726,12 @@ export default function TaxReportsPage() {
   const totalLosses = parseCurrency(displayData.shortTermLosses); // API puts total losses here (negative)
   const totalIncome = parseCurrency(displayData.totalIncome);
   const netTaxable = parseCurrency(displayData.totalTaxableGain);
-  const estimatedTax = Math.max(0, netTaxable) * 0.24; // simplified estimate
+  // Simplified flat-rate estimate on positive net capital gains PLUS ordinary income
+  // (airdrops/staking/interest are taxable as income). totalIncome is always ≥ 0.
+  const estimatedTax = (Math.max(0, netTaxable) + totalIncome) * 0.24;
 
   const fmtUsd = (n: number) => `${currencySymbol}${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const fmtSign = (n: number) => n >= 0 ? `+${fmtUsd(n)}` : `-${fmtUsd(n)}`;
-
-  // Disposals the engine couldn't match to an acquisition (taxed as 100% gain).
-  const needsReviewCount = displayData.needsReviewCount || 0;
-  const needsReviewGain = displayData.needsReviewGain || fmtUsd(0);
 
   // Bar widths for breakdown
   const maxBar = Math.max(totalGains, Math.abs(totalLosses), totalIncome, 1);
@@ -830,23 +828,8 @@ export default function TaxReportsPage() {
           </div>
         )}
 
-        {/* Phantom-gain warning: disposals with no matched cost basis are taxed on
-            the full proceeds, so the headline totals can be wildly overstated until
-            the user connects the source wallet/exchange. Rendered OUTSIDE the blurred
-            grid so free users see it too. */}
-        {needsReviewCount > 0 && (
-          <div className="rounded-lg border border-[#FCD34D] bg-[#FFFBEB] px-5 py-4">
-            <p className="text-[15px] font-semibold text-[#92400E]">
-              {needsReviewCount.toLocaleString()} disposal{needsReviewCount === 1 ? "" : "s"} have no matched cost basis and are taxed as 100% gain ({needsReviewGain}).
-            </p>
-            <p className="mt-0.5 text-[13px] text-[#B45309]">
-              This usually means the wallet or exchange those funds came from isn&apos;t connected yet. Add every source account and re-sync so this gain isn&apos;t overstated &mdash; you can review the affected rows on the Transactions page.
-            </p>
-          </div>
-        )}
-
         <p className="text-[12px] text-[#9CA3AF]">
-          Estimates only &mdash; not tax advice. Accuracy depends on a complete transaction history; &quot;Est. Tax&quot; is a simplified flat-rate estimate.
+          Estimates only &mdash; not tax advice. Accuracy depends on a complete transaction history; &quot;Est. Tax&quot; is a simplified flat-rate estimate on net capital gains plus income.
         </p>
 
         {/* Row 1: Tax Summary + Breakdown */}
