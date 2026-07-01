@@ -4,6 +4,43 @@ import { PLANS, PlanKey } from "@/lib/stripe";
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
 
 /**
+ * Accounts (by email, case-insensitive) granted unconditional FULL access — unlimited
+ * transactions + wallets, every feature, and all tax years. This is evaluated in
+ * getUserPlan (the single entitlement chokepoint), so it overrides billing entirely and
+ * survives Stripe webhooks (it does not depend on planId / subscriptionStatus). Use for
+ * owner / comp accounts.
+ */
+const UNLIMITED_ACCESS_EMAILS = new Set<string>([
+  "aaravsawlani1@gmail.com",
+]);
+
+/** A synthetic "everything unlocked, forever" plan for allowlisted accounts. */
+function buildUnlimitedPlan(): UserPlan {
+  return {
+    billingPlanKey: "prime",
+    billingPlanName: "Prime",
+    planKey: "prime",
+    planName: "Prime",
+    transactionLimit: Infinity,
+    walletLimit: Infinity,
+    features: {
+      allReports: true,
+      taxAi: true,
+      securities: true,
+      analytics: true,
+      chatSupport: true,
+      dfy: true,
+    },
+    subscriptionStatus: "active",
+    // Far-future term so any date-derived licensing is unbounded; access is driven by the
+    // explicit licensedThroughTaxYear below regardless.
+    currentPeriodEnd: new Date("9999-12-31T23:59:59.999Z"),
+    licensedThroughTaxYear: 9999, // canAccessTaxYear passes for every real year
+    isPaid: true,
+  };
+}
+
+/**
  * Returns the current filing tax year.
  * Example: in calendar year 2026, users are generally filing for 2025.
  */
@@ -101,8 +138,13 @@ export function getTaxYearAccessMessage(
 export async function getUserPlan(userId: string): Promise<UserPlan> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { planId: true, subscriptionStatus: true, currentPeriodEnd: true },
+    select: { email: true, planId: true, subscriptionStatus: true, currentPeriodEnd: true },
   });
+
+  // Owner / comp accounts: full access, independent of billing.
+  if (user?.email && UNLIMITED_ACCESS_EMAILS.has(user.email.toLowerCase())) {
+    return buildUnlimitedPlan();
+  }
 
   const billingPlanKey = (user?.planId || "free") as PlanKey;
   const billingPlan = PLANS[billingPlanKey] || PLANS.free;
