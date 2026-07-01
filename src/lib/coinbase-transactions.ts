@@ -6,6 +6,11 @@ import { encryptApiKey, decryptApiKey } from "./exchange-clients";
 import prisma from "./prisma";
 import { generateCoinbaseJWT } from "./coinbase-signer";
 
+// Stablecoins whose USD value ≈ the token amount. Coinbase omits native_amount on some
+// rows (notably interest / reward payouts), which would otherwise store value_usd = $0 and
+// drop the income from tax reports. For stablecoins we can safely fall back to the amount.
+const STABLECOINS = new Set(["USDC", "USDT", "DAI", "BUSD", "GUSD", "PYUSD", "TUSD", "USDP", "PAX", "USD"]);
+
 // Encryption key for OAuth tokens
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
@@ -201,9 +206,13 @@ export async function getCoinbaseTransactionsWithApiKey(
 
           const amount = parseFloat(tx.amount?.amount || "0");
           const currency = tx.amount?.currency || "UNKNOWN";
-          const nativeAmount = tx.native_amount
+          let nativeAmount = tx.native_amount
             ? parseFloat(tx.native_amount.amount)
             : 0;
+          // Coinbase omits native_amount on some rows (e.g. interest/reward payouts). For
+          // stablecoins the USD value equals the token amount, so fall back to it instead of
+          // storing $0 (which would drop the income from tax reports).
+          if (nativeAmount === 0 && STABLECOINS.has(currency.toUpperCase())) nativeAmount = amount;
 
           // Skip fiat currency transactions (bank transfers)
           const fiatCurrencies = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "CNY", "INR", "KRW", "BRL", "MXN"];
@@ -529,9 +538,13 @@ export async function getCoinbaseTransactions(
 
           const amount = parseFloat(tx.amount.amount);
           const currency = tx.amount.currency;
-          const nativeAmount = tx.native_amount
+          let nativeAmount = tx.native_amount
             ? parseFloat(tx.native_amount.amount)
             : 0;
+          // Coinbase omits native_amount on some rows (e.g. interest/reward payouts). For
+          // stablecoins the USD value equals the token amount, so fall back to it instead of
+          // storing $0 (which would drop the income from tax reports).
+          if (nativeAmount === 0 && STABLECOINS.has(currency.toUpperCase())) nativeAmount = amount;
 
           const fiatCurrencies = ["USD", "EUR", "GBP", "CAD", "AUD", "JPY", "CHF", "CNY", "INR", "KRW", "BRL", "MXN"];
           if (fiatCurrencies.includes(currency.toUpperCase())) {

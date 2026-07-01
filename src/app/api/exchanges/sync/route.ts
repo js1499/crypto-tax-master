@@ -15,6 +15,7 @@ import { recomputeCostBasis } from "@/lib/compute-cost-basis";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
 import { resolveSyncWindow } from "@/lib/sync-cursor";
+import { getCategory } from "@/lib/transaction-categorizer";
 
 // Encryption key - REQUIRED for decrypting exchange credentials
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
@@ -328,6 +329,10 @@ export async function POST(request: NextRequest) {
                 tx_timestamp: tx.tx_timestamp,
                 tx_hash: tx.tx_hash || null,
                 identified: false,
+                // Flag reward/interest/staking-type rows as income so the combined/CSV tax
+                // path books them (the FIFO engine already books income-category types; this
+                // keeps the flag consistent across all engines and the UI).
+                is_income: getCategory(tx.type) === "income",
                 notes: tx.notes || null,
                 // Swap fields
                 incoming_asset_symbol: tx.incoming_asset_symbol || null,
