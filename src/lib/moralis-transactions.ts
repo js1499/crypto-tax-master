@@ -540,6 +540,34 @@ function postProcessTransaction(
  * Returns fully populated WalletTransaction objects with USD values.
  */
 /**
+ * GET a Moralis history page with retry + backoff on TRANSIENT failures (429, any 5xx
+ * incl. 504, and network/timeout errors). Without this a single transient 504 on one
+ * page throws out of the whole chain fetch and discards every page already fetched
+ * (observed in prod: "Base FAILED: 504"). Non-transient errors (401 bad key, 400) throw
+ * immediately.
+ */
+async function getMoralisWithRetry(
+  url: string,
+  config: Parameters<typeof axios.get>[1],
+  maxRetries = 3,
+): Promise<import("axios").AxiosResponse> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await axios.get(url, config);
+    } catch (err) {
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      const transient = status === undefined || status === 429 || status >= 500;
+      if (!transient || attempt >= maxRetries) throw err;
+      attempt++;
+      const backoffMs = Math.min(2000 * 2 ** (attempt - 1), 15000); // 2s, 4s, 8s…
+      console.warn(`[Moralis] Page fetch failed (${status ?? "network/timeout"}); retry ${attempt}/${maxRetries} in ${backoffMs}ms`);
+      await new Promise((r) => setTimeout(r, backoffMs));
+    }
+  }
+}
+
+/**
  * Map a Moralis on-chain receipt_status ("1" success, "0" reverted) to our status
  * string. Reverted/failed txns are stored as "failed" so the tax engine (which only
  * considers confirmed/completed/pending) never treats them as real transfers.
@@ -596,7 +624,7 @@ export async function getWalletTransactions(
 
       if (VERBOSE) console.log(`[Moralis] Fetching page ${pageCount}${cursor ? " (cursor …)" : ""}`);
 
-      const response = await axios.get(
+      const response = await getMoralisWithRetry(
         `${MORALIS_BASE_URL}/wallets/${walletAddress}/history`,
         {
           headers: {

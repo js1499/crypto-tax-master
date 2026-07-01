@@ -859,7 +859,13 @@ function TransactionsContent() {
         const amountValue = parseFloat(editingValue);
         updatePayload.amount_value = amountValue;
       } else if (field === 'price') {
-        updatePayload.price_per_unit = parseFloat(editingValue);
+        const price = parseFloat(editingValue);
+        updatePayload.price_per_unit = isNaN(price) ? null : price;
+        // Keep value_usd consistent (value = price × quantity, stored as magnitude; the
+        // list view re-applies the +/- direction). Cost basis / gains refresh on the next
+        // cost-basis recompute.
+        const qty = parseFloat(tx.amount) || 0;
+        if (!isNaN(price) && qty > 0) updatePayload.value_usd = Math.abs(price * qty);
       } else if (field === 'value') {
         const numValue = parseFloat(editingValue);
         const isNegative = isOutflow(tx.type);
@@ -2428,13 +2434,60 @@ function TransactionsContent() {
                             </span>
                           </TableCell>
                           <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
-                            <BlurValue year={new Date(transaction.date).getUTCFullYear()}>
-                            <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                              {transaction.outPricePerUnit != null
-                                ? `$${transaction.outPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`
-                                : transaction.price && transaction.price !== "$0.00" ? transaction.price : "—"}
-                            </span>
-                            </BlurValue>
+                            {editingTransactionId === transaction.id && editingField === 'price' ? (
+                              <div className="flex items-center gap-1">
+                                <Input
+                                  type="number"
+                                  step="any"
+                                  value={editingValue}
+                                  autoFocus
+                                  onClick={(e) => e.stopPropagation()}
+                                  onChange={(e) => setEditingValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleSaveEdit(transaction.id, 'price');
+                                    else if (e.key === 'Escape') handleCancelEditing();
+                                  }}
+                                  className="h-7 w-24 text-xs"
+                                />
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleSaveEdit(transaction.id, 'price'); }}
+                                  className="p-1 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A]"
+                                  aria-label="Save price"
+                                >
+                                  <Check className="h-3.5 w-3.5 text-[#16A34A]" />
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleCancelEditing(); }}
+                                  className="p-1 rounded hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A]"
+                                  aria-label="Cancel"
+                                >
+                                  <X className="h-3.5 w-3.5 text-[#9CA3AF]" />
+                                </button>
+                              </div>
+                            ) : (
+                              <BlurValue year={new Date(transaction.date).getUTCFullYear()}>
+                                <span className="inline-flex items-center gap-1.5">
+                                  <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                                    {transaction.outPricePerUnit != null
+                                      ? `$${transaction.outPricePerUnit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`
+                                      : transaction.price && transaction.price !== "$0.00" ? transaction.price : "—"}
+                                  </span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const cur = transaction.outPricePerUnit != null
+                                        ? String(transaction.outPricePerUnit)
+                                        : (transaction.price ?? "");
+                                      handleStartEditing(transaction.id, 'price', cur);
+                                    }}
+                                    className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A] transition-opacity"
+                                    aria-label="Edit price"
+                                  >
+                                    <Pencil className="h-3 w-3 text-[#9CA3AF] hover:text-[#2563EB]" />
+                                  </button>
+                                </span>
+                              </BlurValue>
+                            )}
                           </TableCell>
                           <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                             <BlurValue year={new Date(transaction.date).getUTCFullYear()}>
