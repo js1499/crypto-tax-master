@@ -59,6 +59,10 @@ export interface TaxReport {
   // Currency display
   currency: string; // "USD", "GBP", "EUR"
   currencySymbol: string; // "$", "£", "€"
+  // Number of on-chain disposals booked with NO/zero cost basis (full proceeds taxed
+  // as gain) — e.g. an asset acquired on an unsynced source. Surfaced so the report can
+  // flag likely-inflated gains for review.
+  costBasisReviewCount: number;
 }
 
 // IRS Form 8949 required fields
@@ -80,12 +84,35 @@ export interface TransactionCostBasisResult {
   gainLossUsd: number | null;   // null = not a disposal event
   holdingPeriod: "short" | "long" | null;  // null = not a disposal
   dateAcquired: Date | null;    // earliest lot date consumed
+  // True when a disposal was booked with missing/zero cost basis (full proceeds taxed
+  // as gain) — needs user review. Set centrally by computeCostBasisForTransactions.
+  needsReview?: boolean;
 }
 
 // Stablecoins: use face value ($1/unit) as cost basis for disposals.
 // Lot tracking for stablecoins creates artifacts when tokens cycle through
 // DeFi protocols (deposits/withdrawals deplete lots, causing phantom gains).
-const STABLECOINS = new Set(["USDC", "USDT", "PYUSD", "DAI", "BUSD", "TUSD", "USDP", "FRAX", "USD1", "EURC", "USDH", "DOLLARCOIN"]);
+const STABLECOINS = new Set([
+  // Canonical USD (and EURC) pegs
+  "USDC", "USDT", "PYUSD", "DAI", "BUSD", "TUSD", "USDP", "FRAX", "USD1", "EURC", "USDH", "DOLLARCOIN",
+  // Bridged / chain variants — Moralis emits the on-chain symbol verbatim, so these
+  // never matched the canonical set and produced phantom gains from lot depletion.
+  "USDC.E", "USDBC", "USDT.E", "DAI.E", "AXLUSDC",
+  // Other widely-held USD-pegged stablecoins
+  "USDE", "CRVUSD", "LUSD", "GUSD", "FDUSD", "USDD", "GHO", "SUSD", "MIM", "DOLA", "USDL", "USDG",
+]);
+
+// Only force the stablecoin break-even (basis = proceeds) when the disposal price is
+// actually near the $1 peg. A materially off-peg disposal — a real depeg (e.g. selling
+// at $0.20, or USDC's dip to ~$0.88) — should book its true gain/loss instead of being
+// silently zeroed. ±10% covers normal fluctuation (and EUR-pegged EURC ~$1.08) while
+// still letting a genuine depeg realize the loss.
+const STABLE_PEG_TOLERANCE = 0.10;
+function isStablecoinNearPeg(proceedsUsd: number, amount: number): boolean {
+  if (!(amount > 0)) return true; // no amount to price against → keep prior break-even behavior
+  const pricePerUnit = Math.abs(proceedsUsd / amount);
+  return Math.abs(pricePerUnit - 1) <= STABLE_PEG_TOLERANCE;
+}
 
 // Known staking/governance contract addresses that should be treated as
 // self-transfers (non-taxable). Tokens sent to these addresses are locked,
@@ -105,7 +132,19 @@ interface CostBasisLot {
   washSaleAdjustment?: number; // Wash sale loss adjustment added to this lot
 }
 
-/** Compute the lot key: per-wallet mode uses "wallet:asset", universal uses just "asset" */
+/**
+ * Compute the lot key: per-wallet mode uses "wallet:asset", universal uses just "asset".
+ *
+ * DESIGN NOTE (T7): lots are keyed by asset SYMBOL, not by chain or contract address.
+ * This is intentional and matches standard crypto tax practice: a fungible asset is the
+ * same economic asset across chains (e.g. USDC/WBTC bridged ETH↔L2), so it should share
+ * one lot pool, and the non-taxable same-token-bridge handling relies on that symbol
+ * match. Keying by contract/chain would fragment a bridged asset into artificial
+ * per-chain pools and break bridge continuity. The one downside — two genuinely
+ * DIFFERENT tokens that share a ticker commingling — is mitigated by the ingestion spam
+ * filter (Moralis possible_spam) and would otherwise require an asset-identity registry
+ * to resolve without breaking legitimate bridged assets.
+ */
 function lotKey(asset: string, walletAddress: string | null, perWallet: boolean): string {
   if (!perWallet) return asset;
   return `${walletAddress || "__global__"}:${asset}`;
@@ -177,10 +216,21 @@ function getTaxYearBounds(year: number, country: string): { start: Date; end: Da
  * This is date-based, not day-count based (e.g., Jan 1, 2024 to Jan 1, 2025 = exactly 1 year = short-term)
  */
 function isLongTerm(dateAcquired: Date, dateSold: Date): boolean {
-  const anniversary = new Date(dateAcquired);
-  anniversary.setFullYear(anniversary.getFullYear() + 1);
-  // Must be MORE than one year, so dateSold must be after the anniversary
-  return dateSold > anniversary;
+  // Calendar-day based, NOT timestamp based: the time-of-day of the two txns must
+  // not flip short/long-term near the 1-year boundary. IRS holding period starts the
+  // day AFTER acquisition, so long-term requires the sale to be on or after
+  // (acquisition date + 1 year + 1 day). Compare UTC date components only.
+  const longTermStart = Date.UTC(
+    dateAcquired.getUTCFullYear() + 1,
+    dateAcquired.getUTCMonth(),
+    dateAcquired.getUTCDate() + 1,
+  );
+  const soldDay = Date.UTC(
+    dateSold.getUTCFullYear(),
+    dateSold.getUTCMonth(),
+    dateSold.getUTCDate(),
+  );
+  return soldDay >= longTermStart;
 }
 
 /**
@@ -343,8 +393,9 @@ function processDisposal(
     // Force cost basis = proceeds to prevent phantom gains from lot depletion.
     // Extract bare asset name from composite key (e.g., "walletAddr:USDC" → "USDC")
     const bareAsset = asset.includes(":") ? asset.split(":").pop()! : asset;
-    if (STABLECOINS.has(bareAsset)) {
-      // Always force break-even for stablecoins — they don't have real capital gains
+    if (STABLECOINS.has(bareAsset) && isStablecoinNearPeg(netProceeds, amount)) {
+      // Force break-even for near-peg stablecoins (avoids phantom lot-depletion gains).
+      // A materially off-peg disposal falls through and books its real gain/loss.
       totalCostBasis = netProceeds;
     }
 
@@ -467,7 +518,8 @@ export async function calculateTaxReport(
   userId?: string, // Optional user ID to include CSV-imported transactions
   filingStatus: "single" | "married_joint" | "married_separate" | "head_of_household" = "single",
   timezone: string = "America/New_York",
-  country: string = "US"
+  country: string = "US",
+  applyWashSales: boolean = false, // US §1091 does not apply to crypto by default
 ): Promise<TaxReport> {
   const startDate = new Date(`${year}-01-01T00:00:00Z`);
   const endDate = new Date(`${year}-12-31T23:59:59Z`);
@@ -658,11 +710,19 @@ export async function calculateTaxReport(
         undefined, // costBasisResults
         timezone,
         perWallet,
-        country
+        country,
+        applyWashSales,
       );
 
   const combinedTaxableEvents = unifiedReport.taxableEvents;
   const combinedIncomeEvents = unifiedReport.incomeEvents;
+
+  // On-chain disposals booked with missing/zero basis (full proceeds taxed as gain) —
+  // surfaced for review. Counted from engine events only; CSV imports are
+  // bring-your-own-P&L (a $0 basis there is intentional, not a gap).
+  const costBasisReviewCount = unifiedReport.taxableEvents.filter(
+    (e) => e.costBasis === 0 && e.gainLoss > 0,
+  ).length;
 
   // Germany: Freigrenze (Section 23 EStG) — if net short-term gains < EUR 1,000,
   // all short-term gains AND losses are exempt. If >= EUR 1,000, everything is taxable.
@@ -995,6 +1055,7 @@ export async function calculateTaxReport(
     annualExemption,
     currency,
     currencySymbol,
+    costBasisReviewCount,
   };
 }
 
@@ -1009,6 +1070,7 @@ export function computeCostBasisForTransactions(
   walletAddresses: string[] = [],
   perWalletOverride?: boolean,
   country: string = "US",
+  applyWashSales: boolean = false,
 ): TransactionCostBasisResult[] {
   const resultMap = new Map<number, TransactionCostBasisResult>();
 
@@ -1022,10 +1084,20 @@ export function computeCostBasisForTransactions(
   if (country === "UK") {
     processTransactionsForTaxUK(transactions, maxYear, walletAddresses, resultMap, "Europe/London");
   } else {
-    processTransactionsForTax(transactions, maxYear, method, walletAddresses, resultMap, "America/New_York", perWallet, country);
+    processTransactionsForTax(transactions, maxYear, method, walletAddresses, resultMap, "America/New_York", perWallet, country, applyWashSales);
   }
 
-  return Array.from(resultMap.values());
+  const results = Array.from(resultMap.values());
+  // Centralize the "needs cost-basis review" rule: a disposal booked with missing or
+  // zero basis while realizing a positive gain (i.e. the FULL proceeds were taxed).
+  // Stablecoins get basis forced = proceeds, so they never match. Both the DB recompute
+  // and the tax report read this instead of re-deriving the rule.
+  for (const r of results) {
+    r.needsReview =
+      r.gainLossUsd !== null &&
+      (r.costBasisUsd === null || (r.costBasisUsd === 0 && r.gainLossUsd > 0));
+  }
+  return results;
 }
 
 // ---------------------------------------------------------------------------
@@ -1330,9 +1402,9 @@ function processTransactionsForTaxUK(
       unmatched -= poolQty;
     }
 
-    // Stablecoin override
+    // Stablecoin override (near-peg only — a real depeg still books its gain/loss)
     const bareAsset = asset.includes(":") ? asset.split(":").pop()! : asset;
-    if (STABLECOINS.has(bareAsset)) {
+    if (STABLECOINS.has(bareAsset) && isStablecoinNearPeg(disposal.proceeds, disposal.amount)) {
       totalCostBasis = disposal.proceeds;
     }
 
@@ -1382,7 +1454,8 @@ function processTransactionsForTax(
   costBasisResults?: Map<number, TransactionCostBasisResult>, // Per-transaction cost basis collector
   timezone: string = "America/New_York", // User's timezone for year boundary determination
   perWallet: boolean = false,
-  country: string = "US"
+  country: string = "US",
+  applyWashSales: boolean = false, // US §1091 does not apply to crypto by default
 ): {
   taxableEvents: TaxableEvent[];
   incomeEvents: IncomeEvent[];
@@ -1469,7 +1542,11 @@ function processTransactionsForTax(
     // Remap TRANSFER_IN/TRANSFER_OUT to receive/send so they go through
     // proper cost basis handling. Only skip true self-transfers (TRANSFER_SELF)
     // and generic "transfer" types with no direction.
-    if (isTransferSkip(tx.type || "")) {
+    // Do NOT transfer-skip an income-flagged row (e.g. an EVM staking/airdrop that
+    // Moralis labels "token receive"): it must reach the income handler below so it
+    // books ordinary income AND an FMV cost-basis lot (otherwise it's dropped — no
+    // income, and a later sale becomes a zero-basis 100% gain, i.e. taxed twice).
+    if (isTransferSkip(tx.type || "") && !tx.is_income) {
       const typeUpper = (tx.type || "").toUpperCase();
       const isSelfTransfer = typeUpper === "TRANSFER_SELF" || (
         tx.counterparty_address && walletAddresses.some(addr =>
@@ -1568,7 +1645,7 @@ function processTransactionsForTax(
       let totalCostBasis = Math.abs(valueUsd) + feeUsd;
       
       // Check for wash sale: if this buy is within 30 days of a previous loss sale, apply wash sale rules
-      const washSaleAdjustment = checkWashSale(lk, date, amount, lossSales);
+      const washSaleAdjustment = applyWashSales ? checkWashSale(lk, date, amount, lossSales) : 0;
       if (washSaleAdjustment > 0) {
         // Add disallowed loss to cost basis of replacement shares
         totalCostBasis += washSaleAdjustment;
@@ -2039,9 +2116,11 @@ function processTransactionsForTax(
             });
           }
 
-          // Stablecoin: always force break-even (extract bare asset from composite key)
+          // Stablecoin: force break-even only when near the peg (a real depeg keeps its P&L)
           const swapBareAsset = asset.includes(":") ? asset.split(":").pop()! : asset;
-          const finalCostBasis = STABLECOINS.has(swapBareAsset) ? disposal.netProceeds : disposal.totalCostBasis;
+          const finalCostBasis = (STABLECOINS.has(swapBareAsset) && isStablecoinNearPeg(disposal.netProceeds, amount))
+            ? disposal.netProceeds
+            : disposal.totalCostBasis;
           const finalGainLoss = disposal.netProceeds - finalCostBasis;
 
           if (costBasisResults) {
@@ -2203,7 +2282,7 @@ function processTransactionsForTax(
       let totalCostBasis = Math.abs(valueUsd) + feeUsd;
       
       // Check for wash sale
-      const washSaleAdjustment = checkWashSale(lk, date, amount, lossSales);
+      const washSaleAdjustment = applyWashSales ? checkWashSale(lk, date, amount, lossSales) : 0;
       if (washSaleAdjustment > 0) {
         totalCostBasis += washSaleAdjustment;
         debugLog(`[Wash Sale] Margin buy transaction ${tx.id}: Added $${washSaleAdjustment.toFixed(2)} wash sale adjustment to cost basis.`);
@@ -2525,9 +2604,12 @@ function processTransactionsForTax(
     }
   }
 
-  // Mark wash sales after processing all transactions
-  // This includes checking buys that occurred BEFORE loss sales (two-pass approach)
-  markWashSales(taxableEvents, lossSales, buyTransactions, costBasisLots);
+  // Mark wash sales after processing all transactions (US §1091, two-pass).
+  // Crypto is NOT a "security" under current US law, so this is OFF by default and
+  // only runs when a caller explicitly opts in (applyWashSales).
+  if (applyWashSales) {
+    markWashSales(taxableEvents, lossSales, buyTransactions, costBasisLots);
+  }
   
   debugLog(`[processTransactionsForTax] Processing complete for tax year ${taxYear}:`);
   debugLog(`  - Processed ${processedCount} transactions (out of ${transactions.length} total)`);

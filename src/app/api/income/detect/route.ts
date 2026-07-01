@@ -53,10 +53,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ status: "success", flagged: 0, message: "No wallets found" });
     }
 
-    // Reset all is_income flags first (idempotent)
+    // Reset is_income first (idempotent) — but ONLY for the Solana rows the rules below
+    // re-flag. EVM rows (chain = eth/polygon/...) and CSV imports (null wallet_address)
+    // are left untouched, so an is_income flag set for them elsewhere (e.g. the CSV
+    // field mapper, or a future EVM income detector) is never silently clobbered.
     await prisma.$executeRawUnsafe(`
       UPDATE transactions SET is_income = false
       WHERE wallet_address = ANY($1::text[]) AND is_income = true
+        AND (chain IS NULL OR chain = 'solana')
     `, walletAddresses);
 
     let totalFlagged = 0;

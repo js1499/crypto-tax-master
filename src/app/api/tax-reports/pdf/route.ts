@@ -688,6 +688,7 @@ export async function GET(request: NextRequest) {
       annualExemption: 0,
       currency: "USD",
       currencySymbol: "$",
+      costBasisReviewCount: dbEvents.filter((e) => e.costBasis === 0 && e.gainLoss > 0).length,
     };
 
     // ---- Generate the PDF ----

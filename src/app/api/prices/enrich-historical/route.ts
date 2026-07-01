@@ -3,11 +3,16 @@ import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import { enrichHistoricalPrices } from "@/lib/enrich-prices";
+import { StaleLock } from "@/lib/stale-lock";
 
 export const maxDuration = 800; // 13 min Vercel timeout
 
-// Prevent concurrent enrichment runs (CoinGecko has a shared rate limit)
-let enrichmentRunning = false;
+// Prevent concurrent enrichment runs (CoinGecko has a shared rate limit).
+// A self-healing lock: if a run is hard-killed (504 at maxDuration / OOM) the lock
+// auto-expires after the TTL instead of wedging every future request on a stuck flag
+// (which the pipeline treats as success → prices silently never backfill).
+const ENRICH_LOCK_TTL_MS = 15 * 60 * 1000; // > maxDuration (800s)
+const enrichLock = new StaleLock(ENRICH_LOCK_TTL_MS);
 
 /**
  * POST /api/prices/enrich-historical
@@ -22,14 +27,6 @@ export async function POST(request: NextRequest) {
   const warn = (msg: string) => console.warn(`[Enrich API] ${msg}`);
 
   log(`── Endpoint called at ${new Date().toISOString()} ──`);
-
-  if (enrichmentRunning) {
-    warn(`Enrichment already in progress — rejecting concurrent request`);
-    return NextResponse.json(
-      { status: "error", error: "Enrichment already in progress. Please wait for it to complete." },
-      { status: 409 }
-    );
-  }
 
   try {
     // Rate limiting
@@ -61,15 +58,25 @@ export async function POST(request: NextRequest) {
       walletAddress = wallet.address;
     }
 
-    enrichmentRunning = true;
-    const result = await enrichHistoricalPrices(walletAddress, user.id);
-    enrichmentRunning = false;
+    // Concurrency guard (self-healing — see ENRICH_LOCK_TTL_MS). Held only for the
+    // duration of the actual enrichment and always released in the finally below.
+    if (!enrichLock.acquire()) {
+      warn(`Enrichment already in progress — rejecting concurrent request`);
+      return NextResponse.json(
+        { status: "error", error: "Enrichment already in progress. Please wait for it to complete." },
+        { status: 409 },
+      );
+    }
 
-    return NextResponse.json(result, {
-      status: result.status === "success" ? 200 : 500,
-    });
+    try {
+      const result = await enrichHistoricalPrices(walletAddress, user.id);
+      return NextResponse.json(result, {
+        status: result.status === "success" ? 200 : 500,
+      });
+    } finally {
+      enrichLock.release();
+    }
   } catch (error) {
-    enrichmentRunning = false;
     console.error("[Enrich API] Error:", error);
     return NextResponse.json(
       {
@@ -77,7 +84,7 @@ export async function POST(request: NextRequest) {
         error: "Failed to enrich historical prices",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

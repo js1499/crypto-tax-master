@@ -14,6 +14,7 @@ import {
   SUPPORTED_CHAINS,
   WalletTransaction,
 } from "@/lib/moralis-transactions";
+import { evmDedupKey } from "@/lib/evm-dedup";
 import {
   getSolanaWalletTransactions,
   isValidSolanaAddress,
@@ -229,10 +230,19 @@ export async function POST(request: NextRequest) {
         let walletSkipped = 0;
         let walletErrors = 0;
 
-        // Batch duplicate check
-        const txHashes = transactions
-          .map((tx) => tx.tx_hash)
-          .filter((h): h is string => !!h);
+        // Batch duplicate check. Dedup on a per-leg, per-wallet key (not the bare EVM
+        // hash, which every transfer leg + both self-transfer wallets share and which
+        // silently drops legs). Non-EVM records key on their existing unique tx_hash.
+        // We ALSO look up the legacy bare hash so a full re-sync of a wallet synced
+        // BEFORE this change (whose rows still store the raw hash) is not double-inserted.
+        const lookupSet = new Set<string>();
+        for (const tx of transactions) {
+          const key = evmDedupKey(tx as { tx_hash?: string | null; id?: string | null; wallet_address?: string | null });
+          if (key) lookupSet.add(key);
+          const raw = (tx as { tx_hash?: string | null }).tx_hash;
+          if (raw) lookupSet.add(raw);
+        }
+        const txHashes = [...lookupSet];
 
         const existingHashes = new Set<string>();
         if (txHashes.length > 0) {
@@ -252,7 +262,15 @@ export async function POST(request: NextRequest) {
         // Filter out duplicates and prepare batch insert data
         const toInsert = [];
         for (const tx of transactions) {
-          if (tx.tx_hash && existingHashes.has(tx.tx_hash)) {
+          const dedupKey = evmDedupKey(tx as { tx_hash?: string | null; id?: string | null; wallet_address?: string | null });
+          const rawHash = (tx as { tx_hash?: string | null }).tx_hash;
+          // Skip if this leg's key already exists, OR a LEGACY row for the raw hash
+          // exists (pre-change data) — the raw-hash check prevents duplicates on a full
+          // re-sync of wallets synced before the per-leg key was introduced.
+          if (
+            (dedupKey && existingHashes.has(dedupKey)) ||
+            (rawHash && rawHash !== dedupKey && existingHashes.has(rawHash))
+          ) {
             walletSkipped++;
             totalSkipped++;
             continue;
@@ -260,7 +278,9 @@ export async function POST(request: NextRequest) {
           toInsert.push({
             userId: user.id,
             type: tx.type,
-            status: "confirmed",
+            // Use the on-chain receipt status (reverted txns -> "failed") so they're
+            // excluded from cost-basis/tax instead of treated as real transfers.
+            status: tx.status || "confirmed",
             source: tx.source,
             source_type: "wallet",
             asset_symbol: tx.asset_symbol,
@@ -271,7 +291,7 @@ export async function POST(request: NextRequest) {
             value_usd: tx.value_usd,
             fee_usd: tx.fee_usd,
             tx_timestamp: tx.tx_timestamp,
-            tx_hash: tx.tx_hash || null,
+            tx_hash: dedupKey,
             wallet_address: tx.wallet_address,
             counterparty_address: tx.counterparty_address || null,
             chain: tx.chain,

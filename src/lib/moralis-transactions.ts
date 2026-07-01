@@ -171,6 +171,7 @@ interface MoralisTransaction {
   category: string;
   summary: string;
   possible_spam: boolean;
+  receipt_status?: string; // "1" = success, "0" = reverted/failed
   native_transfers?: MoralisNativeTransfer[];
   erc20_transfers?: MoralisERC20Transfer[];
   nft_transfers?: MoralisNFTTransfer[];
@@ -232,6 +233,7 @@ export interface WalletTransaction {
   tx_timestamp: Date;
   source: string;
   source_type: string;
+  status?: string; // "confirmed" | "failed" — from the on-chain receipt
   tx_hash: string;
   wallet_address: string;
   counterparty_address?: string;
@@ -543,6 +545,15 @@ function postProcessTransaction(
  * Fetch wallet transaction history from Moralis API with price lookups.
  * Returns fully populated WalletTransaction objects with USD values.
  */
+/**
+ * Map a Moralis on-chain receipt_status ("1" success, "0" reverted) to our status
+ * string. Reverted/failed txns are stored as "failed" so the tax engine (which only
+ * considers confirmed/completed/pending) never treats them as real transfers.
+ */
+export function moralisTxStatus(receiptStatus: string | undefined | null): "confirmed" | "failed" {
+  return receiptStatus === "0" ? "failed" : "confirmed";
+}
+
 export async function getWalletTransactions(
   walletAddress: string,
   chain: string = "eth",
@@ -568,7 +579,10 @@ export async function getWalletTransactions(
   const transactions: WalletTransaction[] = [];
   let cursor: string | null = null;
   let pageCount = 0;
-  const maxPages = 50;
+  // ~50k txns/chain safety bound (was 50 = 5k, which silently dropped the OLDEST
+  // history in DESC order → later sells hit empty lots and booked 100% gains).
+  // Truncation is now surfaced as a warning below instead of being silent.
+  const maxPages = 500;
   let totalRawTx = 0;
   let spamSkipped = 0;
 
@@ -768,13 +782,40 @@ export async function getWalletTransactions(
           }
         }
 
+        // Capture the tx's gas fee on exactly one record for ERC-20-only txns (a DEX
+        // swap composed purely of erc20_transfers has no native-transfer record to
+        // carry it, so gas was previously lost). Only when the synced wallet actually
+        // PAID the gas (it is the tx sender) and no record already carries a fee (avoids
+        // double-counting). Stored in native units; converted to USD in Step 2, then
+        // deducted from proceeds on the outgoing/swap side by the tax engine.
+        if (
+          feeInNativeToken > 0 &&
+          tx.from_address?.toLowerCase() === walletAddress.toLowerCase() &&
+          !txRecords.some((r) => r.fee_usd != null)
+        ) {
+          const feeTarget =
+            txRecords.find((r) => ["send", "token send", "nft send"].includes(r.type)) ||
+            txRecords[0];
+          if (feeTarget) feeTarget.fee_usd = new Decimal(feeInNativeToken);
+        }
+
         // Post-process: detect swaps and wraps within a single on-chain tx
         const processed = postProcessTransaction(txRecords, tx, chain, walletAddress);
+        // Stamp the on-chain receipt status so reverted/failed txns are excluded from
+        // cost-basis/tax (the engine only considers confirmed/completed/pending).
+        const txStatus = moralisTxStatus(tx.receipt_status);
+        for (const r of processed) r.status = txStatus;
         transactions.push(...processed);
       }
 
       cursor = data.cursor || null;
     } while (cursor && pageCount < maxPages);
+
+    if (cursor && pageCount >= maxPages) {
+      console.warn(
+        `[Moralis] ⚠️ Page cap (${maxPages} pages ≈ ${maxPages * 100} txns) reached for ${walletAddress} on ${chainInfo.name}; OLDEST history beyond this was NOT fetched (DESC order). Older cost-basis lots may be missing.`
+      );
+    }
 
     console.log(
       `[Moralis] Step 1 complete: ${totalRawTx} raw tx fetched, ${spamSkipped} spam skipped, ${transactions.length} valid transactions parsed across ${pageCount} pages`

@@ -238,6 +238,7 @@ export async function GET(request: NextRequest) {
       annualExemption: 0,
       currency: "USD",
       currencySymbol: "$",
+      costBasisReviewCount: taxableEvents.filter((e) => e.costBasis === 0 && e.gainLoss > 0).length,
     };
 
     // Generate CSV based on export type

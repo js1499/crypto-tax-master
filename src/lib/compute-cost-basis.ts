@@ -61,10 +61,9 @@ export async function recomputeCostBasis(
     // disposal (gain/loss is not null) but with NO basis, or a ZERO basis while
     // booking a positive gain (i.e. the full proceeds were taxed). Stablecoins get
     // basis forced = proceeds, so they never match this.
-    const needsReview = (r: { costBasisUsd: number | null; gainLossUsd: number | null }) =>
-      r.gainLossUsd !== null &&
-      (r.costBasisUsd === null || (r.costBasisUsd === 0 && r.gainLossUsd > 0));
-    const needsReviewCount = results.filter(needsReview).length;
+    // needsReview is computed centrally by computeCostBasisForTransactions so the rule
+    // lives in one place (engine + report + this recompute all agree).
+    const needsReviewCount = results.filter((r) => r.needsReview).length;
 
     const CHUNK_SIZE = 5000; // Postgres can handle large VALUES lists efficiently
     for (let i = 0; i < results.length; i += CHUNK_SIZE) {
@@ -74,7 +73,7 @@ export async function recomputeCostBasis(
         const gl = r.gainLossUsd !== null ? r.gainLossUsd.toString() : 'NULL';
         const hp = r.holdingPeriod ? `'${r.holdingPeriod}'` : 'NULL';
         const da = r.dateAcquired ? `'${r.dateAcquired.toISOString()}'::timestamptz` : 'NULL';
-        const ncbr = needsReview(r) ? 'true' : 'false';
+        const ncbr = r.needsReview ? 'true' : 'false';
         return `(${r.transactionId}, ${cb}::numeric(30,15), ${gl}::numeric(30,15), ${hp}::varchar(10), ${da}, ${ncbr}::boolean)`;
       }).join(',\n');
 
