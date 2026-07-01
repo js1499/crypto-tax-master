@@ -25,7 +25,11 @@ export async function fetchBinanceMinuteKlines(
   onProgress?: (fetched: number) => void,
 ): Promise<Map<number, number>> {
   const priceMap = new Map<number, number>();
-  const BINANCE_KLINE_URL = "https://api.binance.com/api/v3/klines";
+  // Binance's public market-data host. api.binance.com geo-blocks US-originating
+  // requests with HTTP 451 (Vercel functions run in US regions), which silently
+  // zeroed out minute-price coverage. data-api.binance.vision serves the identical
+  // /api/v3/klines response, requires no API key, and is not geo-restricted.
+  const BINANCE_KLINE_URL = "https://data-api.binance.vision/api/v3/klines";
   const LIMIT = 1000; // Max candles per request
   let startTime = fromDate.getTime(); // Binance uses milliseconds
   const endTime = toDate.getTime();
