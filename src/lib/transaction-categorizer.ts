@@ -321,6 +321,41 @@ const CATEGORY_MAP: Record<string, string> = {
   "inflation_reward": "income",
   "interest_payout": "income",
 
+  // Coinbase App API raw types (snake_case), per
+  // https://docs.cdp.coinbase.com/coinbase-app/track-apis/transactions — plus legacy
+  // Coinbase Pro / Exchange types still present in historical data. Tax treatment:
+  // deposits/withdrawals/transfers are non-taxable internal moves; rewards are income;
+  // conversions are taxable swaps. (advanced_trade_fill stays unmapped — see note above.)
+  // -- Internal money movements between own Coinbase products/accounts (non-taxable) --
+  "exchange_deposit": "deposit",        // legacy: crypto INTO Coinbase Exchange
+  "exchange_withdrawal": "withdrawal",  // legacy: crypto OUT of Coinbase Exchange
+  "pro_deposit": "deposit",             // legacy: INTO Coinbase Pro
+  "pro_withdrawal": "withdrawal",       // legacy: OUT of Coinbase Pro
+  "vault_withdrawal": "withdrawal",
+  "intx_deposit": "deposit",            // international account transfer in
+  "intx_withdrawal": "withdrawal",
+  "fiat_deposit": "deposit",            // fiat funding (also skipped at ingest)
+  "fiat_withdrawal": "withdrawal",
+  "staking_transfer": "transfer",       // principal into staked account (non-taxable)
+  "unstaking_transfer": "transfer",     // principal back to primary (non-taxable)
+  "unsupported_asset_recovery": "transfer",
+  // -- Income / rewards --
+  "incentives_rewards_payout": "income",
+  "subscription_rebate": "income",
+  // -- Taxable conversions --
+  "wrap_asset": "swap",                 // e.g. ETH <-> cbETH/WETH
+  "unwrap_asset": "swap",
+  "retail_simple_dust": "swap",         // dust swept/converted to another asset
+  "derivatives_settlement": "sell",     // realized derivatives P&L (review for §1256)
+  // -- Non-taxable / neutral / rare --
+  "request": "other",
+  "tx": "other",                        // Coinbase's own "uncategorized" default
+  "clawback": "other",
+  "incentives_shared_clawback": "other",
+  "subscription": "other",              // subscription charge (typically fiat)
+  "fcm_futures_usdc_sell": "other",     // futures margin USDC<->USD conversion
+  "fcm_futures_usdc_sell_additional_encumberment_rollup": "other",
+
   // Coinbase CSV "Transaction Type" exports (Title Case). Mapped for the field mapper's
   // auto-suggestion (user can override any per-import). Buy/Sell/Send/Receive/Deposit/
   // Withdrawal are already covered above.

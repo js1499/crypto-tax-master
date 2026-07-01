@@ -41,6 +41,32 @@ describe("getCategory normalization", () => {
     expect(getCategory("CLAIM_REWARDS")).toBe("income");
   });
 
+  it("maps Coinbase App API raw types (incl. legacy Pro/Exchange) — no longer 'other'", () => {
+    // Legacy Pro/Exchange internal transfers — the types that were falling to 'other'.
+    expect(getCategory("exchange_deposit")).toBe("deposit");
+    expect(getCategory("exchange_withdrawal")).toBe("withdrawal");
+    expect(getCategory("pro_deposit")).toBe("deposit");
+    expect(getCategory("pro_withdrawal")).toBe("withdrawal");
+    // Other documented internal moves.
+    expect(getCategory("vault_withdrawal")).toBe("withdrawal");
+    expect(getCategory("intx_deposit")).toBe("deposit");
+    expect(getCategory("intx_withdrawal")).toBe("withdrawal");
+    expect(getCategory("fiat_deposit")).toBe("deposit");
+    expect(getCategory("fiat_withdrawal")).toBe("withdrawal");
+    expect(getCategory("staking_transfer")).toBe("transfer");
+    expect(getCategory("unstaking_transfer")).toBe("transfer");
+    // Rewards / income.
+    expect(getCategory("incentives_rewards_payout")).toBe("income");
+    expect(getCategory("subscription_rebate")).toBe("income");
+    // Taxable conversions.
+    expect(getCategory("wrap_asset")).toBe("swap");
+    expect(getCategory("unwrap_asset")).toBe("swap");
+    expect(getCategory("retail_simple_dust")).toBe("swap");
+    expect(getCategory("derivatives_settlement")).toBe("sell");
+    // advanced_trade_fill is intentionally normalized to buy/sell at import, not mapped here.
+    expect(getCategory("advanced_trade_fill")).toBe("other");
+  });
+
   it("maps Coinbase CSV transaction types", () => {
     expect(getCategory("Convert")).toBe("swap");
     expect(getCategory("Wrap Asset")).toBe("swap");
