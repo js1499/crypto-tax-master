@@ -1,6 +1,11 @@
 import axios from "axios";
 import { Decimal } from "@prisma/client/runtime/library";
 
+// Set SYNC_VERBOSE=1 for per-page / per-token debug logs. Off by default so a full
+// multi-chain sync stays well under Vercel's 256-line log limit; the concise per-stage
+// summary lines always print regardless.
+const VERBOSE = process.env.SYNC_VERBOSE === "1";
+
 // Moralis API key from environment
 const MORALIS_API_KEY = process.env.MORALIS_API_KEY;
 const MORALIS_BASE_URL = "https://deep-index.moralis.io/api/v2.2";
@@ -322,15 +327,11 @@ export async function getTokenPriceUSD(
 
     if (price !== null && price !== undefined && !isNaN(price)) {
       priceCache.set(cacheKey, price);
-      console.log(
-        `[Moralis Price] ${tokenAddress.slice(0, 10)}... on ${chain} at block ${blockNumber}: $${price}`
-      );
+      if (VERBOSE) console.log(`[Moralis Price] ${tokenAddress.slice(0, 10)}… on ${chain} @${blockNumber}: $${price}`);
       return price;
     }
 
-    console.log(
-      `[Moralis Price] No price data for ${tokenAddress.slice(0, 10)}... on ${chain} at block ${blockNumber}`
-    );
+    if (VERBOSE) console.log(`[Moralis Price] No price for ${tokenAddress.slice(0, 10)}… on ${chain} @${blockNumber}`);
     priceCache.set(cacheKey, 0);
     return null;
   } catch (error) {
@@ -338,24 +339,17 @@ export async function getTokenPriceUSD(
       const status = error.response?.status;
       if (status === 404) {
         // Token not found in Moralis price index - common for obscure tokens
-        console.log(
-          `[Moralis Price] Token not in price index: ${tokenAddress.slice(0, 10)}... on ${chain}`
-        );
+        if (VERBOSE) console.log(`[Moralis Price] Not in index: ${tokenAddress.slice(0, 10)}… on ${chain}`);
         priceCache.set(cacheKey, 0);
         return null;
       }
       if (status === 429) {
-        console.warn(`[Moralis Price] Rate limited. Skipping price for ${tokenAddress.slice(0, 10)}...`);
+        if (VERBOSE) console.warn(`[Moralis Price] Rate limited: ${tokenAddress.slice(0, 10)}…`);
         return null;
       }
-      console.warn(
-        `[Moralis Price] API error (${status}) for ${tokenAddress.slice(0, 10)}...: ${error.response?.data?.message || error.message}`
-      );
+      if (VERBOSE) console.warn(`[Moralis Price] API error (${status}) for ${tokenAddress.slice(0, 10)}…: ${error.response?.data?.message || error.message}`);
     } else {
-      console.warn(
-        `[Moralis Price] Error fetching price for ${tokenAddress.slice(0, 10)}...:`,
-        error instanceof Error ? error.message : error
-      );
+      if (VERBOSE) console.warn(`[Moralis Price] Error for ${tokenAddress.slice(0, 10)}…:`, error instanceof Error ? error.message : error);
     }
     priceCache.set(cacheKey, 0);
     return null;
@@ -572,9 +566,8 @@ export async function getWalletTransactions(
   }
 
   const moralisChainParam = chainInfo.chainParam;
-  console.log(`[Moralis] ====== Starting fetch for ${walletAddress} on ${chainInfo.name} (chain param: ${moralisChainParam}) ======`);
-  if (startTime) console.log(`[Moralis] Start time: ${new Date(startTime).toISOString()}`);
-  if (endTime) console.log(`[Moralis] End time: ${new Date(endTime).toISOString()}`);
+  const windowStr = startTime ? ` since ${new Date(startTime).toISOString().slice(0, 10)}` : " (full history)";
+  console.log(`[Moralis] ${chainInfo.name}: fetching ${walletAddress.slice(0, 10)}…${windowStr}`);
 
   const transactions: WalletTransaction[] = [];
   let cursor: string | null = null;
@@ -588,8 +581,6 @@ export async function getWalletTransactions(
 
   try {
     // Step 1: Fetch all raw transactions from Moralis
-    console.log(`[Moralis] Step 1: Fetching transaction history from API...`);
-
     do {
       pageCount++;
       const params: Record<string, any> = {
@@ -603,9 +594,7 @@ export async function getWalletTransactions(
       if (startTime) params.from_date = new Date(startTime).toISOString();
       if (endTime) params.to_date = new Date(endTime).toISOString();
 
-      console.log(
-        `[Moralis] Fetching page ${pageCount}${cursor ? " (cursor: " + cursor.slice(0, 20) + "...)" : ""}...`
-      );
+      if (VERBOSE) console.log(`[Moralis] Fetching page ${pageCount}${cursor ? " (cursor …)" : ""}`);
 
       const response = await axios.get(
         `${MORALIS_BASE_URL}/wallets/${walletAddress}/history`,
@@ -623,7 +612,7 @@ export async function getWalletTransactions(
       const results: MoralisTransaction[] = data.result || [];
       totalRawTx += results.length;
 
-      console.log(`[Moralis] Page ${pageCount}: ${results.length} raw transactions received`);
+      if (VERBOSE) console.log(`[Moralis] Page ${pageCount}: ${results.length} raw`);
 
       for (const tx of results) {
         // Skip spam transactions
@@ -818,17 +807,15 @@ export async function getWalletTransactions(
     }
 
     console.log(
-      `[Moralis] Step 1 complete: ${totalRawTx} raw tx fetched, ${spamSkipped} spam skipped, ${transactions.length} valid transactions parsed across ${pageCount} pages`
+      `[Moralis] ${chainInfo.name}: ${totalRawTx} raw → ${transactions.length} parsed, ${spamSkipped} spam, ${pageCount} page(s)`
     );
 
     // Step 2: Enrich with USD prices
-    console.log(`[Moralis] Step 2: Looking up USD prices for ${transactions.length} transactions...`);
     await enrichTransactionsWithPrices(transactions, chain);
 
     // Sort by timestamp
     transactions.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
 
-    console.log(`[Moralis] ====== Fetch complete: ${transactions.length} transactions for ${chainInfo.name} ======`);
     return transactions;
   } catch (error) {
     if (axios.isAxiosError(error)) {
@@ -885,9 +872,7 @@ async function enrichTransactionsWithPrices(
     }
   }
 
-  console.log(
-    `[Moralis Price] Need ${priceKeys.size} unique price lookups for ${transactions.length} transactions`
-  );
+  if (VERBOSE) console.log(`[Moralis Price] ${priceKeys.size} unique lookups for ${transactions.length} tx`);
 
   // Fetch prices for each unique token+date
   // Note: getTokenPriceUSD handles chainParam resolution internally
@@ -912,17 +897,13 @@ async function enrichTransactionsWithPrices(
       failed++;
     }
 
-    // Progress log every 10 lookups
-    if (lookedUp % 10 === 0) {
-      console.log(
-        `[Moralis Price] Progress: ${lookedUp}/${priceKeys.size} lookups (${found} found, ${failed} failed)`
-      );
+    // Progress log every 50 lookups (verbose only)
+    if (VERBOSE && lookedUp % 50 === 0) {
+      console.log(`[Moralis Price] ${lookedUp}/${priceKeys.size} (${found} found, ${failed} failed)`);
     }
   }
 
-  console.log(
-    `[Moralis Price] Lookups complete: ${found}/${priceKeys.size} prices found, ${failed} unavailable`
-  );
+  console.log(`[Moralis Price] ${chain}: priced ${found}/${priceKeys.size} tokens (${failed} unavailable)`);
 
   // Now apply prices to all transactions
   let priced = 0;
@@ -1027,11 +1008,9 @@ export async function getWalletTransactionsAllChains(
     const chainName = chainInfo?.name || chain;
 
     try {
-      console.log(`[Moralis] --- Starting chain: ${chainName} ---`);
       const transactions = await getWalletTransactions(walletAddress, chain, startTime, endTime);
       allTransactions.push(...transactions);
       chainResults.push({ chain: chainName, count: transactions.length });
-      console.log(`[Moralis] --- ${chainName} complete: ${transactions.length} transactions ---`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       console.error(`[Moralis] --- ${chainName} FAILED: ${message} ---`);
@@ -1042,17 +1021,11 @@ export async function getWalletTransactionsAllChains(
   // Sort all transactions by timestamp
   allTransactions.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
 
-  // Summary log
-  console.log(`[Moralis] ====== Multi-chain fetch complete ======`);
-  console.log(`[Moralis] Results by chain:`);
-  for (const result of chainResults) {
-    if (result.error) {
-      console.log(`[Moralis]   ${result.chain}: FAILED - ${result.error}`);
-    } else {
-      console.log(`[Moralis]   ${result.chain}: ${result.count} transactions`);
-    }
-  }
-  console.log(`[Moralis] Total: ${allTransactions.length} transactions across ${chains.length} chains`);
+  // Summary log (one line: per-chain counts + any failures)
+  const perChain = chainResults
+    .map((r) => (r.error ? `${r.chain}=FAILED` : `${r.chain}=${r.count}`))
+    .join(", ");
+  console.log(`[Moralis] Multi-chain total ${allTransactions.length} across ${chains.length}: ${perChain}`);
 
   return allTransactions;
 }

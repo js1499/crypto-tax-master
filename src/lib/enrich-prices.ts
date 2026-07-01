@@ -5,6 +5,12 @@ import { batchGetTokenOHLCV, getMinuteOHLCVForDay, findClosestPrice, fetchBinanc
 
 const log = (msg: string) => console.log(`[Enrich] ${msg}`);
 const warn = (msg: string) => console.warn(`[Enrich] ${msg}`);
+// Per-item (per-symbol / progress) logs — set SYNC_VERBOSE=1 to see them. Off by default
+// so a large wallet's enrichment stays well under Vercel's 256-line log limit; the
+// per-phase headers/summaries and the final breakdown always print.
+const VERBOSE = process.env.SYNC_VERBOSE === "1";
+const vlog = (msg: string) => { if (VERBOSE) console.log(`[Enrich] ${msg}`); };
+const vwarn = (msg: string) => { if (VERBOSE) console.warn(`[Enrich] ${msg}`); };
 
 export interface EnrichResult {
   status: "success" | "error";
@@ -270,7 +276,7 @@ export async function enrichHistoricalPrices(
         }
 
         if (i + 1000 < swapTxIds.length) {
-          log(`  Phase 1 progress: ${Math.min(i + 1000, swapTxIds.length)}/${swapTxIds.length} queried`);
+          vlog(`  Phase 1 progress: ${Math.min(i + 1000, swapTxIds.length)}/${swapTxIds.length} queried`);
         }
       }
 
@@ -350,7 +356,7 @@ export async function enrichHistoricalPrices(
           }
         }
         if ((i + CONCURRENCY) % 50 === 0 || i + CONCURRENCY >= keys.length) {
-          log(`  Phase 1.5 fetch: ${Math.min(i + CONCURRENCY, keys.length)}/${keys.length} (${resolvedCount} resolved)`);
+          vlog(`  Phase 1.5 fetch: ${Math.min(i + CONCURRENCY, keys.length)}/${keys.length} (${resolvedCount} resolved)`);
         }
       }
 
@@ -496,12 +502,12 @@ export async function enrichHistoricalPrices(
           for (const entry of prices) {
             priceMap.set(`${symbol}:${entry.date.split("T")[0]}`, entry.price);
           }
-          log(`  [${idx + 1}/${otherSymbols.length}] ${symbol}: ${prices.length} daily prices`);
+          vlog(`  [${idx + 1}/${otherSymbols.length}] ${symbol}: ${prices.length} daily prices`);
         } else {
-          warn(`  [${idx + 1}/${otherSymbols.length}] ${symbol}: no price data`);
+          vwarn(`  [${idx + 1}/${otherSymbols.length}] ${symbol}: no price data`);
         }
       } catch (err) {
-        warn(`  [${idx + 1}/${otherSymbols.length}] ${symbol}: error — ${err instanceof Error ? err.message : err}`);
+        vwarn(`  [${idx + 1}/${otherSymbols.length}] ${symbol}: error — ${err instanceof Error ? err.message : err}`);
       }
     }
 
@@ -652,10 +658,10 @@ export async function enrichHistoricalPrices(
                 priceMap.set(`${symbol}:${entry.date.split("T")[0]}`, entry.price);
               }
               pricesFetched++;
-              log(`  [Phase 3.5] ${symbol}: ${prices.length} daily prices loaded`);
+              vlog(`  [Phase 3.5] ${symbol}: ${prices.length} daily prices loaded`);
             }
           } catch (err) {
-            warn(`  [Phase 3.5] ${symbol}: price fetch error — ${err instanceof Error ? err.message : err}`);
+            vwarn(`  [Phase 3.5] ${symbol}: price fetch error — ${err instanceof Error ? err.message : err}`);
           }
         }
         log(`  Phase 3.5: Fetched price ranges for ${pricesFetched}/${newSymbols.size} resolved tokens`);
@@ -796,7 +802,7 @@ export async function enrichHistoricalPrices(
       const ohlcvResults = await batchGetTokenOHLCV(
         mintAddresses, rangeStart, rangeEnd,
         (done, total, resolved) => {
-          log(`  Phase 5 OHLCV: ${done}/${total} mints (${resolved} resolved)`);
+          vlog(`  Phase 5 OHLCV: ${done}/${total} mints (${resolved} resolved)`);
         },
       );
 
