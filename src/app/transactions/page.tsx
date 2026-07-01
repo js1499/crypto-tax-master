@@ -294,6 +294,9 @@ function TransactionsContent() {
     unlabelledCount: number;
     identifiedPercentage: number;
     valueIdentifiedPercentage: number;
+    costBasisMatchedPercentage: number;
+    needsCostBasisCount: number;
+    disposalCount: number;
     pnl: { totalCostBasis: number; totalProceeds: number; netGain: number; gainsByAsset: Array<{ asset: string; amount: number }>; lossesByAsset: Array<{ asset: string; amount: number }> };
     income: { count: number; totalValueUsd: number; byAsset: Array<{ asset: string; amount: number }> };
     weeklyActivity: Array<{ weekStart: string; count: number; netGainLoss: number }>;
@@ -2112,6 +2115,33 @@ function TransactionsContent() {
                 </div>
                 <span className={cn("text-[11px] font-bold", stats.identifiedPercentage === 100 ? "text-[#2563EB]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.identifiedPercentage}%</span>
               </div>
+              {/* Cost-basis coverage: share of disposals matched to an acquisition. Amber +
+                  clickable when incomplete — filters to the unmatched rows so the user can
+                  connect the source wallet/exchange. Deliberately compact (same size as the
+                  bars above), not a full-width banner. */}
+              {stats.disposalCount > 0 && (
+                <button
+                  type="button"
+                  disabled={stats.needsCostBasisCount === 0}
+                  onClick={() => { if (stats.needsCostBasisCount > 0) { setOnlyNeedsReview(!onlyNeedsReview); setCurrentPage(1); } }}
+                  title={stats.needsCostBasisCount > 0
+                    ? `${stats.needsCostBasisCount.toLocaleString()} disposal${stats.needsCostBasisCount === 1 ? "" : "s"} have no matched cost basis (taxed as 100% gain). Click to view — connect the source wallet/exchange to fix.`
+                    : "All disposals have a matched cost basis."}
+                  className={cn(
+                    "flex items-center gap-1.5 shrink-0 rounded-md px-1 -mx-1 transition-colors",
+                    stats.needsCostBasisCount > 0 ? "cursor-pointer hover:bg-[#F0F0EB] dark:hover:bg-[#2A2A2A]" : "cursor-default",
+                    onlyNeedsReview && "bg-[#FEF3C7] dark:bg-[rgba(202,138,4,0.15)]",
+                  )}
+                >
+                  <span className="text-[11px] text-[#6B7280] shrink-0">Cost Basis</span>
+                  <div className="w-[80px]">
+                    <div className="h-1.5 w-full rounded-full bg-[#F0F0EB] dark:bg-[#2A2A2A] overflow-hidden">
+                      <div className={cn("h-full rounded-full", stats.costBasisMatchedPercentage === 100 ? "bg-[#16A34A]" : "bg-[#CA8A04]")} style={{ width: `${stats.costBasisMatchedPercentage}%` }} />
+                    </div>
+                  </div>
+                  <span className={cn("text-[11px] font-bold", stats.costBasisMatchedPercentage === 100 ? "text-[#16A34A]" : "text-[#CA8A04]")} style={{ fontVariantNumeric: 'tabular-nums' }}>{stats.costBasisMatchedPercentage}%</span>
+                </button>
+              )}
             </>
           )}
         </div>

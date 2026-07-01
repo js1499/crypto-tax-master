@@ -454,7 +454,7 @@ export async function GET(request: NextRequest) {
       ...getTypesForCategory("deposit"), ...getTypesForCategory("withdrawal"),
     ];
     // Stats use statsWhere (includes search/filter/wallet/date but excludes cosmetic hideZero/hideSpam)
-    const [buyCount, sellCount, transferInCount, transferOutCount, swapCount, identifiedTypeCount, valueIdentifiedCount, disposalAgg, incomeAgg] = await Promise.all([
+    const [buyCount, sellCount, transferInCount, transferOutCount, swapCount, identifiedTypeCount, valueIdentifiedCount, disposalAgg, incomeAgg, disposalNeedsReviewCount] = await Promise.all([
       prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("buy"), ...getTypesForCategory("nft").filter(t => t === "NFT_PURCHASE" || t === "NFT Purchase" || t === "nft purchase")] } } }),
       prisma.transaction.count({ where: { ...statsWhere, type: { in: [...getTypesForCategory("sell"), ...getTypesForCategory("nft").filter(t => t === "NFT_SALE" || t === "NFT Sale" || t === "nft sale")] } } }),
       prisma.transaction.count({ where: { ...statsWhere, type: { in: getTypesForCategory("transfer").filter(t => t.toLowerCase().includes("in") || t === "Receive" || t === "receive") } } }),
@@ -463,9 +463,12 @@ export async function GET(request: NextRequest) {
       prisma.transaction.count({ where: { ...statsWhere, type: { in: allKnownTypes } } }),
       prisma.transaction.count({ where: { ...statsWhere, NOT: { value_usd: 0 } } }),
       // Cost basis stats: aggregate disposal transactions (where gain_loss_usd has been computed)
-      prisma.transaction.aggregate({ where: { ...statsWhere, gain_loss_usd: { not: null } }, _sum: { cost_basis_usd: true, gain_loss_usd: true } }),
+      prisma.transaction.aggregate({ where: { ...statsWhere, gain_loss_usd: { not: null } }, _count: true, _sum: { cost_basis_usd: true, gain_loss_usd: true } }),
       // Income stats: aggregate income transactions (airdrops, rewards, vesting)
       prisma.transaction.aggregate({ where: { ...statsWhere, is_income: true }, _count: true, _sum: { value_usd: true } }),
+      // Disposals with no matched cost basis (taxed as 100% gain). Scoped to disposals so it
+      // measures cost-basis coverage, not the airdrop rows also flagged needs_cost_basis_review.
+      prisma.transaction.count({ where: { ...statsWhere, gain_loss_usd: { not: null }, needs_cost_basis_review: true } }),
     ]);
 
     // Per-asset P&L breakdown for the three-bar chart
@@ -539,6 +542,11 @@ export async function GET(request: NextRequest) {
     const totalCostBasis = Math.abs(Number(disposalAgg._sum.cost_basis_usd || 0));
     const netGain = Number(disposalAgg._sum.gain_loss_usd || 0);
     const totalProceeds = totalCostBasis + netGain;
+    // Cost-basis coverage: share of disposals the engine could match to an acquisition.
+    const disposalCount = disposalAgg._count || 0;
+    const costBasisMatchedPercentage = disposalCount > 0
+      ? Math.round(((disposalCount - disposalNeedsReviewCount) / disposalCount) * 100)
+      : 100;
 
     // Calculate pagination metadata
     const totalPages = Math.ceil(totalCount / limit);
@@ -571,6 +579,9 @@ export async function GET(request: NextRequest) {
         unlabelledCount,
         identifiedPercentage,
         valueIdentifiedPercentage,
+        costBasisMatchedPercentage,
+        needsCostBasisCount: disposalNeedsReviewCount,
+        disposalCount,
         pnl: {
           totalCostBasis,
           totalProceeds,
