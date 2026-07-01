@@ -131,6 +131,22 @@ export function CsvFieldMapper({
     }
   }
 
+  /** Map a canonical field to one of the user's CSV columns (field-first picker used by
+   *  the P&L method selectors). Clears any prior column for this field and vice-versa. */
+  function setFieldColumn(field: CanonicalField, ci: number | null) {
+    setColumns((prev) => {
+      const next: Partial<Record<CanonicalField, number>> = {};
+      for (const [f, c] of Object.entries(prev) as [CanonicalField, number][]) {
+        if (f === field) continue; // clear the field's current column
+        if (ci != null && c === ci) continue; // clear whatever was on the target column
+        next[f] = c;
+      }
+      if (ci != null) next[field] = ci;
+      return next;
+    });
+    setPreview(null);
+  }
+
   /** Switch P&L method, dropping the other method's USD columns (keep them exclusive). */
   function changePnlMethod(m: "net" | "gross") {
     setPnlMethod(m);
@@ -279,6 +295,28 @@ export function CsvFieldMapper({
       : f.key !== "proceeds" && f.key !== "costBasis",
   );
 
+  // Field-first column picker for the active P&L method — the explicit place to map your
+  // CSV's Proceeds / Cost basis / net-Amount column. Writes into `columns` (same state as
+  // the per-column dropdowns), which on import feeds value_usd / cost_basis_usd /
+  // gain_loss_usd in the transactions DB.
+  const renderPnlCol = (field: CanonicalField, label: string) => (
+    <label key={field} className="block space-y-1 text-xs">
+      <span className="font-medium">{label}</span>
+      <select
+        className={cn(selectClass, columns[field] != null && "border-primary ring-1 ring-primary/40")}
+        value={columns[field] ?? ""}
+        onChange={(e) => setFieldColumn(field, e.target.value === "" ? null : Number(e.target.value))}
+      >
+        <option value="">— Select your CSV column —</option>
+        {headers.map((h, i) => (
+          <option key={i} value={i}>
+            {h || `Column ${i + 1}`}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
   // The upload step lives inline in the CSV tab; the mapping step needs far more
   // room (preview tables), so it opens as a NESTED Radix dialog. Radix renders that
   // dialog through its own portal to <body>, which escapes the host dialog's CSS
@@ -401,6 +439,16 @@ export function CsvFieldMapper({
               rows book as ordinary income; <span className="font-medium">deposit</span>/
               <span className="font-medium">withdrawal</span> are always $0.
             </p>
+            <div className="grid gap-3 pt-1 sm:grid-cols-2">
+              {pnlMethod === "net" ? (
+                renderPnlCol("value", "Amount (USD, net +/-) column")
+              ) : (
+                <>
+                  {renderPnlCol("proceeds", "Proceeds (USD) column")}
+                  {renderPnlCol("costBasis", "Cost basis (USD) column")}
+                </>
+              )}
+            </div>
           </div>
 
           {missing.length > 0 && (
