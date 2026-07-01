@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
 import * as Sentry from "@sentry/nextjs";
@@ -163,7 +164,7 @@ async function persistTransactions(
  */
 async function handleResumableChunk(params: {
   user: { id: string };
-  wallet: { id: string; address: string; name: string; provider: string; chains: string | null; lastSyncAt: Date | null; syncStartDate: Date | null; syncEndDate: Date | null };
+  wallet: { id: string; address: string; name: string; provider: string; chains: string | null; lastSyncAt: Date | null; syncStartDate: Date | null; syncEndDate: Date | null; syncCursor: Prisma.JsonValue | null };
   chainsOverride?: string[];
   startTime?: number;
   endTime?: number;
@@ -237,25 +238,42 @@ async function handleResumableChunk(params: {
     return NextResponse.json({ error: `${wallet.name}: MORALIS_API_KEY not configured` }, { status: 500 });
   }
 
-  // INIT: build state on the first request (no syncState yet).
+  // INIT: no syncState in the body (first request, or the client refreshed and lost it).
   if (!syncState) {
-    let chainsToSync: string[] = [];
-    if (chainsOverride && chainsOverride.length > 0) chainsToSync = chainsOverride;
-    else if (wallet.chains) chainsToSync = wallet.chains.split(",").map((c: string) => c.trim());
-    else chainsToSync = ["eth", "polygon", "bsc", "arbitrum", "optimism", "base", "avalanche"];
-    chainsToSync = chainsToSync.filter((c) => SUPPORTED_CHAINS[c]);
-    if (chainsToSync.length === 0) {
-      return NextResponse.json({ error: `${wallet.name}: No supported chains configured` }, { status: 400 });
+    // Resume from a persisted cursor if a prior sync of THIS wallet was interrupted (page
+    // refresh/close) and hasn't finished — avoids re-walking pages already fetched.
+    const persistedCursor = wallet.syncCursor as unknown as SyncCursorState | null;
+    // Only resume if the persisted cursor is for this wallet, still incomplete, and was built
+    // for the SAME window (a date-range change makes an old cursor stale → start fresh).
+    const windowMatches = !!persistedCursor &&
+      (persistedCursor.startTime ?? null) === (window.startTime ?? null) &&
+      (persistedCursor.endTime ?? null) === (window.endTime ?? null);
+    if (
+      persistedCursor && typeof persistedCursor === "object" &&
+      Array.isArray(persistedCursor.chains) && persistedCursor.walletId === wallet.id &&
+      !isSyncComplete(persistedCursor) && windowMatches
+    ) {
+      syncState = persistedCursor;
+      console.log(`[Wallet Sync] ${wallet.name} RESUMING persisted cursor: ${syncProgressSummary(persistedCursor)}`);
+    } else {
+      let chainsToSync: string[] = [];
+      if (chainsOverride && chainsOverride.length > 0) chainsToSync = chainsOverride;
+      else if (wallet.chains) chainsToSync = wallet.chains.split(",").map((c: string) => c.trim());
+      else chainsToSync = ["eth", "polygon", "bsc", "arbitrum", "optimism", "base", "avalanche"];
+      chainsToSync = chainsToSync.filter((c) => SUPPORTED_CHAINS[c]);
+      if (chainsToSync.length === 0) {
+        return NextResponse.json({ error: `${wallet.name}: No supported chains configured` }, { status: 400 });
+      }
+      if (window.empty) {
+        console.log(`[Wallet Sync] ${wallet.name}: sync window already covered; nothing to fetch.`);
+        return emptyWindowResponse;
+      }
+      syncState = initSyncState(wallet.id, chainsToSync, window.startTime ?? null, window.endTime ?? null);
+      const win = window.startTime
+        ? `from ${new Date(window.startTime).toISOString().slice(0, 10)}${window.endTime ? ` to ${new Date(window.endTime).toISOString().slice(0, 10)}` : ""}`
+        : window.endTime ? `up to ${new Date(window.endTime).toISOString().slice(0, 10)}` : "full history";
+      console.log(`[Wallet Sync] ${wallet.name} resumable start: chains=${chainsToSync.join(",")}, ${win}`);
     }
-    if (window.empty) {
-      console.log(`[Wallet Sync] ${wallet.name}: sync window already covered; nothing to fetch.`);
-      return emptyWindowResponse;
-    }
-    syncState = initSyncState(wallet.id, chainsToSync, window.startTime ?? null, window.endTime ?? null);
-    const win = window.startTime
-      ? `from ${new Date(window.startTime).toISOString().slice(0, 10)}${window.endTime ? ` to ${new Date(window.endTime).toISOString().slice(0, 10)}` : ""}`
-      : window.endTime ? `up to ${new Date(window.endTime).toISOString().slice(0, 10)}` : "full history";
-    console.log(`[Wallet Sync] ${wallet.name} resumable start: chains=${chainsToSync.join(",")}, ${win}`);
   }
 
   if (syncState.walletId !== wallet.id) {
@@ -302,9 +320,13 @@ async function handleResumableChunk(params: {
 
   const done = isSyncComplete(syncState);
   if (done) {
-    await prisma.wallet.update({ where: { id: wallet.id }, data: { lastSyncAt: new Date() } });
+    // Clear the persisted cursor and stamp lastSyncAt.
+    await prisma.wallet.update({ where: { id: wallet.id }, data: { lastSyncAt: new Date(), syncCursor: Prisma.DbNull } });
     await invalidateTaxReportCache(user.id);
     console.log(`[Wallet Sync] ${wallet.name} resumable COMPLETE: ${syncProgressSummary(syncState)} (last chunk ${((Date.now() - requestStartTime) / 1000).toFixed(1)}s)`);
+  } else {
+    // Persist the cursor so a page refresh/close can resume from here on the next trigger.
+    await prisma.wallet.update({ where: { id: wallet.id }, data: { syncCursor: syncState as unknown as Prisma.InputJsonValue } });
   }
 
   return NextResponse.json({

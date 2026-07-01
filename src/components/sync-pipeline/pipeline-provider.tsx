@@ -125,19 +125,20 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
     stepsRef: { current: PipelineStep[] },
     stepIdx: number,
     estimatedSeconds: number,
+    fromProgress: number = 0,
+    maxProgress: number = 95,
   ) => {
     const startTime = Date.now();
     const targetMs = Math.max(estimatedSeconds, MIN_STEP_SECONDS) * 1000;
-    // Tick every 500ms, asymptotically approach 95% (never 100 — that's set on completion)
-    const maxProgress = 95;
 
     if (tickerRef.current) clearInterval(tickerRef.current);
     tickerRef.current = setInterval(() => {
       const elapsed = Date.now() - startTime;
       const fraction = Math.min(elapsed / targetMs, 1);
-      // Ease-out: fast start, slows down near end
+      // Ease-out: fast start, slows down near end. Animates within [fromProgress, maxProgress]
+      // so a per-chunk ticker can advance the bar from where the last real value left off.
       const eased = 1 - Math.pow(1 - fraction, 2);
-      const progress = Math.round(eased * maxProgress);
+      const progress = Math.round(fromProgress + eased * (maxProgress - fromProgress));
 
       const next = [...stepsRef.current];
       if (next[stepIdx] && next[stepIdx].status === "running") {
@@ -197,17 +198,16 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
         if (cancelledRef.current) throw new Error("Cancelled");
         const stepIdx = i;
 
-        // Estimate: new wallets ~30s, existing ~5s
-        const estimatedSec = wallets[i].walletId ? 10 : 30;
-
-        stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "running", detail: "Syncing transactions...", progress: 0 };
+        stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "running", detail: "Syncing transactions…", progress: 0 };
         setState(prev => ({ ...prev, phase: "syncing", steps: [...stepsRef.current], currentStepIndex: stepIdx, overallProgress: calcOverall(stepsRef.current) }));
-        startTicker(stepsRef, stepIdx, estimatedSec);
 
         // Resumable chunked sync: loop until the server reports `done`, passing back the
         // opaque syncState each round. Each request does one bounded chunk (well under the
-        // serverless timeout), so even a 30k+ tx wallet completes across several calls —
-        // and progress is persisted per chunk, so a failure never loses everything.
+        // serverless timeout). The progress bar is driven by the server's REAL per-chunk
+        // fraction (data.progress); a light per-chunk ticker eases the bar forward while a
+        // chunk is in flight so it doesn't look frozen, then each response snaps it to the
+        // true (monotonic) value. Progress is also persisted server-side per chunk, so a
+        // refresh/close can resume.
         const baseBody: Record<string, unknown> = { walletId: wallets[i].walletId, resumable: true };
         if (wallets[i].chains) baseBody.chains = wallets[i].chains;
 
@@ -218,6 +218,10 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
         const MAX_SYNC_REQUESTS = 500;
         do {
           if (cancelledRef.current) throw new Error("Cancelled");
+          // Animate within this chunk: ease from the current real progress toward a small
+          // ceiling over an estimated chunk duration (~90s) so the bar visibly moves.
+          const chunkStart = stepsRef.current[stepIdx].progress || 0;
+          startTicker(stepsRef, stepIdx, 90, chunkStart, Math.min(chunkStart + 10, 95));
           const res = await fetch("/api/wallets/sync", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -225,14 +229,17 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
             body: JSON.stringify(syncState ? { ...baseBody, syncState } : baseBody),
           });
           data = await res.json();
+          stopTicker();
           if (!res.ok) { ok = false; break; }
           syncState = data.syncState;
           requests++;
           if (!data.done) {
-            // Update the detail text per chunk; leave the progress bar to the ticker.
+            // Snap to the server's real progress fraction (monotonic) + update detail.
+            const realPct = typeof data.progress === "number" ? Math.round(data.progress * 100) : (stepsRef.current[stepIdx].progress || 0);
             stepsRef.current[stepIdx] = {
               ...stepsRef.current[stepIdx],
               detail: data.summary ? `Syncing… ${data.summary}` : `Syncing… ${data.transactionsAdded || 0} added`,
+              progress: Math.max(stepsRef.current[stepIdx].progress || 0, realPct),
             };
             setState(prev => ({ ...prev, steps: [...stepsRef.current], overallProgress: calcOverall(stepsRef.current) }));
           }

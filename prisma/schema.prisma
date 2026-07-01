@@ -111,6 +111,9 @@ model Wallet {
   // side. Mirrors the nullable lastSyncAt pattern.
   syncStartDate DateTime?
   syncEndDate   DateTime?
+  // In-progress resumable-sync cursor (SyncCursorState JSON). Persisted after each chunk so a
+  // page refresh/close can resume from where it stopped; cleared (null) when the sync finishes.
+  syncCursor    Json?
   user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([address, provider, userId])
