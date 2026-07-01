@@ -148,4 +148,26 @@ describe("applyMapping", () => {
     expect(transactions[3].value_usd.toNumber()).toBeCloseTo(2000);
     expect(transactions[3].gain_loss_usd?.toNumber()).toBe(0);
   });
+
+  it("computes gain from proceeds - cost basis, and books income/staking as ordinary income", () => {
+    const csv = [
+      ["Date", "Asset", "Qty", "Type", "Proceeds", "Cost"],
+      ["2025-03-14", "BTC", "0.1", "SELL", "4,000", "3,000"], // gain = 1000
+      ["2025-06-01", "SOL", "10", "staking", "500", ""], // ordinary income
+    ];
+    const mapping: CsvFieldMapping = {
+      columns: { timestamp: 0, symbol: 1, quantity: 2, type: 3, proceeds: 4, costBasis: 5 },
+      options: {},
+    };
+    const { transactions } = applyMapping(csv, mapping);
+    // Proceeds - cost basis => capital gain
+    expect(transactions[0].gain_loss_usd?.toNumber()).toBeCloseTo(1000);
+    expect(transactions[0].value_usd.toNumber()).toBeCloseTo(4000);
+    expect(transactions[0].cost_basis_usd?.toNumber()).toBeCloseTo(3000);
+    expect(transactions[0].is_income).toBe(false);
+    // Staking => ordinary income: is_income true, $0 capital gain, value = income amount
+    expect(transactions[1].is_income).toBe(true);
+    expect(transactions[1].gain_loss_usd?.toNumber()).toBe(0);
+    expect(transactions[1].value_usd.toNumber()).toBeCloseTo(500);
+  });
 });

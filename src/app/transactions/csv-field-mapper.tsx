@@ -29,6 +29,8 @@ const FIELDS: { key: CanonicalField; label: string; required?: boolean }[] = [
   { key: "quantity", label: "Quantity", required: true },
   { key: "type", label: "Transaction Type" },
   { key: "value", label: "Amount (USD, net +/-)" },
+  { key: "proceeds", label: "Proceeds (USD)" },
+  { key: "costBasis", label: "Cost basis (USD)" },
   { key: "fee", label: "Fee (USD)" },
   { key: "time", label: "Time (separate column)" },
   { key: "incomingSymbol", label: "Received asset (trades)" },
@@ -306,9 +308,11 @@ export function CsvFieldMapper({
               <span className="font-medium">Date, Asset, Quantity</span>.
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Your <span className="font-medium">Amount (USD)</span> is treated as each
-              row&apos;s realized gain/loss (signed). Rows tagged{" "}
-              <span className="font-medium">deposit</span> or{" "}
+              <span className="font-medium">Amount (USD)</span> is each row&apos;s realized
+              gain/loss (signed) — or map <span className="font-medium">Proceeds</span> +{" "}
+              <span className="font-medium">Cost basis</span> and we&apos;ll compute it.{" "}
+              <span className="font-medium">Income</span> / <span className="font-medium">staking</span>{" "}
+              rows are booked as ordinary income; <span className="font-medium">deposit</span> /{" "}
               <span className="font-medium">withdrawal</span> are always $0.
             </p>
           </div>
@@ -481,10 +485,14 @@ export function CsvFieldMapper({
                         <TableCell
                           className={cn(
                             "text-right font-mono",
-                            p.gain_loss != null && (p.gain_loss >= 0 ? "text-green-600" : "text-red-600"),
+                            p.is_income
+                              ? "text-blue-600 dark:text-blue-400"
+                              : p.gain_loss != null && (p.gain_loss >= 0 ? "text-green-600" : "text-red-600"),
                           )}
                         >
-                          {p.gain_loss != null
+                          {p.is_income
+                            ? `+$${Number(p.value_usd ?? 0).toLocaleString()} income`
+                            : p.gain_loss != null
                             ? `${p.gain_loss >= 0 ? "+" : "-"}$${Math.abs(p.gain_loss).toLocaleString()}`
                             : "—"}
                         </TableCell>

@@ -16,8 +16,9 @@ describe("CSV mapper pipeline (integration)", () => {
 
     const rows = parseCSV(raw);
     const mapping = suggestMapping(rows[0]);
-    // Sanity: the auto-suggester found the key columns.
-    expect(mapping.columns).toMatchObject({ timestamp: 0, symbol: 1, quantity: 2, type: 3, value: 4, fee: 5 });
+    // Sanity: the auto-suggester found the key columns. "Proceeds (USD)" now maps to
+    // the dedicated proceeds field (drives derived P&L), not the generic value field.
+    expect(mapping.columns).toMatchObject({ timestamp: 0, symbol: 1, quantity: 2, type: 3, proceeds: 4, fee: 5 });
 
     const { transactions, skipped } = applyMapping(rows, mapping);
     expect(transactions).toHaveLength(3);

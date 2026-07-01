@@ -89,9 +89,14 @@ export interface ParsedTransaction {
   amount_value: Decimal;
   price_per_unit?: Decimal;
   value_usd: Decimal;
+  /** Cost basis (CSV: from a mapped cost-basis column; engine-computed for on-chain). */
+  cost_basis_usd?: Decimal;
   /** Realized gain/loss (signed). On CSV import this is derived from the signed
-   * Amount USD + category (deposit/withdrawal => $0); the engine sets it for on-chain rows. */
+   * Amount USD (or proceeds - cost basis) + category (deposit/withdrawal => $0); the
+   * engine sets it for on-chain rows. */
   gain_loss_usd?: Decimal;
+  /** Ordinary-income flag (CSV: true for income/staking rows). */
+  is_income?: boolean;
   fee_usd?: Decimal;
   wallet_address?: string;
   counterparty_address?: string;

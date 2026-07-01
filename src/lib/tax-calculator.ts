@@ -696,11 +696,29 @@ export async function calculateTaxReport(
   }
 
   // ── CSV imports: authoritative, pre-computed P&L (not engine-computed) ──
-  // Their gain_loss_usd came straight from the field mapper's "net gain/loss"
-  // column, so append them directly as taxable/income events for this tax year.
+  // gain_loss_usd is derived by the field mapper (net Amount, or proceeds - cost basis).
+  // income/staking rows are booked as ORDINARY INCOME; everything else (except
+  // deposit/withdrawal, which are $0) as capital gain/loss for this tax year.
   for (const tx of allTransactions) {
     if (tx.source_type !== "csv_import") continue;
     if (getTaxYear(tx.tx_timestamp, timezone) !== year) continue;
+    // Income / staking rows are ordinary income, NOT capital gains — book income and
+    // skip the capital-gain path (mutually exclusive, so nothing is double-counted).
+    if (tx.is_income) {
+      if (Number(tx.value_usd) > 0) {
+        combinedIncomeEvents.push({
+          id: tx.id,
+          date: tx.tx_timestamp,
+          asset: tx.asset_symbol,
+          amount: Math.abs(Number(tx.amount_value)),
+          valueUsd: Number(tx.value_usd),
+          type: "other",
+          chain: tx.chain || undefined,
+          txHash: tx.tx_hash || undefined,
+        });
+      }
+      continue;
+    }
     const gl = tx.gain_loss_usd != null ? Number(tx.gain_loss_usd) : null;
     if (gl != null && gl !== 0) {
       const proceeds = Number(tx.value_usd) || 0;
@@ -717,18 +735,6 @@ export async function calculateTaxReport(
         chain: tx.chain || undefined,
         txHash: tx.tx_hash || undefined,
         source: tx.source || "CSV",
-      });
-    }
-    if (tx.is_income && Number(tx.value_usd) > 0) {
-      combinedIncomeEvents.push({
-        id: tx.id,
-        date: tx.tx_timestamp,
-        asset: tx.asset_symbol,
-        amount: Math.abs(Number(tx.amount_value)),
-        valueUsd: Number(tx.value_usd),
-        type: "other",
-        chain: tx.chain || undefined,
-        txHash: tx.tx_hash || undefined,
       });
     }
   }

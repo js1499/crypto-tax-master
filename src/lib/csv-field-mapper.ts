@@ -21,6 +21,8 @@ export type CanonicalField =
   | "quantity"
   | "type"
   | "value" // signed USD amount (net +/-); drives derived CSV gain/loss (see applyMapping)
+  | "proceeds" // gross proceeds (USD); with costBasis -> gain = proceeds - costBasis
+  | "costBasis" // cost basis (USD); pairs with proceeds/value for normal P&L
   | "fee"
   | "incomingSymbol"
   | "incomingQuantity"
@@ -241,7 +243,12 @@ const SYNONYMS: Record<CanonicalField, string[]> = {
   symbol: ["asset", "symbol", "currency", "coin", "token", "ticker", "market", "pair"],
   quantity: ["quantity", "amount", "qty", "units", "size", "shares", "volume"],
   type: ["type", "transaction type", "action", "side", "operation", "activity"],
-  value: ["value", "total", "usd", "usd value", "proceeds", "subtotal", "amount usd", "net", "net gain", "gain/loss", "pnl", "p&l", "profit", "total value"],
+  // NOTE: suggestMapping also reverse-matches (ns.includes(header)), so multi-word
+  // synonyms containing a bare column name ("amount usd" vs an "Amount" header,
+  // "cost usd" vs a "USD" header) over-grab. Keep these specific.
+  value: ["value", "total", "usd", "usd value", "subtotal", "net", "net gain", "gain/loss", "pnl", "p&l", "profit", "total value"],
+  proceeds: ["proceeds", "gross proceeds", "sale proceeds", "sold for"],
+  costBasis: ["cost basis", "costbasis", "basis", "cost", "acquisition cost", "purchase cost"],
   fee: ["fee", "fees", "commission", "transaction fee"],
   incomingSymbol: ["received currency", "buy currency", "to asset", "incoming asset"],
   incomingQuantity: ["received amount", "buy amount", "to amount", "incoming amount"],
@@ -259,9 +266,9 @@ export function suggestMapping(headers: string[]): CsvFieldMapping {
 
   // Most-specific fields first so e.g. "amount usd" goes to value, not quantity.
   const order: CanonicalField[] = [
-    // value before quantity so "amount usd" / "net gain" is grabbed as the
-    // P&L-driving USD column, not quantity.
-    "timestamp", "symbol", "type", "value", "fee", "quantity",
+    // costBasis/proceeds before value (more specific), and value before quantity so
+    // "amount usd" / "net gain" is grabbed as the P&L-driving USD column, not quantity.
+    "timestamp", "symbol", "type", "costBasis", "proceeds", "value", "fee", "quantity",
     "incomingSymbol", "incomingQuantity", "incomingValue", "time",
   ];
   for (const field of order) {
@@ -337,6 +344,8 @@ export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyRe
     }
 
     const valueRaw = cleanNumber(cell(row, "value"));
+    const proceedsRaw = cleanNumber(cell(row, "proceeds"));
+    const costRaw = cleanNumber(cell(row, "costBasis"));
     const feeRaw = cleanNumber(cell(row, "fee"));
 
     // Type: explicit column, else derive from the sign of the net quantity/value.
@@ -350,24 +359,42 @@ export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyRe
       type = "UNKNOWN";
     }
 
+    // CSV imports are "bring your own P&L". The primary USD figure (Proceeds, else the
+    // net Amount) becomes value_usd; how it converts to gain/loss depends on category:
+    //   • deposit / withdrawal   -> $0 (internal money movement)
+    //   • income / staking       -> ordinary income (is_income), $0 capital gain
+    //   • proceeds + cost basis   -> normal P&L (proceeds - cost basis), like the engine
+    //   • otherwise (net mode)   -> the signed Amount USD IS the realized gain/loss
+    // Uses the SIGNED figures, never the abs'd value_usd. The engine does not recompute
+    // CSV imports.
+    const rowCategory = getCategory(type);
+    const isMovement = rowCategory === "deposit" || rowCategory === "withdrawal";
+    const isIncome = rowCategory === "income" || rowCategory === "staking";
+    const proceedsNum = proceedsRaw ?? valueRaw; // primary signed USD figure
+    let gainLoss: number;
+    if (isMovement || isIncome) {
+      gainLoss = 0;
+    } else if (costRaw != null) {
+      gainLoss = (proceedsNum ?? 0) - costRaw; // proceeds + cost basis -> normal P&L
+    } else {
+      gainLoss = proceedsNum ?? 0; // net-P&L mode: signed amount is the gain/loss
+    }
+
     // (source_type "csv_import" is set by the API layer on DB insert, not here —
     // it isn't part of ParsedTransaction.)
     const tx: ParsedTransaction = {
       type,
       asset_symbol: symbol,
       amount_value: new Decimal(Math.abs(qtyRaw)),
-      value_usd: new Decimal(Math.abs(valueRaw ?? 0)),
+      value_usd: new Decimal(Math.abs(proceedsNum ?? 0)),
+      gain_loss_usd: new Decimal(gainLoss),
+      is_income: isIncome,
       tx_timestamp: ts,
     };
     if (feeRaw != null) tx.fee_usd = new Decimal(Math.abs(feeRaw));
-
-    // CSV imports are "bring your own P&L": the SIGNED Amount USD IS the realized
-    // gain/loss for the row — EXCEPT internal money movements (deposit / withdrawal),
-    // which are forced to $0 regardless of the CSV's number. Uses the signed valueRaw,
-    // never the abs'd value_usd. The cost-basis engine does not recompute CSV imports.
-    const rowCategory = getCategory(type);
-    const zeroPnl = rowCategory === "deposit" || rowCategory === "withdrawal";
-    tx.gain_loss_usd = new Decimal(zeroPnl ? 0 : valueRaw ?? 0);
+    if (costRaw != null && !isMovement && !isIncome) {
+      tx.cost_basis_usd = new Decimal(Math.abs(costRaw));
+    }
 
     // Optional incoming (two-sided trade) leg.
     const inSym = cleanSymbol(cell(row, "incomingSymbol"));
