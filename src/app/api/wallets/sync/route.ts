@@ -267,6 +267,14 @@ async function handleResumableChunk(params: {
   let chunkSkipped = 0;
   const chain = nextPendingChain(syncState);
   if (chain) {
+    // Per-chunk-request log (each chunk is its own serverless invocation): shows overall
+    // progress + whether this request is a fresh chain or a cursor resume. If these lines
+    // stop appearing in Vercel mid-sync, the client stopped requesting (page refresh/close)
+    // — the sync is client-driven, so a completed chunk persists but the loop halts.
+    const chainsDone = syncState.chains.filter((c) => c.done).length;
+    const pagesSoFar = syncState.chains.reduce((s, c) => s + c.pages, 0);
+    console.log(`[Wallet Sync] ${wallet.name} chunk REQ: chain=${chain.chain} ${chain.cursor ? `resume (after ~${chain.pages} pages)` : "fresh start"} | progress ${chainsDone}/${syncState.chains.length} chains, ${pagesSoFar} pages, ${syncState.totalAdded} added so far`);
+
     const chunk = await getWalletTransactionsChunk(wallet.address, chain.chain, {
       cursor: chain.cursor,
       startTime: syncState.startTime ?? undefined,
@@ -286,6 +294,7 @@ async function handleResumableChunk(params: {
       pages: chunk.pagesFetched,
       raw: chunk.rawCount,
     });
+    console.log(`[Wallet Sync] ${wallet.name} chunk DONE: ${chain.chain} +${chunkAdded} added, ${chunkSkipped} skipped, ${chunk.pagesFetched} page(s), ${chain.done ? "chain COMPLETE" : "more pending"} (${((Date.now() - requestStartTime) / 1000).toFixed(1)}s this request)`);
     if (chain.done && chunk.nextCursor !== null) {
       console.warn(`[Wallet Sync] ${wallet.name}: ${chain.chain} hit the per-chain page bound (${chain.pages}); oldest history beyond it was NOT fetched.`);
     }
