@@ -1,5 +1,18 @@
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { PLANS, PlanKey } from "@/lib/stripe";
+
+/**
+ * Spam that shouldn't count toward the plan limit (and is $0 / non-taxable anyway): unpriced
+ * inbound token/NFT receives that aren't income. Catches the worthless airdropped tokens/NFTs
+ * that Moralis's possible_spam flag misses (they slip through as plain "token receive" /
+ * "nft receive"). One definition so the quota count and any future spam-hiding stay in sync.
+ */
+const SPAM_TX_FILTER: Prisma.TransactionWhereInput = {
+  type: { in: ["token receive", "nft receive"] },
+  value_usd: { lte: 0 },
+  is_income: false,
+};
 
 const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
 
@@ -12,6 +25,7 @@ const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
  */
 const UNLIMITED_ACCESS_EMAILS = new Set<string>([
   "aaravsawlani1@gmail.com",
+  "austinsargentwm@gmail.com", // TEMPORARY (testing a >10k-tx wallet sync) — remove after
 ]);
 
 /** A synthetic "everything unlocked, forever" plan for allowlisted accounts. */
@@ -228,6 +242,11 @@ export async function countUserTransactions(
     where: {
       OR: orConditions,
       tx_timestamp: { gte: start, lte: end },
+      // Spam does NOT consume a user's paid quota. Moralis-flagged spam is already dropped
+      // at ingest; this excludes the spam it MISSES — unpriced ($0) inbound token/NFT
+      // receives that aren't income (worthless airdropped tokens/NFTs). They're $0 and
+      // non-taxable, so they shouldn't count against the plan limit. See SPAM_TX_FILTER.
+      NOT: SPAM_TX_FILTER,
     },
   });
 }
