@@ -129,6 +129,7 @@ export async function POST(request: NextRequest) {
 
   const data: Prisma.TransactionCreateManyInput[] = toInsert.map((tx) => ({
     type: tx.type,
+    subtype: tx.subtype ?? null,
     status: "confirmed",
     source: sourceLabel,
     source_type: "csv_import",

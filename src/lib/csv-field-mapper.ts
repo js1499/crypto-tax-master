@@ -349,6 +349,9 @@ export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyRe
     const feeRaw = cleanNumber(cell(row, "fee"));
 
     // Type: explicit column, else derive from the sign of the net quantity/value.
+    // rawTypeCell preserves the ORIGINAL, unprocessed CSV type string (stored on
+    // subtype) so the user can audit how each row was categorized.
+    const rawTypeCell = c.type != null ? (cell(row, "type") ?? "").trim() : "";
     let type: string;
     if (c.type != null) {
       type = cleanType(cell(row, "type"), opts.typeValueMap);
@@ -392,6 +395,7 @@ export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyRe
       tx_timestamp: ts,
     };
     if (feeRaw != null) tx.fee_usd = new Decimal(Math.abs(feeRaw));
+    if (rawTypeCell) tx.subtype = rawTypeCell; // original, unprocessed CSV type
     if (costRaw != null && !isMovement && !isIncome) {
       tx.cost_basis_usd = new Decimal(Math.abs(costRaw));
     }

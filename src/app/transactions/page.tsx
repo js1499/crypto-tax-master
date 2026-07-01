@@ -110,6 +110,7 @@ const allTransactions: any[] = [];
 interface Transaction {
   id: number;
   type: string;
+  rawType?: string | null; // original, unprocessed CSV type (advanced view)
   // Structured out/in fields
   outAsset: string | null;
   outAmount: number | null;
@@ -2226,6 +2227,9 @@ function TransactionsContent() {
                   {advancedView && (
                     <>
                       <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                        Original Type
+                      </TableHead>
+                      <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                         Price
                       </TableHead>
                       <TableHead className="text-[13px] font-semibold text-[#4B5563] border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
@@ -2258,7 +2262,7 @@ function TransactionsContent() {
                           className="cursor-pointer bg-[#FAFAF8] dark:bg-[#161616] hover:bg-[#F5F5F0] dark:hover:bg-[#1A1A1A] border-b border-[#E5E5E0] dark:border-[#333333]"
                           onClick={() => toggleGroup(group.key)}
                         >
-                          <TableCell colSpan={advancedView ? 13 : 10} className="py-2.5">
+                          <TableCell colSpan={advancedView ? 14 : 10} className="py-2.5">
                             <div className="flex items-center gap-3">
                               <ChevronDown className={cn("h-4 w-4 text-[#6B7280] transition-transform duration-200", collapsedGroups.has(group.key) && "-rotate-90")} />
                               <span className="text-[14px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">{group.label}</span>
@@ -2414,6 +2418,14 @@ function TransactionsContent() {
                       {/* Advanced columns */}
                       {advancedView && (
                         <>
+                          <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
+                            <span
+                              className="text-[13px] text-[#6B7280]"
+                              title={transaction.rawType || transaction.type}
+                            >
+                              {transaction.rawType || transaction.type || "—"}
+                            </span>
+                          </TableCell>
                           <TableCell className="border-r border-[#F0F0EB] dark:border-[#2A2A2A]">
                             <BlurValue year={new Date(transaction.date).getUTCFullYear()}>
                             <span className="text-[13px] text-[#6B7280]" style={{ fontVariantNumeric: 'tabular-nums' }}>

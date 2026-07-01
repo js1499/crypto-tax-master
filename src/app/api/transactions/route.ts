@@ -298,6 +298,7 @@ export async function GET(request: NextRequest) {
         select: {
           id: true,
           type: true,
+          subtype: true, // original, unprocessed CSV type (advanced view)
           asset_symbol: true,
           amount_value: true,
           price_per_unit: true,
@@ -411,6 +412,7 @@ export async function GET(request: NextRequest) {
       return {
         id: tx.id,
         type: tx.type,
+        rawType: tx.subtype || null,
         displayType: formatTypeForDisplay(tx.type),
         // Structured out/in fields
         outAsset,
