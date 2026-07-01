@@ -336,16 +336,25 @@ function AccountsContent() {
   // Function to sync wallet transactions
   const syncWalletTransactions = async (walletId: string) => {
     try {
-      const walletSyncResponse = await fetch("/api/wallets/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletId }),
-      });
-      const walletSyncData = await walletSyncResponse.json();
-
-      if (!walletSyncResponse.ok) {
-        throw new Error(walletSyncData.error || "Sync failed");
-      }
+      // Resumable chunked sync: loop until the server reports done, passing back the
+      // opaque syncState each round so a large wallet completes across several short
+      // requests instead of a single call that would hit the serverless timeout.
+      let syncState: unknown = undefined;
+      let walletSyncData: any = null;
+      let requests = 0;
+      do {
+        const walletSyncResponse = await fetch("/api/wallets/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(syncState ? { walletId, resumable: true, syncState } : { walletId, resumable: true }),
+        });
+        walletSyncData = await walletSyncResponse.json();
+        if (!walletSyncResponse.ok) {
+          throw new Error(walletSyncData.error || "Sync failed");
+        }
+        syncState = walletSyncData.syncState;
+        requests++;
+      } while (!walletSyncData.done && requests < 500);
 
       return walletSyncData;
 

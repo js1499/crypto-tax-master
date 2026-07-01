@@ -576,6 +576,209 @@ export function moralisTxStatus(receiptStatus: string | undefined | null): "conf
   return receiptStatus === "0" ? "failed" : "confirmed";
 }
 
+/**
+ * Parse one Moralis /history page's raw results into WalletTransaction records.
+ *
+ * Pure (no network, no pricing) so it is shared by the full-history fetcher
+ * ({@link getWalletTransactions}) and the bounded/resumable fetcher
+ * ({@link getWalletTransactionsChunk}). Prices are left null / 0 here and filled by the
+ * enrichment step. Returns the parsed records plus the spam count (for logging).
+ */
+function parseMoralisPage(
+  results: MoralisTransaction[],
+  chain: string,
+  walletAddress: string,
+  chainInfo: (typeof SUPPORTED_CHAINS)[string],
+): { transactions: WalletTransaction[]; spamSkipped: number } {
+  const transactions: WalletTransaction[] = [];
+  let spamSkipped = 0;
+
+  for (const tx of results) {
+    // Skip spam transactions
+    if (tx.possible_spam) {
+      spamSkipped++;
+      continue;
+    }
+
+    const txType = resolveMoralisType(tx, walletAddress);
+    const blockNumber = parseInt(tx.block_number) || 0;
+    const timestamp = new Date(tx.block_timestamp);
+
+    // Calculate gas fee in native token units
+    const feeWei = tx.transaction_fee || "0";
+    const feeInNativeToken = fromWei(feeWei, chainInfo.decimals);
+
+    // Collect records per-tx for post-processing (swap/wrap detection)
+    const txRecords: WalletTransaction[] = [];
+
+    // === Process native transfers ===
+    if (tx.native_transfers && tx.native_transfers.length > 0) {
+      for (const transfer of tx.native_transfers) {
+        const amount = parseFloat(transfer.value_formatted || "0");
+        if (amount === 0) continue;
+
+        const isIncoming = transfer.direction === "receive";
+
+        txRecords.push({
+          id: `${tx.hash}-native-${transfer.from_address}-${transfer.to_address}`,
+          type: isIncoming ? "receive" : "send",
+          asset_symbol: chainInfo.nativeToken,
+          asset_chain: chain,
+          amount_value: new Decimal(Math.abs(amount)),
+          price_per_unit: null, // Filled in Step 2
+          value_usd: new Decimal(0), // Filled in Step 2
+          fee_usd: !isIncoming && feeInNativeToken > 0
+            ? new Decimal(feeInNativeToken) // Temporarily store native amount; converted in Step 2
+            : null,
+          tx_timestamp: timestamp,
+          source: `${chainInfo.name} Wallet`,
+          source_type: "wallet",
+          tx_hash: tx.hash,
+          wallet_address: walletAddress,
+          counterparty_address: isIncoming ? transfer.from_address : transfer.to_address,
+          chain,
+          block_number: blockNumber,
+          explorer_url: getExplorerUrl(chain, tx.hash),
+          notes: tx.summary || undefined,
+        });
+      }
+    }
+
+    // === Process ERC20 transfers ===
+    if (tx.erc20_transfers && tx.erc20_transfers.length > 0) {
+      for (const transfer of tx.erc20_transfers) {
+        if (transfer.possible_spam) {
+          spamSkipped++;
+          continue;
+        }
+
+        const amount = parseFloat(transfer.value_formatted || "0");
+        if (amount === 0) continue;
+
+        const isIncoming = transfer.direction === "receive";
+
+        txRecords.push({
+          id: `${tx.hash}-erc20-${transfer.log_index}`,
+          type: isIncoming ? "token receive" : "token send",
+          asset_symbol: transfer.token_symbol || "UNKNOWN",
+          asset_address: transfer.address,
+          asset_chain: chain,
+          amount_value: new Decimal(Math.abs(amount)),
+          price_per_unit: null, // Filled in Step 2
+          value_usd: new Decimal(0), // Filled in Step 2
+          fee_usd: null, // Gas fee is on the parent native tx
+          tx_timestamp: timestamp,
+          source: `${chainInfo.name} Wallet`,
+          source_type: "wallet",
+          tx_hash: tx.hash,
+          wallet_address: walletAddress,
+          counterparty_address: isIncoming ? transfer.from_address : transfer.to_address,
+          chain,
+          block_number: blockNumber,
+          explorer_url: getExplorerUrl(chain, tx.hash),
+          notes: transfer.token_name || transfer.token_symbol || undefined,
+        });
+      }
+    }
+
+    // === Process NFT transfers ===
+    if (tx.nft_transfers && tx.nft_transfers.length > 0) {
+      for (const transfer of tx.nft_transfers) {
+        if (transfer.possible_spam) {
+          spamSkipped++;
+          continue;
+        }
+
+        const isIncoming = transfer.direction === "receive";
+        const amount = parseInt(transfer.amount || "1");
+        const contractType = transfer.contract_type || "ERC721";
+        const collectionName = transfer.token_name || "Unknown Collection";
+        const tokenId = transfer.token_id || "?";
+
+        txRecords.push({
+          id: `${tx.hash}-nft-${transfer.token_address}-${transfer.token_id}`,
+          type: isIncoming ? "nft receive" : "nft send",
+          asset_symbol: transfer.token_symbol || "NFT",
+          asset_address: transfer.token_address,
+          asset_chain: chain,
+          amount_value: new Decimal(amount),
+          price_per_unit: null, // NFT pricing is complex; left null
+          value_usd: new Decimal(0), // NFTs need marketplace lookup for accurate pricing
+          fee_usd: null,
+          tx_timestamp: timestamp,
+          source: `${chainInfo.name} Wallet`,
+          source_type: "wallet",
+          tx_hash: tx.hash,
+          wallet_address: walletAddress,
+          counterparty_address: isIncoming ? transfer.from_address : transfer.to_address,
+          chain,
+          block_number: blockNumber,
+          explorer_url: getExplorerUrl(chain, tx.hash),
+          notes: `NFT [${contractType}]: ${collectionName} #${tokenId}`,
+        });
+      }
+    }
+
+    // === Contract interactions with no decoded transfers ===
+    if (
+      (!tx.native_transfers || tx.native_transfers.length === 0) &&
+      (!tx.erc20_transfers || tx.erc20_transfers.length === 0) &&
+      (!tx.nft_transfers || tx.nft_transfers.length === 0)
+    ) {
+      const value = fromWei(tx.value || "0", chainInfo.decimals);
+      if (value > 0 || !["send", "receive"].includes(txType)) {
+        txRecords.push({
+          id: `${tx.hash}-main`,
+          type: txType,
+          asset_symbol: chainInfo.nativeToken,
+          asset_chain: chain,
+          amount_value: new Decimal(Math.abs(value)),
+          price_per_unit: null,
+          value_usd: new Decimal(0),
+          fee_usd: feeInNativeToken > 0 ? new Decimal(feeInNativeToken) : null,
+          tx_timestamp: timestamp,
+          source: `${chainInfo.name} Wallet`,
+          source_type: "wallet",
+          tx_hash: tx.hash,
+          wallet_address: walletAddress,
+          counterparty_address: tx.to_address,
+          chain,
+          block_number: blockNumber,
+          explorer_url: getExplorerUrl(chain, tx.hash),
+          notes: tx.summary || tx.category || undefined,
+        });
+      }
+    }
+
+    // Capture the tx's gas fee on exactly one record for ERC-20-only txns (a DEX
+    // swap composed purely of erc20_transfers has no native-transfer record to
+    // carry it, so gas was previously lost). Only when the synced wallet actually
+    // PAID the gas (it is the tx sender) and no record already carries a fee (avoids
+    // double-counting). Stored in native units; converted to USD in Step 2, then
+    // deducted from proceeds on the outgoing/swap side by the tax engine.
+    if (
+      feeInNativeToken > 0 &&
+      tx.from_address?.toLowerCase() === walletAddress.toLowerCase() &&
+      !txRecords.some((r) => r.fee_usd != null)
+    ) {
+      const feeTarget =
+        txRecords.find((r) => ["send", "token send", "nft send"].includes(r.type)) ||
+        txRecords[0];
+      if (feeTarget) feeTarget.fee_usd = new Decimal(feeInNativeToken);
+    }
+
+    // Post-process: detect swaps and wraps within a single on-chain tx
+    const processed = postProcessTransaction(txRecords, tx, chain, walletAddress);
+    // Stamp the on-chain receipt status so reverted/failed txns are excluded from
+    // cost-basis/tax (the engine only considers confirmed/completed/pending).
+    const txStatus = moralisTxStatus(tx.receipt_status);
+    for (const r of processed) r.status = txStatus;
+    transactions.push(...processed);
+  }
+
+  return { transactions, spamSkipped };
+}
+
 export async function getWalletTransactions(
   walletAddress: string,
   chain: string = "eth",
@@ -642,188 +845,9 @@ export async function getWalletTransactions(
 
       if (VERBOSE) console.log(`[Moralis] Page ${pageCount}: ${results.length} raw`);
 
-      for (const tx of results) {
-        // Skip spam transactions
-        if (tx.possible_spam) {
-          spamSkipped++;
-          continue;
-        }
-
-        const txType = resolveMoralisType(tx, walletAddress);
-        const blockNumber = parseInt(tx.block_number) || 0;
-        const timestamp = new Date(tx.block_timestamp);
-
-        // Calculate gas fee in native token units
-        const feeWei = tx.transaction_fee || "0";
-        const feeInNativeToken = fromWei(feeWei, chainInfo.decimals);
-
-        // Collect records per-tx for post-processing (swap/wrap detection)
-        const txRecords: WalletTransaction[] = [];
-
-        // === Process native transfers ===
-        if (tx.native_transfers && tx.native_transfers.length > 0) {
-          for (const transfer of tx.native_transfers) {
-            const amount = parseFloat(transfer.value_formatted || "0");
-            if (amount === 0) continue;
-
-            const isIncoming = transfer.direction === "receive";
-
-            txRecords.push({
-              id: `${tx.hash}-native-${transfer.from_address}-${transfer.to_address}`,
-              type: isIncoming ? "receive" : "send",
-              asset_symbol: chainInfo.nativeToken,
-              asset_chain: chain,
-              amount_value: new Decimal(Math.abs(amount)),
-              price_per_unit: null, // Filled in Step 2
-              value_usd: new Decimal(0), // Filled in Step 2
-              fee_usd: !isIncoming && feeInNativeToken > 0
-                ? new Decimal(feeInNativeToken) // Temporarily store native amount; converted in Step 2
-                : null,
-              tx_timestamp: timestamp,
-              source: `${chainInfo.name} Wallet`,
-              source_type: "wallet",
-              tx_hash: tx.hash,
-              wallet_address: walletAddress,
-              counterparty_address: isIncoming ? transfer.from_address : transfer.to_address,
-              chain,
-              block_number: blockNumber,
-              explorer_url: getExplorerUrl(chain, tx.hash),
-              notes: tx.summary || undefined,
-            });
-          }
-        }
-
-        // === Process ERC20 transfers ===
-        if (tx.erc20_transfers && tx.erc20_transfers.length > 0) {
-          for (const transfer of tx.erc20_transfers) {
-            if (transfer.possible_spam) {
-              spamSkipped++;
-              continue;
-            }
-
-            const amount = parseFloat(transfer.value_formatted || "0");
-            if (amount === 0) continue;
-
-            const isIncoming = transfer.direction === "receive";
-
-            txRecords.push({
-              id: `${tx.hash}-erc20-${transfer.log_index}`,
-              type: isIncoming ? "token receive" : "token send",
-              asset_symbol: transfer.token_symbol || "UNKNOWN",
-              asset_address: transfer.address,
-              asset_chain: chain,
-              amount_value: new Decimal(Math.abs(amount)),
-              price_per_unit: null, // Filled in Step 2
-              value_usd: new Decimal(0), // Filled in Step 2
-              fee_usd: null, // Gas fee is on the parent native tx
-              tx_timestamp: timestamp,
-              source: `${chainInfo.name} Wallet`,
-              source_type: "wallet",
-              tx_hash: tx.hash,
-              wallet_address: walletAddress,
-              counterparty_address: isIncoming ? transfer.from_address : transfer.to_address,
-              chain,
-              block_number: blockNumber,
-              explorer_url: getExplorerUrl(chain, tx.hash),
-              notes: transfer.token_name || transfer.token_symbol || undefined,
-            });
-          }
-        }
-
-        // === Process NFT transfers ===
-        if (tx.nft_transfers && tx.nft_transfers.length > 0) {
-          for (const transfer of tx.nft_transfers) {
-            if (transfer.possible_spam) {
-              spamSkipped++;
-              continue;
-            }
-
-            const isIncoming = transfer.direction === "receive";
-            const amount = parseInt(transfer.amount || "1");
-            const contractType = transfer.contract_type || "ERC721";
-            const collectionName = transfer.token_name || "Unknown Collection";
-            const tokenId = transfer.token_id || "?";
-
-            txRecords.push({
-              id: `${tx.hash}-nft-${transfer.token_address}-${transfer.token_id}`,
-              type: isIncoming ? "nft receive" : "nft send",
-              asset_symbol: transfer.token_symbol || "NFT",
-              asset_address: transfer.token_address,
-              asset_chain: chain,
-              amount_value: new Decimal(amount),
-              price_per_unit: null, // NFT pricing is complex; left null
-              value_usd: new Decimal(0), // NFTs need marketplace lookup for accurate pricing
-              fee_usd: null,
-              tx_timestamp: timestamp,
-              source: `${chainInfo.name} Wallet`,
-              source_type: "wallet",
-              tx_hash: tx.hash,
-              wallet_address: walletAddress,
-              counterparty_address: isIncoming ? transfer.from_address : transfer.to_address,
-              chain,
-              block_number: blockNumber,
-              explorer_url: getExplorerUrl(chain, tx.hash),
-              notes: `NFT [${contractType}]: ${collectionName} #${tokenId}`,
-            });
-          }
-        }
-
-        // === Contract interactions with no decoded transfers ===
-        if (
-          (!tx.native_transfers || tx.native_transfers.length === 0) &&
-          (!tx.erc20_transfers || tx.erc20_transfers.length === 0) &&
-          (!tx.nft_transfers || tx.nft_transfers.length === 0)
-        ) {
-          const value = fromWei(tx.value || "0", chainInfo.decimals);
-          if (value > 0 || !["send", "receive"].includes(txType)) {
-            txRecords.push({
-              id: `${tx.hash}-main`,
-              type: txType,
-              asset_symbol: chainInfo.nativeToken,
-              asset_chain: chain,
-              amount_value: new Decimal(Math.abs(value)),
-              price_per_unit: null,
-              value_usd: new Decimal(0),
-              fee_usd: feeInNativeToken > 0 ? new Decimal(feeInNativeToken) : null,
-              tx_timestamp: timestamp,
-              source: `${chainInfo.name} Wallet`,
-              source_type: "wallet",
-              tx_hash: tx.hash,
-              wallet_address: walletAddress,
-              counterparty_address: tx.to_address,
-              chain,
-              block_number: blockNumber,
-              explorer_url: getExplorerUrl(chain, tx.hash),
-              notes: tx.summary || tx.category || undefined,
-            });
-          }
-        }
-
-        // Capture the tx's gas fee on exactly one record for ERC-20-only txns (a DEX
-        // swap composed purely of erc20_transfers has no native-transfer record to
-        // carry it, so gas was previously lost). Only when the synced wallet actually
-        // PAID the gas (it is the tx sender) and no record already carries a fee (avoids
-        // double-counting). Stored in native units; converted to USD in Step 2, then
-        // deducted from proceeds on the outgoing/swap side by the tax engine.
-        if (
-          feeInNativeToken > 0 &&
-          tx.from_address?.toLowerCase() === walletAddress.toLowerCase() &&
-          !txRecords.some((r) => r.fee_usd != null)
-        ) {
-          const feeTarget =
-            txRecords.find((r) => ["send", "token send", "nft send"].includes(r.type)) ||
-            txRecords[0];
-          if (feeTarget) feeTarget.fee_usd = new Decimal(feeInNativeToken);
-        }
-
-        // Post-process: detect swaps and wraps within a single on-chain tx
-        const processed = postProcessTransaction(txRecords, tx, chain, walletAddress);
-        // Stamp the on-chain receipt status so reverted/failed txns are excluded from
-        // cost-basis/tax (the engine only considers confirmed/completed/pending).
-        const txStatus = moralisTxStatus(tx.receipt_status);
-        for (const r of processed) r.status = txStatus;
-        transactions.push(...processed);
-      }
+      const parsed = parseMoralisPage(results, chain, walletAddress, chainInfo);
+      transactions.push(...parsed.transactions);
+      spamSkipped += parsed.spamSkipped;
 
       cursor = data.cursor || null;
     } while (cursor && pageCount < maxPages);
@@ -861,6 +885,128 @@ export async function getWalletTransactions(
       }
     }
     console.error(`[Moralis] Unexpected error on ${chainInfo.name}:`, error);
+    throw error;
+  }
+}
+
+export interface ChainFetchChunk {
+  transactions: WalletTransaction[];
+  /** Moralis cursor for the NEXT page, or null when this chain is fully fetched. */
+  nextCursor: string | null;
+  pagesFetched: number;
+  rawCount: number;
+  spamSkipped: number;
+}
+
+/**
+ * Fetch a BOUNDED slice of one chain's history (up to `maxPages` pages), resuming from
+ * `cursor`, and price it inline (same coverage as {@link getWalletTransactions}). This is
+ * how a very large wallet is synced: the caller runs many short requests, each fetching +
+ * pricing + persisting one bounded chunk, resuming from the returned `nextCursor` (null =
+ * chain exhausted). Bounding the pages keeps every request well under the serverless
+ * timeout, and pricing stays in the chunk (rather than deferred to the Solana-centric
+ * enrichment step) so EVM token coverage is not regressed. Pass `priceInline: false` to
+ * skip pricing (fetch-only).
+ */
+export async function getWalletTransactionsChunk(
+  walletAddress: string,
+  chain: string,
+  opts: {
+    cursor?: string | null;
+    startTime?: number;
+    endTime?: number;
+    maxPages?: number;
+    priceInline?: boolean;
+  } = {},
+): Promise<ChainFetchChunk> {
+  if (!MORALIS_API_KEY) {
+    throw new Error("MORALIS_API_KEY environment variable is not set");
+  }
+
+  const chainInfo = SUPPORTED_CHAINS[chain];
+  if (!chainInfo) {
+    throw new Error(
+      `Unsupported chain: ${chain}. Supported: ${Object.keys(SUPPORTED_CHAINS).join(", ")}`
+    );
+  }
+
+  const moralisChainParam = chainInfo.chainParam;
+  const maxPages = opts.maxPages ?? 60;
+  const transactions: WalletTransaction[] = [];
+  let cursor: string | null = opts.cursor ?? null;
+  let pagesFetched = 0;
+  let rawCount = 0;
+  let spamSkipped = 0;
+
+  try {
+    for (let page = 0; page < maxPages; page++) {
+      const params: Record<string, any> = {
+        chain: moralisChainParam,
+        order: "DESC",
+        limit: 100,
+        include_internal_transactions: true,
+      };
+      // Moralis encodes the query window inside the cursor, so from_date/to_date are only
+      // sent on the very first page of a fresh chain (before we have a cursor).
+      if (cursor) {
+        params.cursor = cursor;
+      } else {
+        if (opts.startTime) params.from_date = new Date(opts.startTime).toISOString();
+        if (opts.endTime) params.to_date = new Date(opts.endTime).toISOString();
+      }
+
+      const response = await getMoralisWithRetry(
+        `${MORALIS_BASE_URL}/wallets/${walletAddress}/history`,
+        {
+          headers: {
+            "X-API-Key": MORALIS_API_KEY,
+            Accept: "application/json",
+          },
+          params,
+          timeout: 30000,
+        }
+      );
+
+      pagesFetched++;
+      const data = response.data;
+      const results: MoralisTransaction[] = data.result || [];
+      rawCount += results.length;
+
+      const parsed = parseMoralisPage(results, chain, walletAddress, chainInfo);
+      transactions.push(...parsed.transactions);
+      spamSkipped += parsed.spamSkipped;
+
+      cursor = data.cursor || null;
+      if (!cursor) break; // chain fully fetched
+    }
+
+    // Price this chunk inline (unless disabled) so each persisted chunk is self-contained
+    // and EVM token coverage matches the full-history fetcher.
+    if (opts.priceInline !== false) {
+      await enrichTransactionsWithPrices(transactions, chain);
+    }
+
+    // Ascending within the chunk so downstream ordering is stable.
+    transactions.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
+
+    console.log(
+      `[Moralis] ${chainInfo.name} chunk: ${rawCount} raw → ${transactions.length} parsed, ${spamSkipped} spam, ${pagesFetched} page(s)${cursor ? " (more pending)" : " (chain complete)"}`
+    );
+
+    return { transactions, nextCursor: cursor, pagesFetched, rawCount, spamSkipped };
+  } catch (error) {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const message = error.response?.data?.message || error.message;
+      console.error(`[Moralis] API error on ${chainInfo.name} chunk: status=${status}, message=${message}`);
+      if (status === 401) {
+        throw new Error("Invalid Moralis API key. Check MORALIS_API_KEY environment variable.");
+      } else if (status === 429) {
+        throw new Error("Moralis API rate limit exceeded. Please try again later.");
+      }
+      throw new Error(`Moralis API error (${status}): ${message}`);
+    }
+    console.error(`[Moralis] Unexpected error on ${chainInfo.name} chunk:`, error);
     throw error;
   }
 }

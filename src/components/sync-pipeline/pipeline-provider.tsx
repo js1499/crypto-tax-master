@@ -196,21 +196,49 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
         setState(prev => ({ ...prev, phase: "syncing", steps: [...stepsRef.current], currentStepIndex: stepIdx, overallProgress: calcOverall(stepsRef.current) }));
         startTicker(stepsRef, stepIdx, estimatedSec);
 
-        const body: Record<string, unknown> = { walletId: wallets[i].walletId };
-        if (wallets[i].chains) body.chains = wallets[i].chains;
+        // Resumable chunked sync: loop until the server reports `done`, passing back the
+        // opaque syncState each round. Each request does one bounded chunk (well under the
+        // serverless timeout), so even a 30k+ tx wallet completes across several calls —
+        // and progress is persisted per chunk, so a failure never loses everything.
+        const baseBody: Record<string, unknown> = { walletId: wallets[i].walletId, resumable: true };
+        if (wallets[i].chains) baseBody.chains = wallets[i].chains;
 
-        const res = await fetch("/api/wallets/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
+        let syncState: unknown = undefined;
+        let data: any = null;
+        let ok = true;
+        let requests = 0;
+        const MAX_SYNC_REQUESTS = 500;
+        do {
+          if (cancelledRef.current) throw new Error("Cancelled");
+          const res = await fetch("/api/wallets/sync", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify(syncState ? { ...baseBody, syncState } : baseBody),
+          });
+          data = await res.json();
+          if (!res.ok) { ok = false; break; }
+          syncState = data.syncState;
+          requests++;
+          if (!data.done) {
+            // Update the detail text per chunk; leave the progress bar to the ticker.
+            stepsRef.current[stepIdx] = {
+              ...stepsRef.current[stepIdx],
+              detail: data.summary ? `Syncing… ${data.summary}` : `Syncing… ${data.transactionsAdded || 0} added`,
+            };
+            setState(prev => ({ ...prev, steps: [...stepsRef.current], overallProgress: calcOverall(stepsRef.current) }));
+          }
+        } while (!data.done && requests < MAX_SYNC_REQUESTS);
         stopTicker();
 
-        if (!res.ok) {
-          stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "error", detail: data.error || "Sync failed", progress: 100 };
-          addActivityEntry({ type: "error", message: `Sync failed: ${wallets[i].name}`, detail: data.error });
+        if (ok && !data?.done) {
+          ok = false;
+          if (data) data.error = data.error || "Sync did not complete (too many chunks). Please retry.";
+        }
+
+        if (!ok) {
+          stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "error", detail: data?.error || "Sync failed", progress: 100 };
+          addActivityEntry({ type: "error", message: `Sync failed: ${wallets[i].name}`, detail: data?.error });
         } else {
           const detail = `${data.transactionsAdded || 0} added, ${data.transactionsSkipped || 0} skipped`;
           stepsRef.current[stepIdx] = { ...stepsRef.current[stepIdx], status: "done", detail, progress: 100 };
