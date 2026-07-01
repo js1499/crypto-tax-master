@@ -129,6 +129,10 @@ model Exchange {
   tokenExpiresAt DateTime?
   isConnected    Boolean   @default(false)
   lastSyncAt     DateTime?
+  // Optional per-exchange sync window: when set, every sync only pulls transactions within
+  // [syncStartDate, syncEndDate]. Null = unbounded on that side. Mirrors Wallet.
+  syncStartDate  DateTime?
+  syncEndDate    DateTime?
   userId         String
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt

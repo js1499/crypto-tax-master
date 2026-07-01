@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
+import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 import * as Sentry from "@sentry/nextjs";
 
 /**
@@ -123,22 +124,26 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    // Delete exchange (or mark as disconnected)
-    await prisma.exchange.update({
-      where: { id: exchangeId },
-      data: {
-        isConnected: false,
-        apiKey: null,
-        apiSecret: null,
-        apiPassphrase: null,
-        refreshToken: null,
-        accessToken: null,
+    // Delete the exchange's transactions, then the exchange row itself (mirrors wallet
+    // delete — removing an account removes its data, matching the "deleted from your
+    // account" confirmation). Match source case-insensitively since older rows may have
+    // stored the exchange name with different casing (e.g. "Coinbase" vs "coinbase").
+    const deletedTx = await prisma.transaction.deleteMany({
+      where: {
+        userId: user.id,
+        source_type: "exchange_api",
+        source: { equals: exchange.name, mode: "insensitive" },
       },
     });
+    await prisma.exchange.delete({ where: { id: exchangeId } });
+    await invalidateTaxReportCache(user.id);
+
+    console.log(`[Exchanges API] Deleted exchange ${exchangeId} and ${deletedTx.count} transactions`);
 
     return NextResponse.json({
       status: "success",
-      message: "Exchange disconnected successfully",
+      message: "Exchange removed",
+      deletedTransactions: deletedTx.count,
     });
   } catch (error) {
     console.error("[Exchanges API] Error:", error);

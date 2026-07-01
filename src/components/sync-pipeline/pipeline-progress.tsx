@@ -13,7 +13,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const PHASE_LABELS: Record<string, string> = {
-  syncing: "Syncing wallets",
+  syncing: "Syncing",
   enriching: "Pulling prices",
   computing: "Computing cost basis",
   done: "All done",

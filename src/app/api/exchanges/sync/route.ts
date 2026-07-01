@@ -14,6 +14,7 @@ import { getCoinbaseTransactions, getCoinbaseTransactionsWithApiKey } from "@/li
 import { recomputeCostBasis } from "@/lib/compute-cost-basis";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
+import { resolveSyncWindow } from "@/lib/sync-cursor";
 
 // Encryption key - REQUIRED for decrypting exchange credentials
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
@@ -35,7 +36,7 @@ export const runtime = 'nodejs';
  * }
  */
 export async function POST(request: NextRequest) {
-  const startTime = Date.now(); // Track request start time for metrics
+  const requestStartMs = Date.now(); // Track request start time for metrics (body.startTime shadows below)
 
   try {
     // Verify encryption key is available
@@ -123,13 +124,24 @@ export async function POST(request: NextRequest) {
       try {
         let transactions: any[] = [];
 
-        // PRD: Incremental sync uses last sync timestamp
-        // Use lastSyncAt as startTime for incremental sync if not doing full sync
-        let effectiveStartTime = startTime;
-        if (!fullSync && !startTime && exchange.lastSyncAt) {
-          effectiveStartTime = exchange.lastSyncAt.getTime();
-          console.log(`[Exchange Sync] Using incremental sync from ${exchange.lastSyncAt} for ${exchange.name}`);
+        // Effective [start, end] window: persisted per-exchange window (hard bound) +
+        // explicit request override + incremental lastSyncAt. resolveSyncWindow also flags
+        // an inverted window (a closed past window already fully synced) so we skip it.
+        const window = resolveSyncWindow({
+          bodyStartTime: startTime,
+          bodyEndTime: endTime,
+          walletStartMs: exchange.syncStartDate?.getTime() ?? null,
+          walletEndMs: exchange.syncEndDate?.getTime() ?? null,
+          lastSyncMs: exchange.lastSyncAt?.getTime() ?? null,
+          fullSync,
+        });
+        if (window.empty) {
+          console.log(`[Exchange Sync] ${exchange.name}: sync window already covered; nothing to fetch.`);
+          continue;
         }
+        const effectiveStartTime = window.startTime;
+        const effectiveEndTime = window.endTime;
+        console.log(`[Exchange Sync] ${exchange.name}: window ${effectiveStartTime ? new Date(effectiveStartTime).toISOString().slice(0, 10) : "full"}${effectiveEndTime ? " to " + new Date(effectiveEndTime).toISOString().slice(0, 10) : ""}`);
 
         // Decrypt credentials
         const apiKey = exchange.apiKey
@@ -142,19 +154,30 @@ export async function POST(request: NextRequest) {
           ? decryptApiKey(exchange.apiPassphrase, ENCRYPTION_KEY)
           : null;
 
+        // Skip exchanges missing usable credentials so we don't advance lastSyncAt for a
+        // no-op fetch (which would make the persisted window look "already covered").
+        // Coinbase can also auth via refreshToken (OAuth), so it's validated in its own case.
+        if (exchange.name.toLowerCase() !== "coinbase") {
+          const needsPassphrase = exchange.name.toLowerCase() === "kucoin";
+          if (!apiKey || !apiSecret || (needsPassphrase && !apiPassphrase)) {
+            errors.push(`${exchange.name}: missing API credentials — please reconnect`);
+            continue;
+          }
+        }
+
         // Fetch transactions based on exchange type
         switch (exchange.name.toLowerCase()) {
           case "binance":
             if (apiKey && apiSecret) {
               const client = new BinanceClient(apiKey, apiSecret);
-              transactions = await client.getAllTrades(effectiveStartTime, endTime);
+              transactions = await client.getAllTrades(effectiveStartTime, effectiveEndTime);
             }
             break;
 
           case "kraken":
             if (apiKey && apiSecret) {
               const krakenClient = new KrakenClient(apiKey, apiSecret);
-              transactions = await krakenClient.getAllTransactions(effectiveStartTime, endTime);
+              transactions = await krakenClient.getAllTransactions(effectiveStartTime, effectiveEndTime);
             }
             break;
 
@@ -162,7 +185,7 @@ export async function POST(request: NextRequest) {
             if (apiKey && apiSecret && apiPassphrase) {
               const isKuCoinSandbox = apiKey.includes("sandbox") || process.env.KUCOIN_SANDBOX === "true";
               const client = new KuCoinClient(apiKey, apiSecret, apiPassphrase, isKuCoinSandbox);
-              transactions = await client.getAllTransactions(effectiveStartTime, endTime);
+              transactions = await client.getAllTransactions(effectiveStartTime, effectiveEndTime);
             }
             break;
 
@@ -171,7 +194,7 @@ export async function POST(request: NextRequest) {
               // Detect sandbox keys
               const isSandbox = apiKey.startsWith("master-") || apiKey.includes("sandbox");
               const client = new GeminiClient(apiKey, apiSecret, isSandbox);
-              transactions = await client.getAllTransactions(effectiveStartTime, endTime);
+              transactions = await client.getAllTransactions(effectiveStartTime, effectiveEndTime);
             }
             break;
 
@@ -194,7 +217,7 @@ export async function POST(request: NextRequest) {
                   exchange.apiKey,  // Pass encrypted, not decrypted
                   exchange.apiSecret,  // Pass encrypted, not decrypted
                   effectiveStartTime,
-                  endTime,
+                  effectiveEndTime,
                   exchange.id
                 );
                 console.log(`[Exchange Sync] Coinbase API Key returned ${transactions.length} transactions`);
@@ -219,7 +242,7 @@ export async function POST(request: NextRequest) {
                 transactions = await getCoinbaseTransactions(
                   exchange.refreshToken,
                   effectiveStartTime,
-                  endTime,
+                  effectiveEndTime,
                   exchange.id
                 );
                 console.log(`[Exchange Sync] Coinbase OAuth returned ${transactions.length} transactions`);
@@ -354,8 +377,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Invalidate tax report cache after transaction mutations
-    // Note: cost basis is NOT auto-computed here — run enrichment first, then compute
+    // Invalidate tax report cache after transaction mutations.
+    // Note: cost basis is NOT computed here — exchange transactions arrive priced (no enrich
+    // phase). The client pipeline (startExchangePipeline) calls /api/cost-basis/compute right
+    // after this route returns; the accounts-page manual Sync does the same via post-processing.
     await invalidateTaxReportCache(user.id);
 
     // PRD Observability: Structured response with metrics
@@ -371,7 +396,7 @@ export async function POST(request: NextRequest) {
         transactionsAdded: totalAdded,
         transactionsSkipped: totalSkipped,
         errorCount: errors.length,
-        syncDurationMs: Date.now() - startTime,
+        syncDurationMs: Date.now() - requestStartMs,
       },
     };
 

@@ -485,16 +485,10 @@ export async function getCoinbaseTransactions(
             ? new URL(nextUri).pathname + new URL(nextUri).search
             : nextUri;
 
+          // NOTE: Coinbase v2 starting_after/ending_before are RESOURCE-ID cursors, not
+          // timestamps — passing dates there is ignored. The [startTime, endTime] window is
+          // enforced in-memory in the per-tx loop below (matching the API-key path).
           const params: any = nextUri.includes("?") ? undefined : { limit: 100, order: "asc" };
-          // Only apply time filters on first request (pagination handles the rest)
-          if (pageCount === 1 && params) {
-            if (startTime) {
-              params.starting_after = new Date(startTime).toISOString();
-            }
-            if (endTime) {
-              params.ending_before = new Date(endTime).toISOString();
-            }
-          }
 
           const txResponse = await axios.get(
             nextUri.startsWith("http") ? nextUri : `https://api.coinbase.com${txPath}`,
@@ -526,6 +520,12 @@ export async function getCoinbaseTransactions(
             continue;
           }
           seenTransactionIds.add(tx.id);
+
+          // Enforce the [startTime, endTime] window in-memory (Coinbase v2 has no server-side
+          // date filter), matching the API-key path.
+          const txTime = new Date(tx.created_at).getTime();
+          if (startTime && txTime < startTime) continue;
+          if (endTime && txTime > endTime) continue;
 
           const amount = parseFloat(tx.amount.amount);
           const currency = tx.amount.currency;

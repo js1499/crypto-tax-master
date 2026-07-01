@@ -15,6 +15,11 @@ export interface WalletJob {
   chains?: string[];
 }
 
+export interface ExchangeJob {
+  exchangeId: string;
+  name: string;
+}
+
 export type PipelinePhase =
   | "idle"
   | "syncing"
@@ -50,6 +55,8 @@ interface PipelineContextType {
   startPipeline: (wallets: WalletJob[]) => void;
   /** Start pipeline for existing wallets (Sync All on accounts page) */
   startSyncAll: () => void;
+  /** Start pipeline for a freshly-connected exchange: sync → compute cost basis */
+  startExchangePipeline: (exchange: ExchangeJob) => void;
   /** Cancel (best-effort) */
   cancel: () => void;
   /** Dismiss the progress bar */
@@ -71,6 +78,7 @@ const PipelineContext = createContext<PipelineContextType>({
   refreshKey: 0,
   startPipeline: () => {},
   startSyncAll: () => {},
+  startExchangePipeline: () => {},
   cancel: () => {},
   dismiss: () => {},
 });
@@ -337,10 +345,103 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
     }
   };
 
+  // Pipeline for a freshly-connected exchange: pull transactions, then compute cost basis.
+  // Exchange transactions arrive priced (native USD amounts from the exchange), so there is
+  // no per-wallet enrich phase — just sync → compute.
+  const runExchangePipeline = async (exchange: ExchangeJob) => {
+    const steps: PipelineStep[] = [
+      { label: `Sync ${exchange.name}`, status: "pending" as const, progress: 0 },
+      { label: "Compute cost basis", status: "pending" as const, progress: 0 },
+    ];
+    const stepsRef = { current: [...steps] };
+    setState({ phase: "syncing", steps: stepsRef.current, currentStepIndex: 0, overallProgress: 0, error: null });
+
+    try {
+      // ── Phase 1: pull exchange transactions ──
+      stepsRef.current[0] = { ...stepsRef.current[0], status: "running", detail: "Pulling transactions...", progress: 0 };
+      setState(prev => ({ ...prev, phase: "syncing", steps: [...stepsRef.current], currentStepIndex: 0, overallProgress: calcOverall(stepsRef.current) }));
+      startTicker(stepsRef, 0, 30);
+
+      const res = await fetch("/api/exchanges/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ exchangeId: exchange.exchangeId }),
+      });
+      const data = await res.json();
+      stopTicker();
+
+      if (!res.ok) {
+        stepsRef.current[0] = { ...stepsRef.current[0], status: "error", detail: data.error || "Sync failed", progress: 100 };
+        addActivityEntry({ type: "error", message: `Sync failed: ${exchange.name}`, detail: data.error });
+        setState(prev => ({ ...prev, phase: "error", error: data.error || "Sync failed", steps: [...stepsRef.current], overallProgress: calcOverall(stepsRef.current) }));
+        return;
+      }
+      // A 200 response can still carry per-exchange errors (e.g. token expiry between connect
+      // and sync) — don't report false success. Hard-fail only when nothing was pulled.
+      const syncErrors: string[] = Array.isArray(data.errors) ? data.errors : [];
+      const addedCount = data.transactionsAdded || 0;
+      if (syncErrors.length > 0 && addedCount === 0) {
+        const detail = syncErrors.join("; ");
+        stepsRef.current[0] = { ...stepsRef.current[0], status: "error", detail, progress: 100 };
+        addActivityEntry({ type: "error", message: `Sync failed: ${exchange.name}`, detail });
+        setState(prev => ({ ...prev, phase: "error", error: detail, steps: [...stepsRef.current], overallProgress: calcOverall(stepsRef.current) }));
+        return;
+      }
+      const addedDetail = `${addedCount} added, ${data.transactionsSkipped || 0} skipped`;
+      const syncDetail = syncErrors.length > 0 ? `${addedDetail} (${syncErrors.length} warning(s))` : addedDetail;
+      stepsRef.current[0] = { ...stepsRef.current[0], status: "done", detail: syncDetail, progress: 100 };
+      addActivityEntry({ type: "sync", message: `Synced ${exchange.name}`, detail: syncDetail });
+      setState(prev => ({ ...prev, steps: [...stepsRef.current], overallProgress: calcOverall(stepsRef.current) }));
+
+      // ── Phase 2: compute cost basis ──
+      if (cancelledRef.current) throw new Error("Cancelled");
+      setState(prev => ({ ...prev, phase: "computing" }));
+      stepsRef.current[1] = { ...stepsRef.current[1], status: "running", detail: "Computing...", progress: 0 };
+      setState(prev => ({ ...prev, steps: [...stepsRef.current], currentStepIndex: 1, overallProgress: calcOverall(stepsRef.current) }));
+      startTicker(stepsRef, 1, 10);
+
+      const cbRes = await fetch("/api/cost-basis/compute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      const cbData = await cbRes.json();
+      stopTicker();
+
+      const needsReviewCount: number = cbRes.ok && typeof cbData.needsReviewCount === "number" ? cbData.needsReviewCount : 0;
+      if (!cbRes.ok) {
+        // Transactions WERE synced, but cost-basis failed — show error (not a green "done"),
+        // and still refresh so the newly-synced transactions appear.
+        stepsRef.current[1] = { ...stepsRef.current[1], status: "error", detail: cbData.error || "Failed", progress: 100 };
+        addActivityEntry({ type: "error", message: "Cost basis computation failed", detail: cbData.error });
+        setState(prev => ({ ...prev, phase: "error", error: cbData.error || "Cost basis computation failed", steps: [...stepsRef.current], currentStepIndex: 1, overallProgress: calcOverall(stepsRef.current), needsReviewCount }));
+        setRefreshKey(k => k + 1);
+        return;
+      }
+      const detail = needsReviewCount > 0 ? `${needsReviewCount} need cost-basis review` : (cbData.message || "Done");
+      stepsRef.current[1] = { ...stepsRef.current[1], status: "done", detail, progress: 100 };
+      addActivityEntry({ type: "compute", message: "Computed cost basis", detail: cbData.message });
+
+      setState({ phase: "done", steps: [...stepsRef.current], currentStepIndex: 1, overallProgress: 100, error: null, needsReviewCount });
+      setRefreshKey(k => k + 1);
+    } catch (err) {
+      stopTicker();
+      const msg = err instanceof Error ? err.message : "Pipeline failed";
+      setState(prev => ({ ...prev, phase: "error", error: msg }));
+    }
+  };
+
   const startPipeline = useCallback((wallets: WalletJob[]) => {
     if (wallets.length === 0) return;
     cancelledRef.current = false;
     runPipeline(wallets);
+  }, []);
+
+  const startExchangePipeline = useCallback((exchange: ExchangeJob) => {
+    cancelledRef.current = false;
+    runExchangePipeline(exchange);
   }, []);
 
   // "Sync All" — fetch user's wallets from API, then run pipeline
@@ -380,7 +481,7 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
   }, []);
 
   return (
-    <PipelineContext.Provider value={{ state, isRunning, refreshKey, startPipeline, startSyncAll, cancel, dismiss }}>
+    <PipelineContext.Provider value={{ state, isRunning, refreshKey, startPipeline, startSyncAll, startExchangePipeline, cancel, dismiss }}>
       {children}
     </PipelineContext.Provider>
   );

@@ -147,7 +147,9 @@ export async function POST(request: NextRequest) {
     // next sync re-fetches the (possibly widened-backward) window from scratch — dedup
     // handles the overlap. Without this, incremental sync would clamp start up to lastSyncAt
     // and never backfill a newly-added earlier range.
-    const windowProvided = "syncStartDate" in body || "syncEndDate" in body;
+    const windowProvided =
+      (typeof syncStartDate === "string" && syncStartDate.trim() !== "") ||
+      (typeof syncEndDate === "string" && syncEndDate.trim() !== "");
 
     // Validate required fields
     if (!name || !address || !provider) {

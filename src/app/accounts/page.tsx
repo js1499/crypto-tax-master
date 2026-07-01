@@ -513,7 +513,7 @@ function AccountsContent() {
 
   // Function to disconnect exchange
   const handleDisconnectExchange = async (exchangeId: string) => {
-    if (!confirm("Remove this exchange? It will be deleted from your account.")) {
+    if (!confirm("Remove this exchange? It and its imported transactions will be deleted from your account.")) {
       return;
     }
 
@@ -523,7 +523,8 @@ function AccountsContent() {
       );
 
       if (response.data.status === "success") {
-        toast.success("Exchange removed");
+        const n = response.data.deletedTransactions;
+        toast.success(typeof n === "number" ? `Exchange removed — ${n} transaction(s) deleted.` : "Exchange removed");
         fetchWallets(); // Refresh list
       } else {
         throw new Error(response.data.error || "Failed to disconnect");

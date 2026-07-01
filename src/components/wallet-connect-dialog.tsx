@@ -84,7 +84,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
     { id: 1, type: "wallet", provider: "solana", address: "", name: "SOL Wallet 1", chains: ["eth", "polygon", "arbitrum", "optimism", "base"] },
   ]);
   const [bulkNextId, setBulkNextId] = useState(2);
-  const { startPipeline, isRunning } = useSyncPipeline();
+  const { startPipeline, startExchangePipeline, isRunning } = useSyncPipeline();
 
   const addBulkRow = (rowType: "wallet" | "csv" = "wallet") => {
     const count = bulkRows.length + 1;
@@ -302,6 +302,10 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
       toast.error("API Passphrase is required for KuCoin");
       return;
     }
+    if (syncStartDate && syncEndDate && syncStartDate > syncEndDate) {
+      toast.error("Start date must be on or before the end date");
+      return;
+    }
 
     setConnecting(true);
     setConnectionError(null);
@@ -309,6 +313,8 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
     try {
       const body: Record<string, unknown> = { exchange: selectedExchange, apiKey, apiSecret };
       if (selectedExchange === "kucoin") body.apiPassphrase = apiPassphrase;
+      if (syncStartDate) body.syncStartDate = syncStartDate;
+      if (syncEndDate) body.syncEndDate = syncEndDate;
 
       const response = await fetch("/api/exchanges/connect", {
         method: "POST",
@@ -318,7 +324,18 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Failed to connect exchange");
 
-      toast.success(`Connected to ${selectedExchange}`);
+      // Auto-run the full pipeline: pull transactions → compute cost basis.
+      if (data.exchange?.id && !isRunning) {
+        toast.success(`Connected to ${selectedExchange}. Starting sync…`);
+        startExchangePipeline({ exchangeId: data.exchange.id, name: selectedExchange! });
+      } else if (data.exchange?.id && isRunning) {
+        // A sync is already running; the exchange pipeline can't run concurrently. Point the
+        // user at the per-exchange Sync button on the Accounts page (it runs the full sync +
+        // cost-basis) — "Sync All" only covers wallets, not exchanges.
+        toast.info(`Connected to ${selectedExchange}. A sync is already running — use the Sync button next to it on the Accounts page once that finishes.`);
+      } else {
+        toast.success(`Connected to ${selectedExchange}`);
+      }
       resetForm();
       if (onConnect) {
         onConnect(selectedExchange!, { success: true, provider: selectedExchange!, timestamp: new Date().toISOString() });
@@ -342,7 +359,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
   const exchangeOption = EXCHANGE_OPTIONS.find(e => e.id === selectedExchange);
 
   return (
-    <Tabs defaultValue="wallets" className="w-full">
+    <Tabs defaultValue="wallets" className="w-full" onValueChange={() => { setSyncStartDate(""); setSyncEndDate(""); }}>
       <TabsList className="grid w-full grid-cols-3" data-onboarding="dialog-tabs">
         <TabsTrigger value="wallets" data-onboarding="tab-wallets">Wallets</TabsTrigger>
         <TabsTrigger value="exchanges" data-onboarding="tab-exchanges">Exchanges</TabsTrigger>
@@ -547,7 +564,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-3" data-onboarding="wallet-grid">
               {WALLET_OPTIONS.map((option) => (
-                <button key={option.id} data-onboarding={`wallet-${option.id}`} onClick={() => setSelectedWallet(option.id)} className="aspect-square flex flex-col items-center justify-center gap-2 rounded-xl border border-[#E5E5E0] dark:border-[#333] hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
+                <button key={option.id} data-onboarding={`wallet-${option.id}`} onClick={() => { setSelectedWallet(option.id); setSyncStartDate(""); setSyncEndDate(""); }} className="aspect-square flex flex-col items-center justify-center gap-2 rounded-xl border border-[#E5E5E0] dark:border-[#333] hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
                   <img src={option.logo} alt={option.name} className="h-10 w-10 rounded-full" />
                   <span className="text-[13px] font-medium">{option.name}</span>
                 </button>
@@ -561,6 +578,8 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
                   onClick={() => {
                     setSelectedWallet("evm");
                     setSelectedChains(option.chains);
+                    setSyncStartDate("");
+                    setSyncEndDate("");
                   }}
                   className="aspect-square flex flex-col items-center justify-center gap-2 rounded-xl border border-[#E5E5E0] dark:border-[#333] hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors"
                 >
@@ -574,7 +593,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
 
             {/* Bulk add link */}
             <button
-              onClick={() => setBulkMode(true)}
+              onClick={() => { setBulkMode(true); setSyncStartDate(""); setSyncEndDate(""); }}
               className="w-full py-2.5 rounded-lg border border-dashed border-[#E5E5E0] dark:border-[#333] text-[13px] font-medium text-[#6B7280] hover:border-[#9CA3AF] hover:text-[#4B5563] transition-colors"
             >
               <Plus className="inline h-3.5 w-3.5 mr-1.5 -mt-0.5" />
@@ -596,6 +615,21 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
               <h3 className="text-[14px] font-semibold">{exchangeOption.name}</h3>
             </div>
 
+            <div className="space-y-2">
+              <Label>Date Range <span className="font-normal text-[#9CA3AF]">(optional)</span></Label>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label htmlFor="ex-sync-start" className="text-xs text-[#6B7280]">Start</label>
+                  <Input id="ex-sync-start" type="date" value={syncStartDate} max={syncEndDate || undefined} onChange={(e) => setSyncStartDate(e.target.value)} className="text-[13px]" />
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="ex-sync-end" className="text-xs text-[#6B7280]">End</label>
+                  <Input id="ex-sync-end" type="date" value={syncEndDate} min={syncStartDate || undefined} onChange={(e) => setSyncEndDate(e.target.value)} className="text-[13px]" />
+                </div>
+              </div>
+              <p className="text-xs text-[#9CA3AF]">Only pull transactions in this range (UTC). Leave blank for full history.</p>
+            </div>
+
             {exchangeOption.connection === "OAuth" ? (
               <div className="space-y-4">
                 <p className="text-[13px] text-muted-foreground">Connect via Coinbase OAuth to securely import your transactions.</p>
@@ -610,7 +644,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
                     <p className="text-xs text-muted-foreground">Paste the key exactly as Coinbase gives it (EC or Ed25519). No formatting needed — we handle it.</p>
                   </div>
                   {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}
-                  <Button className="w-full" onClick={handleApiConnect} disabled={!apiKey || !apiSecret || connecting}>
+                  <Button className="w-full" onClick={handleApiConnect} disabled={!apiKey || !apiSecret || (selectedExchange === "kucoin" && !apiPassphrase) || connecting}>
                     {connecting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Connecting...</> : "Connect"}
                   </Button>
                 </div>
@@ -633,7 +667,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
                   </div>
                 )}
                 {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}
-                <Button className="w-full" onClick={handleApiConnect} disabled={!apiKey || !apiSecret || connecting}>
+                <Button className="w-full" onClick={handleApiConnect} disabled={!apiKey || !apiSecret || (selectedExchange === "kucoin" && !apiPassphrase) || connecting}>
                   {connecting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Connecting...</> : "Connect"}
                 </Button>
               </div>
@@ -642,7 +676,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
         ) : (
           <div className="grid grid-cols-3 gap-3">
             {EXCHANGE_OPTIONS.map((option) => (
-              <button key={option.id} onClick={() => setSelectedExchange(option.id)} className="flex flex-col items-center gap-2.5 rounded-xl border border-[#E5E5E0] dark:border-[#333] p-5 hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
+              <button key={option.id} onClick={() => { setSelectedExchange(option.id); setSyncStartDate(""); setSyncEndDate(""); }} className="flex flex-col items-center gap-2.5 rounded-xl border border-[#E5E5E0] dark:border-[#333] p-5 hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
                 <img src={option.logo} alt={option.name} className="h-10 w-10 rounded-full object-cover" />
                 <span className="text-[13px] font-medium">{option.name}</span>
               </button>

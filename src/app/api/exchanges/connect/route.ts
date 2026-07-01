@@ -64,7 +64,33 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { exchange, apiKey, apiSecret, apiPassphrase, refreshToken } = body;
+    const { exchange, apiKey, apiSecret, apiPassphrase, refreshToken, syncStartDate, syncEndDate } = body;
+
+    // Optional per-exchange sync window (yyyy-MM-dd → UTC start-of-day / end-of-day).
+    // Blank/absent => null; a non-empty unparseable value is a 400.
+    const parseSyncDate = (v: unknown, endOfDay: boolean): Date | null | "invalid" => {
+      if (v === undefined || v === null || (typeof v === "string" && !v.trim())) return null;
+      if (typeof v !== "string") return "invalid";
+      const d = new Date(`${v.trim()}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`);
+      return isNaN(d.getTime()) ? "invalid" : d;
+    };
+    const rawStart = parseSyncDate(syncStartDate, false);
+    const rawEnd = parseSyncDate(syncEndDate, true);
+    if (rawStart === "invalid" || rawEnd === "invalid") {
+      return NextResponse.json({ error: "Invalid date format; use YYYY-MM-DD" }, { status: 400 });
+    }
+    const syncStartDateVal: Date | null = rawStart;
+    const syncEndDateVal: Date | null = rawEnd;
+    if (syncStartDateVal && syncEndDateVal && syncStartDateVal > syncEndDateVal) {
+      return NextResponse.json({ error: "Sync start date must be on or before the end date" }, { status: 400 });
+    }
+    // Only touch the window on UPDATE when the caller sent a NON-BLANK date (a reconnect with
+    // blank/omitted dates never wipes a configured window). When a window IS supplied we reset
+    // lastSyncAt so the next sync re-fetches the whole supplied window from scratch. The window
+    // is treated as an all-or-nothing pair (an omitted side becomes null).
+    const windowProvided =
+      (typeof syncStartDate === "string" && syncStartDate.trim() !== "") ||
+      (typeof syncEndDate === "string" && syncEndDate.trim() !== "");
 
     if (!exchange) {
       return NextResponse.json(
@@ -207,6 +233,35 @@ export async function POST(request: NextRequest) {
 
     // Create or update exchange connection
     // Clear OAuth tokens when using API key auth, and vice versa
+    const updateData: {
+      apiKey: string | null;
+      apiSecret: string | null;
+      apiPassphrase: string | null;
+      refreshToken?: string | null;
+      accessToken?: string | null;
+      tokenExpiresAt?: Date | null;
+      isConnected: boolean;
+      updatedAt: Date;
+      syncStartDate?: Date | null;
+      syncEndDate?: Date | null;
+      lastSyncAt?: Date | null;
+    } = {
+      apiKey: encryptedApiKey,
+      apiSecret: encryptedApiSecret,
+      apiPassphrase: encryptedApiPassphrase,
+      // Clear OAuth tokens if using API key auth to prevent auth method conflicts
+      refreshToken: refreshToken || (encryptedApiKey ? null : undefined),
+      accessToken: encryptedApiKey ? null : undefined,
+      tokenExpiresAt: encryptedApiKey ? null : undefined,
+      isConnected: true,
+      updatedAt: new Date(),
+    };
+    if (windowProvided) {
+      updateData.syncStartDate = syncStartDateVal;
+      updateData.syncEndDate = syncEndDateVal;
+      updateData.lastSyncAt = null;
+    }
+
     const exchangeRecord = await prisma.exchange.upsert({
       where: {
         name_userId: {
@@ -214,17 +269,7 @@ export async function POST(request: NextRequest) {
           userId: user.id,
         },
       },
-      update: {
-        apiKey: encryptedApiKey,
-        apiSecret: encryptedApiSecret,
-        apiPassphrase: encryptedApiPassphrase,
-        // Clear OAuth tokens if using API key auth to prevent auth method conflicts
-        refreshToken: refreshToken || (encryptedApiKey ? null : undefined),
-        accessToken: encryptedApiKey ? null : undefined,
-        tokenExpiresAt: encryptedApiKey ? null : undefined,
-        isConnected: true,
-        updatedAt: new Date(),
-      },
+      update: updateData,
       create: {
         name: exchangeName,
         apiKey: encryptedApiKey,
@@ -233,6 +278,8 @@ export async function POST(request: NextRequest) {
         refreshToken: refreshToken || undefined,
         isConnected: true,
         userId: user.id,
+        syncStartDate: syncStartDateVal,
+        syncEndDate: syncEndDateVal,
       },
     });
 
