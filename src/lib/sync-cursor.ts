@@ -146,3 +146,55 @@ export function syncProgressSummary(state: SyncCursorState): string {
   const pages = state.chains.reduce((s, c) => s + c.pages, 0);
   return `${done}/${state.chains.length} chains, ${pages} pages, ${state.totalAdded} added`;
 }
+
+export interface SyncWindow {
+  /** Lower time bound (ms epoch) to fetch from, or undefined for no lower bound. */
+  startTime?: number;
+  /** Upper time bound (ms epoch), or undefined for no upper bound (up to now). */
+  endTime?: number;
+  /** True when the resolved window is inverted (start > end) — nothing to fetch. */
+  empty: boolean;
+}
+
+/**
+ * Resolve the effective [startTime, endTime] window for a sync, combining:
+ *  - a persisted per-wallet window (walletStartMs / walletEndMs) — a HARD bound,
+ *  - an explicit per-request override (bodyStartTime / bodyEndTime),
+ *  - incremental sync (lastSyncMs) — skip already-synced history unless fullSync.
+ *
+ * Lower bound = the LATEST of {persisted floor, (explicit start OR incremental cursor)} —
+ * so we never fetch before the wallet's window and never re-walk already-synced history.
+ * Upper bound = the EARLIEST of {persisted ceiling, explicit end} — the narrower wins,
+ * so the persisted ceiling is a hard cap.
+ *
+ * Edge case: a CLOSED past window that's already fully synced yields start (=lastSync≈now)
+ * > end (in the past) → an INVERTED window. We flag `empty` so callers skip fetching a
+ * bad from_date>to_date range (which Moralis/Helius would reject or mishandle) and simply
+ * report the sync complete with nothing new — which is correct for a closed window.
+ */
+export function resolveSyncWindow(opts: {
+  bodyStartTime?: number | null;
+  bodyEndTime?: number | null;
+  walletStartMs?: number | null;
+  walletEndMs?: number | null;
+  lastSyncMs?: number | null;
+  fullSync?: boolean;
+}): SyncWindow {
+  const nums = (arr: Array<number | null | undefined>): number[] =>
+    arr.filter((x): x is number => typeof x === "number" && !Number.isNaN(x));
+
+  // Incremental cursor applies only when not a full re-sync and there's a prior sync.
+  const incremental =
+    !opts.fullSync && typeof opts.lastSyncMs === "number" ? opts.lastSyncMs : undefined;
+  // An explicit request start overrides the incremental cursor; otherwise use incremental.
+  const requestedStart = typeof opts.bodyStartTime === "number" ? opts.bodyStartTime : incremental;
+
+  const startCandidates = nums([opts.walletStartMs, requestedStart]);
+  const startTime = startCandidates.length ? Math.max(...startCandidates) : undefined;
+
+  const endCandidates = nums([opts.walletEndMs, opts.bodyEndTime]);
+  const endTime = endCandidates.length ? Math.min(...endCandidates) : undefined;
+
+  const empty = typeof startTime === "number" && typeof endTime === "number" && startTime > endTime;
+  return { startTime, endTime, empty };
+}

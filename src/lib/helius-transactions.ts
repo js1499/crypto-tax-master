@@ -485,7 +485,18 @@ export async function getSolanaWalletTransactions(
     if (results === null) break;
 
     totalRawTx += results.length;
-    rawHeliusTransactions.push(...results);
+    // Only persist raw txns within the requested window. Without this, the raw dump
+    // (later saved by dumpRawHeliusToDb) would keep rows OUTSIDE [startTime, endTime] —
+    // e.g. every tx newer than endTime, since pagination starts at the newest tx.
+    const rawInWindow = (startTime || endTime)
+      ? results.filter((tx: { timestamp: number }) => {
+          const ts = tx.timestamp * 1000;
+          if (startTime && ts < startTime) return false;
+          if (endTime && ts > endTime) return false;
+          return true;
+        })
+      : results;
+    rawHeliusTransactions.push(...rawInWindow);
     if (results.length === 0) break;
 
     // Log progress every 50 pages to stay within log limits

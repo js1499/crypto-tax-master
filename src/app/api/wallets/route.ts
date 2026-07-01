@@ -67,6 +67,8 @@ export async function GET(request: NextRequest) {
       provider: wallet.provider,
       chains: wallet.chains,
       lastSyncAt: wallet.lastSyncAt,
+      syncStartDate: wallet.syncStartDate,
+      syncEndDate: wallet.syncEndDate,
       createdAt: wallet.createdAt,
       updatedAt: wallet.updatedAt,
       transactionCount: txCountMap[wallet.address] || 0,
@@ -115,7 +117,37 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { name, address, provider, chains, exclusive } = body;
+    const { name, address, provider, chains, exclusive, syncStartDate, syncEndDate } = body;
+
+    // Optional per-wallet sync window (yyyy-MM-dd strings). Stored so EVERY sync of this
+    // wallet only pulls transactions within [start-of-startDay, end-of-endDay] UTC.
+    // Blank/absent => null (unbounded on that side); a non-empty UNPARSEABLE value is a 400.
+    const parseSyncDate = (v: unknown, endOfDay: boolean): Date | null | "invalid" => {
+      if (v === undefined || v === null || (typeof v === "string" && !v.trim())) return null;
+      if (typeof v !== "string") return "invalid";
+      const d = new Date(`${v.trim()}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}Z`);
+      return isNaN(d.getTime()) ? "invalid" : d;
+    };
+    const rawStart = parseSyncDate(syncStartDate, false);
+    const rawEnd = parseSyncDate(syncEndDate, true);
+    if (rawStart === "invalid" || rawEnd === "invalid") {
+      return NextResponse.json({ error: "Invalid date format; use YYYY-MM-DD" }, { status: 400 });
+    }
+    const syncStartDateVal: Date | null = rawStart;
+    const syncEndDateVal: Date | null = rawEnd;
+    if (syncStartDateVal && syncEndDateVal && syncStartDateVal > syncEndDateVal) {
+      return NextResponse.json(
+        { error: "Sync start date must be on or before the end date" },
+        { status: 400 }
+      );
+    }
+    // Only touch the persisted window on UPDATE when the caller actually sent date fields,
+    // so re-adding a wallet (rename / add chain) with blank dates does NOT silently wipe a
+    // previously-configured window. When the window DOES change, reset lastSyncAt so the
+    // next sync re-fetches the (possibly widened-backward) window from scratch — dedup
+    // handles the overlap. Without this, incremental sync would clamp start up to lastSyncAt
+    // and never backfill a newly-added earlier range.
+    const windowProvided = "syncStartDate" in body || "syncEndDate" in body;
 
     // Validate required fields
     if (!name || !address || !provider) {
@@ -158,6 +190,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const updateData: {
+      name: string;
+      chains: string | null;
+      syncStartDate?: Date | null;
+      syncEndDate?: Date | null;
+      lastSyncAt?: Date | null;
+    } = { name, chains: chains || null };
+    if (windowProvided) {
+      updateData.syncStartDate = syncStartDateVal;
+      updateData.syncEndDate = syncEndDateVal;
+      updateData.lastSyncAt = null;
+    }
+
     // Create or update wallet for THIS user (unique key now includes userId)
     const wallet = await prisma.wallet.upsert({
       where: {
@@ -167,16 +212,15 @@ export async function POST(request: NextRequest) {
           userId: user.id,
         },
       },
-      update: {
-        name: name,
-        chains: chains || null,
-      },
+      update: updateData,
       create: {
         name: name,
         address: address,
         provider: provider,
         chains: chains || null,
         userId: user.id,
+        syncStartDate: syncStartDateVal,
+        syncEndDate: syncEndDateVal,
       },
     });
     

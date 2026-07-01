@@ -5,8 +5,15 @@ import {
   applyChunkResult,
   isSyncComplete,
   syncProgressFraction,
+  resolveSyncWindow,
   MAX_PAGES_PER_CHAIN,
 } from "../sync-cursor";
+
+// Fixed reference points (ms epoch) — no Date.now() so tests are deterministic.
+const JAN_2023 = Date.UTC(2023, 0, 1);
+const JUN_2023 = Date.UTC(2023, 5, 1);
+const DEC_2023 = Date.UTC(2023, 11, 31, 23, 59, 59);
+const NOW = Date.UTC(2026, 6, 1);
 
 describe("initSyncState", () => {
   it("creates one pending chain cursor per chain with zeroed counts", () => {
@@ -102,5 +109,53 @@ describe("syncProgressFraction", () => {
     const p2 = syncProgressFraction(s);
     expect(p2).toBeGreaterThan(p1);
     expect(p2).toBeLessThan(1);
+  });
+});
+
+describe("resolveSyncWindow", () => {
+  it("no window, no incremental → unbounded full history", () => {
+    expect(resolveSyncWindow({})).toEqual({ startTime: undefined, endTime: undefined, empty: false });
+  });
+
+  it("persisted closed window on a NEW wallet → fetches the full window", () => {
+    const w = resolveSyncWindow({ walletStartMs: JAN_2023, walletEndMs: DEC_2023, lastSyncMs: null });
+    expect(w).toEqual({ startTime: JAN_2023, endTime: DEC_2023, empty: false });
+  });
+
+  it("persisted CLOSED window already synced (re-sync) → inverted window flagged empty", () => {
+    // After the initial sync, lastSyncAt ≈ now (2026); the window ends in 2023.
+    const w = resolveSyncWindow({ walletStartMs: JAN_2023, walletEndMs: DEC_2023, lastSyncMs: NOW });
+    expect(w.empty).toBe(true); // start (now) > end (2023) → nothing to fetch, and no bad range sent
+  });
+
+  it("OPEN-ended window keeps syncing forward incrementally", () => {
+    const w = resolveSyncWindow({ walletStartMs: JAN_2023, walletEndMs: null, lastSyncMs: JUN_2023 });
+    expect(w).toEqual({ startTime: JUN_2023, endTime: undefined, empty: false }); // start clamped up to lastSync
+  });
+
+  it("plain incremental (no persisted window) resumes from lastSync", () => {
+    const w = resolveSyncWindow({ lastSyncMs: JUN_2023 });
+    expect(w).toEqual({ startTime: JUN_2023, endTime: undefined, empty: false });
+  });
+
+  it("fullSync ignores lastSync and re-fetches the whole persisted window", () => {
+    const w = resolveSyncWindow({ walletStartMs: JAN_2023, walletEndMs: DEC_2023, lastSyncMs: NOW, fullSync: true });
+    expect(w).toEqual({ startTime: JAN_2023, endTime: DEC_2023, empty: false });
+  });
+
+  it("explicit body range narrows within the persisted window", () => {
+    const w = resolveSyncWindow({
+      walletStartMs: JAN_2023, walletEndMs: DEC_2023,
+      bodyStartTime: JUN_2023, bodyEndTime: DEC_2023,
+    });
+    expect(w).toEqual({ startTime: JUN_2023, endTime: DEC_2023, empty: false });
+  });
+
+  it("explicit body range wider than the persisted window is CLAMPED to it (hard bound)", () => {
+    const w = resolveSyncWindow({
+      walletStartMs: JUN_2023, walletEndMs: DEC_2023,
+      bodyStartTime: JAN_2023, bodyEndTime: NOW, // both outside the persisted window
+    });
+    expect(w).toEqual({ startTime: JUN_2023, endTime: DEC_2023, empty: false }); // clamped
   });
 });

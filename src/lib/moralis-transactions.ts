@@ -862,6 +862,15 @@ export async function getWalletTransactions(
       `[Moralis] ${chainInfo.name}: ${totalRawTx} raw → ${transactions.length} parsed, ${spamSkipped} spam, ${pageCount} page(s)`
     );
 
+    // Safety net: enforce the [startTime, endTime] window client-side (from_date/to_date is
+    // sent per page, but this guards both bounds independently of Moralis semantics).
+    if (startTime || endTime) {
+      for (let i = transactions.length - 1; i >= 0; i--) {
+        const ts = transactions[i].tx_timestamp.getTime();
+        if ((startTime && ts < startTime) || (endTime && ts > endTime)) transactions.splice(i, 1);
+      }
+    }
+
     // Step 2: Enrich with USD prices
     await enrichTransactionsWithPrices(transactions, chain);
 
@@ -978,6 +987,18 @@ export async function getWalletTransactionsChunk(
 
       cursor = data.cursor || null;
       if (!cursor) break; // chain fully fetched
+    }
+
+    // Safety net: enforce the [startTime, endTime] window client-side too. This path relies
+    // on Moralis preserving from_date in the cursor across pages; filtering here guards both
+    // bounds independently of cursor internals (mirrors the Helius path).
+    if (opts.startTime || opts.endTime) {
+      const s = opts.startTime;
+      const e = opts.endTime;
+      for (let i = transactions.length - 1; i >= 0; i--) {
+        const ts = transactions[i].tx_timestamp.getTime();
+        if ((s && ts < s) || (e && ts > e)) transactions.splice(i, 1);
+      }
     }
 
     // Price this chunk inline (unless disabled) so each persisted chunk is self-contained

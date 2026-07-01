@@ -29,6 +29,7 @@ import {
   isSyncComplete,
   syncProgressFraction,
   syncProgressSummary,
+  resolveSyncWindow,
   MAX_PAGES_PER_CHUNK,
   type SyncCursorState,
 } from "@/lib/sync-cursor";
@@ -160,7 +161,7 @@ async function persistTransactions(
  */
 async function handleResumableChunk(params: {
   user: { id: string };
-  wallet: { id: string; address: string; name: string; provider: string; chains: string | null; lastSyncAt: Date | null };
+  wallet: { id: string; address: string; name: string; provider: string; chains: string | null; lastSyncAt: Date | null; syncStartDate: Date | null; syncEndDate: Date | null };
   chainsOverride?: string[];
   startTime?: number;
   endTime?: number;
@@ -173,6 +174,27 @@ async function handleResumableChunk(params: {
   let syncState = params.syncState;
   const isSolana = wallet.provider === "solana";
 
+  // Effective [start, end] window: persisted per-wallet window (hard bound) combined with
+  // any explicit request override and incremental lastSyncAt. Used on the INIT call; the
+  // resumable EVM path then carries it on syncState across chunks.
+  const window = resolveSyncWindow({
+    bodyStartTime: startTime,
+    bodyEndTime: endTime,
+    walletStartMs: wallet.syncStartDate?.getTime() ?? null,
+    walletEndMs: wallet.syncEndDate?.getTime() ?? null,
+    lastSyncMs: wallet.lastSyncAt?.getTime() ?? null,
+    fullSync,
+  });
+  const emptyWindowResponse = NextResponse.json({
+    status: "success",
+    done: true,
+    transactionsAdded: 0,
+    transactionsSkipped: 0,
+    chunkAdded: 0,
+    chunkSkipped: 0,
+    progress: 1,
+  });
+
   // ---------- Solana: not chunked; full one-shot on the (single) init call ----------
   if (isSolana) {
     if (!isValidSolanaAddress(wallet.address)) {
@@ -181,10 +203,12 @@ async function handleResumableChunk(params: {
     if (!process.env.HELIUS_API_KEY) {
       return NextResponse.json({ error: `${wallet.name}: HELIUS_API_KEY not configured` }, { status: 500 });
     }
-    let effectiveStartTime = startTime;
-    if (!fullSync && !startTime && wallet.lastSyncAt) effectiveStartTime = wallet.lastSyncAt.getTime();
+    if (window.empty) {
+      console.log(`[Wallet Sync] ${wallet.name} (solana): sync window already covered; nothing to fetch.`);
+      return emptyWindowResponse;
+    }
 
-    const result = await getSolanaWalletTransactions(wallet.address, effectiveStartTime, endTime);
+    const result = await getSolanaWalletTransactions(wallet.address, window.startTime, window.endTime);
     const persisted = await persistTransactions(user.id, result.transactions, remainingCapacity);
     if (result.rawHeliusTransactions.length > 0) {
       await dumpRawHeliusToDb(wallet.address, result.rawHeliusTransactions);
@@ -221,10 +245,15 @@ async function handleResumableChunk(params: {
     if (chainsToSync.length === 0) {
       return NextResponse.json({ error: `${wallet.name}: No supported chains configured` }, { status: 400 });
     }
-    let effectiveStartTime: number | null = startTime ?? null;
-    if (!fullSync && !startTime && wallet.lastSyncAt) effectiveStartTime = wallet.lastSyncAt.getTime();
-    syncState = initSyncState(wallet.id, chainsToSync, effectiveStartTime, endTime ?? null);
-    console.log(`[Wallet Sync] ${wallet.name} resumable start: chains=${chainsToSync.join(",")}, ${effectiveStartTime ? `incremental from ${new Date(effectiveStartTime).toISOString().slice(0, 10)}` : "full history"}`);
+    if (window.empty) {
+      console.log(`[Wallet Sync] ${wallet.name}: sync window already covered; nothing to fetch.`);
+      return emptyWindowResponse;
+    }
+    syncState = initSyncState(wallet.id, chainsToSync, window.startTime ?? null, window.endTime ?? null);
+    const win = window.startTime
+      ? `from ${new Date(window.startTime).toISOString().slice(0, 10)}${window.endTime ? ` to ${new Date(window.endTime).toISOString().slice(0, 10)}` : ""}`
+      : window.endTime ? `up to ${new Date(window.endTime).toISOString().slice(0, 10)}` : "full history";
+    console.log(`[Wallet Sync] ${wallet.name} resumable start: chains=${chainsToSync.join(",")}, ${win}`);
   }
 
   if (syncState.walletId !== wallet.id) {
@@ -452,13 +481,27 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Determine effective start time for incremental sync
-        let effectiveStartTime = startTime;
-        if (!fullSync && !startTime && wallet.lastSyncAt) {
-          effectiveStartTime = wallet.lastSyncAt.getTime();
+        // Determine effective [start, end] window: persisted per-wallet window (hard
+        // bound) combined with any explicit request override and incremental lastSyncAt.
+        const window = resolveSyncWindow({
+          bodyStartTime: startTime,
+          bodyEndTime: endTime,
+          walletStartMs: wallet.syncStartDate?.getTime() ?? null,
+          walletEndMs: wallet.syncEndDate?.getTime() ?? null,
+          lastSyncMs: wallet.lastSyncAt?.getTime() ?? null,
+          fullSync,
+        });
+        if (window.empty) {
+          console.log(`[Wallet Sync] ${wallet.name}: sync window already covered; nothing to fetch.`);
+          syncResults.push({ walletId: wallet.id, address: wallet.address, name: wallet.name, added: 0, skipped: 0, chains: isSolana ? ["solana"] : chainsToSync });
+          continue;
         }
+        const effectiveStartTime = window.startTime;
+        const effectiveEndTime = window.endTime;
 
-        const syncMode = effectiveStartTime ? `incremental from ${new Date(effectiveStartTime).toISOString()}` : "full history";
+        const syncMode = effectiveStartTime
+          ? `from ${new Date(effectiveStartTime).toISOString().slice(0, 10)}${effectiveEndTime ? ` to ${new Date(effectiveEndTime).toISOString().slice(0, 10)}` : ""}`
+          : effectiveEndTime ? `up to ${new Date(effectiveEndTime).toISOString().slice(0, 10)}` : "full history";
         console.log(`[Wallet Sync] ${wallet.name} (${isSolana ? "solana" : chainsToSync.join(",")}) — ${syncMode}`);
 
         // Fetch transactions from the appropriate provider
@@ -470,7 +513,7 @@ export async function POST(request: NextRequest) {
           const result = await getSolanaWalletTransactions(
             wallet.address,
             effectiveStartTime,
-            endTime
+            effectiveEndTime
           );
           transactions = result.transactions;
           rawHeliusData = result.rawHeliusTransactions;
@@ -480,14 +523,14 @@ export async function POST(request: NextRequest) {
               wallet.address,
               chainsToSync[0],
               effectiveStartTime,
-              endTime
+              effectiveEndTime
             );
           } else {
             transactions = await getWalletTransactionsAllChains(
               wallet.address,
               chainsToSync,
               effectiveStartTime,
-              endTime
+              effectiveEndTime
             );
           }
         }
