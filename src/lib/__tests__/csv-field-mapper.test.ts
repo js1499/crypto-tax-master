@@ -149,7 +149,7 @@ describe("applyMapping", () => {
     expect(transactions[3].gain_loss_usd?.toNumber()).toBe(0);
   });
 
-  it("computes gain from proceeds - cost basis, and books income/staking as ordinary income", () => {
+  it("gross method: gain = proceeds - cost basis, and books income/staking as ordinary income", () => {
     const csv = [
       ["Date", "Asset", "Qty", "Type", "Proceeds", "Cost"],
       ["2025-03-14", "BTC", "0.1", "SELL", "4,000", "3,000"], // gain = 1000
@@ -157,7 +157,7 @@ describe("applyMapping", () => {
     ];
     const mapping: CsvFieldMapping = {
       columns: { timestamp: 0, symbol: 1, quantity: 2, type: 3, proceeds: 4, costBasis: 5 },
-      options: {},
+      options: { pnlMethod: "gross" },
     };
     const { transactions } = applyMapping(csv, mapping);
     // Proceeds - cost basis => capital gain
@@ -169,5 +169,20 @@ describe("applyMapping", () => {
     expect(transactions[1].is_income).toBe(true);
     expect(transactions[1].gain_loss_usd?.toNumber()).toBe(0);
     expect(transactions[1].value_usd.toNumber()).toBeCloseTo(500);
+  });
+
+  it("methods are mutually exclusive: net mode uses only the Amount and ignores a stray cost-basis column", () => {
+    const csv = [
+      ["Date", "Asset", "Qty", "Type", "Amount", "Cost"],
+      ["2025-03-14", "BTC", "0.1", "SELL", "1,000", "3,000"],
+    ];
+    const mapping: CsvFieldMapping = {
+      columns: { timestamp: 0, symbol: 1, quantity: 2, type: 3, value: 4, costBasis: 5 },
+      options: { pnlMethod: "net" },
+    };
+    const { transactions } = applyMapping(csv, mapping);
+    // Net mode: gain = the Amount (1000); the cost-basis column is NOT subtracted or stored.
+    expect(transactions[0].gain_loss_usd?.toNumber()).toBeCloseTo(1000);
+    expect(transactions[0].cost_basis_usd).toBeUndefined();
   });
 });

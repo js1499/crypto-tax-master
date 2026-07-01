@@ -43,6 +43,12 @@ export interface CsvFieldMapping {
     typeValueMap?: Record<string, string>;
     /** When `type` is unmapped, derive buy/sell from the sign of quantity (or value). */
     deriveTypeFromSign?: boolean;
+    /**
+     * How per-row P&L is provided (MUTUALLY EXCLUSIVE — the mapper UI enforces one):
+     *  - "net"   (default): the `value` column is the signed realized gain/loss.
+     *  - "gross": `proceeds` and `costBasis` columns; gain = proceeds − cost basis.
+     */
+    pnlMethod?: "net" | "gross";
   };
 }
 
@@ -362,25 +368,25 @@ export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyRe
       type = "UNKNOWN";
     }
 
-    // CSV imports are "bring your own P&L". The primary USD figure (Proceeds, else the
-    // net Amount) becomes value_usd; how it converts to gain/loss depends on category:
-    //   • deposit / withdrawal   -> $0 (internal money movement)
-    //   • income / staking       -> ordinary income (is_income), $0 capital gain
-    //   • proceeds + cost basis   -> normal P&L (proceeds - cost basis), like the engine
-    //   • otherwise (net mode)   -> the signed Amount USD IS the realized gain/loss
-    // Uses the SIGNED figures, never the abs'd value_usd. The engine does not recompute
-    // CSV imports.
+    // CSV imports are "bring your own P&L" with two MUTUALLY EXCLUSIVE input methods
+    // (chosen in the mapper UI and passed as opts.pnlMethod):
+    //   • "net"   (default): the signed Amount column IS the realized gain/loss.
+    //   • "gross": gain = proceeds − cost basis.
+    // Category still overrides the amount: deposit/withdrawal -> $0 (internal movement);
+    // income/staking -> ordinary income (is_income) with $0 capital gain. Uses SIGNED
+    // figures; the engine never recomputes CSV imports.
+    const pnlMethod = opts.pnlMethod ?? "net";
     const rowCategory = getCategory(type);
     const isMovement = rowCategory === "deposit" || rowCategory === "withdrawal";
     const isIncome = rowCategory === "income" || rowCategory === "staking";
-    const proceedsNum = proceedsRaw ?? valueRaw; // primary signed USD figure
+    const proceedsNum = proceedsRaw ?? valueRaw; // primary signed USD figure -> value_usd
     let gainLoss: number;
     if (isMovement || isIncome) {
       gainLoss = 0;
-    } else if (costRaw != null) {
-      gainLoss = (proceedsNum ?? 0) - costRaw; // proceeds + cost basis -> normal P&L
+    } else if (pnlMethod === "gross") {
+      gainLoss = (proceedsNum ?? 0) - (costRaw ?? 0); // proceeds − cost basis
     } else {
-      gainLoss = proceedsNum ?? 0; // net-P&L mode: signed amount is the gain/loss
+      gainLoss = proceedsNum ?? 0; // net: the signed Amount is the gain/loss
     }
 
     // (source_type "csv_import" is set by the API layer on DB insert, not here —
@@ -396,7 +402,7 @@ export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyRe
     };
     if (feeRaw != null) tx.fee_usd = new Decimal(Math.abs(feeRaw));
     if (rawTypeCell) tx.subtype = rawTypeCell; // original, unprocessed CSV type
-    if (costRaw != null && !isMovement && !isIncome) {
+    if (pnlMethod === "gross" && costRaw != null && !isMovement && !isIncome) {
       tx.cost_basis_usd = new Decimal(Math.abs(costRaw));
     }
 

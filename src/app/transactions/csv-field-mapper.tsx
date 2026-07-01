@@ -72,6 +72,7 @@ export function CsvFieldMapper({
   const [dateFormat, setDateFormat] = useState("auto");
   const [dateOnly, setDateOnly] = useState(true);
   const [deriveTypeFromSign, setDeriveTypeFromSign] = useState(true);
+  const [pnlMethod, setPnlMethod] = useState<"net" | "gross">("net");
   const [typeValues, setTypeValues] = useState<string[]>([]);
   const [typeValueMap, setTypeValueMap] = useState<Record<string, string>>({});
 
@@ -94,6 +95,7 @@ export function CsvFieldMapper({
       dateOnly,
       deriveTypeFromSign: columns.type == null ? deriveTypeFromSign : undefined,
       typeValueMap: columns.type != null ? typeValueMap : undefined,
+      pnlMethod,
     },
   });
 
@@ -129,6 +131,22 @@ export function CsvFieldMapper({
     }
   }
 
+  /** Switch P&L method, dropping the other method's USD columns (keep them exclusive). */
+  function changePnlMethod(m: "net" | "gross") {
+    setPnlMethod(m);
+    setColumns((prev) => {
+      const next = { ...prev };
+      if (m === "net") {
+        delete next.proceeds;
+        delete next.costBasis;
+      } else {
+        delete next.value;
+      }
+      return next;
+    });
+    setPreview(null);
+  }
+
   async function analyze() {
     if (!file) {
       toast.error("Choose a CSV file first");
@@ -149,7 +167,19 @@ export function CsvFieldMapper({
       setHeaders(data.headers);
       setSampleRows(data.sampleRows || []);
       setRowCount(data.rowCount || 0);
-      setColumns(data.suggestedMapping?.columns || {});
+      const suggested = { ...(data.suggestedMapping?.columns || {}) };
+      // Auto-pick the P&L method from what was detected, then keep only that method's
+      // USD columns so the two methods can never be mixed.
+      const method: "net" | "gross" =
+        suggested.costBasis != null || suggested.proceeds != null ? "gross" : "net";
+      if (method === "gross") {
+        delete suggested.value;
+      } else {
+        delete suggested.proceeds;
+        delete suggested.costBasis;
+      }
+      setPnlMethod(method);
+      setColumns(suggested);
       setDateFormat(data.suggestedMapping?.options?.dateFormat || "auto");
       setDateOnly(data.suggestedMapping?.options?.dateOnly !== false);
       setTypeValues(data.typeValues || []);
@@ -201,6 +231,13 @@ export function CsvFieldMapper({
       toast.error(`Assign the required field(s): ${miss.join(", ")}`);
       return;
     }
+    if (pnlMethod === "gross") {
+      const missPnl = (["proceeds", "costBasis"] as CanonicalField[]).filter((f) => columns[f] == null);
+      if (missPnl.length) {
+        toast.error("The Proceeds + Cost basis method needs BOTH columns mapped (or switch to Net gain/loss).");
+        return;
+      }
+    }
     setBusy("import");
     try {
       const data = await callMapped(false);
@@ -234,6 +271,13 @@ export function CsvFieldMapper({
   }
 
   const missing = REQUIRED.filter((f) => columns[f] == null);
+  // Only the selected P&L method's USD fields are offered in the column picker, so a
+  // user can never map both "Amount (net)" and "Proceeds/Cost basis".
+  const visibleFields = FIELDS.filter((f) =>
+    pnlMethod === "gross"
+      ? f.key !== "value"
+      : f.key !== "proceeds" && f.key !== "costBasis",
+  );
 
   // The upload step lives inline in the CSV tab; the mapping step needs far more
   // room (preview tables), so it opens as a NESTED Radix dialog. Radix renders that
@@ -309,12 +353,52 @@ export function CsvFieldMapper({
               Pick what each column is using the dropdown above it. Required:{" "}
               <span className="font-medium">Date, Asset, Quantity</span>.
             </p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              <span className="font-medium">Amount (USD)</span> is each row&apos;s realized
-              gain/loss (signed) — or map <span className="font-medium">Proceeds</span> +{" "}
-              <span className="font-medium">Cost basis</span> and we&apos;ll compute it.{" "}
-              <span className="font-medium">Income</span> / <span className="font-medium">staking</span>{" "}
-              rows are booked as ordinary income; <span className="font-medium">deposit</span> /{" "}
+          </div>
+
+          {/* P&L method — MUTUALLY EXCLUSIVE: net gain/loss OR proceeds + cost basis */}
+          <div className="space-y-2 rounded-md border bg-muted/30 p-3">
+            <p className="text-sm font-medium">How is profit / loss provided?</p>
+            <div className="inline-flex rounded-md border border-input p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => changePnlMethod("net")}
+                className={cn(
+                  "rounded px-3 py-1 font-medium transition-colors",
+                  pnlMethod === "net"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Net gain / loss
+              </button>
+              <button
+                type="button"
+                onClick={() => changePnlMethod("gross")}
+                className={cn(
+                  "rounded px-3 py-1 font-medium transition-colors",
+                  pnlMethod === "gross"
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Proceeds + Cost basis
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {pnlMethod === "net" ? (
+                <>
+                  Map one <span className="font-medium">Amount (USD, net +/-)</span> column — it is
+                  each row&apos;s realized gain/loss.
+                </>
+              ) : (
+                <>
+                  Map <span className="font-medium">Proceeds</span> and{" "}
+                  <span className="font-medium">Cost basis</span> columns — gain/loss = proceeds −
+                  cost basis.
+                </>
+              )}{" "}
+              <span className="font-medium">Income</span>/<span className="font-medium">staking</span>{" "}
+              rows book as ordinary income; <span className="font-medium">deposit</span>/
               <span className="font-medium">withdrawal</span> are always $0.
             </p>
           </div>
@@ -344,7 +428,7 @@ export function CsvFieldMapper({
                           onChange={(e) => assignColumn(ci, e.target.value)}
                         >
                           <option value="">— Ignore —</option>
-                          {FIELDS.map((f) => (
+                          {visibleFields.map((f) => (
                             <option key={f.key} value={f.key}>
                               {f.label}
                               {f.required ? " *" : ""}
