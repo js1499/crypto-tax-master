@@ -2,6 +2,41 @@ import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { computeCostBasisForTransactions } from "@/lib/tax-calculator";
 
+// ── Spam-airdrop income guard ───────────────────────────────────────────────
+// Moralis tags a large amount of spam as `airdrop`, and price enrichment can attach a
+// garbage price to a spam token (a ticker collision, or a low-liquidity DEX quote). The
+// two multiply: a 2.17-TRILLION-unit "Ark" airdrop × a $0.0001 quote booked as $266M of
+// ordinary income (and minted a $266M FMV cost-basis lot). We DON'T want to book spam as
+// income. An airdrop receipt is treated as spam — is_income cleared, flagged for manual
+// review instead of booked — when its token quantity is absurd (spam dumps billions/
+// trillions of units) OR a single receipt's value is implausibly high (a misprice tell).
+// Genuinely valuable airdrops (reasonable quantity AND reasonable value) keep is_income.
+const SPAM_AIRDROP_MAX_UNITS = 1_000_000_000; // ≥1B units of one airdropped token ⇒ spam
+const SPAM_AIRDROP_MAX_VALUE_USD = 50_000; // a single airdrop worth >$50k ⇒ likely a misprice
+
+/**
+ * Clear is_income (and flag for review) on implausible airdrop receipts, so mispriced spam
+ * isn't booked as income. Scoped to the airdrop/receive types Moralis produces so exchange
+ * income (interest/staking, keyed by userId) is untouched. Runs BEFORE the cost-basis engine
+ * so no phantom income event or FMV lot is ever created; idempotent (safe every recompute).
+ */
+export async function unflagSpamAirdropIncome(walletAddresses: string[]): Promise<number> {
+  if (walletAddresses.length === 0) return 0;
+  const affected = await prisma.$executeRawUnsafe(
+    `
+    UPDATE transactions
+    SET is_income = false, needs_cost_basis_review = true
+    WHERE wallet_address = ANY($1::text[])
+      AND is_income = true
+      AND type IN ('token receive', 'nft receive', 'receive')
+      AND (ABS(amount_value) >= ${SPAM_AIRDROP_MAX_UNITS} OR ABS(value_usd) > ${SPAM_AIRDROP_MAX_VALUE_USD})
+    `,
+    walletAddresses,
+  );
+  if (affected > 0) console.log(`[Income Detect] Un-flagged ${affected} implausible (spam) airdrop income rows`);
+  return affected;
+}
+
 /**
  * Recompute cost basis and gain/loss for all of a user's transactions.
  * Called automatically after sync/import, and manually via /api/cost-basis/compute.
@@ -23,6 +58,10 @@ export async function recomputeCostBasis(
     const walletAddresses = userWithWallets.wallets.map(w => w.address);
     const costBasisMethod = (userWithWallets.costBasisMethod || "FIFO") as "FIFO" | "LIFO" | "HIFO";
     const country = (userWithWallets as any).country || "US";
+
+    // Clear spam-airdrop income BEFORE the engine reads is_income, so mispriced spam is
+    // never booked as income nor mints a phantom FMV lot. See unflagSpamAirdropIncome.
+    await unflagSpamAirdropIncome(walletAddresses);
 
     // Tenant isolation: a row is the user's if it's from one of their wallets
     // (wallet_address) OR explicitly owned by them (userId, for CSV/exchange). The
@@ -259,10 +298,16 @@ async function detectIncomeTransactions(walletAddresses: string[], country: stri
   try {
     if (walletAddresses.length === 0) return;
 
-    // Reset existing flags
+    // Reset existing flags — but ONLY for the Solana rows the rules below re-flag.
+    // EVM rows (chain = eth/polygon/...) and CSV imports (null wallet_address) carry
+    // an is_income flag set upstream (Moralis income categories, CSV field mapper);
+    // an unscoped reset would silently clobber it and NOTHING here re-flags them,
+    // dropping airdrop income and later producing zero-basis disposals. Mirrors the
+    // scoping in /api/income/detect.
     await prisma.$executeRawUnsafe(`
       UPDATE transactions SET is_income = false
       WHERE wallet_address = ANY($1::text[]) AND is_income = true
+        AND (chain IS NULL OR chain = 'solana')
     `, walletAddresses);
 
     // Rule 1: CLAIM_REWARDS type (staking rewards, etc.)

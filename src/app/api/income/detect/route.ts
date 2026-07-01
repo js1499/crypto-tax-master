@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
+import { unflagSpamAirdropIncome } from "@/lib/compute-cost-basis";
 
 /**
  * Known airdrop / merkle distributor program IDs.
@@ -139,6 +140,11 @@ export async function POST(request: NextRequest) {
     const jupAirdropFlagged = typeof jupAirdropResult === 'number' ? jupAirdropResult : 0;
     log(`Rule 4 (JUP Jupuary airdrops): flagged ${jupAirdropFlagged}`);
     totalFlagged += jupAirdropFlagged;
+
+    // ── Spam-airdrop guard (EVM/Moralis): clear is_income on implausible airdrop receipts
+    // (absurd token quantity or a misprice-tier value) so spam isn't booked as income. This
+    // is the one shared definition used by the cost-basis recompute too. ──
+    await unflagSpamAirdropIncome(walletAddresses);
 
     // ── Summary ──
     // Get total income value
