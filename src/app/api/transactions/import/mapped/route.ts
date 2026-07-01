@@ -7,7 +7,8 @@ import { parseCSV } from "@/lib/csv-parser";
 import { applyMapping, type CsvFieldMapping } from "@/lib/csv-field-mapper";
 import { getCategory } from "@/lib/transaction-categorizer";
 // Note: CSV imports are intentionally NOT cost-basis-recomputed (recomputeCostBasis
-// skips source_type "csv_import") — P&L comes from the mapped "net gain/loss" column.
+// skips source_type "csv_import") — P&L is derived in applyMapping from the signed
+// Amount USD + category (deposit/withdrawal => $0).
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
 
@@ -155,9 +156,10 @@ export async function POST(request: NextRequest) {
   }
 
   await invalidateTaxReportCache(user.id);
-  // CSV imports are NOT cost-basis-recomputed — P&L comes from the mapped "net
-  // gain/loss" column written above. recomputeCostBasis skips source_type
-  // "csv_import", and the tax report reads gain_loss_usd straight from these rows.
+  // CSV imports are NOT cost-basis-recomputed — P&L is DERIVED in applyMapping from the
+  // signed Amount USD + category (deposit/withdrawal => $0) and written above.
+  // recomputeCostBasis skips source_type "csv_import", and the tax report reads
+  // gain_loss_usd straight from these rows.
 
   return NextResponse.json({
     status: "success",

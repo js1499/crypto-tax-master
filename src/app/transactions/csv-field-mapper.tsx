@@ -28,8 +28,7 @@ const FIELDS: { key: CanonicalField; label: string; required?: boolean }[] = [
   { key: "symbol", label: "Asset / Symbol", required: true },
   { key: "quantity", label: "Quantity", required: true },
   { key: "type", label: "Transaction Type" },
-  { key: "value", label: "USD Value (net +/-)" },
-  { key: "gainLoss", label: "Net gain / loss (USD)" },
+  { key: "value", label: "Amount (USD, net +/-)" },
   { key: "fee", label: "Fee (USD)" },
   { key: "time", label: "Time (separate column)" },
   { key: "incomingSymbol", label: "Received asset (trades)" },
@@ -37,7 +36,7 @@ const FIELDS: { key: CanonicalField; label: string; required?: boolean }[] = [
   { key: "incomingValue", label: "Received USD value (trades)" },
 ];
 
-const CATEGORIES = ["buy", "sell", "swap", "income", "staking", "transfer", "nft", "defi", "gambling", "other"];
+const CATEGORIES = ["buy", "sell", "swap", "income", "staking", "transfer", "deposit", "withdrawal", "nft", "defi", "gambling", "other"];
 const DATE_FORMATS = [
   { v: "auto", l: "Auto-detect" },
   { v: "MDY", l: "MM/DD/YYYY (US)" },
@@ -305,6 +304,12 @@ export function CsvFieldMapper({
             <p className="text-xs text-muted-foreground">
               Pick what each column is using the dropdown above it. Required:{" "}
               <span className="font-medium">Date, Asset, Quantity</span>.
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Your <span className="font-medium">Amount (USD)</span> is treated as each
+              row&apos;s realized gain/loss (signed). Rows tagged{" "}
+              <span className="font-medium">deposit</span> or{" "}
+              <span className="font-medium">withdrawal</span> are always $0.
             </p>
           </div>
 

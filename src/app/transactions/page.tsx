@@ -1811,6 +1811,8 @@ function TransactionsContent() {
               <SelectItem value="buy">Buy</SelectItem>
               <SelectItem value="sell">Sell</SelectItem>
               <SelectItem value="transfer">Transfers</SelectItem>
+              <SelectItem value="deposit">Deposits</SelectItem>
+              <SelectItem value="withdrawal">Withdrawals</SelectItem>
               <SelectItem value="swap">Swaps</SelectItem>
               <SelectItem value="stake">Staking</SelectItem>
               <SelectItem value="defi">DeFi</SelectItem>

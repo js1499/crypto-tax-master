@@ -89,7 +89,8 @@ export interface ParsedTransaction {
   amount_value: Decimal;
   price_per_unit?: Decimal;
   value_usd: Decimal;
-  /** Pre-computed realized gain/loss imported directly from a CSV (signed). */
+  /** Realized gain/loss (signed). On CSV import this is derived from the signed
+   * Amount USD + category (deposit/withdrawal => $0); the engine sets it for on-chain rows. */
   gain_loss_usd?: Decimal;
   fee_usd?: Decimal;
   wallet_address?: string;

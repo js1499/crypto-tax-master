@@ -123,6 +123,12 @@ export async function GET(request: NextRequest) {
         whereConditions.push({ type: { in: getTypesForCategory("nft") } });
       } else if (filter === "income") {
         whereConditions.push({ type: { in: getTypesForCategory("income") } });
+      } else if (filter === "gambling") {
+        whereConditions.push({ type: { in: getTypesForCategory("gambling") } });
+      } else if (filter === "deposit") {
+        whereConditions.push({ type: { in: getTypesForCategory("deposit") } });
+      } else if (filter === "withdrawal") {
+        whereConditions.push({ type: { in: getTypesForCategory("withdrawal") } });
       } else if (filter === "other") {
         whereConditions.push({ type: { in: getTypesForCategory("other") } });
       } else {

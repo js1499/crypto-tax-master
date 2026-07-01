@@ -75,9 +75,9 @@ describe("suggestMapping", () => {
     expect(m.columns).toMatchObject({ timestamp: 0, symbol: 1, quantity: 2, type: 3, value: 4, fee: 5 });
   });
 
-  it("auto-maps a net-gain column to gainLoss (not value)", () => {
+  it("auto-maps a net-gain column to value (the P&L-driving USD column)", () => {
     const m = suggestMapping(["Date", "Asset", "Quantity", "Type", "Net Gain"]);
-    expect(m.columns.gainLoss).toBe(4);
+    expect(m.columns.value).toBe(4);
   });
 });
 
@@ -126,18 +126,26 @@ describe("applyMapping", () => {
     expect(transactions[1].type).toBe("buy"); // positive
   });
 
-  it("maps a net gain/loss column to gain_loss_usd (signed, CSV import P&L)", () => {
+  it("derives gain_loss from the signed Amount USD, forcing $0 for deposit/withdrawal", () => {
     const csv = [
-      ["Date", "Asset", "Qty", "Side", "Net Gain"],
-      ["2025-03-14", "BTC", "0.5", "SELL", "1,234.56"],
+      ["Date", "Asset", "Qty", "Type", "Amount USD"],
+      ["2025-03-14", "BTC", "0.5", "SELL", "1,234.56"], // signed amount = gain
       ["2025-04-01", "ETH", "2", "SELL", "(300)"], // accounting-negative = loss
+      ["2025-05-01", "USDC", "5000", "deposit", "5,000"], // deposit -> $0
+      ["2025-05-02", "USDC", "2000", "withdrawal", "-2,000"], // withdrawal -> $0
     ];
     const mapping: CsvFieldMapping = {
-      columns: { timestamp: 0, symbol: 1, quantity: 2, type: 3, gainLoss: 4 },
+      columns: { timestamp: 0, symbol: 1, quantity: 2, type: 3, value: 4 },
       options: {},
     };
     const { transactions } = applyMapping(csv, mapping);
+    // Passthrough categories: gain/loss = signed Amount USD
     expect(transactions[0].gain_loss_usd?.toNumber()).toBeCloseTo(1234.56);
     expect(transactions[1].gain_loss_usd?.toNumber()).toBeCloseTo(-300); // loss kept negative
+    // Movements: value_usd keeps its magnitude but gain/loss is forced to $0
+    expect(transactions[2].value_usd.toNumber()).toBeCloseTo(5000);
+    expect(transactions[2].gain_loss_usd?.toNumber()).toBe(0);
+    expect(transactions[3].value_usd.toNumber()).toBeCloseTo(2000);
+    expect(transactions[3].gain_loss_usd?.toNumber()).toBe(0);
   });
 });

@@ -3,9 +3,14 @@
  *
  * Every raw type from Helius (SCREAMING_SNAKE), Moralis (lowercase),
  * Coinbase (lowercase), exchange clients, CSV parsers, AND legacy app
- * types (Title Case) maps to exactly one of 9 categories.
+ * types (Title Case) maps to exactly one of 12 categories.
  *
- * Categories: buy, sell, transfer, swap, staking, defi, nft, income, gambling, other
+ * Categories: buy, sell, transfer, deposit, withdrawal, swap, staking, defi, nft, income, gambling, other
+ *
+ * "deposit" / "withdrawal" are internal money movements (funding an exchange,
+ * moving coins to a wallet). They are non-taxable for the on-chain engine (skipped
+ * like transfer) and forced to $0 P&L on CSV import — distinct from "transfer"
+ * (receive / spend), which does count toward CSV P&L.
  */
 const CATEGORY_MAP: Record<string, string> = {
   // ================================================================
@@ -269,6 +274,7 @@ const CATEGORY_MAP: Record<string, string> = {
   // ================================================================
   "send": "transfer",
   "receive": "transfer",
+  "spend": "transfer",
   "token send": "transfer",
   "token receive": "transfer",
   "token swap": "swap",
@@ -276,8 +282,8 @@ const CATEGORY_MAP: Record<string, string> = {
   "nft receive": "transfer",
   "nft sale": "nft",
   "nft purchase": "nft",
-  "deposit": "defi",
-  "withdraw": "defi",
+  "deposit": "deposit",
+  "withdraw": "withdrawal",
   "airdrop": "income",
   "mint": "nft",
   "burn": "other",
@@ -318,7 +324,7 @@ const CATEGORY_MAP: Record<string, string> = {
   // ================================================================
   // Exchange client types (Kraken, KuCoin, Gemini, Binance)
   // ================================================================
-  "withdrawal": "transfer",
+  "withdrawal": "withdrawal",
   "transfer": "transfer",
   "Staking Reward": "income",
   "Margin": "buy",
@@ -331,6 +337,7 @@ const CATEGORY_MAP: Record<string, string> = {
   "Swap": "swap",
   "Send": "transfer",
   "Receive": "transfer",
+  "Spend": "transfer",
   "Transfer": "transfer",
   "Bridge": "transfer",
   "Self": "transfer",
@@ -344,8 +351,8 @@ const CATEGORY_MAP: Record<string, string> = {
   "NFT Sale": "nft",
   "NFT Activity": "nft",
   "Mint": "nft",
-  "Deposit": "defi",
-  "Withdraw": "defi",
+  "Deposit": "deposit",
+  "Withdraw": "withdrawal",
   "Borrow": "defi",
   "Repay": "defi",
   "Add Liquidity": "defi",
@@ -378,13 +385,19 @@ for (const [rawType, category] of Object.entries(CATEGORY_MAP)) {
 // Case-insensitive index built once from CATEGORY_MAP. Provider exports vary in
 // capitalization ("Withdrawal" vs "withdrawal", "DEPOSIT" vs "deposit", "Buy" vs
 // "buy"), so normalizing here means a casing we didn't pre-list never silently
-// falls to "other". First write wins (the map has no case-collisions that map to
-// different categories).
+// falls to "other". First write wins.
 const NORMALIZED_CATEGORY_MAP: Record<string, string> = {};
 for (const [rawType, category] of Object.entries(CATEGORY_MAP)) {
   const key = rawType.toLowerCase();
   if (!(key in NORMALIZED_CATEGORY_MAP)) NORMALIZED_CATEGORY_MAP[key] = category;
 }
+// Collision override: Helius "DEPOSIT"/"WITHDRAW" (DeFi vault ops → defi) are inserted
+// before the lowercase/legacy exchange "deposit"/"withdraw" (→ deposit/withdrawal), so
+// first-write-wins would resolve an off-cased variant to "defi". Real provider strings
+// hit getCategory's exact-match branch; these overrides fix the normalized fallback so a
+// casing/whitespace variant (" Deposit", "dEpOsit") still lands on the movement category.
+NORMALIZED_CATEGORY_MAP["deposit"] = "deposit";
+NORMALIZED_CATEGORY_MAP["withdraw"] = "withdrawal";
 
 // ================================================================
 // Public helpers
@@ -408,7 +421,7 @@ export function getTypesForCategory(category: string): string[] {
 }
 
 const OUTFLOW_RAW_TYPES = new Set([
-  "TRANSFER_OUT", "Send", "send", "token send", "nft send", "withdrawal",
+  "TRANSFER_OUT", "Send", "send", "token send", "nft send",
   "NFT_PURCHASE",
 ]);
 
@@ -420,7 +433,7 @@ export function isOutflow(rawType: string): boolean {
 }
 
 const INFLOW_RAW_TYPES = new Set([
-  "TRANSFER_IN", "Receive", "receive", "token receive", "nft receive", "deposit",
+  "TRANSFER_IN", "Receive", "receive", "token receive", "nft receive",
   "NFT_SALE",
 ]);
 
@@ -468,7 +481,10 @@ export function isTaxableSell(rawType: string): boolean {
 
 /** Types the tax engine should skip entirely (internal movements). */
 export function isTransferSkip(rawType: string): boolean {
-  return getCategory(rawType) === "transfer";
+  const cat = getCategory(rawType);
+  // deposit/withdrawal are their own categories but stay non-taxable internal
+  // movements for the on-chain engine, exactly like transfer.
+  return cat === "transfer" || cat === "deposit" || cat === "withdrawal";
 }
 
 // Types where the primary asset_symbol represents something the user RECEIVES.
@@ -548,6 +564,14 @@ export function formatTypeForDisplay(rawType: string): string {
 export function getCategoryBadgeColor(rawType: string): string {
   const cat = getCategory(rawType);
   const lower = rawType.toLowerCase();
+
+  // Deposit = teal, Withdrawal = indigo (their own movement-style categories).
+  if (cat === "deposit") {
+    return "bg-pill-teal-bg text-pill-teal-text dark:bg-[rgba(13,148,136,0.12)] dark:text-[#14B8A6]";
+  }
+  if (cat === "withdrawal") {
+    return "bg-pill-indigo-bg text-pill-indigo-text dark:bg-[rgba(79,70,229,0.12)] dark:text-[#818CF8]";
+  }
 
   // Sub-type differentiation within categories
   if (cat === "transfer") {

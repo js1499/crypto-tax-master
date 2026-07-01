@@ -142,6 +142,10 @@ export async function GET(request: NextRequest) {
         whereConditions.push({ type: { in: getTypesForCategory("income") } });
       } else if (filter === "gambling") {
         whereConditions.push({ type: { in: getTypesForCategory("gambling") } });
+      } else if (filter === "deposit") {
+        whereConditions.push({ type: { in: getTypesForCategory("deposit") } });
+      } else if (filter === "withdrawal") {
+        whereConditions.push({ type: { in: getTypesForCategory("withdrawal") } });
       } else if (filter === "other") {
         whereConditions.push({ type: { in: getTypesForCategory("other") } });
       } else {
@@ -445,6 +449,7 @@ export async function GET(request: NextRequest) {
       ...getTypesForCategory("staking"), ...getTypesForCategory("defi"),
       ...getTypesForCategory("nft"), ...getTypesForCategory("income"),
       ...getTypesForCategory("gambling"), ...getTypesForCategory("other"),
+      ...getTypesForCategory("deposit"), ...getTypesForCategory("withdrawal"),
     ];
     // Stats use statsWhere (includes search/filter/wallet/date but excludes cosmetic hideZero/hideSpam)
     const [buyCount, sellCount, transferInCount, transferOutCount, swapCount, identifiedTypeCount, valueIdentifiedCount, disposalAgg, incomeAgg] = await Promise.all([

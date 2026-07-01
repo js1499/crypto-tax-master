@@ -20,8 +20,7 @@ export type CanonicalField =
   | "symbol"
   | "quantity"
   | "type"
-  | "value" // USD value of the transaction (proceeds for a sell, cost for a buy)
-  | "gainLoss" // pre-computed realized gain/loss (CSV import only) -> gain_loss_usd
+  | "value" // signed USD amount (net +/-); drives derived CSV gain/loss (see applyMapping)
   | "fee"
   | "incomingSymbol"
   | "incomingQuantity"
@@ -52,6 +51,8 @@ const CATEGORY_TO_TYPE: Record<string, string> = {
   sell: "sell",
   swap: "token swap",
   transfer: "transfer",
+  deposit: "deposit",
+  withdrawal: "withdrawal",
   income: "reward",
   staking: "stake",
   nft: "mint",
@@ -240,8 +241,7 @@ const SYNONYMS: Record<CanonicalField, string[]> = {
   symbol: ["asset", "symbol", "currency", "coin", "token", "ticker", "market", "pair"],
   quantity: ["quantity", "amount", "qty", "units", "size", "shares", "volume"],
   type: ["type", "transaction type", "action", "side", "operation", "activity"],
-  value: ["value", "total", "usd", "usd value", "proceeds", "subtotal", "amount usd", "net", "total value"],
-  gainLoss: ["net gain", "net gain/loss", "gain/loss", "gain loss", "realized gain", "realized pnl", "pnl", "p&l", "profit", "gain"],
+  value: ["value", "total", "usd", "usd value", "proceeds", "subtotal", "amount usd", "net", "net gain", "gain/loss", "pnl", "p&l", "profit", "total value"],
   fee: ["fee", "fees", "commission", "transaction fee"],
   incomingSymbol: ["received currency", "buy currency", "to asset", "incoming asset"],
   incomingQuantity: ["received amount", "buy amount", "to amount", "incoming amount"],
@@ -259,8 +259,9 @@ export function suggestMapping(headers: string[]): CsvFieldMapping {
 
   // Most-specific fields first so e.g. "amount usd" goes to value, not quantity.
   const order: CanonicalField[] = [
-    // gainLoss before value so a "Net Gain" header isn't grabbed by value's "net".
-    "timestamp", "symbol", "type", "gainLoss", "value", "fee", "quantity",
+    // value before quantity so "amount usd" / "net gain" is grabbed as the
+    // P&L-driving USD column, not quantity.
+    "timestamp", "symbol", "type", "value", "fee", "quantity",
     "incomingSymbol", "incomingQuantity", "incomingValue", "time",
   ];
   for (const field of order) {
@@ -360,11 +361,13 @@ export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyRe
     };
     if (feeRaw != null) tx.fee_usd = new Decimal(Math.abs(feeRaw));
 
-    // Pre-computed realized gain/loss (CSV import only) — kept SIGNED (+ gain, - loss).
-    // This becomes the transaction's gain_loss_usd directly; the cost-basis engine
-    // does not recompute CSV imports.
-    const gainRaw = cleanNumber(cell(row, "gainLoss"));
-    if (gainRaw != null) tx.gain_loss_usd = new Decimal(gainRaw);
+    // CSV imports are "bring your own P&L": the SIGNED Amount USD IS the realized
+    // gain/loss for the row — EXCEPT internal money movements (deposit / withdrawal),
+    // which are forced to $0 regardless of the CSV's number. Uses the signed valueRaw,
+    // never the abs'd value_usd. The cost-basis engine does not recompute CSV imports.
+    const rowCategory = getCategory(type);
+    const zeroPnl = rowCategory === "deposit" || rowCategory === "withdrawal";
+    tx.gain_loss_usd = new Decimal(zeroPnl ? 0 : valueRaw ?? 0);
 
     // Optional incoming (two-sided trade) leg.
     const inSym = cleanSymbol(cell(row, "incomingSymbol"));

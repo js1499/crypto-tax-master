@@ -20,7 +20,7 @@ const KNOWN_TYPES = [
   "nft purchase", "nft sale",
   "margin buy", "margin sell", "liquidation",
   "bridge", "add liquidity", "remove liquidity",
-  "mint", "burn", "deposit", "withdraw",
+  "mint", "burn", "deposit", "withdraw", "withdrawal", "spend",
 ];
 
 /**
