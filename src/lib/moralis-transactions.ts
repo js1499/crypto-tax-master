@@ -1,5 +1,7 @@
 import axios from "axios";
 import { Decimal } from "@prisma/client/runtime/library";
+import prisma from "./prisma";
+import { getCategory } from "./transaction-categorizer";
 
 // Set SYNC_VERBOSE=1 for per-page / per-token debug logs. Off by default so a full
 // multi-chain sync stays well under Vercel's 256-line log limit; the concise per-stage
@@ -159,7 +161,7 @@ export const SUPPORTED_CHAINS: Record<
 // Moralis API response interfaces
 // ============================================================
 
-interface MoralisTransaction {
+export interface MoralisTransaction {
   hash: string;
   nonce: string;
   transaction_index: string;
@@ -239,6 +241,7 @@ export interface WalletTransaction {
   source: string;
   source_type: string;
   status?: string; // "confirmed" | "failed" — from the on-chain receipt
+  is_income?: boolean; // true for Moralis income categories (e.g. airdrop) — booked at FMV
   tx_hash: string;
   wallet_address: string;
   counterparty_address?: string;
@@ -456,6 +459,17 @@ function postProcessTransaction(
   const chainInfo = SUPPORTED_CHAINS[chain];
   if (!chainInfo) return txRecords;
 
+  // Don't collapse a different-asset out+in pair into a taxable "token swap" when Moralis
+  // tagged the tx as a non-swap DeFi/movement category — e.g. borrow (collateral out + loan
+  // in), repay, or deposit/withdraw (token out + LP-receipt in). Those are non-taxable moves;
+  // merging them would book a phantom disposal. ALSO skip for income categories (airdrop/
+  // reward/claim): the inbound leg carries is_income and must stay a separate income record,
+  // not be folded into a swap built from the outbound leg (which would drop is_income).
+  // Leave the legs as direction-typed transfers/income.
+  const cat = (tx.category || "").toLowerCase();
+  const nonSwapCategories = new Set(["borrow", "repay", "deposit", "withdraw"]);
+  if (nonSwapCategories.has(cat) || getCategory(cat) === "income") return txRecords;
+
   const wallet = walletAddress.toLowerCase();
   const outTypes = ["send", "token send", "nft send"];
   const inTypes = ["receive", "token receive", "nft receive"];
@@ -608,6 +622,13 @@ function parseMoralisPage(
     const feeWei = tx.transaction_fee || "0";
     const feeInNativeToken = fromWei(feeWei, chainInfo.decimals);
 
+    // Moralis tags the whole tx with a category (e.g. "airdrop"). If that category maps to
+    // income, flag the INBOUND legs as income so they book ordinary income at FMV (with a
+    // cost-basis lot) instead of being transfer-skipped. Direction still drives the movement
+    // type; the category is otherwise passed to postProcessTransaction (swap-merge guard).
+    const txCategory = (tx.category || "").toLowerCase();
+    const txIsIncome = getCategory(txCategory) === "income";
+
     // Collect records per-tx for post-processing (swap/wrap detection)
     const txRecords: WalletTransaction[] = [];
 
@@ -622,6 +643,7 @@ function parseMoralisPage(
         txRecords.push({
           id: `${tx.hash}-native-${transfer.from_address}-${transfer.to_address}`,
           type: isIncoming ? "receive" : "send",
+          is_income: isIncoming && txIsIncome,
           asset_symbol: chainInfo.nativeToken,
           asset_chain: chain,
           amount_value: new Decimal(Math.abs(amount)),
@@ -660,6 +682,7 @@ function parseMoralisPage(
         txRecords.push({
           id: `${tx.hash}-erc20-${transfer.log_index}`,
           type: isIncoming ? "token receive" : "token send",
+          is_income: isIncoming && txIsIncome,
           asset_symbol: transfer.token_symbol || "UNKNOWN",
           asset_address: transfer.address,
           asset_chain: chain,
@@ -809,6 +832,7 @@ export async function getWalletTransactions(
   const maxPages = 500;
   let totalRawTx = 0;
   let spamSkipped = 0;
+  const rawTransactions: MoralisTransaction[] = [];
 
   try {
     // Step 1: Fetch all raw transactions from Moralis
@@ -842,6 +866,7 @@ export async function getWalletTransactions(
       const data = response.data;
       const results: MoralisTransaction[] = data.result || [];
       totalRawTx += results.length;
+      rawTransactions.push(...results); // faithful raw record for the audit dump
 
       if (VERBOSE) console.log(`[Moralis] Page ${pageCount}: ${results.length} raw`);
 
@@ -877,6 +902,10 @@ export async function getWalletTransactions(
     // Sort by timestamp
     transactions.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
 
+    // Persist raw payloads for the audit table. This is the legacy one-shot path (used by
+    // csv-import); the resumable/chunk path dumps per chunk in the sync route.
+    await dumpRawMoralisToDb(walletAddress, chain, rawTransactions);
+
     return transactions;
   } catch (error) {
     if (axios.isAxiosError(error)) {
@@ -905,6 +934,8 @@ export interface ChainFetchChunk {
   pagesFetched: number;
   rawCount: number;
   spamSkipped: number;
+  /** Raw Moralis payloads for this chunk (for the raw-audit dump). */
+  rawTransactions: MoralisTransaction[];
 }
 
 /**
@@ -942,6 +973,7 @@ export async function getWalletTransactionsChunk(
   const moralisChainParam = chainInfo.chainParam;
   const maxPages = opts.maxPages ?? 60;
   const transactions: WalletTransaction[] = [];
+  const rawTransactions: MoralisTransaction[] = [];
   let cursor: string | null = opts.cursor ?? null;
   let pagesFetched = 0;
   let rawCount = 0;
@@ -980,6 +1012,7 @@ export async function getWalletTransactionsChunk(
       const data = response.data;
       const results: MoralisTransaction[] = data.result || [];
       rawCount += results.length;
+      rawTransactions.push(...results); // faithful raw record for the audit dump
 
       const parsed = parseMoralisPage(results, chain, walletAddress, chainInfo);
       transactions.push(...parsed.transactions);
@@ -1014,7 +1047,7 @@ export async function getWalletTransactionsChunk(
       `[Moralis] ${chainInfo.name} chunk: ${rawCount} raw → ${transactions.length} parsed, ${spamSkipped} spam, ${pagesFetched} page(s)${cursor ? " (more pending)" : " (chain complete)"}`
     );
 
-    return { transactions, nextCursor: cursor, pagesFetched, rawCount, spamSkipped };
+    return { transactions, nextCursor: cursor, pagesFetched, rawCount, spamSkipped, rawTransactions };
   } catch (error) {
     if (axios.isAxiosError(error)) {
       const status = error.response?.status;
@@ -1029,6 +1062,67 @@ export async function getWalletTransactionsChunk(
     }
     console.error(`[Moralis] Unexpected error on ${chainInfo.name} chunk:`, error);
     throw error;
+  }
+}
+
+/**
+ * Persist raw Moralis wallet-history payloads to moralis_raw_transactions so we can compare
+ * exactly what Moralis returned (category, transfers, spam flag) against how we categorized
+ * it and the cost basis / P&L we computed. One row per on-chain tx per wallet+chain (unique
+ * key → re-syncs don't duplicate). Non-fatal on error.
+ */
+export async function dumpRawMoralisToDb(
+  walletAddress: string,
+  chain: string,
+  rawTransactions: MoralisTransaction[],
+): Promise<void> {
+  if (!rawTransactions || rawTransactions.length === 0) return;
+  try {
+    // Dedupe by hash within this batch (createMany can't skip in-batch dups before insert;
+    // the table's unique key handles cross-sync dups via skipDuplicates).
+    const seen = new Set<string>();
+    const rows = [];
+    for (const tx of rawTransactions) {
+      if (!tx.hash || seen.has(tx.hash)) continue;
+      seen.add(tx.hash);
+      // Guard conversions so one malformed row can't fail (and drop) the whole createMany
+      // chunk: skip a row with an unparseable timestamp; null a non-numeric block_number.
+      const ts = new Date(tx.block_timestamp);
+      if (isNaN(ts.getTime())) continue;
+      const blockNumber = /^\d+$/.test(String(tx.block_number)) ? BigInt(tx.block_number) : null;
+      rows.push({
+        wallet_address: walletAddress,
+        chain,
+        moralis_category: tx.category || null,
+        tx_hash: tx.hash,
+        block_number: blockNumber,
+        tx_timestamp: ts,
+        from_address: tx.from_address || null,
+        to_address: tx.to_address || null,
+        summary: tx.summary || null,
+        possible_spam: !!tx.possible_spam,
+        receipt_status: tx.receipt_status || null,
+        fee_wei: tx.transaction_fee || null,
+        native_transfers_count: tx.native_transfers?.length || 0,
+        erc20_transfers_count: tx.erc20_transfers?.length || 0,
+        nft_transfers_count: tx.nft_transfers?.length || 0,
+        raw_payload: tx as any,
+      });
+    }
+
+    const chunkSize = 500;
+    let inserted = 0;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      const result = await prisma.moralisRawTransaction.createMany({
+        data: chunk,
+        skipDuplicates: true,
+      });
+      inserted += result.count;
+    }
+    console.log(`[Moralis] Raw dump saved: ${inserted} rows for ${walletAddress.slice(0, 8)}… (${chain})`);
+  } catch (err) {
+    console.warn("[Moralis] Failed to write raw dump to DB:", err);
   }
 }
 

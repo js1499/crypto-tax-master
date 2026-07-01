@@ -10,6 +10,7 @@ import {
   getWalletTransactions,
   getWalletTransactionsAllChains,
   getWalletTransactionsChunk,
+  dumpRawMoralisToDb,
   isValidEthAddress,
   clearPriceCache,
   SUPPORTED_CHAINS,
@@ -115,6 +116,7 @@ async function persistTransactions(
       block_number: tx.block_number ? BigInt(tx.block_number) : null,
       explorer_url: tx.explorer_url || null,
       identified: false,
+      is_income: tx.is_income ?? false,
       notes: tx.notes || null,
       incoming_asset_symbol: tx.incoming_asset_symbol || null,
       incoming_amount_value: tx.incoming_amount_value || null,
@@ -274,6 +276,8 @@ async function handleResumableChunk(params: {
     const persisted = await persistTransactions(user.id, chunk.transactions, remainingCapacity);
     chunkAdded = persisted.added;
     chunkSkipped = persisted.skipped;
+    // Store the raw Moralis payloads for this chunk (audit: raw vs. our categorization/P&L).
+    await dumpRawMoralisToDb(wallet.address, chain.chain, chunk.rawTransactions);
     applyChunkResult(syncState, chain, {
       nextCursor: chunk.nextCursor,
       added: persisted.added,

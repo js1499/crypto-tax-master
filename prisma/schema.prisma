@@ -225,6 +225,37 @@ model HeliusRawTransaction {
   @@map("helius_raw_transactions")
 }
 
+// Raw Moralis wallet-history payloads (one row per on-chain tx per wallet+chain), kept so
+// we can compare exactly what Moralis returned (category, transfers, spam flag) against how
+// we categorized it and what cost basis / P&L we computed. Mirrors HeliusRawTransaction.
+model MoralisRawTransaction {
+  id                     Int      @id @default(autoincrement())
+  wallet_address         String   @db.VarChar(100)
+  chain                  String   @db.VarChar(30)
+  synced_at              DateTime @default(now()) @db.Timestamptz(6)
+  moralis_category       String?  @db.VarChar(50)
+  tx_hash                String   @db.VarChar(255)
+  block_number           BigInt?
+  tx_timestamp           DateTime @db.Timestamptz(6)
+  from_address           String?  @db.VarChar(100)
+  to_address             String?  @db.VarChar(100)
+  summary                String?
+  possible_spam          Boolean  @default(false)
+  receipt_status         String?  @db.VarChar(10)
+  fee_wei                String?  @db.VarChar(78)
+  native_transfers_count Int      @default(0)
+  erc20_transfers_count  Int      @default(0)
+  nft_transfers_count    Int      @default(0)
+  raw_payload            Json
+
+  @@unique([wallet_address, chain, tx_hash], map: "moralis_raw_transactions_wallet_chain_hash_key")
+  @@index([wallet_address])
+  @@index([synced_at])
+  @@index([tx_hash])
+  @@index([chain])
+  @@map("moralis_raw_transactions")
+}
+
 model TaxReportCache {
   id              String   @id @default(cuid())
   userId          String

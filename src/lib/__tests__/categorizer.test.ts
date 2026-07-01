@@ -41,6 +41,25 @@ describe("getCategory normalization", () => {
     expect(getCategory("CLAIM_REWARDS")).toBe("income");
   });
 
+  it("maps all 16 Moralis wallet-history categories", () => {
+    expect(getCategory("send")).toBe("transfer");
+    expect(getCategory("receive")).toBe("transfer");
+    expect(getCategory("token send")).toBe("transfer");
+    expect(getCategory("token receive")).toBe("transfer");
+    expect(getCategory("nft send")).toBe("transfer");
+    expect(getCategory("nft receive")).toBe("transfer");
+    expect(getCategory("token swap")).toBe("swap");
+    expect(getCategory("deposit")).toBe("deposit");
+    expect(getCategory("withdraw")).toBe("withdrawal");
+    expect(getCategory("nft purchase")).toBe("nft");
+    expect(getCategory("nft sale")).toBe("nft");
+    expect(getCategory("airdrop")).toBe("income"); // drives is_income at parse time
+    expect(getCategory("mint")).toBe("nft");
+    expect(getCategory("burn")).toBe("other");
+    expect(getCategory("borrow")).toBe("defi");
+    expect(getCategory("contract interaction")).toBe("defi");
+  });
+
   it("maps Coinbase App API raw types (incl. legacy Pro/Exchange) — no longer 'other'", () => {
     // Legacy Pro/Exchange internal transfers — the types that were falling to 'other'.
     expect(getCategory("exchange_deposit")).toBe("deposit");
