@@ -5,8 +5,7 @@ import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/ra
 import * as Sentry from "@sentry/nextjs";
 import { encryptApiKey } from "@/lib/exchange-clients";
 import { BinanceClient, KrakenClient, KuCoinClient, GeminiClient } from "@/lib/exchange-clients";
-import crypto from "crypto";
-import jwt from "jsonwebtoken";
+import { generateCoinbaseJWT } from "@/lib/coinbase-signer";
 
 // Encryption key - REQUIRED in production
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
@@ -84,9 +83,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Track formatted Coinbase private key (needs to be stored in PEM format)
-    let formattedCoinbasePrivateKey: string | null = null;
-
     // Validate credentials based on exchange
     if (exchangeName === "coinbase") {
       // Coinbase supports both OAuth (refreshToken) and API Key authentication
@@ -102,43 +98,10 @@ export async function POST(request: NextRequest) {
         try {
           const axios = (await import("axios")).default;
 
-          // Format the private key if needed
-          let privateKey = apiSecret;
-          if (!privateKey.includes("-----BEGIN")) {
-            // If it's raw base64, wrap it in PEM format
-            const cleanKey = privateKey.replace(/\s+/g, "");
-            privateKey = `-----BEGIN EC PRIVATE KEY-----\n${cleanKey}\n-----END EC PRIVATE KEY-----`;
-          } else {
-            // Normalize newlines
-            privateKey = privateKey.replace(/\\n/g, "\n").replace(/\r\n/g, "\n").trim();
-          }
-
-          // Store the formatted key to save later (this is the key fix!)
-          formattedCoinbasePrivateKey = privateKey;
-
-          // Generate JWT for Coinbase CDP API
-          const now = Math.floor(Date.now() / 1000);
-          const nonce = crypto.randomBytes(16).toString("hex");
-          const path = "/v2/user";
-
-          const payload = {
-            sub: apiKey, // API Key Name
-            iss: "cdp",
-            aud: ["cdp_service"],
-            nbf: now,
-            exp: now + 120,
-            uri: `GET api.coinbase.com${path}`,
-          };
-
-          const token = jwt.sign(payload, privateKey, {
-            algorithm: "ES256",
-            header: {
-              alg: "ES256",
-              typ: "JWT",
-              kid: apiKey,
-              nonce: nonce,
-            },
-          });
+          // Validate by signing a CDP JWT (auto-detects EC vs Ed25519 — no manual PEM
+          // formatting required) and calling /v2/user. The raw secret is stored as-is;
+          // the signer re-normalizes it on every use (connect + sync).
+          const token = generateCoinbaseJWT(apiKey, apiSecret, "GET", "api.coinbase.com", "/v2/user");
 
           const response = await axios.get("https://api.coinbase.com/v2/user", {
             headers: {
@@ -159,8 +122,8 @@ export async function POST(request: NextRequest) {
           let errorMessage = "Invalid Coinbase API credentials.";
           const errorDetails = error instanceof Error ? error.message : "Unknown error";
 
-          if (errorDetails.includes("secretOrPrivateKey")) {
-            errorMessage = "Invalid private key format. Please paste the complete EC Private Key including -----BEGIN EC PRIVATE KEY----- and -----END EC PRIVATE KEY-----.";
+          if (errorDetails.includes("secretOrPrivateKey") || errorDetails.includes("DECODER") || errorDetails.includes("PEM") || errorDetails.includes("asymmetric")) {
+            errorMessage = "Could not read your Coinbase private key. Paste it exactly as Coinbase provides it (EC or Ed25519) — no extra formatting needed.";
           } else if (errorDetails.includes("401")) {
             errorMessage = "Authentication failed. Please ensure you're using a valid CDP API Key Name and Private Key from the Coinbase Developer Platform.";
           }
@@ -233,24 +196,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Encrypt credentials
-    // For Coinbase, use the formatted PEM private key (not the raw input)
+    // Encrypt credentials. Store the secret as the user provided it (trimmed); the Coinbase
+    // signer normalizes any format (EC/Ed25519, PEM/base64) on every use (connect + sync).
     const encryptedApiKey = apiKey ? encryptApiKey(apiKey, ENCRYPTION_KEY) : null;
-    const secretToEncrypt = formattedCoinbasePrivateKey || apiSecret;
+    const secretToEncrypt = apiSecret ? apiSecret.trim() : null;
     const encryptedApiSecret = secretToEncrypt ? encryptApiKey(secretToEncrypt, ENCRYPTION_KEY) : null;
     const encryptedApiPassphrase = apiPassphrase
       ? encryptApiKey(apiPassphrase, ENCRYPTION_KEY)
       : null;
-
-    if (exchangeName === "coinbase" && formattedCoinbasePrivateKey) {
-      const hasPemHeader = formattedCoinbasePrivateKey.includes("-----BEGIN");
-      const keyLength = formattedCoinbasePrivateKey.length;
-      console.log("[Exchange Connect] Storing formatted PEM private key for Coinbase:", {
-        hasPemHeader,
-        keyLength,
-        hasNewlines: formattedCoinbasePrivateKey.includes("\n"),
-      });
-    }
 
     // Create or update exchange connection
     // Clear OAuth tokens when using API key auth, and vice versa

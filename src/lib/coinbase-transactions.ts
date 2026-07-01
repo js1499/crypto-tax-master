@@ -4,79 +4,15 @@ import { refreshAccessToken, isTokenExpired, CoinbaseTokens } from "./coinbase";
 import type { ExchangeTransaction } from "./exchange-clients";
 import { encryptApiKey, decryptApiKey } from "./exchange-clients";
 import prisma from "./prisma";
-import crypto from "crypto";
-import jwt from "jsonwebtoken";
+import { generateCoinbaseJWT } from "./coinbase-signer";
 
 // Encryption key for OAuth tokens
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
 
 /**
- * Generate a JWT for Coinbase CDP API authentication
- * As of Feb 2025, Coinbase requires JWT-based auth with ES256 for all API keys
- *
- * @param apiKeyName - The API key name (format: organizations/{org_id}/apiKeys/{key_id})
- * @param privateKey - The EC private key in PEM format
- * @param method - HTTP method (GET, POST, etc.)
- * @param host - API host (e.g., api.coinbase.com)
- * @param path - API path (e.g., /v2/accounts)
- */
-function generateCoinbaseJWT(
-  apiKeyName: string,
-  privateKey: string,
-  method: string,
-  host: string,
-  path: string
-): string {
-  const now = Math.floor(Date.now() / 1000);
-  const nonce = crypto.randomBytes(16).toString("hex");
-
-  // Construct the URI claim: "METHOD HOST/PATH"
-  const uri = `${method} ${host}${path}`;
-
-  const payload = {
-    sub: apiKeyName,
-    iss: "cdp",
-    aud: ["cdp_service"],
-    nbf: now,
-    exp: now + 120, // JWT expires in 2 minutes
-    uri: uri,
-  };
-
-  const options: jwt.SignOptions = {
-    algorithm: "ES256",
-    header: {
-      alg: "ES256",
-      typ: "JWT",
-      kid: apiKeyName,
-      nonce: nonce,
-    },
-  };
-
-  return jwt.sign(payload, privateKey, options);
-}
-
-/**
- * Format the private key to ensure it's in proper PEM format
- * Coinbase CDP keys come in EC PRIVATE KEY format
- */
-function formatPrivateKey(privateKey: string): string {
-  // If it already has the PEM header, return as-is but ensure proper newlines
-  if (privateKey.includes("-----BEGIN")) {
-    // Normalize newlines and ensure proper format
-    return privateKey
-      .replace(/\\n/g, "\n")
-      .replace(/\r\n/g, "\n")
-      .trim();
-  }
-
-  // If it's raw base64, wrap it in PEM format
-  const cleanKey = privateKey.replace(/\s+/g, "");
-  return `-----BEGIN EC PRIVATE KEY-----\n${cleanKey}\n-----END EC PRIVATE KEY-----`;
-}
-
-/**
  * Create authorization headers for Coinbase CDP API
- * Uses JWT Bearer token authentication (required since Feb 2025)
+ * Uses JWT Bearer token authentication (required since Feb 2025). The JWT signer
+ * (generateCoinbaseJWT) auto-detects EC (ES256) vs Ed25519 (EdDSA) — see coinbase-signer.ts.
  */
 function createCoinbaseCDPHeaders(
   apiKeyName: string,
@@ -84,8 +20,7 @@ function createCoinbaseCDPHeaders(
   method: string,
   path: string
 ): Record<string, string> {
-  const formattedKey = formatPrivateKey(privateKey);
-  const token = generateCoinbaseJWT(apiKeyName, formattedKey, method, "api.coinbase.com", path);
+  const token = generateCoinbaseJWT(apiKeyName, privateKey, method, "api.coinbase.com", path);
 
   return {
     "Authorization": `Bearer ${token}`,

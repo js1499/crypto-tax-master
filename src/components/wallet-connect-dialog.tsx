@@ -605,8 +605,9 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
                     <Input id="api-key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="organizations/{org_id}/apiKeys/{key_id}" />
                   </div>
                   <div className="space-y-1">
-                    <Label htmlFor="api-secret">EC Private Key</Label>
-                    <textarea id="api-secret" className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} placeholder={"-----BEGIN EC PRIVATE KEY-----\n...\n-----END EC PRIVATE KEY-----"} />
+                    <Label htmlFor="api-secret">API Private Key</Label>
+                    <textarea id="api-secret" className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={apiSecret} onChange={(e) => setApiSecret(e.target.value)} placeholder="Paste your Coinbase private key here" />
+                    <p className="text-xs text-muted-foreground">Paste the key exactly as Coinbase gives it (EC or Ed25519). No formatting needed — we handle it.</p>
                   </div>
                   {connectionError && <p className="text-sm text-red-500">{connectionError}</p>}
                   <Button className="w-full" onClick={handleApiConnect} disabled={!apiKey || !apiSecret || connecting}>
