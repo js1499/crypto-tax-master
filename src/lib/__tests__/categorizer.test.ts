@@ -40,4 +40,21 @@ describe("getCategory normalization", () => {
     expect(getCategory("token swap")).toBe("swap");
     expect(getCategory("CLAIM_REWARDS")).toBe("income");
   });
+
+  it("maps Coinbase CSV transaction types", () => {
+    expect(getCategory("Convert")).toBe("swap");
+    expect(getCategory("Wrap Asset")).toBe("swap");
+    expect(getCategory("Retail Simple Dust")).toBe("swap");
+    expect(getCategory("Staking Income")).toBe("income");
+    expect(getCategory("Reward Income")).toBe("income");
+    expect(getCategory("Credit Card Reward")).toBe("income");
+    expect(getCategory("Subscription Rebate")).toBe("income");
+    expect(getCategory("Advanced Trade Buy")).toBe("buy");
+    expect(getCategory("Advanced Trade Sell")).toBe("sell");
+    expect(getCategory("Sell Refund")).toBe("sell");
+    expect(getCategory("Derivatives Settlement")).toBe("sell");
+    expect(getCategory("Card Spend")).toBe("transfer");
+    expect(getCategory("Retail Unstaking Transfer")).toBe("transfer");
+    expect(getCategory("Retail Eth2 Deprecation")).toBe("transfer");
+  });
 });

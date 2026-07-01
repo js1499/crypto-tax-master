@@ -321,6 +321,28 @@ const CATEGORY_MAP: Record<string, string> = {
   "inflation_reward": "income",
   "interest_payout": "income",
 
+  // Coinbase CSV "Transaction Type" exports (Title Case). Mapped for the field mapper's
+  // auto-suggestion (user can override any per-import). Buy/Sell/Send/Receive/Deposit/
+  // Withdrawal are already covered above.
+  "Convert": "swap", // crypto -> crypto, taxable disposal
+  "Advanced Trade Buy": "buy",
+  "Advanced Trade Sell": "sell",
+  "Sell Refund": "sell",
+  "Derivatives Settlement": "sell", // realized derivatives P&L (review for §1256)
+  "Staking Income": "income",
+  "Reward Income": "income",
+  "Credit Card Reward": "income",
+  "Subscription Rebate": "income",
+  "Subscription Rebates (24 Hours)": "income",
+  "Credit": "income", // generic account credit (review — could be an adjustment)
+  "Card Spend": "transfer", // spend = transfer out (counts toward CSV P&L)
+  "Credit Card Balance Payment": "transfer",
+  "Retail Simple Dust": "swap", // dust converted to another asset
+  "Wrap Asset": "swap", // e.g. ETH <-> WETH
+  "Retail Staking Transfer": "transfer", // principal into staking (non-taxable move)
+  "Retail Unstaking Transfer": "transfer", // principal out of staking (non-taxable move)
+  "Retail Eth2 Deprecation": "transfer", // 1:1 ETH2 -> ETH migration
+
   // ================================================================
   // Exchange client types (Kraken, KuCoin, Gemini, Binance)
   // ================================================================

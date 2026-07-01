@@ -1379,6 +1379,85 @@ function AccountsContent() {
           </div>
         </div>
 
+        {/* ── Imported CSVs ── */}
+        {csvSources.length > 0 && (
+          <div className="border border-[#E5E5E0] dark:border-[#333] rounded-xl overflow-hidden bg-white dark:bg-[#1A1A1A]">
+            <div className="flex items-center justify-between px-6 pt-5 pb-3">
+              <div>
+                <h2 className="text-[16px] font-semibold text-[#1A1A1A] dark:text-[#F5F5F5]">
+                  Imported CSVs
+                </h2>
+                <p className="text-[12px] text-[#9CA3AF] mt-0.5">
+                  Transaction files you&apos;ve uploaded
+                </p>
+              </div>
+              <span className="inline-flex items-center rounded-full bg-[#EFF6FF] dark:bg-[rgba(37,99,235,0.12)] text-[#2563EB] px-2.5 py-0.5 text-[11px] font-medium">
+                {csvSources.length}
+              </span>
+            </div>
+            <Table className="transaction-table">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Source</TableHead>
+                  <TableHead>Transactions</TableHead>
+                  <TableHead>Imported</TableHead>
+                  <TableHead className="w-16"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {csvSources.map((c) => (
+                  <TableRow
+                    key={c.source}
+                    className="border-b border-[#F0F0EB] dark:border-[#2A2A2A]"
+                  >
+                    <TableCell>
+                      <div className="flex items-center gap-2.5">
+                        <span className="inline-flex items-center justify-center h-[32px] w-[32px] rounded-full bg-[#16A34A] text-white shrink-0">
+                          <FileText className="h-3.5 w-3.5" />
+                        </span>
+                        <div>
+                          <p className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]">
+                            {c.source}
+                          </p>
+                          <p className="text-[13px] text-[#9CA3AF]">Imported CSV</p>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span
+                        className="text-[15px] font-medium text-[#1A1A1A] dark:text-[#F5F5F5]"
+                        style={{ fontVariantNumeric: "tabular-nums" }}
+                      >
+                        {c.transactionCount.toLocaleString()}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className="text-[14px] text-[#6B7280]">
+                        {c.importedAt
+                          ? new Date(c.importedAt).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })
+                          : "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        className="inline-flex items-center px-1.5 py-1 rounded-md border border-[#E5E5E0] dark:border-[#333] text-[#9CA3AF] hover:border-[#DC2626] hover:text-[#DC2626] transition-colors"
+                        onClick={() => handleDeleteCsv(c.source)}
+                        aria-label="Remove CSV import"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+
         {/* ── Suggested Wallets ── */}
         {walletSuggestions.length > 0 && (
           <div className="border border-[#E5E5E0] dark:border-[#333] rounded-xl overflow-hidden bg-white dark:bg-[#1A1A1A]">
