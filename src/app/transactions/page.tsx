@@ -401,6 +401,7 @@ function TransactionsContent() {
           const apiTransactions: Transaction[] = data.transactions.map((tx: any) => ({
             id: tx.id,
             type: tx.type,
+            rawType: tx.rawType ?? null,
             // Structured out/in fields
             outAsset: tx.outAsset ?? null,
             outAmount: tx.outAmount ?? null,

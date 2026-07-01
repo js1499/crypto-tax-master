@@ -168,7 +168,9 @@ export function CsvFieldMapper({
     const fd = new FormData();
     fd.append("file", file);
     fd.append("mapping", JSON.stringify(buildMapping()));
-    fd.append("source", source);
+    // Use the file name as the source so each imported CSV is its own "account"
+    // on the Accounts page (grouped by source), instead of merging into one "CSV" row.
+    fd.append("source", file?.name || source);
     if (dryRun) fd.append("dryRun", "true");
     const res = await fetch("/api/transactions/import/mapped", {
       method: "POST",
