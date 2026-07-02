@@ -384,7 +384,10 @@ const CATEGORY_MAP: Record<string, string> = {
   "withdrawal": "withdrawal",
   "transfer": "transfer",
   "Staking Reward": "income",
-  "Margin": "buy",
+  "Dividend": "income",
+  // Margin realized P&L is a net collateral gain/loss, not a simple buy/sell of an asset. We
+  // don't model it as capital P&L yet, so keep it neutral rather than mis-booking it as a buy.
+  "Margin": "other",
 
   // ================================================================
   // Legacy app types (backward compat with existing DB records)

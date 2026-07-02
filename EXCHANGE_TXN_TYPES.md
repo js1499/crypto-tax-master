@@ -12,6 +12,20 @@
 
 ---
 
+## Status (updated 2026-07-02) — Kraken rewrite landed
+
+The **P0/P1 Kraken gaps and the Gemini `Reward` P0 in §5–§6 are now RESOLVED** (`exchange-clients.ts`, `transaction-categorizer.ts`), verified by `src/lib/__tests__/kraken-mapping.test.ts` (simulated full-ledger sync covering every type):
+
+- **Kraken now fetches the FULL ledger** (`getAllTransactions` → `getLedgers()` with no `type` filter), so staking/reward/dividend/airdrop/instant-buy-sell rows are imported, not just deposit/withdrawal.
+- **`classifyKrakenLedger` maps every documented ledger `type` + `subtype`** to an internal type (income / deposit / withdrawal / transfer / buy / sell / nft / other); unknown types fall to `other`, never a silent buy/sell.
+- **Income rows are priced** at historical FMV (`priceUnvaluedTaxableRows` via `getHistoricalPriceAtTimestamp`) — otherwise `is_income` rows booked $0. Staked-asset suffixes (`DOT.S`) are stripped so they price + book on the base asset.
+- **Fee currency** is only written to `fee_usd` when USD-equivalent; **deposit/withdrawal** now use their own categories (not `transfer`); pagination caps raised to 100k.
+- **Gemini `Reward`** now books as income (removed from `depositTypes`); Gemini reward rows are priced too.
+
+Judgment calls (deliberate, see code comments): bare positive Kraken `transfer` → income (airdrop/fork); `credit` → non-taxable (loan/funding default); `conversion`/`margin`/`settled`/`rollover` → `other` (margin P&L and two-legged conversions not modeled yet). The §5 matrix below documents the pre-fix state for reference.
+
+---
+
 ## 1. Overview
 
 We integrate two centralized exchanges as data sources for cost-basis and gain/loss

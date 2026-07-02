@@ -1,6 +1,8 @@
 import axios, { AxiosInstance } from "axios";
 import { Decimal } from "@prisma/client/runtime/library";
 import crypto from "crypto";
+import { getCategory } from "@/lib/transaction-categorizer";
+import { getHistoricalPriceAtTimestamp } from "@/lib/coingecko";
 
 // Logger helper - only logs in development
 const log = {
@@ -271,6 +273,47 @@ export class BinanceClient {
 }
 
 // Kraken API Client
+// Fiat + USD-stablecoins. After Kraken asset normalization (Z-prefix stripped) fiat shows as
+// USD/EUR/GBP/etc. Used to (a) treat fee/value in these as already-USD, and (b) mark the fiat
+// leg of an instant buy/sell as a non-taxable cash movement rather than a crypto disposal.
+const FIAT_OR_STABLE = new Set([
+  "USD", "EUR", "GBP", "CAD", "JPY", "CHF", "AUD",
+  "USDT", "USDC", "DAI", "BUSD", "PYUSD", "USDG",
+]);
+
+/**
+ * Best-effort USD valuation for exchange rows that arrive without one. Exchange ledgers
+ * (Kraken) are asset-denominated, so income (staking/rewards/dividends) and instant buy/sell
+ * legs come through at value_usd=0 — which would book $0 income. Fill value_usd from historical
+ * FMV at the row's timestamp for the taxable/income categories only; deposits/withdrawals/
+ * transfers stay $0 (non-taxable movements). Unresolved prices are left at $0 (never throws).
+ */
+async function priceUnvaluedTaxableRows(rows: ExchangeTransaction[]): Promise<void> {
+  for (const r of rows) {
+    if (r.value_usd && Number(r.value_usd) > 0) continue;
+    const cat = getCategory(r.type);
+    if (cat !== "income" && cat !== "buy" && cat !== "sell") continue;
+    const amount = Number(r.amount_value);
+    if (!(amount > 0)) continue;
+    const sym = (r.asset_symbol || "").toUpperCase();
+    if (FIAT_OR_STABLE.has(sym)) {
+      r.value_usd = new Decimal(amount);
+      r.price_per_unit = new Decimal(1);
+      continue;
+    }
+    try {
+      const ts = Math.floor(r.tx_timestamp.getTime() / 1000);
+      const price = await getHistoricalPriceAtTimestamp(sym, ts);
+      if (price && price > 0) {
+        r.price_per_unit = new Decimal(price);
+        r.value_usd = new Decimal(amount * price);
+      }
+    } catch {
+      // best-effort — leave value_usd at 0 rather than failing the whole sync
+    }
+  }
+}
+
 export class KrakenClient {
   private apiKey: string;
   private apiSecret: string;
@@ -366,6 +409,10 @@ export class KrakenClient {
    * Kraken uses X prefix for crypto (XXBT, XETH) and Z prefix for fiat (ZUSD, ZEUR)
    */
   private normalizeAsset(asset: string): string {
+    // Kraken staking/earn variants carry a suffix (DOT.S, SOL.S, DOT.B, ATOM.F, …). They are
+    // economically the base asset for tax purposes, so strip the suffix — otherwise reward
+    // rows land on an un-priceable "DOT.S" symbol and never get a USD value or cost basis.
+    if (asset.includes(".")) asset = asset.split(".")[0];
     // Remove X or Z prefix for standard assets
     if (asset.length === 4 && (asset.startsWith("X") || asset.startsWith("Z"))) {
       asset = asset.substring(1);
@@ -414,6 +461,72 @@ export class KrakenClient {
   private isUsdEquivalent(currency: string): boolean {
     const usdEquivalents = ["USD", "USDT", "USDC", "DAI", "BUSD"];
     return usdEquivalents.includes(currency.toUpperCase());
+  }
+
+  /**
+   * Map a Kraken ledger entry to our internal transaction type. Covers EVERY documented
+   * Get Ledgers `type` (plus the WS-v2 and CSV variants) so no entry silently drops. Returns
+   * null for entries imported elsewhere (trade legs → TradesHistory). getCategory() then
+   * classifies the returned type (income / deposit / withdrawal / transfer / buy / sell /
+   * swap / nft / other), and the sync route sets is_income when that category is "income".
+   *
+   * Signed `amount`: positive = credited to the account (inflow), negative = debited.
+   */
+  private classifyKrakenLedger(
+    type: string,
+    subtype: string,
+    amount: number,
+    asset: string,
+  ): string | null {
+    const t = (type || "").toLowerCase().trim();
+    const sub = (subtype || "").toLowerCase().trim();
+    const inflow = amount > 0;
+    const fiat = FIAT_OR_STABLE.has(asset.toUpperCase());
+    // Subtypes that mark a non-taxable internal move between the user's own Kraken wallets
+    // (spot↔futures, spot↔staking/earn, and the allocation/migration lifecycle).
+    const MOVEMENT_SUBTYPES = new Set([
+      "spottofutures", "spotfromfutures", "spottostaking", "stakingfromspot",
+      "stakingtospot", "spotfromstaking", "allocation", "deallocation",
+      "autoallocate", "migration",
+    ]);
+    const isMovement = MOVEMENT_SUBTYPES.has(sub);
+
+    switch (t) {
+      case "trade":           return null;                                   // imported from TradesHistory
+      case "deposit":         return "Deposit";                             // non-taxable in ($0)
+      case "withdrawal":      return "Withdraw";                            // non-taxable out ($0)
+      // Bare positive `transfer` on Kraken is an airdrop/fork/bonus credit → income; a move
+      // carrying a futures/staking subtype (or an outflow) is a non-taxable transfer.
+      case "transfer":        return isMovement ? "Transfer" : (inflow ? "Airdrop" : "Transfer");
+      // A reward payout is a bare positive `staking`/`earn` row; allocation/deallocation legs
+      // carry a movement subtype and are non-taxable.
+      case "staking":
+      case "earn":            return isMovement ? "Transfer" : (inflow ? "Staking Reward" : "Transfer");
+      case "reward":
+      case "invite bonus":    return "Reward";                             // ordinary income
+      case "dividend":        return "Dividend";                           // dividend income
+      case "sale":            return "sell";                               // Instant Sell disposal
+      case "spend":           return fiat ? "Transfer" : "sell";           // Buy-Crypto out leg
+      case "receive":         return fiat ? "Transfer" : "buy";            // Buy-Crypto in leg
+      // Dust/asset conversions have two legs sharing a refid; we can't reliably pair them into
+      // a two-sided swap here, so stay neutral rather than mis-booking a one-sided swap.
+      case "conversion":      return "other";
+      case "nfttrade":        return inflow ? "NFT Sale" : "NFT Purchase";
+      case "nftcreatorfee":
+      case "creator_fee":     return inflow ? "Reward" : "other";          // royalty received = income
+      case "nftrebate":       return "other";
+      case "custodytransfer": return "Transfer";                           // same-owner venue move
+      case "credit":          return "Transfer";                           // loan/instant-funding: non-taxable default
+      // Margin P&L, settlement, rollover fees, corrections, holds, placeholders: not modeled as
+      // capital P&L yet — keep neutral rather than mis-booking as a buy/sell.
+      case "margin":
+      case "settled":
+      case "rollover":
+      case "adjustment":
+      case "reserve":
+      case "none":            return "other";
+      default:                return "other";                             // unknown/new type → never a silent buy/sell
+    }
   }
 
   /**
@@ -472,8 +585,8 @@ export class KrakenClient {
         hasMore = tradeCount === pageSize && offset < totalCount;
 
         // Safety limit
-        if (offset > 5000) {
-          console.log("[Kraken] Reached pagination limit (5000 trades)");
+        if (offset > 100000) {
+          console.log("[Kraken] Reached pagination safety limit (100000 trades)");
           break;
         }
       }
@@ -513,44 +626,27 @@ export class KrakenClient {
           const amount = parseFloat(entry.amount);
           const fee = parseFloat(entry.fee || "0");
 
-          // Determine transaction type
-          let txType: string;
-          switch (entry.type) {
-            case "deposit":
-              txType = "Receive";
-              break;
-            case "withdrawal":
-              txType = "Send";
-              break;
-            case "staking":
-              txType = amount > 0 ? "Staking Reward" : "Staking";
-              break;
-            case "transfer":
-              txType = amount > 0 ? "Receive" : "Send";
-              break;
-            case "trade":
-              // Skip trades - we get those from TradesHistory
-              continue;
-            case "margin":
-              txType = "Margin";
-              break;
-            default:
-              txType = entry.type || "Transfer";
-          }
+          const txType = this.classifyKrakenLedger(entry.type, entry.subtype, amount, asset);
+          if (txType === null) continue; // trade legs come from TradesHistory
+
+          // The ledger `fee` is denominated in the entry's OWN asset, not USD. Only record it
+          // as fee_usd when that asset is USD-equivalent; otherwise keep it in notes (a non-USD
+          // fee written into a USD field would corrupt P&L).
+          const feeIsUsd = this.isUsdEquivalent(asset);
 
           transactions.push({
             id: ledgerId,
             type: txType,
             asset_symbol: asset,
             amount_value: new Decimal(Math.abs(amount)),
-            price_per_unit: null, // Would need price lookup
-            value_usd: new Decimal(0), // Would need price lookup
-            fee_usd: fee > 0 ? new Decimal(fee) : null,
+            price_per_unit: null, // priced later for income/trade rows (priceUnvaluedTaxableRows)
+            value_usd: new Decimal(0),
+            fee_usd: feeIsUsd && fee > 0 ? new Decimal(fee) : null,
             tx_timestamp: new Date(parseFloat(entry.time) * 1000),
             source: "Kraken",
             source_type: "exchange_api",
             tx_hash: entry.refid || ledgerId,
-            notes: `${entry.type}: ${entry.subtype || ""}`,
+            notes: `${entry.type}${entry.subtype ? `: ${entry.subtype}` : ""}${!feeIsUsd && fee > 0 ? ` (fee: ${fee} ${asset})` : ""}`,
           });
         }
 
@@ -558,8 +654,8 @@ export class KrakenClient {
         offset += ledgerCount;
         hasMore = ledgerCount === pageSize && offset < totalCount;
 
-        if (offset > 5000) {
-          console.log("[Kraken] Reached ledger pagination limit");
+        if (offset > 100000) {
+          console.log("[Kraken] Reached ledger pagination safety limit (100000 entries)");
           break;
         }
       }
@@ -589,16 +685,22 @@ export class KrakenClient {
    * Get all transactions (trades + deposits + withdrawals)
    */
   async getAllTransactions(startTime?: number, endTime?: number): Promise<ExchangeTransaction[]> {
-    const [trades, depositsWithdrawals] = await Promise.all([
+    const [trades, ledger] = await Promise.all([
       this.getTradesHistory(startTime, endTime),
-      this.getDepositsAndWithdrawals(startTime, endTime),
+      // Full ledger (no type filter) so income (staking/rewards/dividends), airdrops, instant
+      // buy/sell legs, deposits and withdrawals are ALL fetched — not just deposit/withdrawal.
+      // classifyKrakenLedger skips `trade` legs (imported from TradesHistory instead).
+      this.getLedgers(startTime, endTime),
     ]);
 
-    const all = [...trades, ...depositsWithdrawals];
+    const all = [...trades, ...ledger];
+    // Ledger rows are asset-denominated with no USD value; price the income/trade rows at
+    // historical FMV so staking/rewards/dividends book real income instead of $0.
+    await priceUnvaluedTaxableRows(all);
     // Sort by timestamp
     all.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
 
-    console.log(`[Kraken] Total transactions: ${all.length} (${trades.length} trades, ${depositsWithdrawals.length} deposits/withdrawals)`);
+    console.log(`[Kraken] Total transactions: ${all.length} (${trades.length} trades, ${ledger.length} ledger)`);
     return all;
   }
 }
@@ -1132,20 +1234,28 @@ export class GeminiClient {
             continue;
           }
 
-          // Determine if this is a deposit or withdrawal
-          // Types: Deposit, Withdrawal, AdminCredit, AdminDebit, Reward
-          const depositTypes = ["Deposit", "AdminCredit", "Reward"];
-          const isDeposit = depositTypes.includes(transfer.type);
+          // Gemini transfer types: Deposit, Withdrawal, AdminCredit, AdminDebit, Reward.
+          // `Reward` = promo/referral/rewards crypto credited by Gemini → ORDINARY INCOME
+          // (previously mis-booked as a non-taxable deposit). Deposit/AdminCredit = non-taxable
+          // transfer-in; Withdrawal/AdminDebit/unknown = out.
+          let transferType: string;
+          if (transfer.type === "Reward") transferType = "Reward"; // income
+          else if (transfer.type === "Deposit" || transfer.type === "AdminCredit") transferType = "deposit";
+          else transferType = "withdrawal";
           const amount = parseFloat(transfer.amount);
+          // feeAmount is denominated in feeCurrency (usually the crypto being moved), not USD.
+          // Only record it as fee_usd when that currency is USD-equivalent.
+          const feeCcy = (transfer.feeCurrency || transfer.currency || "").toUpperCase();
+          const feeIsUsd = FIAT_OR_STABLE.has(feeCcy);
 
           transfers.push({
             id: transfer.eid?.toString() || transfer.timestampms.toString(),
-            type: isDeposit ? "deposit" : "withdrawal",
+            type: transferType,
             asset_symbol: transfer.currency.toUpperCase(),
             amount_value: new Decimal(Math.abs(amount)),
-            price_per_unit: null, // Would need price lookup
-            value_usd: new Decimal(0), // Would need price lookup
-            fee_usd: transfer.feeAmount ? new Decimal(parseFloat(transfer.feeAmount)) : null,
+            price_per_unit: null, // priced later for income rows (priceUnvaluedTaxableRows)
+            value_usd: new Decimal(0),
+            fee_usd: (transfer.feeAmount && feeIsUsd) ? new Decimal(parseFloat(transfer.feeAmount)) : null,
             tx_timestamp: new Date(transfer.timestampms),
             source: "Gemini",
             source_type: "exchange_api",
@@ -1174,6 +1284,9 @@ export class GeminiClient {
     ]);
 
     const all = [...trades, ...transfers];
+    // Reward rows (income) arrive without a USD value — price them at historical FMV so they
+    // book real income instead of $0.
+    await priceUnvaluedTaxableRows(all);
     // Sort by timestamp
     all.sort((a, b) => a.tx_timestamp.getTime() - b.tx_timestamp.getTime());
 
