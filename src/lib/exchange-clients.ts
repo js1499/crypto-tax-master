@@ -289,28 +289,41 @@ const FIAT_OR_STABLE = new Set([
  * transfers stay $0 (non-taxable movements). Unresolved prices are left at $0 (never throws).
  */
 async function priceUnvaluedTaxableRows(rows: ExchangeTransaction[]): Promise<void> {
+  // Historical USD price for a symbol at a time; fiat/stables are $1. Best-effort (null on miss).
+  const priceSymbol = async (symbol: string, ts: Date): Promise<number | null> => {
+    const s = (symbol || "").toUpperCase();
+    if (FIAT_OR_STABLE.has(s)) return 1;
+    try { return await getHistoricalPriceAtTimestamp(s, Math.floor(ts.getTime() / 1000)); }
+    catch { return null; }
+  };
+
   for (const r of rows) {
-    if (r.value_usd && Number(r.value_usd) > 0) continue;
     const cat = getCategory(r.type);
-    if (cat !== "income" && cat !== "buy" && cat !== "sell") continue;
-    const amount = Number(r.amount_value);
-    if (!(amount > 0)) continue;
-    const sym = (r.asset_symbol || "").toUpperCase();
-    if (FIAT_OR_STABLE.has(sym)) {
-      r.value_usd = new Decimal(amount);
-      r.price_per_unit = new Decimal(1);
+
+    // Swaps (incl. crypto→crypto conversions): value BOTH legs — disposed (value_usd) and
+    // acquired (incoming_value_usd) — so the two-sided engine branch has proceeds + basis.
+    if (cat === "swap") {
+      const outAmt = Number(r.amount_value);
+      if (outAmt > 0 && !(r.value_usd && Number(r.value_usd) > 0)) {
+        const p = await priceSymbol(r.asset_symbol, r.tx_timestamp);
+        if (p !== null && p > 0) { r.price_per_unit = new Decimal(p); r.value_usd = new Decimal(outAmt * p); }
+      }
+      const inAmt = r.incoming_amount_value ? Number(r.incoming_amount_value) : 0;
+      if (r.incoming_asset_symbol && inAmt > 0 && !(r.incoming_value_usd && Number(r.incoming_value_usd) > 0)) {
+        const p2 = await priceSymbol(r.incoming_asset_symbol, r.tx_timestamp);
+        if (p2 !== null && p2 > 0) r.incoming_value_usd = new Decimal(inAmt * p2);
+      }
       continue;
     }
-    try {
-      const ts = Math.floor(r.tx_timestamp.getTime() / 1000);
-      const price = await getHistoricalPriceAtTimestamp(sym, ts);
-      if (price && price > 0) {
-        r.price_per_unit = new Decimal(price);
-        r.value_usd = new Decimal(amount * price);
-      }
-    } catch {
-      // best-effort — leave value_usd at 0 rather than failing the whole sync
-    }
+
+    // Income + one-sided disposals/acquisitions: value the primary asset. Deposits/withdrawals/
+    // transfers stay $0 (non-taxable). Margin P&L is already valued (signed) by the client.
+    if (cat !== "income" && cat !== "buy" && cat !== "sell") continue;
+    if (r.value_usd && Number(r.value_usd) > 0) continue;
+    const amount = Number(r.amount_value);
+    if (!(amount > 0)) continue;
+    const p = await priceSymbol(r.asset_symbol, r.tx_timestamp);
+    if (p !== null && p > 0) { r.price_per_unit = new Decimal(p); r.value_usd = new Decimal(amount * p); }
   }
 }
 
@@ -621,32 +634,98 @@ export class KrakenClient {
         const ledgers = response.result?.ledger || {};
         const ledgerCount = Object.keys(ledgers).length;
 
-        for (const [ledgerId, entry] of Object.entries(ledgers as Record<string, any>)) {
-          const asset = this.normalizeAsset(entry.asset);
-          const amount = parseFloat(entry.amount);
-          const fee = parseFloat(entry.fee || "0");
+        // Parse entries first so the two legs of a `conversion` (which share a refid) can be paired.
+        const entryList = Object.entries(ledgers as Record<string, any>).map(([id, e]) => ({
+          id,
+          rawType: e.type || "",
+          type: (e.type || "").toLowerCase().trim(),
+          subtype: e.subtype || "",
+          asset: this.normalizeAsset(e.asset),
+          amount: parseFloat(e.amount),
+          fee: parseFloat(e.fee || "0"),
+          time: new Date(parseFloat(e.time) * 1000),
+          refid: e.refid || id,
+        }));
 
-          const txType = this.classifyKrakenLedger(entry.type, entry.subtype, amount, asset);
+        // Pair `conversion` legs (same refid: one negative out-leg + one positive in-leg).
+        // crypto→crypto = swap; crypto→fiat = sale; fiat→crypto = buy; fiat→fiat = transfer.
+        const convGroups = new Map<string, typeof entryList>();
+        for (const e of entryList) {
+          if (e.type !== "conversion") continue;
+          const g = convGroups.get(e.refid) || [];
+          g.push(e);
+          convGroups.set(e.refid, g);
+        }
+        const consumed = new Set<string>();
+        for (const [refid, legs] of convGroups) {
+          const out = legs.find((l) => l.amount < 0);
+          const inn = legs.find((l) => l.amount > 0);
+          if (!out || !inn) continue; // unpaired → handled generically below
+          consumed.add(out.id);
+          consumed.add(inn.id);
+          const outFiat = FIAT_OR_STABLE.has(out.asset.toUpperCase());
+          const innFiat = FIAT_OR_STABLE.has(inn.asset.toUpperCase());
+          const base = {
+            price_per_unit: null,
+            fee_usd: null,
+            tx_timestamp: out.time,
+            source: "Kraken",
+            source_type: "exchange_api" as const,
+            tx_hash: refid,
+            notes: `conversion: ${out.asset} → ${inn.asset}`,
+          };
+          if (!outFiat && !innFiat) {
+            transactions.push({
+              ...base, id: out.id, type: "Swap", asset_symbol: out.asset,
+              amount_value: new Decimal(Math.abs(out.amount)), value_usd: new Decimal(0),
+              incoming_asset_symbol: inn.asset,
+              incoming_amount_value: new Decimal(Math.abs(inn.amount)),
+              incoming_value_usd: new Decimal(0),
+            });
+          } else if (!outFiat && innFiat) {
+            // crypto → fiat: a disposal. Proceeds = fiat received (exact if USD-equivalent).
+            const proceeds = this.isUsdEquivalent(inn.asset) ? Math.abs(inn.amount) : 0;
+            transactions.push({
+              ...base, id: out.id, type: "sell", asset_symbol: out.asset,
+              amount_value: new Decimal(Math.abs(out.amount)), value_usd: new Decimal(proceeds),
+            });
+          } else if (outFiat && !innFiat) {
+            // fiat → crypto: an acquisition. Cost basis = fiat spent (exact if USD-equivalent).
+            const cost = this.isUsdEquivalent(out.asset) ? Math.abs(out.amount) : 0;
+            transactions.push({
+              ...base, id: inn.id, type: "buy", asset_symbol: inn.asset,
+              amount_value: new Decimal(Math.abs(inn.amount)), value_usd: new Decimal(cost),
+            });
+          } else {
+            transactions.push({
+              ...base, id: out.id, type: "Transfer", asset_symbol: out.asset,
+              amount_value: new Decimal(Math.abs(out.amount)), value_usd: new Decimal(0),
+            });
+          }
+        }
+
+        for (const e of entryList) {
+          if (consumed.has(e.id)) continue;
+
+          const txType = this.classifyKrakenLedger(e.rawType, e.subtype, e.amount, e.asset);
           if (txType === null) continue; // trade legs come from TradesHistory
 
-          // The ledger `fee` is denominated in the entry's OWN asset, not USD. Only record it
-          // as fee_usd when that asset is USD-equivalent; otherwise keep it in notes (a non-USD
-          // fee written into a USD field would corrupt P&L).
-          const feeIsUsd = this.isUsdEquivalent(asset);
-
+          // The ledger `fee` is denominated in the entry's OWN asset, not USD. Only record it as
+          // fee_usd when that asset is USD-equivalent; otherwise keep it in notes.
+          const feeIsUsd = this.isUsdEquivalent(e.asset);
           transactions.push({
-            id: ledgerId,
+            id: e.id,
             type: txType,
-            asset_symbol: asset,
-            amount_value: new Decimal(Math.abs(amount)),
+            asset_symbol: e.asset,
+            amount_value: new Decimal(Math.abs(e.amount)),
             price_per_unit: null, // priced later for income/trade rows (priceUnvaluedTaxableRows)
             value_usd: new Decimal(0),
-            fee_usd: feeIsUsd && fee > 0 ? new Decimal(fee) : null,
-            tx_timestamp: new Date(parseFloat(entry.time) * 1000),
+            fee_usd: feeIsUsd && e.fee > 0 ? new Decimal(e.fee) : null,
+            tx_timestamp: e.time,
             source: "Kraken",
             source_type: "exchange_api",
-            tx_hash: entry.refid || ledgerId,
-            notes: `${entry.type}${entry.subtype ? `: ${entry.subtype}` : ""}${!feeIsUsd && fee > 0 ? ` (fee: ${fee} ${asset})` : ""}`,
+            tx_hash: e.refid,
+            notes: `${e.rawType}${e.subtype ? `: ${e.subtype}` : ""}${!feeIsUsd && e.fee > 0 ? ` (fee: ${e.fee} ${e.asset})` : ""}`,
           });
         }
 

@@ -22,7 +22,11 @@ The **P0/P1 Kraken gaps and the Gemini `Reward` P0 in §5–§6 are now RESOLVED
 - **Fee currency** is only written to `fee_usd` when USD-equivalent; **deposit/withdrawal** now use their own categories (not `transfer`); pagination caps raised to 100k.
 - **Gemini `Reward`** now books as income (removed from `depositTypes`); Gemini reward rows are priced too.
 
-Judgment calls (deliberate, see code comments): bare positive Kraken `transfer` → income (airdrop/fork); `credit` → non-taxable (loan/funding default); `conversion`/`margin`/`settled`/`rollover` → `other` (margin P&L and two-legged conversions not modeled yet). The §5 matrix below documents the pre-fix state for reference.
+Judgment calls (deliberate, see code comments): bare positive Kraken `transfer` → income (airdrop/fork); `credit` → non-taxable (loan/funding default).
+
+**Conversions (added):** `conversion` ledger legs are paired by `refid` → crypto→crypto = **swap** (both legs priced), crypto→fiat = **sale** (proceeds = USD received), fiat→crypto = **buy**. Unpaired/odd legs fall to neutral `other`. Verified by `kraken-mapping.test.ts`.
+
+**Margin P&L (NOT auto-booked — deliberately neutral):** `margin`/`settled`/`rollover` stay mapped to `other`. An adversarial review flagged that booking these as realized capital P&L rests on an **unverified assumption** about Kraken's ledger semantics (which entry carries realized P&L vs. collateral postings; possible double-count with the closing `trade`; whether `margin`+`settled` duplicate a position's P&L). Since we have **no real Kraken margin data to validate against**, asserting a capital-gains number here risks mis-reporting — worse than leaving it neutral. Booking margin P&L is deferred until it can be validated against a real Kraken margin ledger; the correct implementation also needs: a `TaxableEvent` push (so it reaches Form 8949 / Schedule D, not just the DB totals), UK-engine coverage, and per-entry `tx_hash` (refids repeat across a position's legs). The §5 matrix below documents the earlier pre-fix state for reference.
 
 ---
 
