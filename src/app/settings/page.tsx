@@ -253,6 +253,8 @@ export default function SettingsPage() {
     (plan) => plan.category === "software",
   );
   const dfyPlans = PLAN_OPTIONS.filter((plan) => plan.category === "dfy");
+  // Done-For-You plans are temporarily hidden from the billing tab. Flip to re-enable.
+  const SHOW_DFY: boolean = false;
 
   if (!mounted) {
     return null;
@@ -702,6 +704,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
+                  {SHOW_DFY && (
                   <div className="space-y-3">
                     <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-[#6B7280]">
                       Done For You Plans
@@ -771,6 +774,7 @@ export default function SettingsPage() {
                       })}
                     </div>
                   </div>
+                  )}
 
                   <p className="text-[12px] text-[#9CA3AF]">
                     You can still open the marketing page to compare every plan

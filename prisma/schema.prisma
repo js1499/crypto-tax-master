@@ -47,6 +47,24 @@ model User {
   securitiesDividends         SecuritiesDividend[]
   securitiesEquivalenceGroups SecuritiesEquivalenceGroup[]
   securitiesTaxSettings       SecuritiesTaxSettings[]
+  userTypeMappings            UserTypeMapping[]
+}
+
+/// Remembers a user's manual mapping of an unrecognized transaction `type` → tax category, so
+/// future syncs auto-apply it (via recomputeCostBasis → applyUserTypeMappings) instead of
+/// re-prompting. One row per (user, rawType).
+model UserTypeMapping {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  rawType   String   @map("raw_type") @db.VarChar(100)
+  category  String   @db.VarChar(30)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, rawType])
+  @@index([userId])
+  @@map("user_type_mappings")
 }
 
 /// Fire-once guard for the Google Ads Purchase conversion: one row per Stripe
@@ -149,6 +167,9 @@ model Transaction {
   id                     Int      @id @default(autoincrement())
   type                   String   @db.VarChar(50)
   subtype                String?  @db.VarChar(50)
+  // The provider's raw type before a user remapped it (set by the unmapped-type mapper), so the
+  // original exchange/chain label is never lost when we canonicalize the type for tax treatment.
+  original_type          String?  @db.VarChar(50)
   status                 String   @default("pending") @db.VarChar(30)
   source                 String?  @db.VarChar(100)
   source_type            String?  @db.VarChar(30)

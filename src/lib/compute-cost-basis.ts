@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { computeCostBasisForTransactions } from "@/lib/tax-calculator";
+import { canonicalTypeForCategory } from "@/lib/transaction-categorizer";
 
 // ── Spam-airdrop income guard ───────────────────────────────────────────────
 // Moralis tags a large amount of spam as `airdrop`, and price enrichment can attach a
@@ -38,6 +39,33 @@ export async function unflagSpamAirdropIncome(walletAddresses: string[]): Promis
 }
 
 /**
+ * Apply the user's remembered type mappings (from the unmapped-type mapper): remap any transaction
+ * whose type still equals a mapped rawType to the canonical type, preserving the original label in
+ * original_type and setting is_income for the income category. Idempotent (already-remapped rows no
+ * longer match rawType). Runs at the start of every recompute, so BOTH the map-types action AND
+ * future syncs of the same raw type auto-apply the mapping without re-prompting.
+ */
+export async function applyUserTypeMappings(userId: string, walletAddresses: string[]): Promise<void> {
+  const mappings = await prisma.userTypeMapping.findMany({ where: { userId } });
+  for (const m of mappings) {
+    const canonical = canonicalTypeForCategory(m.category);
+    if (!canonical) continue;
+    await prisma.transaction.updateMany({
+      where: {
+        OR: [{ wallet_address: { in: walletAddresses } }, { userId }],
+        type: m.rawType,
+      },
+      data: {
+        type: canonical,
+        original_type: m.rawType,
+        is_income: m.category.trim().toLowerCase() === "income",
+        identified: true,
+      },
+    });
+  }
+}
+
+/**
  * Recompute cost basis and gain/loss for all of a user's transactions.
  * Called automatically after sync/import, and manually via /api/cost-basis/compute.
  * Fire-and-forget safe — errors are logged but never thrown.
@@ -58,6 +86,10 @@ export async function recomputeCostBasis(
     const walletAddresses = userWithWallets.wallets.map(w => w.address);
     const costBasisMethod = (userWithWallets.costBasisMethod || "FIFO") as "FIFO" | "LIFO" | "HIFO";
     const country = (userWithWallets as any).country || "US";
+
+    // Apply the user's remembered type mappings (remap unknown types → canonical, preserve
+    // original) BEFORE computing, so both manual mapping and future syncs take effect here.
+    await applyUserTypeMappings(userId, walletAddresses);
 
     // Clear spam-airdrop income BEFORE the engine reads is_income, so mispriced spam is
     // never booked as income nor mints a phantom FMV lot. See unflagSpamAirdropIncome.

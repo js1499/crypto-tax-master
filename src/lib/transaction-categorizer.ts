@@ -494,6 +494,26 @@ export function isMappedType(rawType: string): boolean {
   return rawType in CATEGORY_MAP || rawType.trim().toLowerCase() in NORMALIZED_CATEGORY_MAP;
 }
 
+/**
+ * The categories a user can assign to an unmapped type → a canonical internal type the engine
+ * already understands. "ignore" → a known non-taxable type. Used by the unmapped-type mapper.
+ */
+export const MAPPABLE_CATEGORY_TO_TYPE: Record<string, string> = {
+  buy: "Buy",
+  sell: "Sell",
+  income: "Reward",
+  transfer: "Transfer",
+  deposit: "Deposit",
+  withdrawal: "Withdraw",
+  swap: "Swap",
+  ignore: "Ignored",
+};
+
+/** Canonical internal type for a user-chosen mapping category, or null if not a valid choice. */
+export function canonicalTypeForCategory(category: string): string | null {
+  return MAPPABLE_CATEGORY_TO_TYPE[(category || "").trim().toLowerCase()] || null;
+}
+
 const OUTFLOW_RAW_TYPES = new Set([
   "TRANSFER_OUT", "Send", "send", "token send", "nft send",
   "NFT_PURCHASE",

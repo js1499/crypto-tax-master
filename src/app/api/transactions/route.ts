@@ -299,6 +299,7 @@ export async function GET(request: NextRequest) {
           id: true,
           type: true,
           subtype: true, // original, unprocessed CSV type (advanced view)
+          original_type: true, // provider's raw type before a user remap (preserved)
           asset_symbol: true,
           amount_value: true,
           price_per_unit: true,
@@ -413,6 +414,7 @@ export async function GET(request: NextRequest) {
         id: tx.id,
         type: tx.type,
         rawType: tx.subtype || null,
+        originalType: tx.original_type || null,
         displayType: formatTypeForDisplay(tx.type),
         // Structured out/in fields
         outAsset,

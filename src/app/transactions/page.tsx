@@ -111,6 +111,7 @@ interface Transaction {
   id: number;
   type: string;
   rawType?: string | null; // original, unprocessed CSV type (advanced view)
+  originalType?: string | null; // provider's raw type before a user remap (preserved)
   // Structured out/in fields
   outAsset: string | null;
   outAmount: number | null;
@@ -405,6 +406,7 @@ function TransactionsContent() {
             id: tx.id,
             type: tx.type,
             rawType: tx.rawType ?? null,
+            originalType: tx.originalType ?? null,
             // Structured out/in fields
             outAsset: tx.outAsset ?? null,
             outAmount: tx.outAmount ?? null,
@@ -2855,6 +2857,11 @@ function TransactionsContent() {
                       </SelectContent>
                     </Select>
                   </div>
+                  {selectedTransaction.originalType && (
+                    <p className="text-[11px] text-muted-foreground -mt-1">
+                      Originally <span className="font-mono">{selectedTransaction.originalType}</span> from the source — remapped by you.
+                    </p>
+                  )}
 
                   {/* Basic Info Grid */}
                   <div className="grid grid-cols-2 gap-4">
