@@ -52,7 +52,9 @@ const EXCHANGE_OPTIONS = [
   // a Binance CSV export (no API call, no geo-block) — see the CSV fallback in the dialog.
   { id: "kraken", name: "Kraken", logo: "/logos/kraken.svg", connection: "API" as const },
   { id: "gemini", name: "Gemini", logo: "/logos/gemini.png", connection: "API" as const },
-  { id: "kucoin", name: "KuCoin", logo: "/logos/kucoin.png", connection: "API" as const },
+  // KuCoin omitted: its API sandbox was retired (openapi-sandbox.kucoin.com no longer
+  // resolves), so the direct integration can't be validated end-to-end. Users import a
+  // KuCoin CSV export instead (still available in the CSV format dropdown).
 ];
 
 interface WalletConnectDialogProps {
