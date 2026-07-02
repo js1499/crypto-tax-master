@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useRef } from "react";
 import { addActivityEntry } from "@/lib/activity-log";
+import { UnmappedTypesDialog, type UnmappedType } from "@/components/unmapped-types-dialog";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -107,6 +108,8 @@ const MIN_STEP_SECONDS = 3;
 export function SyncPipelineProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<PipelineState>(IDLE_STATE);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Types we couldn't classify after an exchange sync — prompt the user to map them.
+  const [unmappedTypes, setUnmappedTypes] = useState<UnmappedType[]>([]);
   const cancelledRef = useRef(false);
   const tickerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -433,6 +436,20 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
 
       setState({ phase: "done", steps: [...stepsRef.current], currentStepIndex: 1, overallProgress: 100, error: null, needsReviewCount });
       setRefreshKey(k => k + 1);
+
+      // After the exchange is synced + cost basis computed, surface any transaction types we
+      // couldn't classify so the user can map them (which then re-runs cost basis). Best-effort.
+      try {
+        const umRes = await fetch("/api/transactions/unmapped-types", { credentials: "include" });
+        if (umRes.ok) {
+          const umData = await umRes.json();
+          if (Array.isArray(umData.unmapped) && umData.unmapped.length > 0) {
+            setUnmappedTypes(umData.unmapped);
+          }
+        }
+      } catch {
+        // non-fatal — the Transactions page also exposes unmapped types
+      }
     } catch (err) {
       stopTicker();
       const msg = err instanceof Error ? err.message : "Pipeline failed";
@@ -490,6 +507,13 @@ export function SyncPipelineProvider({ children }: { children: React.ReactNode }
   return (
     <PipelineContext.Provider value={{ state, isRunning, refreshKey, startPipeline, startSyncAll, startExchangePipeline, cancel, dismiss }}>
       {children}
+      {unmappedTypes.length > 0 && (
+        <UnmappedTypesDialog
+          types={unmappedTypes}
+          onClose={() => setUnmappedTypes([])}
+          onDone={() => { setUnmappedTypes([]); setRefreshKey(k => k + 1); }}
+        />
+      )}
     </PipelineContext.Provider>
   );
 }

@@ -433,6 +433,9 @@ const CATEGORY_MAP: Record<string, string> = {
   "Spam": "other",
   "Fee": "other",
   "Staking": "staking",
+  // User-chosen "ignore / not taxable" target for the unmapped-type mapper (a known,
+  // non-taxable type so the row is no longer flagged as unmapped).
+  "Ignored": "other",
 };
 
 // Pre-built reverse index: category → list of raw type strings
@@ -478,6 +481,17 @@ export function getCategory(rawType: string): string {
 /** Return all raw type strings that belong to a given category. */
 export function getTypesForCategory(category: string): string[] {
   return _categoryIndex[category] || [];
+}
+
+/**
+ * True if we recognize this raw type (exact or case-insensitive match in the map). A type that
+ * is NOT mapped falls back to "other" in getCategory purely because we don't know it — distinct
+ * from a type explicitly mapped to "other" (burn/spam/fee). Used to surface genuinely-unknown
+ * exchange/wallet types to the user for manual mapping.
+ */
+export function isMappedType(rawType: string): boolean {
+  if (!rawType) return false;
+  return rawType in CATEGORY_MAP || rawType.trim().toLowerCase() in NORMALIZED_CATEGORY_MAP;
 }
 
 const OUTFLOW_RAW_TYPES = new Set([
