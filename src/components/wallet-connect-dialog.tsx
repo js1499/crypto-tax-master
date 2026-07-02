@@ -47,7 +47,9 @@ const L2_WALLET_OPTIONS = [
 
 const EXCHANGE_OPTIONS = [
   { id: "coinbase", name: "Coinbase", logo: "/logos/coinbase.png", connection: "OAuth" as const },
-  { id: "binance", name: "Binance", logo: "/logos/binance.jpg", connection: "API" as const },
+  // Binance omitted: binance.com (prod + testnet) geo-blocks US-originating requests with
+  // HTTP 451, so an API sync can't run from our US serverless region. Users can still import
+  // a Binance CSV export (no API call, no geo-block) — see the CSV fallback in the dialog.
   { id: "kraken", name: "Kraken", logo: "/logos/kraken.svg", connection: "API" as const },
   { id: "gemini", name: "Gemini", logo: "/logos/gemini.png", connection: "API" as const },
   { id: "kucoin", name: "KuCoin", logo: "/logos/kucoin.png", connection: "API" as const },
@@ -63,6 +65,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
   const [connecting, setConnecting] = useState(false);
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
   const [selectedExchange, setSelectedExchange] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("wallets"); // controlled so the CSV-fallback link can switch tabs
   const [walletName, setWalletName] = useState("");
   const [walletAddress, setWalletAddress] = useState("");
   const [selectedChains, setSelectedChains] = useState<string[]>(["eth", "polygon", "arbitrum", "optimism", "base"]);
@@ -359,7 +362,7 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
   const exchangeOption = EXCHANGE_OPTIONS.find(e => e.id === selectedExchange);
 
   return (
-    <Tabs defaultValue="wallets" className="w-full" onValueChange={() => { setSyncStartDate(""); setSyncEndDate(""); }}>
+    <Tabs value={activeTab} className="w-full" onValueChange={(v) => { setActiveTab(v); setSyncStartDate(""); setSyncEndDate(""); }}>
       <TabsList className="grid w-full grid-cols-3" data-onboarding="dialog-tabs">
         <TabsTrigger value="wallets" data-onboarding="tab-wallets">Wallets</TabsTrigger>
         <TabsTrigger value="exchanges" data-onboarding="tab-exchanges">Exchanges</TabsTrigger>
@@ -674,13 +677,22 @@ export function WalletConnectDialog({ onConnect, exclusive, initialBulk }: Walle
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-3">
-            {EXCHANGE_OPTIONS.map((option) => (
-              <button key={option.id} onClick={() => { setSelectedExchange(option.id); setSyncStartDate(""); setSyncEndDate(""); }} className="flex flex-col items-center gap-2.5 rounded-xl border border-[#E5E5E0] dark:border-[#333] p-5 hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
-                <img src={option.logo} alt={option.name} className="h-10 w-10 rounded-full object-cover" />
-                <span className="text-[13px] font-medium">{option.name}</span>
+          <div className="space-y-3">
+            <div className="grid grid-cols-3 gap-3">
+              {EXCHANGE_OPTIONS.map((option) => (
+                <button key={option.id} onClick={() => { setSelectedExchange(option.id); setSyncStartDate(""); setSyncEndDate(""); }} className="flex flex-col items-center gap-2.5 rounded-xl border border-[#E5E5E0] dark:border-[#333] p-5 hover:border-[#9CA3AF] dark:hover:border-[#555] transition-colors">
+                  <img src={option.logo} alt={option.name} className="h-10 w-10 rounded-full object-cover" />
+                  <span className="text-[13px] font-medium">{option.name}</span>
+                </button>
+              ))}
+            </div>
+            {/* CSV fallback for exchanges we don't connect directly (or can't, e.g. Binance) */}
+            <div className="rounded-lg border border-[#E5E5E0] dark:border-[#333] bg-[#FAFAF8] dark:bg-[#1A1A1A] px-3.5 py-2.5 text-[12px] text-[#6B7280] dark:text-[#9CA3AF]">
+              Can&apos;t find one of your exchanges?{" "}
+              <button onClick={() => setActiveTab("csv")} className="font-semibold text-[#9333EA] hover:underline">
+                Import a CSV instead
               </button>
-            ))}
+            </div>
           </div>
         )}
       </TabsContent>
