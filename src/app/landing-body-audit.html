@@ -1,0 +1,64 @@
+  <!-- ============================================================
+       HERO — Variant D: Audit-ready / traceable (trust)
+  ============================================================ -->
+  <section class="hero section--textured" id="hero">
+    <div class="hero__grid" aria-hidden="true"></div>
+    <div class="hero__glow" aria-hidden="true"></div>
+    <div class="hero__particles" aria-hidden="true">
+      <canvas id="mesh-canvas" style="width:100%;height:100%;"></canvas>
+    </div>
+    <div class="container">
+      <div class="hero__content">
+        <h1 class="hero__headline">
+          Every number,<br />
+          <span class="hero__headline-accent">traceable to the blockchain.</span>
+        </h1>
+        <p class="hero__subline">
+          Glide prices every transaction with the IRS fair-market-value method at its exact on-chain block timestamp, and links every line on your report back to its transaction hash. Reports that show their work.
+        </p>
+        <div class="hero__ctas">
+          {{LANDING_HERO_CTA}}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICED AT THE MOMENT -->
+  <section class="section section--border section--warm-reverse">
+    <div class="container">
+      <div class="reveal">
+        <span class="section__label section__label--accent">The right price, at the right moment</span>
+        <h2 class="section__title">Priced at the exact block.</h2>
+        <p class="section__desc" style="margin:0 auto;">Glide values both sides of every swap using the IRS-recognized fair-market-value method, at the precise block timestamp the transaction settled on chain. The number on your return is the number the market showed at that second.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- TRACEABLE -->
+  <section class="section section--border">
+    <div class="container">
+      <div class="reveal" style="text-align:center;">
+        <span class="section__label section__label--accent">Show your work</span>
+        <h2 class="section__title">Every line traces back to the source.</h2>
+        <p class="section__desc" style="margin:0 auto 2.5rem;">Behind each gain, income event, and cost-basis figure is the transaction hash it came from. If a question ever comes up, you can follow any number all the way back to the block it happened in.</p>
+      </div>
+      <div class="reveal reveal-delay-1" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0.85rem;max-width:900px;margin:0 auto;">
+        <div class="glide-trust"><strong>Block-timestamp pricing</strong><span>Exact-second fair market value</span></div>
+        <div class="glide-trust"><strong>Tx-hash on every line</strong><span>Traceable to the chain</span></div>
+        <div class="glide-trust"><strong>IRS FMV method</strong><span>Recognized valuation approach</span></div>
+        <div class="glide-trust"><strong>Per-wallet cost basis</strong><span>Tracked the way the IRS expects</span></div>
+      </div>
+    </div>
+  </section>
+
+  <style>
+    .glide-trust{
+      display:flex;flex-direction:column;gap:0.25rem;
+      border:1px solid rgba(15,23,42,0.10);
+      border-radius:14px;background:#fff;
+      padding:1.1rem 1.15rem;text-align:left;
+      box-shadow:0 1px 2px rgba(15,23,42,0.04);
+    }
+    .glide-trust strong{ font-size:1.02rem;color:#0f172a;font-weight:700; }
+    .glide-trust span{ font-size:0.9rem;color:#64748b; }
+  </style>
