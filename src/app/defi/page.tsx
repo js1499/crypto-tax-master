@@ -1,4 +1,4 @@
-import { renderLandingVariant } from "../../landing-shared";
+import { renderLandingVariant } from "../landing-shared";
 
 export const dynamic = "force-dynamic";
 
