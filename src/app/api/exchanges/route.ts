@@ -46,9 +46,25 @@ export async function GET(request: NextRequest) {
       },
     });
 
+    // Per-exchange transaction count. Exchange rows are stored with source = exchange name and
+    // source_type = "exchange_api"; match case-insensitively on lowercased source (mirroring the
+    // DELETE handler), otherwise the Accounts page shows "—" for every exchange row.
+    const counts = await prisma.transaction.groupBy({
+      by: ["source"],
+      where: { userId: user.id, source_type: "exchange_api" },
+      _count: { _all: true },
+    });
+    const countByName = new Map(
+      counts.map((c) => [String(c.source ?? "").toLowerCase(), c._count._all]),
+    );
+    const exchangesWithCounts = exchanges.map((ex) => ({
+      ...ex,
+      transactionCount: countByName.get(ex.name.toLowerCase()) ?? 0,
+    }));
+
     return NextResponse.json({
       status: "success",
-      exchanges,
+      exchanges: exchangesWithCounts,
     });
   } catch (error) {
     console.error("[Exchanges API] Error:", error);

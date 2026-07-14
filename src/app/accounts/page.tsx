@@ -96,6 +96,7 @@ interface ExchangeAccount extends BaseAccount {
   type: "exchange";
   isConnected?: boolean;
   lastSyncAt?: string;
+  transactionCount?: number;
 }
 
 type Account = WalletAccount | ExchangeAccount;
@@ -232,6 +233,7 @@ function AccountsContent() {
         lastSyncAt: exchange.lastSyncAt,
         createdAt: exchange.createdAt,
         updatedAt: exchange.updatedAt,
+        transactionCount: exchange.transactionCount || 0,
       }));
 
       setAccounts(wallets);
@@ -394,18 +396,28 @@ function AccountsContent() {
   };
 
   // Function to enrich wallet transactions with historical prices
-  const runPostSyncProcessing = async (walletId?: string) => {
+  const runPostSyncProcessing = async (walletId?: string, skipEnrich = false) => {
     setEnriching(walletId || "full");
     try {
-      const priceResponse = await fetch("/api/prices/enrich-historical", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(walletId ? { walletId } : {}),
-      });
-      const priceData = await priceResponse.json();
+      // Exchange rows arrive already priced from the venue (Coinbase native_amount). Running the
+      // historical-price enrichment on them is not just wasted work — it OVERWRITES those good
+      // fill prices with daily CoinGecko closes and mis-scales sub-$0.10 fees ~100x. Worse, if
+      // enrichment fails it throws here and cost-basis compute (the ONLY writer of gain_loss_usd)
+      // never runs, leaving exchange P&L null. So skip enrichment on the exchange-only path and
+      // go straight to cost-basis compute.
+      let pricesUpdated = 0;
+      if (!skipEnrich) {
+        const priceResponse = await fetch("/api/prices/enrich-historical", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(walletId ? { walletId } : {}),
+        });
+        const priceData = await priceResponse.json();
 
-      if (!priceResponse.ok) {
-        throw new Error(priceData.error || "Price enrichment failed");
+        if (!priceResponse.ok) {
+          throw new Error(priceData.error || "Price enrichment failed");
+        }
+        pricesUpdated = priceData.updated || 0;
       }
 
       const computeResponse = await fetch("/api/cost-basis/compute", {
@@ -420,7 +432,7 @@ function AccountsContent() {
       }
 
       return {
-        pricesUpdated: priceData.updated || 0,
+        pricesUpdated,
         computeMessage: computeData.message || "Cost basis updated",
       };
 
@@ -451,14 +463,14 @@ function AccountsContent() {
   const handleSyncExchange = async (exchangeId: string) => {
     setSyncing(exchangeId);
     try {
-      toast.info(
-        "Syncing exchange, pulling prices, and computing cost basis...",
-      );
+      toast.info("Syncing exchange and computing cost basis...");
       const syncData = await syncExchangeTransactions(exchangeId);
-      const postSyncData = await runPostSyncProcessing();
+      // skipEnrich=true: exchange rows arrive priced; enrichment is needless AND would corrupt
+      // their venue prices. This goes straight to cost-basis compute so P&L actually populates.
+      await runPostSyncProcessing(undefined, true);
 
       toast.success(
-        `Full sync complete - ${(syncData.transactionsAdded || 0).toLocaleString()} new transactions added and ${postSyncData.pricesUpdated.toLocaleString()} prices updated`,
+        `Sync complete - ${(syncData.transactionsAdded || 0).toLocaleString()} new transactions added, cost basis updated`,
       );
       await fetchWallets();
     } catch (error) {
@@ -1201,7 +1213,7 @@ function AccountsContent() {
                     const txCount =
                       account.type === "wallet"
                         ? (account as WalletAccount).transactionCount
-                        : null;
+                        : ((account as ExchangeAccount).transactionCount ?? null);
                     const address =
                       account.type === "wallet"
                         ? (account as WalletAccount).address
