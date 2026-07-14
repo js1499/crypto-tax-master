@@ -301,6 +301,19 @@ function AccountsContent() {
       if (syncResponse.data.status !== "success") {
         throw new Error(syncResponse.data.error || "Failed to sync exchange");
       }
+      // The route returns HTTP 200 status:"success" even when the exchange actually failed to
+      // sync (e.g. an expired/revoked Coinbase token, invalid API key) — the failure is reported
+      // in errors[]/metrics.errorCount, NOT the top-level status. Without this check a broken
+      // connection is indistinguishable from a genuinely empty account (both show "0 added").
+      const syncErrors: string[] = Array.isArray(syncResponse.data.errors)
+        ? syncResponse.data.errors
+        : [];
+      const errorCount: number = syncResponse.data.metrics?.errorCount ?? syncErrors.length;
+      if (errorCount > 0) {
+        throw new Error(
+          syncErrors[0] || "Exchange sync failed. Please reconnect the exchange and try again.",
+        );
+      }
       return syncResponse.data;
 
       /* legacy flow removed
@@ -455,6 +468,9 @@ function AccountsContent() {
           ? error.message
           : "Failed to sync exchange. Please try again.",
       );
+      // A failed sync may have flagged the exchange disconnected server-side (e.g. an expired
+      // Coinbase token) — refresh so the row shows its true state / a Reconnect prompt.
+      await fetchWallets().catch(() => {});
     } finally {
       setSyncing(null);
     }
