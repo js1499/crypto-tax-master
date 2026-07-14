@@ -96,10 +96,27 @@ describe("getCategory normalization", () => {
     expect(getCategory("Subscription Rebate")).toBe("income");
     expect(getCategory("Advanced Trade Buy")).toBe("buy");
     expect(getCategory("Advanced Trade Sell")).toBe("sell");
-    expect(getCategory("Sell Refund")).toBe("sell");
+    expect(getCategory("Sell Refund")).toBe("buy"); // reversal of a sell => re-acquisition
     expect(getCategory("Derivatives Settlement")).toBe("sell");
-    expect(getCategory("Card Spend")).toBe("transfer");
+    expect(getCategory("Card Spend")).toBe("sell"); // debit-card spend auto-sells crypto => disposal
+    expect(getCategory("Card Buyback")).toBe("buy");
+    expect(getCategory("Credit Card Balance Payment")).toBe("sell");
     expect(getCategory("Retail Unstaking Transfer")).toBe("transfer");
     expect(getCategory("Retail Eth2 Deprecation")).toBe("transfer");
+  });
+
+  it("maps Coinbase Card / credit-card / reversal snake_case types (were dropping to 'other' => null P&L)", () => {
+    // Card spend auto-sells crypto at POS => taxable disposal (verified vs real data: no paired 'sell').
+    expect(getCategory("cardspend")).toBe("sell");
+    // Over-authorization rebuy/refund => re-acquisition, NOT a disposal.
+    expect(getCategory("cardbuyback")).toBe("buy");
+    // Paying the Coinbase One credit-card balance with crypto => disposal.
+    expect(getCategory("credit_card_balance_payment")).toBe("sell");
+    // Credit-card BTC-back reward => income (conservative; a non-taxable rebate view is also defensible).
+    expect(getCategory("credit_card_reward")).toBe("income");
+    // Reversal of a prior sell => re-acquisition (must NOT book a 2nd disposal).
+    expect(getCategory("sell_refund")).toBe("buy");
+    // 1:1 ETH2 -> ETH migration => non-taxable transfer (must NOT be a taxable swap).
+    expect(getCategory("retail_eth2_deprecation")).toBe("transfer");
   });
 });

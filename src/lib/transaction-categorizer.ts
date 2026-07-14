@@ -342,6 +342,19 @@ const CATEGORY_MAP: Record<string, string> = {
   // -- Income / rewards --
   "incentives_rewards_payout": "income",
   "subscription_rebate": "income",
+  // -- Coinbase Card (debit) & Coinbase One Card (credit) + reversals --
+  // A card spend AUTO-SELLS crypto to settle the Visa charge => a taxable disposal (no de-minimis).
+  // The App API emits ONE 'cardspend' row that IS that disposal (verified against real data: no
+  // paired 'sell'); the rebuy of an over-authorization returns as 'cardbuyback' (a re-acquisition,
+  // NOT a disposal). Snake_case keys are REQUIRED: getCategory normalizes case but NOT underscores,
+  // so these never matched the Title-Case CSV keys below and were silently dropping card disposals
+  // to "other" => null P&L. (Verified via Coinbase Help + the dali-rp2 and rotki importers.)
+  "cardspend": "sell",                   // debit-card purchase: crypto sold at POS => disposal
+  "cardbuyback": "buy",                  // over-auth refund/rebuy => re-acquisition (offsets cardspend)
+  "credit_card_balance_payment": "sell", // paying the Coinbase One credit-card balance with crypto => disposal
+  "credit_card_reward": "income",        // BTC-back reward (conservative; a non-taxable rebate/"buy" view is also defensible)
+  "sell_refund": "buy",                  // reversal of a prior sell: crypto returns => re-acquisition, not a 2nd disposal
+  "retail_eth2_deprecation": "transfer", // 1:1 ETH2 -> ETH migration, non-taxable (NOT a swap)
   // -- Taxable conversions --
   "wrap_asset": "swap",                 // e.g. ETH <-> cbETH/WETH
   "unwrap_asset": "swap",
@@ -362,7 +375,7 @@ const CATEGORY_MAP: Record<string, string> = {
   "Convert": "swap", // crypto -> crypto, taxable disposal
   "Advanced Trade Buy": "buy",
   "Advanced Trade Sell": "sell",
-  "Sell Refund": "sell",
+  "Sell Refund": "buy", // reversal of a prior sell = crypto returns (re-acquisition), NOT a 2nd disposal
   "Derivatives Settlement": "sell", // realized derivatives P&L (review for §1256)
   "Staking Income": "income",
   "Reward Income": "income",
@@ -370,8 +383,9 @@ const CATEGORY_MAP: Record<string, string> = {
   "Subscription Rebate": "income",
   "Subscription Rebates (24 Hours)": "income",
   "Credit": "income", // generic account credit (review — could be an adjustment)
-  "Card Spend": "transfer", // spend = transfer out (counts toward CSV P&L)
-  "Credit Card Balance Payment": "transfer",
+  "Card Spend": "sell", // debit-card spend auto-sells crypto at POS => taxable disposal
+  "Card Buyback": "buy", // over-authorization refund/rebuy => re-acquisition (offsets Card Spend)
+  "Credit Card Balance Payment": "sell", // paying the credit-card balance with crypto => disposal
   "Retail Simple Dust": "swap", // dust converted to another asset
   "Wrap Asset": "swap", // e.g. ETH <-> WETH
   "Retail Staking Transfer": "transfer", // principal into staking (non-taxable move)
