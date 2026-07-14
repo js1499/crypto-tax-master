@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import prisma from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/auth-helpers";
 import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/rate-limit";
@@ -25,7 +26,7 @@ if (!ENCRYPTION_KEY) {
 }
 
 // Configure for long-running operations on Vercel
-export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
+export const maxDuration = 800; // headroom for large-account fetch + batched save (plan ceiling)
 export const runtime = 'nodejs';
 
 /**
@@ -275,98 +276,146 @@ export async function POST(request: NextRequest) {
             continue;
         }
 
-        // Store transactions in database
+        // Store transactions in database — BATCHED. The old path did a findFirst + create per
+        // row (2 sequential DB round-trips each), so a few-thousand-transaction Coinbase account
+        // blew past maxDuration (the save phase timed out at 300s). Mirror wallets/sync: bulk-dedup
+        // in a couple of queries, then createMany in chunks. tx_hash (a @unique column) is the
+        // primary dedup key; rows WITHOUT a tx_hash fall back to the original composite key
+        // (timestamp|asset|amount, scoped to this exchange's source) so re-syncs stay idempotent.
         console.log(`[Exchange Sync] Saving ${transactions.length} transactions to database for ${exchange.name}...`);
         let dbSaveCount = 0;
         let dbSkipCount = 0;
-        let dbErrorCount = 0;
 
-        for (const tx of transactions) {
-          try {
-            // Check if transaction already exists
-            // Use multiple criteria to avoid duplicates
-            const existing = await prisma.transaction.findFirst({
-              where: {
-                OR: [
-                  // Match by tx_hash if available
-                  ...(tx.tx_hash ? [{ tx_hash: tx.tx_hash }] : []),
-                  // Match by timestamp, asset, amount, and source
-                  {
-                    tx_timestamp: tx.tx_timestamp,
-                    asset_symbol: tx.asset_symbol,
-                    amount_value: tx.amount_value,
-                    source: exchange.name,
-                    source_type: "exchange_api",
-                  },
-                ],
-              },
-            });
+        // Canonical composite key for a row lacking tx_hash. Normalize the amount to the DB's
+        // scale-15 so a raw incoming Decimal matches an already-stored (rounded) value.
+        const compositeKey = (
+          tsMs: number,
+          asset: string,
+          amount: { toFixed: (dp: number) => string },
+        ): string => `${tsMs}|${asset}|${amount.toFixed(15)}`;
 
-            if (existing) {
-              dbSkipCount++;
-              totalSkipped++;
-              continue;
-            }
+        const incomingHashes = transactions.filter((t) => t.tx_hash).map((t) => t.tx_hash as string);
+        const noHashRows = transactions.filter((t) => !t.tx_hash);
 
-            // Check transaction limit before inserting
-            if (remainingCapacity !== Infinity && remainingCapacity <= 0) {
-              console.log(`[Exchange Sync] Transaction limit reached for ${exchange.name}, stopping`);
-              break;
-            }
+        // Existing tx_hashes already in the DB (bulk, chunked) — the primary dedup.
+        const existingHashes = new Set<string>();
+        for (let h = 0; h < incomingHashes.length; h += 500) {
+          const found = await prisma.transaction.findMany({
+            where: { userId: user.id, tx_hash: { in: incomingHashes.slice(h, h + 500) } },
+            select: { tx_hash: true },
+          });
+          for (const row of found) if (row.tx_hash) existingHashes.add(row.tx_hash);
+        }
 
-            // Create transaction
-            await prisma.transaction.create({
-              // clampTxStrings: keep every VarChar column within its DB cap (exchange APIs
-              // can return long product ids / custom type labels) — avoids Prisma P2000.
-              data: clampTxStrings({
-                userId: user.id,
-                type: tx.type,
-                status: "confirmed",
-                source: exchange.name,
-                source_type: "exchange_api",
-                asset_symbol: tx.asset_symbol,
-                amount_value: tx.amount_value,
-                price_per_unit: tx.price_per_unit,
-                value_usd: tx.value_usd,
-                fee_usd: tx.fee_usd,
-                tx_timestamp: tx.tx_timestamp,
-                tx_hash: tx.tx_hash || null,
-                identified: false,
-                // Flag reward/interest/staking-type rows as income so the combined/CSV tax
-                // path books them (the FIFO engine already books income-category types; this
-                // keeps the flag consistent across all engines and the UI).
-                is_income: getCategory(tx.type) === "income",
-                notes: tx.notes || null,
-                // Swap fields
-                incoming_asset_symbol: tx.incoming_asset_symbol || null,
-                incoming_amount_value: tx.incoming_amount_value || null,
-                incoming_value_usd: tx.incoming_value_usd || null,
-              }),
-            });
-
-            dbSaveCount++;
-            totalAdded++;
-            if (remainingCapacity !== Infinity) remainingCapacity--;
-          } catch (error) {
-            dbErrorCount++;
-            // Check if this is a unique constraint violation (duplicate tx_hash)
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            if (errorMessage.includes("Unique constraint") || errorMessage.includes("P2002")) {
-              totalSkipped++;
-            } else {
-              // Log only non-duplicate errors
-              console.error(`[Exchange Sync] DB ERROR:`, errorMessage);
-            }
-            // Don't add to errors array for individual transaction failures
-            // to avoid cluttering the response
+        // Existing composite keys — queried ONLY when some incoming rows lack a tx_hash, bounded to
+        // this exchange's source and the incoming time range so it stays one small query.
+        const existingComposite = new Set<string>();
+        if (noHashRows.length > 0) {
+          // Linear min/max — NOT Math.min(...times): spreading a large array as function args
+          // throws RangeError (Maximum call stack size exceeded) at ~130k elements, which would
+          // abort the whole save for exactly the large no-hash-heavy accounts this path serves.
+          let minTs = noHashRows[0].tx_timestamp.getTime();
+          let maxTs = minTs;
+          for (const t of noHashRows) {
+            const ms = t.tx_timestamp.getTime();
+            if (ms < minTs) minTs = ms;
+            if (ms > maxTs) maxTs = ms;
+          }
+          const found = await prisma.transaction.findMany({
+            where: {
+              userId: user.id,
+              source: exchange.name,
+              source_type: "exchange_api",
+              tx_timestamp: { gte: new Date(minTs), lte: new Date(maxTs) },
+            },
+            select: { tx_timestamp: true, asset_symbol: true, amount_value: true },
+          });
+          for (const row of found) {
+            existingComposite.add(compositeKey(row.tx_timestamp.getTime(), row.asset_symbol, row.amount_value));
           }
         }
+
+        // Build the insert list: dedup against the DB and within this batch, honoring the plan limit.
+        const seenHashes = new Set<string>();
+        const seenComposite = new Set<string>();
+        const toInsert: Prisma.TransactionCreateManyInput[] = [];
+        for (const tx of transactions) {
+          // Build (and clamp) the row FIRST, then dedup off the SAME clamped values that get
+          // stored — so the insert-time composite key matches the key rebuilt from the stored
+          // row on the next sync (no raw-vs-clamped asymmetry that would re-insert every time).
+          const row = clampTxStrings({
+            userId: user.id,
+            type: tx.type,
+            status: "confirmed",
+            source: exchange.name,
+            source_type: "exchange_api",
+            asset_symbol: tx.asset_symbol,
+            amount_value: tx.amount_value,
+            price_per_unit: tx.price_per_unit,
+            value_usd: tx.value_usd,
+            fee_usd: tx.fee_usd,
+            tx_timestamp: tx.tx_timestamp,
+            tx_hash: tx.tx_hash || null,
+            identified: false,
+            // Flag reward/interest/staking-type rows as income so the combined/CSV tax path
+            // books them (keeps the flag consistent across all engines and the UI).
+            is_income: getCategory(tx.type) === "income",
+            notes: tx.notes || null,
+            incoming_asset_symbol: tx.incoming_asset_symbol || null,
+            incoming_amount_value: tx.incoming_amount_value || null,
+            incoming_value_usd: tx.incoming_value_usd || null,
+          });
+
+          // Dedup — count skips regardless of the plan limit (matches the original ordering).
+          if (row.tx_hash) {
+            if (existingHashes.has(row.tx_hash) || seenHashes.has(row.tx_hash)) { dbSkipCount++; continue; }
+            seenHashes.add(row.tx_hash);
+          } else {
+            const key = compositeKey(tx.tx_timestamp.getTime(), row.asset_symbol as string, tx.amount_value);
+            if (existingComposite.has(key) || seenComposite.has(key)) { dbSkipCount++; continue; }
+            seenComposite.add(key);
+          }
+
+          // Plan limit: stop inserting NEW rows once capacity is reached (the dedup above already
+          // ran, so trailing duplicates are still counted — parity with the old per-row loop).
+          if (remainingCapacity !== Infinity && toInsert.length >= remainingCapacity) {
+            console.log(`[Exchange Sync] Transaction limit reached for ${exchange.name}, stopping`);
+            break;
+          }
+          toInsert.push(row);
+        }
+
+        // Bulk insert in chunks; skipDuplicates catches any tx_hash race dupe. On a batch failure,
+        // isolate rows so one bad row can't drop the whole chunk.
+        for (let c = 0; c < toInsert.length; c += 500) {
+          const chunk = toInsert.slice(c, c + 500);
+          try {
+            const result = await prisma.transaction.createMany({ data: chunk, skipDuplicates: true });
+            dbSaveCount += result.count;
+            dbSkipCount += chunk.length - result.count;
+          } catch (error) {
+            console.error(`[Exchange Sync] Batch insert error for ${exchange.name}:`, error instanceof Error ? error.message : error);
+            for (const row of chunk) {
+              try {
+                await prisma.transaction.create({ data: row as Prisma.TransactionUncheckedCreateInput });
+                dbSaveCount++;
+              } catch (rowErr) {
+                const rmsg = rowErr instanceof Error ? rowErr.message : String(rowErr);
+                if (rmsg.includes("Unique constraint") || rmsg.includes("P2002")) dbSkipCount++;
+                else console.error(`[Exchange Sync] Row insert error for ${exchange.name}: ${rmsg}`);
+              }
+            }
+          }
+        }
+
+        totalAdded += dbSaveCount;
+        totalSkipped += dbSkipCount;
+        if (remainingCapacity !== Infinity) remainingCapacity = Math.max(0, remainingCapacity - dbSaveCount);
 
         console.log(`[Exchange Sync] Database save complete for ${exchange.name}:`, {
           attempted: transactions.length,
           saved: dbSaveCount,
           skipped: dbSkipCount,
-          errors: dbErrorCount,
         });
 
         // Update exchange lastSyncAt
