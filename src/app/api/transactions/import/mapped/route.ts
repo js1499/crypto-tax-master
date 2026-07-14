@@ -6,6 +6,7 @@ import { rateLimitAPI, createRateLimitResponse } from "@/lib/rate-limit";
 import { parseCSV } from "@/lib/csv-parser";
 import { applyMapping, type CsvFieldMapping } from "@/lib/csv-field-mapper";
 import { getCategory } from "@/lib/transaction-categorizer";
+import { clampTxStrings } from "@/lib/tx-column-limits";
 // Note: CSV imports are intentionally NOT cost-basis-recomputed (recomputeCostBasis
 // skips source_type "csv_import") — P&L is derived in applyMapping from the signed
 // Amount USD + category (deposit/withdrawal => $0).
@@ -71,10 +72,11 @@ export async function POST(request: NextRequest) {
   // the handler with an empty response (which the client surfaces as "Unexpected end of JSON input").
   let parsed: ReturnType<typeof applyMapping>["transactions"];
   let skipped: ReturnType<typeof applyMapping>["skipped"];
+  let clampedRows: ReturnType<typeof applyMapping>["clamped"] = [];
   try {
     const content = await file.text();
     const rows = parseCSV(content);
-    ({ transactions: parsed, skipped } = applyMapping(rows, mapping));
+    ({ transactions: parsed, skipped, clamped: clampedRows } = applyMapping(rows, mapping));
   } catch (e) {
     console.error(`[MappedImport] parse failed after ${Date.now() - startedAt}ms:`, e instanceof Error ? e.message : e);
     return NextResponse.json(
@@ -82,7 +84,7 @@ export async function POST(request: NextRequest) {
       { status: 400 },
     );
   }
-  console.log(`[MappedImport] parsed ${parsed.length} row(s) (${skipped.length} skipped by mapping) in ${Date.now() - startedAt}ms`);
+  console.log(`[MappedImport] parsed ${parsed.length} row(s) (${skipped.length} skipped by mapping, ${clampedRows.length} string field(s) truncated to fit) in ${Date.now() - startedAt}ms`);
 
   // Dry run: return a cleaned preview (no DB writes) so the UI can show the user
   // exactly how their data will be cleaned before committing.
@@ -93,6 +95,7 @@ export async function POST(request: NextRequest) {
       parsed: parsed.length,
       skippedRows: skipped.length,
       skippedSamples: skipped.slice(0, 10),
+      clampedRows: clampedRows.length,
       preview: parsed.slice(0, 25).map((t) => ({
         type: t.type,
         asset_symbol: t.asset_symbol,
@@ -209,6 +212,10 @@ export async function POST(request: NextRequest) {
   const insertable: Prisma.TransactionCreateManyInput[] = [];
   let overflowCount = 0;
   for (const row of data) {
+    // Final DB-boundary safety net: clamp any VarChar column to its cap (covers `source`,
+    // which is set here rather than in applyMapping, and re-verifies the symbol/subtype
+    // fields applyMapping already clamped). Prevents Prisma P2000 "value too long".
+    clampTxStrings(row);
     const bad = overflowField(row);
     if (bad) {
       overflowCount++;
@@ -267,6 +274,7 @@ export async function POST(request: NextRequest) {
     parsed: parsed.length,
     skippedRows: skipped.length,
     skippedSamples: skipped.slice(0, 10),
+    clampedRows: clampedRows.length,
     truncated,
     failed: failedCount,
     failedSamples,

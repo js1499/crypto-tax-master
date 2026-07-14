@@ -8,6 +8,7 @@ import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/ra
 import { getCategory } from "@/lib/transaction-categorizer";
 import * as Sentry from "@sentry/nextjs";
 import { logBuffer } from "@/lib/log-buffer";
+import { clampTxStrings } from "@/lib/tx-column-limits";
 import { recomputeCostBasis } from "@/lib/compute-cost-basis";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
@@ -525,6 +526,10 @@ export async function POST(request: NextRequest) {
             userId: user.id, // BUG-003 fix: Set owner for CSV imports
           }));
 
+          // Clamp each VarChar column to its DB cap so an over-long spam-token symbol/type
+          // can't throw Prisma P2000 and fail the whole batch (see tx-column-limits.ts).
+          for (const row of createManyData) clampTxStrings(row);
+
           // Use createMany with skipDuplicates for better performance
           const result = await prisma.transaction.createMany({
             data: createManyData,
@@ -540,7 +545,7 @@ export async function POST(request: NextRequest) {
             try {
               // Ensure ownership on the fallback path too (transactionsToCreate
               // entries lack userId; createManyData is out of scope in this catch).
-              await prisma.transaction.create({ data: { ...data, userId: user.id } as Prisma.TransactionUncheckedCreateInput });
+              await prisma.transaction.create({ data: clampTxStrings({ ...data, userId: user.id }) as Prisma.TransactionUncheckedCreateInput });
               added++;
             } catch (individualError) {
               // Check if it's a duplicate error

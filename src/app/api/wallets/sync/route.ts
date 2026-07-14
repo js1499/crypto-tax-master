@@ -18,6 +18,7 @@ import {
   WalletTransaction,
 } from "@/lib/moralis-transactions";
 import { evmDedupKey } from "@/lib/evm-dedup";
+import { clampTxStrings } from "@/lib/tx-column-limits";
 import {
   getSolanaWalletTransactions,
   isValidSolanaAddress,
@@ -124,6 +125,12 @@ async function persistTransactions(
       incoming_value_usd: tx.incoming_value_usd || null,
     });
   }
+
+  // Clamp every VarChar column to its DB cap before insert. Spam/scam SPL & ERC-20 tokens
+  // routinely carry symbols/names far longer than asset_symbol's VarChar(50); one such row
+  // would throw Prisma P2000 and — because the createMany catch below counts the WHOLE
+  // 500-row chunk as errors — silently drop up to 500 GOOD rows with it.
+  for (const row of toInsert) clampTxStrings(row);
 
   // Enforce transaction limit — truncate to remaining capacity
   if (remainingCapacity !== Infinity && toInsert.length > remainingCapacity) {

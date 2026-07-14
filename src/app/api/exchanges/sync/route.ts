@@ -16,6 +16,7 @@ import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
 import { resolveSyncWindow } from "@/lib/sync-cursor";
 import { getCategory } from "@/lib/transaction-categorizer";
+import { clampTxStrings } from "@/lib/tx-column-limits";
 
 // Encryption key - REQUIRED for decrypting exchange credentials
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
@@ -315,7 +316,9 @@ export async function POST(request: NextRequest) {
 
             // Create transaction
             await prisma.transaction.create({
-              data: {
+              // clampTxStrings: keep every VarChar column within its DB cap (exchange APIs
+              // can return long product ids / custom type labels) — avoids Prisma P2000.
+              data: clampTxStrings({
                 userId: user.id,
                 type: tx.type,
                 status: "confirmed",
@@ -338,7 +341,7 @@ export async function POST(request: NextRequest) {
                 incoming_asset_symbol: tx.incoming_asset_symbol || null,
                 incoming_amount_value: tx.incoming_amount_value || null,
                 incoming_value_usd: tx.incoming_value_usd || null,
-              },
+              }),
             });
 
             dbSaveCount++;

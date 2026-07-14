@@ -185,4 +185,28 @@ describe("applyMapping", () => {
     expect(transactions[0].gain_loss_usd?.toNumber()).toBeCloseTo(1000);
     expect(transactions[0].cost_basis_usd).toBeUndefined();
   });
+
+  it("clamps an over-long asset_symbol to the VarChar(50) cap so the row still imports (regression: Prisma P2000)", () => {
+    // Spam tokens carry long promotional 'symbol' strings; asset_symbol is VarChar(50) and
+    // used to overflow, throwing P2000 and stalling the whole batch. It must now be clamped,
+    // the row kept (its P&L is intact), and the truncation reported in `clamped`.
+    const longSym = "SCAM" + "X".repeat(80); // 84 chars
+    const csv = [
+      ["Date", "Asset", "Qty", "Type", "USD"],
+      ["2025-03-14", longSym, "1", "SELL", "100"],
+      ["2025-03-15", "BTC", "1", "SELL", "100"], // normal row: untouched
+    ];
+    const mapping: CsvFieldMapping = {
+      columns: { timestamp: 0, symbol: 1, quantity: 2, type: 3, value: 4 },
+      options: {},
+    };
+    const { transactions, clamped } = applyMapping(csv, mapping);
+    expect(transactions).toHaveLength(2);
+    expect(transactions[0].asset_symbol).toHaveLength(50);
+    expect(transactions[0].asset_symbol).toBe(longSym.toUpperCase().slice(0, 50));
+    expect(transactions[0].gain_loss_usd?.toNumber()).toBeCloseTo(100); // P&L preserved
+    expect(clamped).toContainEqual({ row: 2, field: "asset_symbol" }); // row 2 = first data row
+    expect(transactions[1].asset_symbol).toBe("BTC");
+    expect(clamped.some((c) => c.row === 3)).toBe(false); // normal row not recorded
+  });
 });

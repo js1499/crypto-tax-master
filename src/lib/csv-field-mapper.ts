@@ -8,6 +8,7 @@
  */
 import { Decimal } from "@prisma/client/runtime/library";
 import { getCategory } from "./transaction-categorizer";
+import { clampVarchar } from "./tx-column-limits";
 import type { ParsedTransaction } from "./csv-parser";
 
 // ---------------------------------------------------------------------------
@@ -311,13 +312,25 @@ export function distinctTypeValues(csv: string[][], mapping: CsvFieldMapping): s
 export interface ApplyResult {
   transactions: ParsedTransaction[];
   skipped: { row: number; reason: string }[];
+  /** Rows whose string field was truncated to fit its DB VarChar cap (e.g. an
+   *  over-long spam-token symbol). Truncation keeps the row (its P&L is intact) —
+   *  contrast with `skipped`, which are dropped entirely. */
+  clamped: { row: number; field: string }[];
 }
+
+// VarChar caps on the Transaction columns these CSV fields land in (schema.prisma).
+// Over-long values (spam-token symbols/names, verbose raw type labels) would otherwise
+// throw Prisma P2000 on insert and fail the whole batch; clamp them here so the value
+// the PREVIEW shows is exactly the value that gets stored.
+const SYMBOL_CAP = 50; // asset_symbol / incoming_asset_symbol VarChar(50)
+const SUBTYPE_CAP = 50; // subtype VarChar(50)
 
 /** Apply a mapping to parsed CSV rows, cleaning every field. Row 0 is the header. */
 export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyResult {
   const transactions: ParsedTransaction[] = [];
   const skipped: { row: number; reason: string }[] = [];
-  if (csv.length < 2) return { transactions, skipped };
+  const clamped: { row: number; field: string }[] = [];
+  if (csv.length < 2) return { transactions, skipped, clamped };
 
   const c = mapping.columns;
   const opts = mapping.options ?? {};
@@ -330,10 +343,17 @@ export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyRe
     const row = csv[r];
     if (!row || row.length === 0 || row.every((x) => !x || !x.trim())) continue; // blank line
 
-    const symbol = cleanSymbol(cell(row, "symbol"));
+    let symbol = cleanSymbol(cell(row, "symbol"));
     if (!symbol) {
       skipped.push({ row: r + 1, reason: "missing symbol" });
       continue;
+    }
+    // asset_symbol is VarChar(50); spam-token "symbols" (URLs, marketing text) blow past
+    // that and would throw Prisma P2000 on insert. Clamp so the row still imports.
+    const symbolClamped = clampVarchar(symbol, SYMBOL_CAP);
+    if (symbolClamped !== symbol) {
+      clamped.push({ row: r + 1, field: "asset_symbol" });
+      symbol = symbolClamped;
     }
     const qtyRaw = cleanNumber(cell(row, "quantity"));
     if (qtyRaw == null) {
@@ -401,7 +421,12 @@ export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyRe
       tx_timestamp: ts,
     };
     if (feeRaw != null) tx.fee_usd = new Decimal(Math.abs(feeRaw));
-    if (rawTypeCell) tx.subtype = rawTypeCell; // original, unprocessed CSV type
+    if (rawTypeCell) {
+      // subtype is VarChar(50); clamp the raw type label so a verbose value can't fail insert.
+      const st = clampVarchar(rawTypeCell, SUBTYPE_CAP);
+      if (st !== rawTypeCell) clamped.push({ row: r + 1, field: "subtype" });
+      tx.subtype = st; // original, unprocessed CSV type
+    }
     if (pnlMethod === "gross" && costRaw != null && !isMovement && !isIncome) {
       tx.cost_basis_usd = new Decimal(Math.abs(costRaw));
     }
@@ -410,12 +435,16 @@ export function applyMapping(csv: string[][], mapping: CsvFieldMapping): ApplyRe
     const inSym = cleanSymbol(cell(row, "incomingSymbol"));
     const inQty = cleanNumber(cell(row, "incomingQuantity"));
     const inVal = cleanNumber(cell(row, "incomingValue"));
-    if (inSym) tx.incoming_asset_symbol = inSym;
+    if (inSym) {
+      const inSymClamped = clampVarchar(inSym, SYMBOL_CAP); // incoming_asset_symbol VarChar(50)
+      if (inSymClamped !== inSym) clamped.push({ row: r + 1, field: "incoming_asset_symbol" });
+      tx.incoming_asset_symbol = inSymClamped;
+    }
     if (inQty != null) tx.incoming_amount_value = new Decimal(Math.abs(inQty));
     if (inVal != null) tx.incoming_value_usd = new Decimal(Math.abs(inVal));
 
     transactions.push(tx);
   }
 
-  return { transactions, skipped };
+  return { transactions, skipped, clamped };
 }

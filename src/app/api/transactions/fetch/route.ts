@@ -6,6 +6,7 @@ import { rateLimitAPI, createRateLimitResponse, rateLimitByUser } from "@/lib/ra
 import * as Sentry from "@sentry/nextjs";
 import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
+import { clampTxStrings } from "@/lib/tx-column-limits";
 
 // Configure for long-running operations on Vercel
 export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
@@ -124,7 +125,9 @@ export async function POST(request: NextRequest) {
 
         // Create new transaction
         await prisma.transaction.create({
-          data: {
+          // clampTxStrings: keep every VarChar column within its DB cap (blockchain-API token
+          // metadata can carry long spam symbols) — avoids Prisma P2000 on insert.
+          data: clampTxStrings({
             userId: user.id,
             type: tx.type,
             status: tx.status,
@@ -147,7 +150,7 @@ export async function POST(request: NextRequest) {
             incoming_asset_symbol: (tx as any).incoming_asset_symbol || null,
             incoming_amount_value: (tx as any).incoming_amount_value || null,
             incoming_value_usd: (tx as any).incoming_value_usd || null,
-          },
+          }),
         });
 
         added++;
