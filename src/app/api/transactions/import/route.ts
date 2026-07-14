@@ -13,7 +13,7 @@ import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
 
 // Increase body size limit for large CSV uploads (50MB)
-export const maxDuration = 300; // 5 minutes max execution time (Vercel Pro limit)
+export const maxDuration = 800; // max execution time (parity with /import/mapped for large files)
 export const runtime = 'nodejs';
 // Note: Next.js App Router doesn't have a bodyParser config option
 // Form data size is handled by the server infrastructure
