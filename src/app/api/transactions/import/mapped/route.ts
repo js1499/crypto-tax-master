@@ -23,6 +23,7 @@ export const maxDuration = 800;
  * cost basis. The companion to /preview for the interactive field mapper.
  */
 export async function POST(request: NextRequest) {
+  const startedAt = Date.now();
   const rl = rateLimitAPI(request, 20);
   if (!rl.success) return createRateLimitResponse(rl.remaining, rl.reset);
 
@@ -75,11 +76,13 @@ export async function POST(request: NextRequest) {
     const rows = parseCSV(content);
     ({ transactions: parsed, skipped } = applyMapping(rows, mapping));
   } catch (e) {
+    console.error(`[MappedImport] parse failed after ${Date.now() - startedAt}ms:`, e instanceof Error ? e.message : e);
     return NextResponse.json(
       { status: "error", error: e instanceof Error ? `Could not parse the CSV file: ${e.message}` : "Could not parse the CSV file." },
       { status: 400 },
     );
   }
+  console.log(`[MappedImport] parsed ${parsed.length} row(s) (${skipped.length} skipped by mapping) in ${Date.now() - startedAt}ms`);
 
   // Dry run: return a cleaned preview (no DB writes) so the UI can show the user
   // exactly how their data will be cleaned before committing.
@@ -161,42 +164,95 @@ export async function POST(request: NextRequest) {
     userId: user.id,
   }));
 
-  // Insert with a BINARY-SPLIT fallback. Bulk-insert each batch; if a batch throws (one bad row
-  // fails the whole createMany), split it in half and retry each half. Good rows stay in bulk
-  // createMany calls and a bad row is isolated in ~log2(n) calls — instead of grinding through n
-  // one-at-a-time inserts (which made a 6k import with scattered bad rows take minutes). The
-  // import always finishes fast and returns JSON with an accurate count + the failed rows.
   let added = 0;
+  let failedCount = 0;
   const failedSamples: Array<{ asset: string; type: string; error: string }> = [];
+  const recordFailure = (row: Prisma.TransactionCreateManyInput, error: string) => {
+    failedCount++;
+    if (failedSamples.length < 10) {
+      failedSamples.push({ asset: String(row.asset_symbol ?? ""), type: String(row.type ?? ""), error });
+    }
+  };
 
+  // ---- Pre-flight guard: divert rows whose Decimal values can't fit the DB column. ----
+  // Every money/amount column is Decimal(30,15) => the integer part must be < 10^15. Raw
+  // (un-normalized) or spam-token amounts routinely exceed this, and each such row makes the
+  // bulk createMany throw "numeric field overflow". Catching them here (in memory, instantly)
+  // instead of via failed DB round-trips is what keeps a big import from grinding for minutes:
+  // a bulk insert only stays fast if the rows in it are actually insertable. This can't drop a
+  // storable row — anything >= 1e15 is physically unstorable in Decimal(30,15) regardless.
+  const DEC_LIMIT = new Prisma.Decimal("1e15");
+  const overflowField = (row: Prisma.TransactionCreateManyInput): string | null => {
+    const fields: Array<[string, unknown]> = [
+      ["amount_value", row.amount_value],
+      ["value_usd", row.value_usd],
+      ["price_per_unit", row.price_per_unit],
+      ["cost_basis_usd", row.cost_basis_usd],
+      ["gain_loss_usd", row.gain_loss_usd],
+      ["fee_usd", row.fee_usd],
+      ["incoming_amount_value", row.incoming_amount_value],
+      ["incoming_value_usd", row.incoming_value_usd],
+    ];
+    for (const [name, v] of fields) {
+      if (v == null) continue;
+      let d: Prisma.Decimal;
+      try {
+        d = new Prisma.Decimal(v as never);
+      } catch {
+        return name; // unparseable => would fail the insert
+      }
+      if (!d.isFinite() || d.abs().gte(DEC_LIMIT)) return name;
+    }
+    return null;
+  };
+
+  const insertable: Prisma.TransactionCreateManyInput[] = [];
+  let overflowCount = 0;
+  for (const row of data) {
+    const bad = overflowField(row);
+    if (bad) {
+      overflowCount++;
+      recordFailure(row, `${bad} value too large to store (exceeds Decimal(30,15); integer part must be < 1e15)`);
+    } else {
+      insertable.push(row);
+    }
+  }
+  if (overflowCount > 0) {
+    console.warn(`[MappedImport] pre-filtered ${overflowCount} of ${data.length} row(s) with out-of-range Decimal values; first sample:`, failedSamples[0]);
+  }
+
+  // Insert with a BINARY-SPLIT fallback. Bulk-insert each batch; if a batch throws (a still-bad
+  // row fails the whole createMany), split it in half and retry each half so good rows stay
+  // batched and a bad row is isolated in ~log2(n) calls. Every failure is logged so the REAL
+  // Postgres error is visible in Vercel logs — anything landing here got past the overflow
+  // pre-filter above and is therefore a NEW, unmodelled bad-row cause worth seeing.
   const insertChunk = async (chunk: Prisma.TransactionCreateManyInput[]): Promise<void> => {
     if (chunk.length === 0) return;
     try {
       const res = await prisma.transaction.createMany({ data: chunk, skipDuplicates: true });
       added += res.count;
     } catch (err) {
+      const msg = err instanceof Error ? err.message : "insert failed";
       if (chunk.length === 1) {
-        const row = chunk[0];
-        if (failedSamples.length < 10) {
-          failedSamples.push({
-            asset: String(row.asset_symbol ?? ""),
-            type: String(row.type ?? ""),
-            error: err instanceof Error ? err.message.slice(0, 140) : "insert failed",
-          });
-        }
+        console.error(`[MappedImport] row insert failed: asset=${chunk[0].asset_symbol} type=${chunk[0].type} err=${msg.slice(0, 200)}`);
+        recordFailure(chunk[0], msg.slice(0, 140));
         return;
       }
+      console.warn(`[MappedImport] createMany failed for chunk of ${chunk.length} (splitting): ${msg.slice(0, 160)}`);
       const mid = Math.floor(chunk.length / 2);
       await insertChunk(chunk.slice(0, mid));
       await insertChunk(chunk.slice(mid));
     }
   };
 
+  const tInsertStart = Date.now();
+  console.log(`[MappedImport] inserting ${insertable.length} row(s) (${overflowCount} pre-filtered as overflow) for user ${user.id}`);
   // Postgres caps bind parameters (~65535), so cap the top-level batch well under it.
   const batchSize = 1000;
-  for (let i = 0; i < data.length; i += batchSize) {
-    await insertChunk(data.slice(i, i + batchSize));
+  for (let i = 0; i < insertable.length; i += batchSize) {
+    await insertChunk(insertable.slice(i, i + batchSize));
   }
+  console.log(`[MappedImport] insert loop done: added=${added} failed=${failedCount} in ${Date.now() - tInsertStart}ms`);
 
   await invalidateTaxReportCache(user.id);
   // CSV imports are NOT cost-basis-recomputed — P&L is DERIVED in applyMapping from the
@@ -204,6 +260,7 @@ export async function POST(request: NextRequest) {
   // recomputeCostBasis skips source_type "csv_import", and the tax report reads
   // gain_loss_usd straight from these rows.
 
+  console.log(`[MappedImport] DONE added=${added} failed=${failedCount} parsed=${parsed.length} total=${Date.now() - startedAt}ms`);
   return NextResponse.json({
     status: "success",
     added,
@@ -211,7 +268,7 @@ export async function POST(request: NextRequest) {
     skippedRows: skipped.length,
     skippedSamples: skipped.slice(0, 10),
     truncated,
-    failed: failedSamples.length,
+    failed: failedCount,
     failedSamples,
   });
 }
