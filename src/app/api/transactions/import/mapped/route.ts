@@ -161,34 +161,41 @@ export async function POST(request: NextRequest) {
     userId: user.id,
   }));
 
-  // Insert in batches. A single malformed row fails an entire createMany batch, so on a batch
-  // error we retry that batch row-by-row — good rows still import, bad rows are skipped and
-  // sampled, and the import always finishes and returns JSON (instead of a partial commit + a
-  // dead/empty response, which surfaced as "Unexpected end of JSON input" + a wrong count).
+  // Insert with a BINARY-SPLIT fallback. Bulk-insert each batch; if a batch throws (one bad row
+  // fails the whole createMany), split it in half and retry each half. Good rows stay in bulk
+  // createMany calls and a bad row is isolated in ~log2(n) calls — instead of grinding through n
+  // one-at-a-time inserts (which made a 6k import with scattered bad rows take minutes). The
+  // import always finishes fast and returns JSON with an accurate count + the failed rows.
   let added = 0;
   const failedSamples: Array<{ asset: string; type: string; error: string }> = [];
+
+  const insertChunk = async (chunk: Prisma.TransactionCreateManyInput[]): Promise<void> => {
+    if (chunk.length === 0) return;
+    try {
+      const res = await prisma.transaction.createMany({ data: chunk, skipDuplicates: true });
+      added += res.count;
+    } catch (err) {
+      if (chunk.length === 1) {
+        const row = chunk[0];
+        if (failedSamples.length < 10) {
+          failedSamples.push({
+            asset: String(row.asset_symbol ?? ""),
+            type: String(row.type ?? ""),
+            error: err instanceof Error ? err.message.slice(0, 140) : "insert failed",
+          });
+        }
+        return;
+      }
+      const mid = Math.floor(chunk.length / 2);
+      await insertChunk(chunk.slice(0, mid));
+      await insertChunk(chunk.slice(mid));
+    }
+  };
+
+  // Postgres caps bind parameters (~65535), so cap the top-level batch well under it.
   const batchSize = 1000;
   for (let i = 0; i < data.length; i += batchSize) {
-    const batch = data.slice(i, i + batchSize);
-    try {
-      const res = await prisma.transaction.createMany({ data: batch, skipDuplicates: true });
-      added += res.count;
-    } catch {
-      for (const row of batch) {
-        try {
-          await prisma.transaction.create({ data: row as Prisma.TransactionUncheckedCreateInput });
-          added += 1;
-        } catch (rowErr) {
-          if (failedSamples.length < 10) {
-            failedSamples.push({
-              asset: String(row.asset_symbol ?? ""),
-              type: String(row.type ?? ""),
-              error: rowErr instanceof Error ? rowErr.message.slice(0, 140) : "insert failed",
-            });
-          }
-        }
-      }
-    }
+    await insertChunk(data.slice(i, i + batchSize));
   }
 
   await invalidateTaxReportCache(user.id);
