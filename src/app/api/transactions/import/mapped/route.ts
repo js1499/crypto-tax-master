@@ -13,7 +13,7 @@ import { invalidateTaxReportCache } from "@/lib/tax-report-cache";
 import { getUserPlan, countUserTransactions, LIMIT_TAX_YEAR } from "@/lib/plan-limits";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 /**
  * POST /api/transactions/import/mapped
@@ -66,9 +66,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const content = await file.text();
-  const rows = parseCSV(content);
-  const { transactions: parsed, skipped } = applyMapping(rows, mapping);
+  // Parse + map inside a guard: a malformed CSV must return a clear JSON error, not throw out of
+  // the handler with an empty response (which the client surfaces as "Unexpected end of JSON input").
+  let parsed: ReturnType<typeof applyMapping>["transactions"];
+  let skipped: ReturnType<typeof applyMapping>["skipped"];
+  try {
+    const content = await file.text();
+    const rows = parseCSV(content);
+    ({ transactions: parsed, skipped } = applyMapping(rows, mapping));
+  } catch (e) {
+    return NextResponse.json(
+      { status: "error", error: e instanceof Error ? `Could not parse the CSV file: ${e.message}` : "Could not parse the CSV file." },
+      { status: 400 },
+    );
+  }
 
   // Dry run: return a cleaned preview (no DB writes) so the UI can show the user
   // exactly how their data will be cleaned before committing.
@@ -150,14 +161,34 @@ export async function POST(request: NextRequest) {
     userId: user.id,
   }));
 
+  // Insert in batches. A single malformed row fails an entire createMany batch, so on a batch
+  // error we retry that batch row-by-row — good rows still import, bad rows are skipped and
+  // sampled, and the import always finishes and returns JSON (instead of a partial commit + a
+  // dead/empty response, which surfaced as "Unexpected end of JSON input" + a wrong count).
   let added = 0;
+  const failedSamples: Array<{ asset: string; type: string; error: string }> = [];
   const batchSize = 1000;
   for (let i = 0; i < data.length; i += batchSize) {
-    const res = await prisma.transaction.createMany({
-      data: data.slice(i, i + batchSize),
-      skipDuplicates: true,
-    });
-    added += res.count;
+    const batch = data.slice(i, i + batchSize);
+    try {
+      const res = await prisma.transaction.createMany({ data: batch, skipDuplicates: true });
+      added += res.count;
+    } catch {
+      for (const row of batch) {
+        try {
+          await prisma.transaction.create({ data: row as Prisma.TransactionUncheckedCreateInput });
+          added += 1;
+        } catch (rowErr) {
+          if (failedSamples.length < 10) {
+            failedSamples.push({
+              asset: String(row.asset_symbol ?? ""),
+              type: String(row.type ?? ""),
+              error: rowErr instanceof Error ? rowErr.message.slice(0, 140) : "insert failed",
+            });
+          }
+        }
+      }
+    }
   }
 
   await invalidateTaxReportCache(user.id);
@@ -173,5 +204,7 @@ export async function POST(request: NextRequest) {
     skippedRows: skipped.length,
     skippedSamples: skipped.slice(0, 10),
     truncated,
+    failed: failedSamples.length,
+    failedSamples,
   });
 }
