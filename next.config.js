@@ -38,6 +38,15 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Bundle the unlinked /lp/* landing-page HTML (lives in apps/, outside src) into the
+  // serverless function — belt-and-braces alongside the literal readFileSync tracing pattern.
+  outputFileTracingIncludes: {
+    "/lp/[variant]": [
+      "./apps/glide-landing/index.html",
+      "./apps/glide-landing-b/index.html",
+      "./apps/glide-landing-c/index.html",
+    ],
+  },
   eslint: {
     ignoreDuringBuilds: true,
   },

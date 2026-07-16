@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Glide — Crypto taxes that are actually correct</title>
+<meta name="description" content="The numbers other crypto tax tools miss. Every swap priced at its exact on-chain block timestamp, every reward classified, every number traceable to a transaction hash." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2310B981'/%3E%3Cpath d='M9 16.5l5 5 9-10' stroke='%23F7F8F5' stroke-width='3.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+<script>document.documentElement.classList.add('js')</script>
+
+<link rel="preconnect" href="https://api.fontshare.com" crossorigin>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://api.fontshare.com/v2/css?f[]=cabinet-grotesk@400,500,700,800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&display=swap" rel="stylesheet">
+
+<style>
+/* ─────────────────────────────────────────────────────────────
+   GLIDE — "The Case File"  ·  crypto tax software, audit-grade
+   Corridor composition · ledger-paper grade · Cabinet Grotesk + DM Mono
+   Built per DIRECTION.md. No build step, no framework, no images.
+   ───────────────────────────────────────────────────────────── */
+
+:root {
+  /* grade — 5 colors: paper/ink neutrals · emerald brand (2 shades) · rust for errors only */
+  --paper:        #F7F8F5;
+  --card:         #FFFFFF;
+  --ink:          #17201A;
+  --muted:        #5C695F;
+  --line:         rgba(23, 32, 26, 0.16);
+  --line-soft:    rgba(23, 32, 26, 0.08);
+  --emerald:      #10B981;
+  --emerald-deep: #0A7A55;
+  --emerald-wash: rgba(16, 185, 129, 0.09);
+  --rust:         #C2410C;
+  --rust-wash:    rgba(194, 64, 12, 0.06);
+
+  --display: 'Cabinet Grotesk', 'Avenir Next', 'Segoe UI', system-ui, sans-serif;
+  --mono:    'DM Mono', 'Cascadia Mono', ui-monospace, 'Courier New', monospace;
+
+  /* scale */
+  --fs-hero:  clamp(2.7rem, 5.4vw, 4.6rem);
+  --fs-h2:    clamp(1.85rem, 3.1vw, 2.65rem);
+  --fs-body:  1.04rem;
+  --fs-label: 0.68rem;
+
+  --rail-w:   304px;
+  --gut:      clamp(1.4rem, 4.5vw, 4.75rem);
+  --sec-pad:  clamp(4rem, 8vh, 6.25rem);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+body {
+  font-family: var(--display);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: var(--fs-body);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+img, svg, canvas { display: block; max-width: 100%; }
+a { color: inherit; }
+::selection { background: var(--emerald); color: #fff; }
+
+/* film grain — paper-print depth */
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 9990; pointer-events: none;
+  opacity: 0.038; mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='190' height='190'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+/* ─── shared typographic atoms ─── */
+.label {
+  font-family: var(--mono); font-size: var(--fs-label); font-weight: 500;
+  letter-spacing: 0.17em; text-transform: uppercase; color: var(--muted);
+}
+.label--emerald { color: var(--emerald-deep); }
+.label--rust    { color: var(--rust); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+/* stamps — the working-papers mark */
+.stamp {
+  display: inline-flex; align-items: center; gap: 0.42em;
+  font-family: var(--mono); font-size: 0.62rem; font-weight: 500;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  padding: 0.3em 0.75em; border-radius: 3px; white-space: nowrap;
+}
+.stamp--ok   { color: var(--emerald-deep); background: var(--emerald-wash); box-shadow: inset 0 0 0 1px rgba(10,122,85,0.35); }
+.stamp--bad  { color: var(--rust); background: var(--rust-wash); box-shadow: inset 0 0 0 1px rgba(194,64,12,0.3); }
+.stamp--line { color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); }
+.tick { width: 0.85em; height: 0.85em; flex: none; }
+
+/* ─── reveal (html.js-gated: no-JS / reduced-motion / verify all see the page) ─── */
+.reveal { transition: opacity 0.85s ease, transform 0.85s ease; }
+html.js .reveal { opacity: 0; transform: translateY(22px); }
+html.js .reveal.is-in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  html.js .reveal { opacity: 1; transform: none; }
+}
+
+/* ═══════════════ FRAME — the corridor ═══════════════ */
+.frame { display: grid; grid-template-columns: var(--rail-w) minmax(0, 1fr); min-height: 100vh; }
+
+/* ─── RAIL — the audit index ─── */
+.rail {
+  border-right: 1px solid var(--line);
+  background: var(--paper);
+  position: relative;
+}
+.rail__stick {
+  position: sticky; top: 0; height: 100vh;
+  display: flex; flex-direction: column;
+  padding: 2rem 1.9rem 1.6rem;
+}
+.rail__mark { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.55rem; }
+.rail__glyph { width: 26px; height: 26px; flex: none; }
+.wordmark {
+  font-family: var(--display); font-weight: 800; font-size: 1.5rem;
+  letter-spacing: -0.01em; line-height: 1; color: var(--ink); text-decoration: none;
+}
+.rail__case {
+  font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--muted);
+  padding-bottom: 1.4rem; border-bottom: 1px solid var(--line); line-height: 1.9;
+}
+.rail__clock { color: var(--emerald-deep); }
+
+.rail__index { list-style: none; margin: 1.5rem 0 auto; }
+.rail__index a {
+  display: grid; grid-template-columns: 2.9rem 1fr; align-items: baseline;
+  padding: 0.44rem 0; text-decoration: none;
+  font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--line-soft);
+  transition: color 0.3s ease;
+}
+.rail__index a .ix { color: var(--muted); transition: color 0.3s ease; }
+.rail__index a:hover, .rail__index a.on { color: var(--ink); }
+.rail__index a.on .ix { color: var(--emerald-deep); }
+.rail__index a.on { border-bottom-color: var(--emerald); }
+
+.rail__method {
+  margin: 1.6rem 0 1.4rem; padding-top: 1.3rem; border-top: 1px solid var(--line);
+  font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.13em;
+  text-transform: uppercase; color: var(--muted); line-height: 2.05;
+}
+.rail__method b { color: var(--ink); font-weight: 500; }
+
+/* ─── buttons ─── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 0.55rem;
+  font-family: var(--display); font-weight: 700; font-size: 0.95rem;
+  padding: 0.85rem 1.5rem; border-radius: 6px; text-decoration: none;
+  border: 1px solid transparent; cursor: pointer;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease, color 0.25s ease;
+}
+.btn--primary { background: var(--emerald); color: #fff; }
+.btn--primary:hover { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(16,185,129,0.35); }
+.btn--ghost { border-color: var(--line); color: var(--ink); background: transparent; }
+.btn--ghost:hover { border-color: var(--emerald-deep); color: var(--emerald-deep); }
+.btn--onink { background: var(--emerald); color: #fff; }
+.btn--onink:hover { transform: translateY(-1px); box-shadow: 0 6px 26px rgba(16,185,129,0.45); }
+.rail .btn { width: 100%; }
+
+/* ─── MAIN column ─── */
+.main { min-width: 0; }
+.shell { max-width: 1020px; padding-inline: var(--gut); }
+
+/* mobile top strip (hidden on desktop) */
+.strip {
+  display: none; position: sticky; top: 0; z-index: 60;
+  background: rgba(247, 248, 245, 0.92);
+  backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
+  border-bottom: 1px solid var(--line);
+  padding: 0.7rem var(--gut);
+  align-items: center; justify-content: space-between; gap: 1rem;
+}
+.strip__mark { display: flex; align-items: center; gap: 0.5rem; }
+.strip__mark .rail__glyph { width: 21px; height: 21px; }
+.strip__mark .wordmark { font-size: 1.18rem; }
+.strip .btn { padding: 0.55rem 1rem; font-size: 0.85rem; }
+
+/* ═══════════════ HERO ═══════════════ */
+.hero { padding-block: clamp(4.5rem, 11vh, 7.5rem) var(--sec-pad); }
+.hero__eyebrow { display: flex; align-items: center; gap: 0.9rem; margin-bottom: 2.1rem; flex-wrap: wrap; }
+.hero__eyebrow .rule-lead { width: 2.4rem; height: 1px; background: var(--emerald); }
+.hero h1 {
+  font-size: var(--fs-hero); font-weight: 800; line-height: 1.01;
+  letter-spacing: -0.022em; max-width: 15ch; margin-bottom: 1.9rem; text-wrap: balance;
+}
+.hero h1 .miss { color: var(--emerald-deep); }
+.hero .ln { overflow: hidden; }
+.hero__dek {
+  font-size: clamp(1.02rem, 1.35vw, 1.16rem); line-height: 1.6;
+  color: var(--muted); max-width: 58ch; margin-bottom: 2.4rem;
+}
+.hero__dek b { color: var(--ink); font-weight: 700; }
+.hero__ctas { display: flex; gap: 0.9rem; flex-wrap: wrap; margin-bottom: 3.6rem; }
+
+/* Exhibit A — the price-resolve working paper */
+.exhibit {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 18px 44px rgba(23, 32, 26, 0.07);
+  overflow: hidden;
+}
+.exhibit__head {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  padding: 0.85rem 1.4rem; border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.exhibit__head .label { font-size: 0.62rem; }
+.exhibit__body { padding: 0.4rem 1.4rem; }
+.exhibit__row {
+  display: grid; grid-template-columns: minmax(0, 1.35fr) auto auto;
+  align-items: center; gap: 1.2rem; padding: 1.05rem 0;
+}
+.exhibit__row + .exhibit__row { border-top: 1px dashed var(--line); }
+.exhibit__who { min-width: 0; }
+.exhibit__who .t { font-weight: 700; font-size: 0.98rem; }
+.exhibit__who .s { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-top: 0.15rem; }
+.exhibit__price { font-family: var(--mono); font-size: clamp(1.5rem, 2.6vw, 2.1rem); font-weight: 500; letter-spacing: -0.03em; text-align: right; }
+.price--guess { color: var(--rust); text-decoration: line-through; text-decoration-thickness: 2px; text-decoration-color: rgba(194,64,12,0.6); }
+.price--exact { color: var(--emerald-deep); }
+.exhibit__foot {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap;
+  padding: 1rem 1.4rem 1.15rem; border-top: 1px solid var(--line); background: var(--emerald-wash);
+}
+.exhibit__foot .q { font-weight: 700; font-size: 0.95rem; }
+.exhibit__foot .v { font-family: var(--mono); font-size: 1.5rem; font-weight: 500; color: var(--emerald-deep); letter-spacing: -0.02em; }
+.exhibit__note { font-family: var(--mono); font-size: 0.62rem; color: var(--muted); letter-spacing: 0.06em; padding: 0.7rem 1.4rem; border-top: 1px solid var(--line-soft); }
+
+/* ═══════════════ SECTIONS — exhibits ═══════════════ */
+.exhibit-sec { padding: var(--sec-pad) 0; border-top: 1px solid var(--line); }
+.sec-head { display: flex; align-items: baseline; gap: 1.4rem; margin-bottom: 0.9rem; }
+.sec-head .ix { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.14em; color: var(--emerald-deep); flex: none; }
+.sec-head h2 { font-size: var(--fs-h2); font-weight: 800; letter-spacing: -0.018em; line-height: 1.06; text-wrap: balance; }
+.sec-dek { color: var(--muted); max-width: 60ch; margin-bottom: 2.6rem; }
+.sec-dek b { color: var(--ink); font-weight: 700; }
+
+/* ─── E-01 · two-panel price comparison ─── */
+.duel { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; margin-bottom: 1.1rem; }
+.duel__panel { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1.4rem 1.4rem 1.25rem; }
+.duel__panel--glide { border-color: rgba(10, 122, 85, 0.45); }
+.duel__tag { margin-bottom: 1.1rem; display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; }
+.candles { display: flex; align-items: flex-end; gap: 3px; height: 88px; margin-bottom: 1.15rem; padding-bottom: 0.55rem; border-bottom: 1px solid var(--line-soft); }
+.candles i { display: block; border-radius: 1.5px; }
+.candles--hourly { justify-content: center; }
+.candles--hourly i { position: relative; width: 44%; background: var(--rust-wash); box-shadow: inset 0 0 0 1px rgba(194,64,12,0.5); height: 74%; }
+.candles--hourly i::before, .candles--hourly i::after { content: ""; position: absolute; left: calc(50% - 1px); width: 2px; background: rgba(194,64,12,0.45); }
+.candles--hourly i::before { top: -14px; height: 14px; }
+.candles--hourly i::after  { bottom: -8px; height: 8px; }
+.candles--block i { flex: 1 1 0; background: var(--emerald); opacity: 0.85; min-width: 2px; }
+.candles--block i:nth-child(3n)  { height: 46%; } .candles--block i:nth-child(3n+1) { height: 72%; }
+.candles--block i:nth-child(3n+2){ height: 58%; } .candles--block i:nth-child(5n)  { height: 88%; }
+.candles--block i:nth-child(7n)  { height: 34%; } .candles--block i:nth-child(11n) { height: 100%; }
+.duel__fact { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); line-height: 1.9; }
+.duel__fact b { font-weight: 500; color: var(--ink); }
+.duel__price { font-family: var(--mono); font-size: 1.75rem; font-weight: 500; letter-spacing: -0.03em; margin: 0.4rem 0 0.2rem; }
+.duel__panel--hourly .duel__price { color: var(--rust); }
+.duel__panel--glide  .duel__price { color: var(--emerald-deep); }
+.callout {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 1.2rem; flex-wrap: wrap;
+  border: 1px solid var(--line); border-left: 3px solid var(--emerald); border-radius: 8px;
+  background: var(--card); padding: 1.15rem 1.4rem;
+}
+.callout .q { font-weight: 700; }
+.callout .v { font-family: var(--mono); font-size: 1.9rem; font-weight: 500; color: var(--ink); letter-spacing: -0.03em; }
+.callout .m { font-size: 0.88rem; color: var(--muted); flex-basis: 100%; }
+
+/* ─── E-02 · compounding cards ─── */
+.compound { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; margin-bottom: 1.3rem; }
+.compound__card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1.5rem 1.45rem 1.35rem; position: relative; }
+.compound__card--mid { border-color: rgba(10, 122, 85, 0.5); box-shadow: 0 14px 34px rgba(23,32,26,0.08); }
+.compound__badge { position: absolute; top: -0.62rem; left: 1.3rem; }
+.compound__n { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.9rem; }
+.compound__v { font-family: var(--mono); font-size: clamp(1.9rem, 3.4vw, 2.6rem); font-weight: 500; letter-spacing: -0.035em; margin-bottom: 0.7rem; }
+.compound__card--mid .compound__v, .compound__card:last-child .compound__v { color: var(--rust); }
+.compound__d { font-size: 0.9rem; color: var(--muted); line-height: 1.55; }
+.footnotes { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.04em; color: var(--muted); line-height: 1.9; max-width: 72ch; }
+
+/* ─── E-03 · findings schedule ─── */
+.findings { border: 1px solid var(--line); border-radius: 10px; background: var(--card); overflow: hidden; }
+.finding { display: grid; grid-template-columns: 4.4rem minmax(0,1.05fr) minmax(0,1fr) auto; gap: 1.3rem; align-items: start; padding: 1.25rem 1.4rem; }
+.finding + .finding { border-top: 1px solid var(--line-soft); }
+.finding__ix { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; color: var(--muted); padding-top: 0.2rem; }
+.finding__fail { font-weight: 700; font-size: 0.97rem; line-height: 1.4; }
+.finding__fail .s { display: block; font-weight: 400; font-size: 0.85rem; color: var(--rust); margin-top: 0.3rem; }
+.finding__fix { font-size: 0.9rem; color: var(--muted); line-height: 1.5; padding-top: 0.12rem; }
+.finding__fix b { color: var(--emerald-deep); font-weight: 700; }
+.finding .stamp { margin-top: 0.15rem; }
+.findings__head { display: grid; grid-template-columns: 4.4rem minmax(0,1.05fr) minmax(0,1fr) auto; gap: 1.3rem; padding: 0.8rem 1.4rem; background: var(--paper); border-bottom: 1px solid var(--line); }
+.findings__head .label { font-size: 0.6rem; }
+
+/* ─── E-04 · traceability (inverted ink panel) ─── */
+.trace { background: var(--ink); color: var(--paper); border-radius: 12px; padding: clamp(1.6rem, 3.5vw, 2.8rem); }
+.trace .label { color: rgba(247, 248, 245, 0.62); }
+.trace h3 { font-size: clamp(1.5rem, 2.5vw, 2rem); font-weight: 800; letter-spacing: -0.015em; margin: 0.65rem 0 1rem; }
+.trace p { color: rgba(247, 248, 245, 0.78); max-width: 58ch; margin-bottom: 1.9rem; font-size: 0.98rem; }
+.trace__row {
+  background: rgba(247, 248, 245, 0.05); border: 1px solid rgba(247, 248, 245, 0.16);
+  border-radius: 8px; padding: 1rem 1.2rem; overflow-x: auto;
+}
+.trace__grid { display: grid; grid-template-columns: repeat(6, auto); gap: 0.35rem 1.8rem; min-width: 560px; }
+.trace__grid .h { font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(247,248,245,0.5); white-space: nowrap; }
+.trace__grid .c { font-family: var(--mono); font-size: 0.84rem; white-space: nowrap; }
+.trace__grid .gain { color: #34D399; }
+.trace__link { display: flex; align-items: center; gap: 0.7rem; margin-top: 1.05rem; padding-top: 1rem; border-top: 1px dashed rgba(247,248,245,0.2); flex-wrap: wrap; }
+.trace__hash {
+  font-family: var(--mono); font-size: 0.8rem; color: #34D399;
+  background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.3);
+  padding: 0.32em 0.7em; border-radius: 5px; white-space: nowrap;
+}
+.trace__vnote { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(247,248,245,0.55); }
+.trace__foot { margin-top: 1.4rem; font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.06em; color: rgba(247,248,245,0.45); }
+
+/* ─── E-05 · coverage ledger ─── */
+.coverage { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); overflow: hidden; }
+.coverage__col { padding: 1.5rem 1.45rem 1.3rem; }
+.coverage__col + .coverage__col { border-left: 1px solid var(--line-soft); }
+.coverage__col h3 { font-family: var(--mono); font-size: 0.66rem; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase; color: var(--emerald-deep); padding-bottom: 0.85rem; margin-bottom: 0.4rem; border-bottom: 1px solid var(--line); }
+.cov-item { display: flex; justify-content: space-between; align-items: baseline; gap: 0.8rem; padding: 0.52rem 0; border-bottom: 1px solid var(--line-soft); font-size: 0.93rem; font-weight: 500; }
+.cov-item:last-child { border-bottom: 0; }
+.cov-item .how { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+.cov-item .how--ok { color: var(--emerald-deep); }
+.coverage__note { font-size: 0.82rem; color: var(--muted); margin-top: 0.9rem; line-height: 1.5; }
+.forms-strip { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 1.2rem; }
+.forms-strip .stamp { font-size: 0.66rem; }
+
+/* ─── E-06 · steps ─── */
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.1rem; margin-bottom: 1rem; }
+.step { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 1.45rem 1.4rem 1.3rem; }
+.step__top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1rem; }
+.step__ix { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.14em; color: var(--emerald-deep); }
+.step__time { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); }
+.step h3 { font-size: 1.12rem; font-weight: 700; margin-bottom: 0.55rem; letter-spacing: -0.01em; }
+.step p { font-size: 0.9rem; color: var(--muted); line-height: 1.55; }
+
+/* ─── E-07 · pricing as ledger lines ─── */
+.plans { border: 1px solid var(--line); border-radius: 10px; background: var(--card); overflow: hidden; margin-bottom: 1.1rem; }
+.plan { display: grid; grid-template-columns: minmax(7.5rem, 0.9fr) auto minmax(0, 1.6fr) auto; gap: 1.4rem; align-items: center; padding: 1.3rem 1.5rem; }
+.plan + .plan { border-top: 1px solid var(--line-soft); }
+.plan--hi { background: var(--emerald-wash); }
+.plan__name { font-weight: 800; font-size: 1.12rem; letter-spacing: -0.01em; }
+.plan__who { display: block; font-family: var(--mono); font-size: 0.62rem; font-weight: 400; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-top: 0.3rem; }
+.plan__price { font-family: var(--mono); font-size: 1.45rem; font-weight: 500; letter-spacing: -0.03em; text-align: right; }
+.plan__price .per { display: block; font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-top: 0.15rem; }
+.plan__meta { font-size: 0.87rem; color: var(--muted); line-height: 1.55; min-width: 0; }
+.plan__meta b { color: var(--ink); font-weight: 700; }
+.plan .btn { padding: 0.66rem 1.15rem; font-size: 0.88rem; white-space: nowrap; }
+.plans__note { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.05em; color: var(--muted); line-height: 1.9; }
+
+/* ─── E-08 · closing ─── */
+.close-sec { text-align: left; }
+.close-sec h2 { font-size: clamp(2.1rem, 4vw, 3.2rem); font-weight: 800; letter-spacing: -0.022em; line-height: 1.03; max-width: 17ch; margin-bottom: 1.3rem; text-wrap: balance; }
+.close-sec h2 em { font-style: normal; color: var(--emerald-deep); }
+.close-sec p { color: var(--muted); max-width: 54ch; margin-bottom: 2.2rem; }
+
+/* ─── colophon ─── */
+.colophon { border-top: 1px solid var(--line); padding: 2.6rem 0 2.4rem; }
+.colophon__grid { display: flex; justify-content: space-between; gap: 2rem; flex-wrap: wrap; align-items: flex-start; }
+.colophon__brand .wordmark { font-size: 1.3rem; }
+.colophon__tag { font-size: 0.88rem; color: var(--muted); margin-top: 0.5rem; max-width: 30ch; }
+.colophon__links { display: flex; gap: 1.7rem; flex-wrap: wrap; }
+.colophon__links a { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.13em; text-transform: uppercase; color: var(--muted); text-decoration: none; transition: color 0.3s ease; }
+.colophon__links a:hover { color: var(--emerald-deep); }
+.colophon__foot { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin-top: 2.2rem; padding-top: 1.3rem; border-top: 1px solid var(--line-soft); font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+
+/* ═══════════════ RESPONSIVE ═══════════════ */
+@media (max-width: 1080px) {
+  .finding, .findings__head { grid-template-columns: 3.2rem minmax(0,1fr) auto; }
+  .finding__fix { grid-column: 2 / 3; }
+  .findings__head .h-fix { display: none; }
+  .finding .stamp, .findings__head .h-status { grid-row: 1; grid-column: 3; }
+}
+@media (max-width: 960px) {
+  .frame { grid-template-columns: 1fr; }
+  .rail { display: none; }
+  .strip { display: flex; }
+  .duel, .compound, .steps { grid-template-columns: 1fr; }
+  .coverage { grid-template-columns: 1fr; }
+  .coverage__col + .coverage__col { border-left: 0; border-top: 1px solid var(--line-soft); }
+  .plan { grid-template-columns: 1fr auto; grid-template-areas: "name price" "meta meta" "cta cta"; row-gap: 0.85rem; }
+  .plan__name { grid-area: name; } .plan__price { grid-area: price; }
+  .plan__meta { grid-area: meta; } .plan .btn { grid-area: cta; justify-self: start; }
+  .exhibit__row { grid-template-columns: minmax(0, 1fr) auto; }
+  .exhibit__row .stamp { display: none; }
+  .hero { padding-top: 3.2rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- mobile top strip -->
+<header class="strip">
+  <a class="strip__mark" href="#top" aria-label="Glide">
+    <svg class="rail__glyph" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#10B981"/><path d="M9 16.5l5 5 9-10" stroke="#F7F8F5" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <span class="wordmark">Glide</span>
+  </a>
+  <a class="btn btn--primary" href="#pricing">See your numbers free</a>
+</header>
+
+<div class="frame" id="top">
+
+  <!-- ═══════════ RAIL — the audit index ═══════════ -->
+  <aside class="rail">
+    <div class="rail__stick">
+      <div class="rail__mark">
+        <svg class="rail__glyph" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#10B981"/><path d="M9 16.5l5 5 9-10" stroke="#F7F8F5" stroke-width="3.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <a class="wordmark" href="#top">Glide</a>
+      </div>
+      <div class="rail__case">
+        Case file — tax year 2025<br>
+        Subject: your trading history<br>
+        <span class="rail__clock num" id="utcClock">00:00:00 UTC</span> · priced to the second
+      </div>
+
+      <nav aria-label="Evidence index">
+        <ul class="rail__index" id="railIndex">
+          <li><a href="#e-01"><span class="ix">E-01</span><span>Same trade, two prices</span></a></li>
+          <li><a href="#e-02"><span class="ix">E-02</span><span>How errors compound</span></a></li>
+          <li><a href="#e-03"><span class="ix">E-03</span><span>What other tools miss</span></a></li>
+          <li><a href="#e-04"><span class="ix">E-04</span><span>Prove every number</span></a></li>
+          <li><a href="#e-05"><span class="ix">E-05</span><span>Coverage</span></a></li>
+          <li><a href="#e-06"><span class="ix">E-06</span><span>Connect. Import. Done.</span></a></li>
+          <li><a href="#pricing"><span class="ix">E-07</span><span>Pricing</span></a></li>
+        </ul>
+      </nav>
+
+      <div class="rail__method">
+        Method — <b>IRS fair market value</b><br>
+        Resolution — <b>exact block timestamp</b><br>
+        Verification — <b>on-chain tx hash</b>
+      </div>
+
+      <a class="btn btn--primary" href="#pricing">See your real numbers — free</a>
+    </div>
+  </aside>
+
+  <!-- ═══════════ MAIN — the exhibits ═══════════ -->
+  <main class="main">
+
+    <!-- HERO -->
+    <section class="hero shell">
+      <div class="hero__eyebrow reveal">
+        <span class="rule-lead"></span>
+        <span class="label">Crypto tax software · audit-grade accuracy</span>
+      </div>
+      <h1 data-split>The numbers other crypto tax tools <span class="miss">miss.</span></h1>
+      <p class="hero__dek reveal" data-d="0.15">
+        Every swap priced at its exact <b>on-chain block timestamp</b>. Every reward and airdrop
+        classified. Every number traceable to a <b>transaction hash</b> — not hourly guesses that
+        compound into audit risk.
+      </p>
+      <div class="hero__ctas reveal" data-d="0.25">
+        <a class="btn btn--primary" href="#pricing">See your real numbers — free</a>
+        <a class="btn btn--ghost" href="#e-01">Review the evidence ↓</a>
+      </div>
+
+      <figure class="exhibit reveal" data-d="0.35">
+        <div class="exhibit__head">
+          <span class="label label--emerald">Exhibit A — one SOL swap, priced two ways</span>
+          <span class="label">SOL / USD</span>
+        </div>
+        <div class="exhibit__body">
+          <div class="exhibit__row">
+            <div class="exhibit__who">
+              <div class="t">Typical tool — hourly candle</div>
+              <div class="s">highest price in the range</div>
+            </div>
+            <span class="stamp stamp--bad">Range guess</span>
+            <div class="exhibit__price price--guess num">$148.50</div>
+          </div>
+          <div class="exhibit__row">
+            <div class="exhibit__who">
+              <div class="t">Glide — block timestamp</div>
+              <div class="s">exact price at the moment of trade</div>
+            </div>
+            <span class="stamp stamp--ok"><svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Confirmed</span>
+            <div class="exhibit__price price--exact num" id="resolvePrice">$147.88</div>
+          </div>
+        </div>
+        <div class="exhibit__foot">
+          <span class="q">Difference on a 100 SOL trade</span>
+          <span class="v num">$62.00</span>
+        </div>
+        <figcaption class="exhibit__note">Illustrative example. Actual differences vary by asset, market conditions, and methodology selected.</figcaption>
+      </figure>
+    </section>
+
+    <!-- E-01 · SAME TRADE, TWO PRICES -->
+    <section class="exhibit-sec" id="e-01">
+      <div class="shell">
+        <div class="sec-head reveal">
+          <span class="ix">E-01</span>
+          <h2>Same trade. Two different prices.</h2>
+        </div>
+        <p class="sec-dek reveal" data-d="0.1">
+          Most tools price your trade with a snapshot candle — sometimes hourly, sometimes
+          <b>as coarse as daily</b>. Glide prices both legs of every swap at the exact on-chain
+          block timestamp, using the IRS-recognized fair market value method.
+        </p>
+
+        <div class="duel">
+          <div class="duel__panel duel__panel--hourly reveal">
+            <div class="duel__tag">
+              <span class="label label--rust">Common approach</span>
+              <span class="stamp stamp--bad">± the whole range</span>
+            </div>
+            <div class="candles candles--hourly" aria-hidden="true"><i></i></div>
+            <div class="duel__price num">$148.50</div>
+            <div class="duel__fact"><b>1 candle</b> for the entire hour<br>price used: the top of the range</div>
+          </div>
+          <div class="duel__panel duel__panel--glide reveal" data-d="0.12">
+            <div class="duel__tag">
+              <span class="label label--emerald">Glide</span>
+              <span class="stamp stamp--ok"><svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>To the second</span>
+            </div>
+            <div class="candles candles--block" aria-hidden="true">
+              <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <div class="duel__price num">$147.88</div>
+            <div class="duel__fact"><b>180 candles</b> for 3 minutes of data<br>price used: the exact moment of trade</div>
+          </div>
+        </div>
+
+        <div class="callout reveal">
+          <span class="q">Difference on a 100 SOL trade</span>
+          <span class="v num">$62.00</span>
+          <span class="m">Now multiply that across your trading history.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- E-02 · COMPOUNDING -->
+    <section class="exhibit-sec" id="e-02">
+      <div class="shell">
+        <div class="sec-head reveal">
+          <span class="ix">E-02</span>
+          <h2>Small errors compound fast.</h2>
+        </div>
+        <p class="sec-dek reveal" data-d="0.1">
+          A $62 cost-basis difference on a single trade might seem minor — and cost-basis errors
+          don't cancel out. Overestimate and you underreport gains: <b>audit risk</b>. Underestimate
+          and you overreport: <b>money lost</b>.
+        </p>
+
+        <div class="compound">
+          <div class="compound__card reveal">
+            <div class="compound__n">100 trades / year</div>
+            <div class="compound__v num" data-countup="6200" data-prefix="$">$6,200</div>
+            <p class="compound__d">A few swaps per week. Even casual traders deserve exact numbers.</p>
+          </div>
+          <div class="compound__card compound__card--mid reveal" data-d="0.12">
+            <span class="compound__badge stamp stamp--ok">Most active traders</span>
+            <div class="compound__n">500 trades / year</div>
+            <div class="compound__v num" data-countup="31000" data-prefix="$">$31,000</div>
+            <p class="compound__d">Daily positions across multiple exchanges. Too many trades to verify by hand.</p>
+          </div>
+          <div class="compound__card reveal" data-d="0.24">
+            <div class="compound__n">1,000 trades / year</div>
+            <div class="compound__v num" data-countup="62000" data-prefix="$">$62,000</div>
+            <p class="compound__d">DCA, DeFi, and cross-chain activity. Exactly the complexity Glide was built for.</p>
+          </div>
+        </div>
+
+        <p class="footnotes reveal">
+          Based on a $62 average difference per trade between snapshot pricing and exact
+          block-timestamp pricing. Illustrative example — actual differences vary based on asset,
+          market conditions, and methodology selected.
+        </p>
+      </div>
+    </section>
+
+    <!-- E-03 · WHAT OTHER TOOLS MISS -->
+    <section class="exhibit-sec" id="e-03">
+      <div class="shell">
+        <div class="sec-head reveal">
+          <span class="ix">E-03</span>
+          <h2>Where crypto tax tools quietly fail.</h2>
+        </div>
+        <p class="sec-dek reveal" data-d="0.1">
+          The messy edge cases are where wrong numbers come from — and where Glide does its real
+          work. Each finding below is a failure we see in imported histories, and how Glide
+          resolves it.
+        </p>
+
+        <div class="findings reveal">
+          <div class="findings__head" aria-hidden="true">
+            <span class="label">No.</span>
+            <span class="label h-fail">The failure</span>
+            <span class="label h-fix">How Glide resolves it</span>
+            <span class="label h-status">Status</span>
+          </div>
+
+          <div class="finding">
+            <span class="finding__ix">F-01</span>
+            <div class="finding__fail">Spam airdrops priced as real income
+              <span class="s">worthless junk tokens booked as phantom taxable income</span>
+            </div>
+            <div class="finding__fix">A <b>spam-airdrop guard</b> detects mispriced junk and keeps it out of your income report.</div>
+            <span class="stamp stamp--ok"><svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Handled</span>
+          </div>
+
+          <div class="finding">
+            <span class="finding__ix">F-02</span>
+            <div class="finding__fail">Staking &amp; rewards never booked
+              <span class="s">income that simply doesn't appear in the report</span>
+            </div>
+            <div class="finding__fix">Staking, rewards, and legitimate airdrops are <b>classified as income</b> — automatically, at the price of their block.</div>
+            <span class="stamp stamp--ok"><svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Handled</span>
+          </div>
+
+          <div class="finding">
+            <span class="finding__ix">F-03</span>
+            <div class="finding__fail">Bridged assets taxed as 100% gain
+              <span class="s">a transfer arrives with $0 cost basis — the whole sale becomes "profit"</span>
+            </div>
+            <div class="finding__fix">Basis is <b>carried across wallets and chains</b>; anything still missing is surfaced for review — never silently guessed.</div>
+            <span class="stamp stamp--ok"><svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Handled</span>
+          </div>
+
+          <div class="finding">
+            <span class="finding__ix">F-04</span>
+            <div class="finding__fail">Unlisted tokens priced at $0
+              <span class="s">no exchange listing, so the tool writes zero and moves on</span>
+            </div>
+            <div class="finding__fix">The <b>liquid-leg method</b> prices the swap from the leg the market can see.</div>
+            <span class="stamp stamp--ok"><svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Handled</span>
+          </div>
+
+          <div class="finding">
+            <span class="finding__ix">F-05</span>
+            <div class="finding__fail">Unknown types dumped into "other"
+              <span class="s">wraps, LP moves, and odd contract calls left uncategorized</span>
+            </div>
+            <div class="finding__fix">Unmapped transaction types get <b>mapped, not dumped</b> — every transaction lands in a real category.</div>
+            <span class="stamp stamp--ok"><svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Handled</span>
+          </div>
+
+          <div class="finding">
+            <span class="finding__ix">F-06</span>
+            <div class="finding__fail">One pooled basis across wallets
+              <span class="s">pre-2025 shortcuts that no longer match IRS rules</span>
+            </div>
+            <div class="finding__fix"><b>Per-wallet cost basis</b>, aligned with the 2025 IRS wallet-by-wallet requirement.</div>
+            <span class="stamp stamp--ok"><svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Handled</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- E-04 · TRACEABILITY -->
+    <section class="exhibit-sec" id="e-04">
+      <div class="shell">
+        <div class="sec-head reveal">
+          <span class="ix">E-04</span>
+          <h2>Every number, traceable to the blockchain.</h2>
+        </div>
+        <p class="sec-dek reveal" data-d="0.1">
+          "Trust us" isn't a methodology. Every line in a Glide report traces back to an on-chain
+          transaction hash — so if anyone ever asks, <b>you can show your work</b>.
+        </p>
+
+        <div class="trace reveal">
+          <span class="label">A report line, opened</span>
+          <h3>From Form 8949 line → to the chain it came from.</h3>
+          <p>Each disposal carries its acquisition, its proceeds, its basis — and the transaction
+          hash both were priced from. Audit-ready by default, using the IRS-recognized fair market
+          value method.</p>
+
+          <div class="trace__row">
+            <div class="trace__grid">
+              <span class="h">Asset</span><span class="h">Acquired</span><span class="h">Disposed</span><span class="h">Proceeds</span><span class="h">Cost basis</span><span class="h">Gain</span>
+              <span class="c">100 SOL</span><span class="c">2025-03-14</span><span class="c">2025-11-02</span><span class="c">$21,410.00</span><span class="c">$14,788.00</span><span class="c gain">+$6,622.00</span>
+            </div>
+            <div class="trace__link">
+              <span class="trace__hash">tx 5vKq…e3Rb</span>
+              <span class="stamp stamp--ok"><svg class="tick" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Verified on-chain</span>
+              <span class="trace__vnote">priced at its exact block timestamp</span>
+            </div>
+          </div>
+          <div class="trace__foot">Illustrative report line. Your reports link each entry to its own transaction hash.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- E-05 · COVERAGE -->
+    <section class="exhibit-sec" id="e-05">
+      <div class="shell">
+        <div class="sec-head reveal">
+          <span class="ix">E-05</span>
+          <h2>Connect once. Glide pulls everything.</h2>
+        </div>
+        <p class="sec-dek reveal" data-d="0.1">
+          CEX trades, on-chain swaps, DeFi, staking, NFTs — reconciled in one place. And because
+          taxes don't stop at crypto: <b>stocks and options too</b>, in the same report.
+        </p>
+
+        <div class="coverage reveal">
+          <div class="coverage__col">
+            <h3>Exchanges</h3>
+            <div class="cov-item"><span>Coinbase</span><span class="how how--ok">Direct sync</span></div>
+            <div class="cov-item"><span>Kraken</span><span class="how how--ok">Direct sync</span></div>
+            <div class="cov-item"><span>Gemini</span><span class="how how--ok">Direct sync</span></div>
+            <div class="cov-item"><span>Binance</span><span class="how">CSV import</span></div>
+            <div class="cov-item"><span>KuCoin</span><span class="how">CSV import</span></div>
+            <div class="cov-item"><span>Anything else</span><span class="how">Custom CSV mapper</span></div>
+          </div>
+          <div class="coverage__col">
+            <h3>Chains — wallet sync</h3>
+            <div class="cov-item"><span>Solana</span><span class="how how--ok">Address only</span></div>
+            <div class="cov-item"><span>Ethereum</span><span class="how how--ok">Address only</span></div>
+            <div class="cov-item"><span>Base · Arbitrum · Optimism</span><span class="how how--ok">L2s</span></div>
+            <div class="cov-item"><span>Polygon · BNB · Avalanche</span><span class="how how--ok">EVM</span></div>
+            <div class="cov-item"><span>Linea · Fantom · Cronos</span><span class="how how--ok">EVM</span></div>
+            <p class="coverage__note">Paste an address — swaps, staking, bridging, LP, NFTs, airdrops are scanned automatically.</p>
+          </div>
+          <div class="coverage__col">
+            <h3>Beyond crypto — Pro &amp; up</h3>
+            <div class="cov-item"><span>US stocks &amp; ETFs</span><span class="how how--ok">✓</span></div>
+            <div class="cov-item"><span>Options · futures · §1256</span><span class="how how--ok">✓</span></div>
+            <div class="cov-item"><span>Wash-sale detection</span><span class="how how--ok">✓</span></div>
+            <div class="cov-item"><span>1099-B reconciliation</span><span class="how how--ok">✓</span></div>
+            <div class="cov-item"><span>RSUs · ESPP · equity comp</span><span class="how how--ok">✓</span></div>
+            <p class="coverage__note">One combined report — stop stitching two tools together.</p>
+          </div>
+        </div>
+
+        <div class="forms-strip reveal">
+          <span class="stamp stamp--line">Form 8949</span>
+          <span class="stamp stamp--line">Schedule D</span>
+          <span class="stamp stamp--line">Schedule 1</span>
+          <span class="stamp stamp--line">UK SA108</span>
+          <span class="stamp stamp--line">Germany Anlage SO</span>
+          <span class="stamp stamp--line">TurboTax export</span>
+          <span class="stamp stamp--line">FIFO · LIFO · specific ID</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- E-06 · HOW IT WORKS -->
+    <section class="exhibit-sec" id="e-06">
+      <div class="shell">
+        <div class="sec-head reveal">
+          <span class="ix">E-06</span>
+          <h2>Connect. Import. Done.</h2>
+        </div>
+        <p class="sec-dek reveal" data-d="0.1">From sign-up to tax-ready reports in minutes — Glide absorbs the formatting, the parsing, and the edge cases.</p>
+
+        <div class="steps">
+          <div class="step reveal">
+            <div class="step__top"><span class="step__ix">Step 01</span><span class="step__time num">~2 min</span></div>
+            <h3>Connect your exchanges</h3>
+            <p>Paste an API key or upload a CSV. Glide handles the formatting, the parsing, and the edge cases.</p>
+          </div>
+          <div class="step reveal" data-d="0.12">
+            <div class="step__top"><span class="step__ix">Step 02</span><span class="step__time num">~1 min</span></div>
+            <h3>Add your wallet addresses</h3>
+            <p>Enter an address. Glide scans every on-chain transaction automatically — swaps, staking, bridging, all of it.</p>
+          </div>
+          <div class="step reveal" data-d="0.24">
+            <div class="step__top"><span class="step__ix">Step 03</span><span class="step__time num">~10 min</span></div>
+            <h3>See what you owe</h3>
+            <p>Capital gains, income, and losses — categorized by year, ready to export, every number traceable to its source.</p>
+          </div>
+        </div>
+        <p class="footnotes reveal">For up to 10,000 transactions.</p>
+      </div>
+    </section>
+
+    <!-- E-07 · PRICING -->
+    <section class="exhibit-sec" id="pricing">
+      <div class="shell">
+        <div class="sec-head reveal">
+          <span class="ix">E-07</span>
+          <h2>Transparent pricing, built for traders.</h2>
+        </div>
+        <p class="sec-dek reveal" data-d="0.1">
+          No hidden fees, no surprise upsells. Start free — <b>connect your accounts and see your
+          real numbers</b> before you pay a cent.
+        </p>
+
+        <div class="plans reveal">
+          <div class="plan plan--hi">
+            <div><span class="plan__name">Trial</span><span class="plan__who">Start here — see it work</span></div>
+            <div class="plan__price num">$0<span class="per">free</span></div>
+            <div class="plan__meta">Connect exchanges and wallets, import everything, and <b>view your computed numbers</b>. Pay only when you want the reports.</div>
+            <a class="btn btn--primary" href="/register">Try free</a>
+          </div>
+          <div class="plan">
+            <div><span class="plan__name">Starter</span><span class="plan__who">Casual traders</span></div>
+            <div class="plan__price num">$49<span class="per">per year</span></div>
+            <div class="plan__meta"><b>300 transactions</b> · full tax suite · every report export · email support</div>
+            <a class="btn btn--ghost" href="/register">Choose Starter</a>
+          </div>
+          <div class="plan">
+            <div><span class="plan__name">Active</span><span class="plan__who">Active traders · most popular</span></div>
+            <div class="plan__price num">$99<span class="per">per year</span></div>
+            <div class="plan__meta"><b>1,000 transactions</b> · everything in Starter · live portfolio tracking · in-app chat support</div>
+            <a class="btn btn--ghost" href="/register">Choose Active</a>
+          </div>
+          <div class="plan">
+            <div><span class="plan__name">Pro</span><span class="plan__who">Serious traders</span></div>
+            <div class="plan__price num">$299<span class="per">per year</span></div>
+            <div class="plan__meta"><b>10,000 transactions</b> · everything in Active · <b>stocks &amp; options support</b> · advanced trade analytics</div>
+            <a class="btn btn--ghost" href="/register">Choose Pro</a>
+          </div>
+          <div class="plan">
+            <div><span class="plan__name">Prime</span><span class="plan__who">High volume</span></div>
+            <div class="plan__price num">$699<span class="per">per year</span></div>
+            <div class="plan__meta"><b>100,000 transactions</b> · everything in Pro · built for high-frequency traders</div>
+            <a class="btn btn--ghost" href="/register">Choose Prime</a>
+          </div>
+        </div>
+
+        <p class="plans__note reveal">
+          All plans are annual. Transaction limits apply per tax year. Securities &amp; trade
+          analytics on Pro and Prime.
+        </p>
+      </div>
+    </section>
+
+    <!-- E-08 · CLOSE -->
+    <section class="exhibit-sec close-sec" id="e-08">
+      <div class="shell">
+        <span class="label label--emerald reveal">E-08 · Closing statement</span>
+        <h2 class="reveal" data-d="0.08" style="margin-top:1rem;">Crypto taxes that are <em>actually correct</em> — and you can prove it.</h2>
+        <p class="reveal" data-d="0.16">
+          Connect an exchange or paste a wallet address on the free Trial. If the numbers don't
+          convince you, you never pay.
+        </p>
+        <div class="hero__ctas reveal" data-d="0.24">
+          <a class="btn btn--primary" href="/register">See your real numbers — free</a>
+          <a class="btn btn--ghost" href="/login">Sign in</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- COLOPHON -->
+    <footer class="colophon">
+      <div class="shell">
+        <div class="colophon__grid">
+          <div class="colophon__brand">
+            <span class="wordmark">Glide</span>
+            <p class="colophon__tag">Crypto tax compliance, simplified — and verifiable down to the block.</p>
+          </div>
+          <nav class="colophon__links" aria-label="Footer">
+            <a href="#e-01">Evidence</a>
+            <a href="#pricing">Pricing</a>
+            <a href="/contact">Contact us</a>
+            <a href="/login">Sign in</a>
+          </nav>
+        </div>
+        <div class="colophon__foot">
+          <span>© 2026 Glide. All rights reserved.</span>
+          <span>IRS fair-market-value method · priced at the block timestamp</span>
+        </div>
+      </div>
+    </footer>
+
+  </main>
+</div>
+
+<!-- ─── cinematic engine (CDN, degrades to the finished static page) ─── -->
+<link rel="stylesheet" href="https://unpkg.com/lenis@1.3.11/dist/lenis.css">
+<script src="https://unpkg.com/lenis@1.3.11/dist/lenis.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/ScrollTrigger.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/SplitText.min.js" defer></script>
+
+<script>
+(() => {
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const TOUCH   = matchMedia('(pointer: coarse)').matches;
+
+  /* ── UTC clock (informational, runs regardless of motion prefs) ── */
+  const clock = document.getElementById('utcClock');
+  const tickClock = () => {
+    if (!clock) return;
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, '0');
+    clock.textContent = `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} UTC`;
+  };
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  /* ── reveal (vanilla IO; verify.mjs force-adds .is-in) ── */
+  const io = new IntersectionObserver((es) => es.forEach((e) => {
+    if (e.isIntersecting) { e.target.classList.add('is-in'); io.unobserve(e.target); }
+  }), { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+  document.querySelectorAll('.reveal').forEach((el) => {
+    if (el.dataset.d) el.style.transitionDelay = el.dataset.d + 's';
+    io.observe(el);
+  });
+
+  /* ── rail index tracking ── */
+  const links = Array.from(document.querySelectorAll('#railIndex a'));
+  if (links.length) {
+    const byId = new Map(links.map((a) => [a.getAttribute('href').slice(1), a]));
+    const secIO = new IntersectionObserver((es) => {
+      es.forEach((e) => {
+        const link = byId.get(e.target.id);
+        if (!link) return;
+        if (e.isIntersecting) { links.forEach((l) => l.classList.remove('on')); link.classList.add('on'); }
+      });
+    }, { rootMargin: '-30% 0px -55% 0px' });
+    byId.forEach((_, id) => { const s = document.getElementById(id); if (s) secIO.observe(s); });
+  }
+
+  if (REDUCED) return; /* everything below is motion-only; page is already complete */
+
+  /* ── count-ups (default markup already shows final values) ── */
+  const fmt = (n, pre) => (pre || '') + Math.round(n).toLocaleString('en-US');
+  const cIO = new IntersectionObserver((es) => es.forEach((e) => {
+    if (!e.isIntersecting) return;
+    cIO.unobserve(e.target);
+    const el = e.target, target = parseFloat(el.dataset.countup), pre = el.dataset.prefix || '';
+    if (isNaN(target)) return;
+    const t0 = performance.now(), dur = 1300;
+    const ease = (t) => 1 - Math.pow(1 - t, 3);
+    const step = (now) => {
+      const t = Math.min((now - t0) / dur, 1);
+      el.textContent = fmt(ease(t) * target, pre);
+      if (t < 1) requestAnimationFrame(step); else el.textContent = fmt(target, pre);
+    };
+    requestAnimationFrame(step);
+  }), { threshold: 0.5 });
+  document.querySelectorAll('[data-countup]').forEach((el) => cIO.observe(el));
+
+  /* ── hero price-resolve: digits settle into the exact block price ── */
+  const resolveEl = document.getElementById('resolvePrice');
+  if (resolveEl) {
+    const FINAL = '$147.88';
+    const start = performance.now(), dur = 1500;
+    const roll = (now) => {
+      const t = Math.min((now - start) / dur, 1);
+      const settled = Math.floor(t * FINAL.length);
+      let out = '';
+      for (let i = 0; i < FINAL.length; i++) {
+        const ch = FINAL[i];
+        out += (i < settled || !/\d/.test(ch)) ? ch : String(Math.floor(Math.random() * 10));
+      }
+      resolveEl.textContent = out;
+      if (t < 1) requestAnimationFrame(roll); else resolveEl.textContent = FINAL;
+    };
+    requestAnimationFrame(roll);
+    setTimeout(() => { resolveEl.textContent = FINAL; }, dur + 300); /* belt & braces */
+  }
+
+  window.addEventListener('load', () => {
+    if (!window.gsap) return;
+    gsap.registerPlugin(ScrollTrigger);
+
+    /* smooth scroll */
+    if (window.Lenis && !TOUCH) {
+      const lenis = new Lenis({ lerp: 0.1, smoothWheel: true });
+      lenis.on('scroll', () => ScrollTrigger.update());
+      gsap.ticker.add((t) => lenis.raf(t * 1000));
+      gsap.ticker.lagSmoothing(0);
+    }
+
+    /* split-headline hero */
+    if (window.SplitText) {
+      try {
+        const split = new SplitText('[data-split]', { type: 'lines,words', linesClass: 'ln' });
+        gsap.from(split.words, { yPercent: 118, opacity: 0, duration: 1.05, ease: 'expo.out', stagger: 0.055, delay: 0.15 });
+      } catch (e) { /* headline stays visible */ }
+    }
+  });
+})();
+</script>
+</body>
+</html>
