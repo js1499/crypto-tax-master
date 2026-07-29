@@ -55,13 +55,12 @@ export const BLOG_CATEGORIES: BlogCategory[] = [
   },
 ];
 
-// --- Post registry. To add an article: create src/content/blog/<slug>.ts and import it here. ---
-import howIsCryptoTaxed from "@/content/blog/how-is-crypto-taxed";
-import cryptoStakingTaxes from "@/content/blog/crypto-staking-taxes";
-import coinbaseTaxDocuments from "@/content/blog/coinbase-tax-documents";
+// --- Post registry. Posts live in src/content/blog/* and are aggregated in manifest.ts.
+// To add an article: create src/content/blog/<slug>.ts and add one line to manifest.ts. ---
+import { posts } from "@/content/blog/manifest";
 
-export const ALL_POSTS: BlogPost[] = [howIsCryptoTaxed, cryptoStakingTaxes, coinbaseTaxDocuments].sort(
-  (a, b) => (a.datePublished < b.datePublished ? 1 : -1),
+export const ALL_POSTS: BlogPost[] = [...posts].sort((a, b) =>
+  a.datePublished < b.datePublished ? 1 : -1,
 );
 
 export function getAllPosts(): BlogPost[] {

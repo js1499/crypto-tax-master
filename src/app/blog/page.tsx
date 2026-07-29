@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { BLOG_CATEGORIES, getAllPosts, postHref, getBlogListingJsonLd } from "@/lib/blog";
+import { BLOG_CATEGORIES, getAllPosts, getBlogListingJsonLd } from "@/lib/blog";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { BlogPostCard } from "@/components/blog-post-card";
 
 const HUB_DESC =
   "Clear, practical guides to crypto and equities taxes — how crypto is taxed, DeFi and staking, exchange tax documents, and ways to lower your bill.";
@@ -10,14 +11,6 @@ export const metadata = {
   description: HUB_DESC,
   alternates: { canonical: "/blog" },
 };
-
-const fmt = (iso: string) =>
-  new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
 
 export default function BlogHubPage() {
   const posts = getAllPosts();
@@ -30,34 +23,29 @@ export default function BlogHubPage() {
           { name: "Blog", href: "/blog" },
         ]}
       />
-      <div className="blog-hero">
-        <h1>Crypto Tax Blog &amp; Guides</h1>
+      <section className="blog-hero">
+        <span className="blog-eyebrow">Glide Blog</span>
+        <h1>Crypto taxes, explained.</h1>
         <p>{HUB_DESC}</p>
-      </div>
+      </section>
 
+      <div className="blog-section-label">Browse by topic</div>
       <div className="blog-cats">
         {BLOG_CATEGORIES.map((c) => (
           <Link key={c.slug} href={`/blog/${c.slug}`} className="blog-cat-card">
             <strong>{c.name}</strong>
             <span>{c.description}</span>
+            <em>Read articles →</em>
           </Link>
         ))}
       </div>
 
-      <div className="blog-section-title">Latest articles</div>
-      <ul className="blog-post-list">
+      <div className="blog-section-label">Latest articles</div>
+      <div className="blog-card-grid">
         {posts.map((p) => (
-          <li key={p.slug} className="blog-post-item">
-            <Link href={postHref(p)} className="blog-post-title">
-              {p.title}
-            </Link>
-            <p>{p.excerpt}</p>
-            <div className="blog-post-meta">
-              {fmt(p.datePublished)} · {p.readingTimeMinutes} min read
-            </div>
-          </li>
+          <BlogPostCard key={p.slug} post={p} />
         ))}
-      </ul>
+      </div>
 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
     </>

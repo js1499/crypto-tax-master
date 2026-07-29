@@ -1,14 +1,8 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import {
-  BLOG_CATEGORIES,
-  getCategory,
-  getPostsByCategory,
-  postHref,
-  getBlogListingJsonLd,
-} from "@/lib/blog";
+import { BLOG_CATEGORIES, getCategory, getPostsByCategory, getBlogListingJsonLd } from "@/lib/blog";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { BlogPostCard } from "@/components/blog-post-card";
 
 export function generateStaticParams() {
   return BLOG_CATEGORIES.map((c) => ({ category: c.slug }));
@@ -28,14 +22,6 @@ export async function generateMetadata({
     alternates: { canonical: `/blog/${cat.slug}` },
   };
 }
-
-const fmt = (iso: string) =>
-  new Date(iso + "T00:00:00Z").toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-    timeZone: "UTC",
-  });
 
 export default async function BlogCategoryPage({
   params,
@@ -57,27 +43,20 @@ export default async function BlogCategoryPage({
           { name: cat.name, href: `/blog/${cat.slug}` },
         ]}
       />
-      <div className="blog-hero">
-        <h1>{cat.title}</h1>
+      <section className="blog-hero">
+        <span className="blog-eyebrow">Category</span>
+        <h1>{cat.name}</h1>
         <p>{cat.description}</p>
-      </div>
+      </section>
 
       {posts.length === 0 ? (
-        <p style={{ color: "#6b7280", margin: "24px 0" }}>New articles are on the way — check back soon.</p>
+        <p style={{ color: "#5b6472", margin: "24px 0" }}>New articles are on the way — check back soon.</p>
       ) : (
-        <ul className="blog-post-list">
+        <div className="blog-card-grid">
           {posts.map((p) => (
-            <li key={p.slug} className="blog-post-item">
-              <Link href={postHref(p)} className="blog-post-title">
-                {p.title}
-              </Link>
-              <p>{p.excerpt}</p>
-              <div className="blog-post-meta">
-                {fmt(p.datePublished)} · {p.readingTimeMinutes} min read
-              </div>
-            </li>
+            <BlogPostCard key={p.slug} post={p} showCategory={false} />
           ))}
-        </ul>
+        </div>
       )}
 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />

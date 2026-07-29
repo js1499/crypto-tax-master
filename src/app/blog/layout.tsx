@@ -1,59 +1,107 @@
 import Link from "next/link";
 
-// Chrome + scoped styling shared by every /blog route (hub, category, article). Server-rendered
-// so all blog content is crawlable. Inter comes from the root layout; styles are scoped to .blog-*.
+// Editorial chrome + scoped design system shared by every /blog route. Server-rendered so all
+// content is crawlable. Inter comes from the root layout; everything is scoped to .blog-* classes.
 const BLOG_CSS = `
-.blog-root { min-height: 100vh; background: #ffffff; color: #1f2937; }
-.blog-container { max-width: 760px; margin: 0 auto; padding: 0 24px; }
-.blog-header { border-bottom: 1px solid #eef0ee; position: sticky; top: 0; background: rgba(255,255,255,0.9); backdrop-filter: saturate(180%) blur(8px); z-index: 10; }
-.blog-header__inner { display: flex; align-items: center; justify-content: space-between; height: 64px; max-width: 1080px; }
-.blog-logo img { height: 34px; width: auto; display: block; }
-.blog-nav { display: flex; align-items: center; gap: 20px; font-size: 14px; font-weight: 600; }
-.blog-nav a { color: #374151; text-decoration: none; }
-.blog-nav a:hover { color: #0d9668; }
-.blog-nav .blog-cta { background: #10b981; color: #04110c; padding: 8px 16px; border-radius: 999px; }
-.blog-breadcrumbs { font-size: 13px; color: #6b7280; margin: 28px 0 8px; }
-.blog-breadcrumbs ol { list-style: none; display: flex; flex-wrap: wrap; gap: 4px; padding: 0; margin: 0; }
-.blog-breadcrumbs a { color: #6b7280; text-decoration: none; }
-.blog-breadcrumbs a:hover { color: #0d9668; }
-.blog-breadcrumbs [aria-current="page"] { color: #111827; }
-.blog-h1 { font-size: 42px; line-height: 1.1; font-weight: 800; letter-spacing: -0.03em; color: #0f172a; margin: 12px 0 10px; }
-.blog-lede { font-size: 19px; color: #4b5563; margin: 0 0 8px; }
-.blog-meta { font-size: 14px; color: #6b7280; margin: 8px 0 28px; }
-.blog-body { font-size: 17px; line-height: 1.75; color: #1f2937; }
-.blog-body h2 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; color: #0f172a; margin: 40px 0 12px; }
-.blog-body h3 { font-size: 20px; font-weight: 700; color: #0f172a; margin: 28px 0 8px; }
-.blog-body p { margin: 14px 0; }
-.blog-body ul, .blog-body ol { margin: 14px 0; padding-left: 24px; }
-.blog-body li { margin: 7px 0; }
-.blog-body a { color: #0d9668; text-decoration: underline; text-underline-offset: 2px; }
-.blog-body strong { color: #111827; }
-.blog-body table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 15px; }
-.blog-body th, .blog-body td { border: 1px solid #e5e7eb; padding: 8px 12px; text-align: left; }
-.blog-body th { background: #f8fafc; font-weight: 700; }
-.blog-cta-card { margin: 40px 0 8px; padding: 24px 28px; border: 1px solid #d1fae5; background: #ecfdf5; border-radius: 16px; }
-.blog-cta-card h3 { margin: 0 0 6px; font-size: 20px; color: #065f46; }
-.blog-cta-card p { margin: 0 0 14px; color: #047857; }
-.blog-cta-card a { display: inline-block; background: #10b981; color: #04110c; font-weight: 700; padding: 10px 20px; border-radius: 999px; text-decoration: none; }
-.blog-hero { padding: 44px 0 8px; }
-.blog-hero h1 { font-size: 46px; line-height: 1.05; font-weight: 800; letter-spacing: -0.03em; color: #0f172a; margin: 8px 0 12px; }
-.blog-hero p { font-size: 19px; color: #4b5563; max-width: 640px; }
-.blog-cats { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin: 28px 0; }
-.blog-cat-card { display: block; border: 1px solid #eef0ee; border-radius: 14px; padding: 18px 20px; text-decoration: none; color: inherit; transition: border-color .15s; }
-.blog-cat-card:hover { border-color: #10b981; }
-.blog-cat-card strong { display: block; color: #0f172a; font-size: 17px; margin-bottom: 4px; }
-.blog-cat-card span { color: #6b7280; font-size: 14px; }
-.blog-post-list { list-style: none; padding: 0; margin: 24px 0; }
-.blog-post-item { padding: 22px 0; border-top: 1px solid #eef0ee; }
-.blog-post-item a.blog-post-title { display: block; font-size: 22px; font-weight: 700; color: #0f172a; text-decoration: none; letter-spacing: -0.01em; }
-.blog-post-item a.blog-post-title:hover { color: #0d9668; }
-.blog-post-item p { margin: 6px 0 8px; color: #4b5563; }
-.blog-post-item .blog-post-meta { font-size: 13px; color: #9ca3af; }
-.blog-section-title { font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #9ca3af; margin: 36px 0 4px; }
-.blog-footer { border-top: 1px solid #eef0ee; margin-top: 64px; padding: 32px 0; font-size: 14px; color: #6b7280; }
-.blog-footer a { color: #6b7280; text-decoration: none; }
-.blog-footer a:hover { color: #0d9668; }
-@media (max-width: 640px) { .blog-h1, .blog-hero h1 { font-size: 34px; } }
+.blog-root {
+  --ink:#0f172a; --muted:#5b6472; --soft:#8a94a3; --line:#e8ebe9;
+  --accent:#10b981; --accent-dim:#0d9668; --pill-bg:#ecfdf5; --pill-line:#d1fae5;
+  min-height:100vh; background:#ffffff; color:#1f2937;
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.blog-container { max-width:1120px; margin:0 auto; padding:0 24px; }
+
+/* Header */
+.blog-header { position:sticky; top:0; z-index:20; background:rgba(255,255,255,0.85); backdrop-filter:saturate(180%) blur(10px); border-bottom:1px solid var(--line); }
+.blog-header__inner { display:flex; align-items:center; justify-content:space-between; height:66px; }
+.blog-logo img { height:30px; width:auto; display:block; }
+.blog-nav { display:flex; align-items:center; gap:26px; font-size:14.5px; font-weight:600; }
+.blog-nav a { color:#374151; text-decoration:none; transition:color .15s; }
+.blog-nav a:hover { color:var(--accent-dim); }
+.blog-nav .blog-cta { background:var(--ink); color:#fff; padding:9px 18px; border-radius:999px; }
+.blog-nav .blog-cta:hover { background:#1f2937; color:#fff; }
+
+/* Breadcrumbs */
+.blog-breadcrumbs { font-size:13px; color:var(--muted); margin:26px 0 0; }
+.blog-breadcrumbs ol { list-style:none; display:flex; flex-wrap:wrap; gap:6px; padding:0; margin:0; }
+.blog-breadcrumbs a { color:var(--muted); text-decoration:none; }
+.blog-breadcrumbs a:hover { color:var(--accent-dim); }
+.blog-breadcrumbs [aria-current="page"] { color:var(--ink); }
+
+/* Hero */
+.blog-hero { padding:46px 0 26px; border-bottom:1px solid var(--line); margin-bottom:34px; }
+.blog-eyebrow { display:inline-block; font-size:13px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--accent-dim); margin-bottom:14px; }
+.blog-hero h1 { font-size:52px; line-height:1.04; font-weight:800; letter-spacing:-0.03em; color:var(--ink); margin:0 0 14px; }
+.blog-hero p { font-size:20px; line-height:1.5; color:var(--muted); max-width:680px; margin:0; }
+
+/* Section label */
+.blog-section-label { font-size:13px; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:var(--soft); margin:44px 0 16px; }
+
+/* Category cards */
+.blog-cats { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; }
+.blog-cat-card { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:16px; padding:22px; text-decoration:none; color:inherit; background:#fff; transition:border-color .15s, transform .15s, box-shadow .15s; }
+.blog-cat-card:hover { border-color:var(--accent); transform:translateY(-2px); box-shadow:0 12px 32px -14px rgba(16,185,129,0.28); }
+.blog-cat-card strong { font-size:18px; color:var(--ink); margin-bottom:6px; }
+.blog-cat-card span { font-size:14.5px; color:var(--muted); line-height:1.5; flex:1; }
+.blog-cat-card em { font-style:normal; font-size:14px; font-weight:600; color:var(--accent-dim); margin-top:14px; }
+
+/* Article card grid */
+.blog-card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:18px; }
+.blog-card { display:flex; flex-direction:column; border:1px solid var(--line); border-radius:16px; padding:22px 22px 20px; text-decoration:none; color:inherit; background:#fff; transition:border-color .15s, transform .15s, box-shadow .15s; }
+.blog-card:hover { border-color:var(--accent); transform:translateY(-2px); box-shadow:0 14px 36px -16px rgba(16,185,129,0.3); }
+.blog-pill { align-self:flex-start; font-size:12px; font-weight:700; color:var(--accent-dim); background:var(--pill-bg); border:1px solid var(--pill-line); padding:4px 10px; border-radius:999px; margin-bottom:14px; }
+.blog-card-title { font-size:19px; line-height:1.28; font-weight:700; letter-spacing:-0.01em; color:var(--ink); margin:0 0 8px; }
+.blog-card:hover .blog-card-title { color:var(--accent-dim); }
+.blog-card-excerpt { font-size:14.5px; line-height:1.55; color:var(--muted); margin:0 0 16px; flex:1; }
+.blog-card-meta { font-size:13px; color:var(--soft); }
+
+/* Article */
+.blog-article { max-width:720px; margin:0 auto; }
+.blog-article-pill { display:inline-block; font-size:12px; font-weight:700; color:var(--accent-dim); background:var(--pill-bg); border:1px solid var(--pill-line); padding:4px 12px; border-radius:999px; margin:22px 0 16px; text-decoration:none; }
+.blog-h1 { font-size:44px; line-height:1.08; font-weight:800; letter-spacing:-0.03em; color:var(--ink); margin:0 0 16px; }
+.blog-lede { font-size:20px; line-height:1.5; color:var(--muted); margin:0 0 22px; }
+.blog-meta { display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:14px; color:var(--soft); padding-bottom:26px; border-bottom:1px solid var(--line); }
+.blog-meta a { color:var(--accent-dim); text-decoration:none; font-weight:600; }
+
+/* Article body typography */
+.blog-body { font-size:18px; line-height:1.78; color:#26303c; margin-top:30px; }
+.blog-body h2 { font-size:27px; font-weight:800; letter-spacing:-0.01em; color:var(--ink); margin:46px 0 14px; }
+.blog-body h3 { font-size:20px; font-weight:700; color:var(--ink); margin:30px 0 8px; }
+.blog-body p { margin:16px 0; }
+.blog-body ul, .blog-body ol { margin:16px 0; padding-left:24px; }
+.blog-body li { margin:8px 0; }
+.blog-body li::marker { color:var(--accent); }
+.blog-body a { color:var(--accent-dim); text-decoration:underline; text-underline-offset:3px; text-decoration-thickness:1px; }
+.blog-body a:hover { color:var(--ink); }
+.blog-body strong { color:var(--ink); font-weight:700; }
+.blog-body em { font-style:italic; }
+.blog-body table { width:100%; border-collapse:collapse; margin:24px 0; font-size:15.5px; }
+.blog-body th, .blog-body td { border:1px solid var(--line); padding:10px 14px; text-align:left; }
+.blog-body th { background:#f6f8f7; font-weight:700; color:var(--ink); }
+
+/* CTA card (rendered inside article HTML) */
+.blog-cta-card { margin:44px 0 8px; padding:28px 30px; border:1px solid #bbf7d0; background:linear-gradient(180deg,#f0fdf4,#ecfdf5); border-radius:18px; }
+.blog-cta-card h3 { margin:0 0 8px; font-size:21px; font-weight:800; color:#065f46; }
+.blog-cta-card p { margin:0 0 16px; color:#047857; font-size:16px; line-height:1.5; }
+.blog-cta-card a { display:inline-block; background:var(--accent); color:#04110c; font-weight:700; padding:11px 22px; border-radius:999px; text-decoration:none; font-size:15px; }
+.blog-cta-card a:hover { background:var(--accent-dim); }
+
+.blog-related { margin-top:56px; }
+
+/* Footer */
+.blog-footer { border-top:1px solid var(--line); margin-top:80px; padding:36px 0 48px; font-size:14px; color:var(--muted); }
+.blog-footer a { color:var(--muted); text-decoration:none; }
+.blog-footer a:hover { color:var(--accent-dim); }
+
+@media (max-width:680px) {
+  .blog-hero { padding:34px 0 20px; }
+  .blog-hero h1 { font-size:36px; }
+  .blog-hero p { font-size:18px; }
+  .blog-h1 { font-size:32px; }
+  .blog-body { font-size:17px; }
+  .blog-nav { gap:16px; font-size:14px; }
+}
 `;
 
 export default function BlogLayout({ children }: { children: React.ReactNode }) {
@@ -63,7 +111,7 @@ export default function BlogLayout({ children }: { children: React.ReactNode }) 
         <div className="blog-container blog-header__inner">
           <Link href="/" className="blog-logo" aria-label="Glide home">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/landing/logos/glide-logo.svg" alt="Glide crypto tax software" />
+            <img src="/landing/logos/glide-logo.png" alt="Glide crypto tax software" />
           </Link>
           <nav className="blog-nav">
             <Link href="/blog">Blog</Link>
@@ -74,7 +122,9 @@ export default function BlogLayout({ children }: { children: React.ReactNode }) 
           </nav>
         </div>
       </header>
-      <div className="blog-container">{children}</div>
+
+      <main className="blog-container">{children}</main>
+
       <footer className="blog-footer">
         <div className="blog-container">
           <p>© 2026 Glide. Crypto &amp; equities tax software.</p>
@@ -84,6 +134,7 @@ export default function BlogLayout({ children }: { children: React.ReactNode }) 
           </p>
         </div>
       </footer>
+
       <style dangerouslySetInnerHTML={{ __html: BLOG_CSS }} />
     </div>
   );

@@ -1,15 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import {
-  getAllPosts,
-  getPost,
-  getCategory,
-  getPostsByCategory,
-  getArticleJsonLd,
-  postHref,
-} from "@/lib/blog";
+import { getAllPosts, getPost, getCategory, getPostsByCategory, getArticleJsonLd, postHref } from "@/lib/blog";
 import { Breadcrumbs } from "@/components/breadcrumbs";
+import { BlogPostCard } from "@/components/blog-post-card";
 
 export function generateStaticParams() {
   return getAllPosts().map((p) => ({ category: p.category, slug: p.slug }));
@@ -60,7 +54,7 @@ export default async function BlogPostPage({
     .slice(0, 3);
 
   return (
-    <article>
+    <article className="blog-article">
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
@@ -69,29 +63,26 @@ export default async function BlogPostPage({
           { name: post.title, href: postHref(post) },
         ]}
       />
+      <Link href={`/blog/${post.category}`} className="blog-article-pill">
+        {cat?.name ?? "Article"}
+      </Link>
       <h1 className="blog-h1">{post.title}</h1>
       <p className="blog-lede">{post.description}</p>
       <div className="blog-meta">
-        By {post.author} · {fmt(post.datePublished)} · {post.readingTimeMinutes} min read ·{" "}
-        <Link href={`/blog/${post.category}`}>{cat?.name}</Link>
+        By {post.author} · {fmt(post.datePublished)} · {post.readingTimeMinutes} min read
       </div>
 
       <div className="blog-body" dangerouslySetInnerHTML={{ __html: post.html }} />
 
       {related.length > 0 && (
-        <>
-          <div className="blog-section-title">Related articles</div>
-          <ul className="blog-post-list">
+        <div className="blog-related">
+          <div className="blog-section-label">Related articles</div>
+          <div className="blog-card-grid">
             {related.map((p) => (
-              <li key={p.slug} className="blog-post-item">
-                <Link href={postHref(p)} className="blog-post-title">
-                  {p.title}
-                </Link>
-                <p>{p.excerpt}</p>
-              </li>
+              <BlogPostCard key={p.slug} post={p} showCategory={false} />
             ))}
-          </ul>
-        </>
+          </div>
+        </div>
       )}
 
       <script
