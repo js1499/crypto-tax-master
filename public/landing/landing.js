@@ -1014,9 +1014,9 @@ if (pipeline) {
   var logoImages = {};
   var logoSrcs = {
     GLIDE: "/landing/logos/glide-logo.png",
-    Solana: "/landing/logos/solana.png",
-    Ethereum: "/landing/logos/ethereum.png",
-    Bitcoin: "/landing/logos/bitcoin.png",
+    Solana: "/landing/logos/solana.webp",
+    Ethereum: "/landing/logos/ethereum.webp",
+    Bitcoin: "/landing/logos/bitcoin.webp",
     Binance: "/landing/logos/binance.png",
     Coinbase: "/landing/logos/coinbase.png",
     Kraken: "/landing/logos/kraken.png",

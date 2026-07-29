@@ -6,6 +6,8 @@ const nextConfig = {
   reactStrictMode: true,
   basePath: '',
   images: {
+    // Serve modern formats where the browser supports them (smaller LCP images).
+    formats: ["image/avif", "image/webp"],
     domains: [
       "source.unsplash.com",
       "images.unsplash.com",
@@ -50,18 +52,40 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
-  async headers() {
+  // Canonicalize the host: 308 (permanent) redirect www -> apex so link equity consolidates on
+  // one host. (If Vercel already redirects www at the edge this is dormant; if not, this enforces
+  // it. No loop: the condition only matches host=www and the target is the apex.) Set the apex as
+  // the primary domain in Vercel too, belt-and-braces.
+  async redirects() {
     return [
       {
         source: '/:path*',
-        headers: [
-          { key: 'X-Content-Type-Options', value: 'nosniff' },
-          { key: 'X-Frame-Options', value: 'DENY' },
-          { key: 'X-XSS-Protection', value: '1; mode=block' },
-          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
-          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-        ],
+        has: [{ type: 'host', value: 'www.glidetaxes.com' }],
+        destination: 'https://glidetaxes.com/:path*',
+        permanent: true,
       },
+    ];
+  },
+  async headers() {
+    const security = [
+      { key: 'X-Content-Type-Options', value: 'nosniff' },
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'X-XSS-Protection', value: '1; mode=block' },
+      { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+      { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+    ];
+    // Keep the authenticated app + auth screens + checkout out of the index and stop crawl budget
+    // leaking onto private surfaces. These are all "use client" pages that can't cleanly export
+    // `robots` metadata, so a header is the right lever. Reinforced by robots.ts disallow.
+    const noindex = { key: 'X-Robots-Tag', value: 'noindex, nofollow' };
+    const appPaths = [
+      '/dashboard/:path*', '/accounts/:path*', '/transactions/:path*', '/tax-reports/:path*',
+      '/settings/:path*', '/tax-ai/:path*', '/tutorial/:path*', '/securities/:path*',
+      '/checkout/:path*', '/login', '/register', '/forgot-password', '/reset-password',
+    ];
+    return [
+      { source: '/:path*', headers: security },
+      ...appPaths.map((source) => ({ source, headers: [noindex] })),
     ];
   },
 };

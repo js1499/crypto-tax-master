@@ -1,9 +1,10 @@
 import { CpaFilingContactPage } from "./cpa-filing-contact-page";
 
 export const metadata = {
-  title: "Glide | CPA Filing",
+  title: "CPA Filing",
   description:
-    "Get in touch with Glide about CPA filing. Share your name, email, and phone number to learn more.",
+    "Have a licensed CPA review and file your crypto & equities taxes. Share your name, email, and phone number and the Glide team will walk you through CPA filing.",
+  alternates: { canonical: "/cpa-filing" },
 };
 
 export default function Page() {

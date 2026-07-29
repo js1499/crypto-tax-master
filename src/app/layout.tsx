@@ -1,5 +1,5 @@
 import "./globals.css"; // Updated import path for globals.css
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -25,9 +25,52 @@ const inter = Inter({
   weight: ["300", "400", "500", "600", "700"],
 });
 
+const SITE_URL = "https://glidetaxes.com";
+const SITE_NAME = "Glide";
+const DEFAULT_TITLE = "Glide — Crypto & Equities Tax Software";
+const DEFAULT_DESCRIPTION =
+  "Glide is crypto & equities tax software that identifies every transaction and prices it to the exact block. Connect your wallets and exchanges to get accurate, audit-ready tax forms.";
+
+// metadataBase is the gate that lets every relative OG image (opengraph-image.tsx) and per-page
+// canonical resolve to absolute production URLs. title.template appends "| Glide" to each page's
+// distinct title. openGraph/twitter give social/chat shares a real card (image comes from the
+// file-based opengraph-image.tsx / twitter-image.tsx routes, auto-merged by Next). No default
+// `alternates.canonical` here on purpose — child pages set their own so they don't all canonicalize
+// to the home page; app/auth pages are noindexed via X-Robots-Tag in next.config.js.
 export const metadata: Metadata = {
-  title: "Crypto Tax Calculator",
-  description: "The first crypto tax calculator that actually gets your numbers right. We checked.",
+  metadataBase: new URL(SITE_URL),
+  title: { default: DEFAULT_TITLE, template: `%s | ${SITE_NAME}` },
+  description: DEFAULT_DESCRIPTION,
+  applicationName: SITE_NAME,
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+      "max-video-preview": -1,
+    },
+  },
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    url: SITE_URL,
+    title: DEFAULT_TITLE,
+    description: DEFAULT_DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: DEFAULT_TITLE,
+    description: DEFAULT_DESCRIPTION,
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#10b981",
 };
 
 export default function RootLayout({
@@ -43,6 +86,10 @@ export default function RootLayout({
           inter.variable
         )}
       >
+        {/* Warm up third-party origins used sitewide (chat + analytics) — cheap CWV win. */}
+        <link rel="dns-prefetch" href="https://client.crisp.chat" />
+        <link rel="dns-prefetch" href="https://www.clarity.ms" />
+        <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
         <ErrorBoundary>
           <NextAuthSessionProvider>
             <ThemeProvider

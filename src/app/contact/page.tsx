@@ -1,9 +1,10 @@
 import { ContactPage } from "./contact-page";
 
 export const metadata = {
-  title: "Glide | Contact Us",
+  title: "Contact Us",
   description:
-    "Get in touch with the Glide team. We'd love to hear from you.",
+    "Get in touch with the Glide team about crypto & equities tax software, CPA filing, or support. We usually reply within one business day.",
+  alternates: { canonical: "/contact" },
 };
 
 export default function Page() {

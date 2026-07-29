@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { LandingPage } from "./landing-page";
 import { getCurrentUser } from "@/lib/auth-helpers";
+import { getSiteStructuredDataJson } from "@/lib/structured-data";
 
 // Shared rendering for the marketing landing page + its A/B test variants. The full page lives in
 // landing-body.html; variants reuse ALL of its chrome (nav, how-it-works, supported platforms,
@@ -80,11 +81,21 @@ function buildVariantBody(base: string, variant: string): string {
 function renderBody(bodyHtml: string, isAuthenticated: boolean) {
   return (
     <>
+      {/* Warm up the render-blocking font origins before the stylesheet requests — the hero <h1>
+          (LCP element) is styled with Cabinet Grotesk from fonts.cdnfonts.com. */}
+      <link rel="preconnect" href="https://fonts.cdnfonts.com" crossOrigin="anonymous" />
+      <link rel="preconnect" href="https://fonts.googleapis.com" />
+      <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
       <link rel="stylesheet" href="/landing/landing.css" />
       <link rel="stylesheet" href="https://fonts.cdnfonts.com/css/cabinet-grotesk" />
       <link
         rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400;1,500&display=swap"
+      />
+      {/* Organization + WebSite + SoftwareApplication(+Offers) JSON-LD — see src/lib/structured-data.ts */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: getSiteStructuredDataJson() }}
       />
       <LandingPage billingHref="/settings?tab=billing" bodyHtml={bodyHtml} isAuthenticated={isAuthenticated} />
     </>

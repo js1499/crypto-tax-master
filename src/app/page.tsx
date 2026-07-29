@@ -3,9 +3,10 @@ import { renderFullLanding } from "./landing-shared";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Glide | Crypto Tax Software",
+  title: "Crypto Tax Calculator & Software",
   description:
-    "Every transaction identified. Effortlessly exact. On-chain verification at the exact block timestamp.",
+    "Glide is crypto tax software that identifies every transaction and prices it to the exact on-chain block. Connect your wallets and exchanges for accurate, audit-ready tax forms.",
+  alternates: { canonical: "/" },
 };
 
 export default async function HomePage() {

@@ -7,7 +7,8 @@ import { PurchaseConversion } from "@/components/purchase-conversion";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Payment successful | Glide",
+  title: "Payment successful",
+  robots: { index: false, follow: false },
 };
 
 interface VerifiedPurchase {
