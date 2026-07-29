@@ -32,7 +32,13 @@ export default function BlogHubPage() {
       <div className="blog-section-label">Browse by topic</div>
       <div className="blog-cats">
         {BLOG_CATEGORIES.map((c) => (
-          <Link key={c.slug} href={`/blog/${c.slug}`} className="blog-cat-card">
+          <Link
+            key={c.slug}
+            href={`/blog/${c.slug}`}
+            className="blog-cat-card"
+            style={{ "--cat": c.color, "--cat-tint": c.tint } as unknown as React.CSSProperties}
+          >
+            <span className="blog-cat-dot" />
             <strong>{c.name}</strong>
             <span>{c.description}</span>
             <em>Read articles →</em>

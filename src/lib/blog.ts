@@ -7,6 +7,8 @@ export interface BlogCategory {
   name: string; // short label (nav, cards)
   title: string; // SEO <title> for the category page
   description: string; // meta description + hub blurb
+  color: string; // accent hex — pills, borders, progress bar, TOC
+  tint: string; // light background for pills/accents
 }
 
 export interface BlogPost {
@@ -31,6 +33,8 @@ export const BLOG_CATEGORIES: BlogCategory[] = [
     title: "Crypto Tax Basics — How Crypto Is Taxed",
     description:
       "Plain-English guides to how cryptocurrency is taxed in the US: capital gains, cost basis, income, and the forms you file.",
+    color: "#059669",
+    tint: "#ecfdf5",
   },
   {
     slug: "defi-and-staking",
@@ -38,6 +42,8 @@ export const BLOG_CATEGORIES: BlogCategory[] = [
     title: "DeFi, Staking & NFT Taxes",
     description:
       "How DeFi swaps, staking rewards, airdrops, bridges, and NFTs are taxed — and how to report them correctly.",
+    color: "#7c3aed",
+    tint: "#f5f3ff",
   },
   {
     slug: "exchange-guides",
@@ -45,6 +51,8 @@ export const BLOG_CATEGORIES: BlogCategory[] = [
     title: "Exchange Tax Guides",
     description:
       "How to find your tax documents and import your full transaction history from Coinbase, Binance, Kraken, and more.",
+    color: "#ea580c",
+    tint: "#fff7ed",
   },
   {
     slug: "tax-strategy",
@@ -52,6 +60,8 @@ export const BLOG_CATEGORIES: BlogCategory[] = [
     title: "Crypto Tax Strategy",
     description:
       "Legal ways to reduce your crypto tax bill: tax-loss harvesting, holding periods, cost-basis methods, and more.",
+    color: "#0284c7",
+    tint: "#eff6ff",
   },
 ];
 

@@ -35,7 +35,7 @@ export default async function BlogCategoryPage({
   const jsonLd = getBlogListingJsonLd(cat.title, cat.description, `/blog/${cat.slug}`, posts);
 
   return (
-    <>
+    <div style={{ "--cat": cat.color, "--cat-tint": cat.tint } as unknown as React.CSSProperties}>
       <Breadcrumbs
         items={[
           { name: "Home", href: "/" },
@@ -43,7 +43,7 @@ export default async function BlogCategoryPage({
           { name: cat.name, href: `/blog/${cat.slug}` },
         ]}
       />
-      <section className="blog-hero">
+      <section className="blog-hero blog-hero--cat">
         <span className="blog-eyebrow">Category</span>
         <h1>{cat.name}</h1>
         <p>{cat.description}</p>
@@ -60,6 +60,6 @@ export default async function BlogCategoryPage({
       )}
 
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
-    </>
+    </div>
   );
 }
