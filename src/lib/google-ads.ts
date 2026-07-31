@@ -118,19 +118,27 @@ export function fireSignupConversion(transactionId?: string): void {
   try {
     const label = config.signupLabel;
     if (!label) return; // no label configured → no-op (never fire a blank label)
-    const gtag = getGtag();
-    if (!gtag) return;
 
-    // Enhanced conversions: hand gtag the user-provided data to hash client-side.
-    if (pendingUserData) {
-      gtag("set", "user_data", pendingUserData);
-    }
-
-    gtag("event", "conversion", {
-      send_to: `${GOOGLE_ADS_ID}/${label}`,
-      ...(transactionId ? { transaction_id: transactionId } : {}),
+    // Wait briefly for gtag in case the base tag (afterInteractive) hasn't finished
+    // loading at the exact moment of a fast/deep-linked signup — otherwise the
+    // conversion would silently no-op and under-count. The poll (and window.gtag)
+    // survive the App Router soft navigation to /accounts, so it still fires once
+    // gtag is ready. Mirrors firePurchaseConversion. Fully fail-safe.
+    whenGtagReady((gtag) => {
+      try {
+        // Enhanced conversions: hand gtag the user-provided data to hash client-side.
+        if (pendingUserData) {
+          gtag("set", "user_data", pendingUserData);
+        }
+        gtag("event", "conversion", {
+          send_to: `${GOOGLE_ADS_ID}/${label}`,
+          ...(transactionId ? { transaction_id: transactionId } : {}),
+        });
+        pendingUserData = null; // clear so a later conversion can't reuse this user's data
+      } catch {
+        // ignore — never interrupt the signup flow
+      }
     });
-    pendingUserData = null; // clear so a later conversion can't reuse this user's data
   } catch {
     // Never let a tracking error affect account creation.
   }
