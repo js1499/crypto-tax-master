@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { firePurchaseConversion, setUserData } from "@/lib/google-ads";
+import { fireMetaPurchase } from "@/lib/meta-pixel";
 
 /**
  * Best-effort: record server-side that this session's purchase conversion has fired,
@@ -52,6 +53,9 @@ export function PurchaseConversion({
       // unclaimed so a retry can fire (Google dedupes any retry by transaction_id).
       onSent: () => markPurchaseFired(transactionId),
     });
+    // Meta Pixel Purchase — same value/currency + the Stripe session id as eventID for CAPI
+    // de-dup. Gated by the same server-side fire-once guard as the Google conversion. Fail-safe.
+    fireMetaPurchase({ value, currency, transactionId });
     // Fire exactly once on mount; deps intentionally empty.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

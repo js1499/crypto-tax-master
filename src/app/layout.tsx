@@ -11,6 +11,7 @@ import { PipelineProgress } from "@/components/sync-pipeline/pipeline-progress";
 import { Toaster } from "sonner";
 import Script from "next/script";
 import { GoogleAds } from "@/components/google-ads";
+import { MetaPixel } from "@/components/meta-pixel";
 
 // Initialize Sentry on the client side
 if (typeof window !== "undefined") {
@@ -116,6 +117,10 @@ export default function RootLayout({
             label is read server-side and stays inert until
             GOOGLE_ADS_SIGNUP_CONVERSION_LABEL is set. */}
         <GoogleAds signupLabel={process.env.GOOGLE_ADS_SIGNUP_CONVERSION_LABEL || ""} />
+        {/* Sitewide Meta (Facebook) Pixel — base tag + PageView, mirroring the Google Ads tag.
+            Standard events (CompleteRegistration / Purchase) fire from the same spots as the Ads
+            conversions. Loaded once here so it persists across client-side navigation. */}
+        <MetaPixel />
         {/* Microsoft Clarity (project xema6mwgl2) — independent analytics, loaded once
             sitewide via afterInteractive (mirrors the Crisp pattern). Id inlined to match
             the other tags; does not touch the Google tag / Ads conversions. Fail-safe:
