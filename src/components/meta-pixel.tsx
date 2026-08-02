@@ -1,5 +1,3 @@
-"use client";
-
 import Script from "next/script";
 import { META_PIXEL_ID } from "@/lib/meta-pixel";
 
