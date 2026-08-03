@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { getStoredClickId } from "@/lib/click-id";
 import { fireSignupConversion, setSignupUserData } from "@/lib/google-ads";
-import { fireMetaSignup } from "@/lib/meta-pixel";
+import { fireMetaSignup, fireMetaStartTrial } from "@/lib/meta-pixel";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -93,8 +93,10 @@ export default function RegisterPage() {
         lastName: restName.length ? restName.join(" ") : undefined,
       });
       fireSignupConversion(data?.user?.id);
-      // Meta Pixel CompleteRegistration (same eventID for future CAPI de-dup). Fail-safe.
+      // Meta Pixel: CompleteRegistration + StartTrial (the free trial begins at signup). Same
+      // eventID (user id) for future CAPI de-dup. Both fail-safe.
       fireMetaSignup(data?.user?.id);
+      fireMetaStartTrial(data?.user?.id);
 
       // Automatically sign in after registration
       const result = await signIn("credentials", {

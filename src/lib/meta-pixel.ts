@@ -66,6 +66,29 @@ export function fireMetaSignup(eventId?: string): void {
 }
 
 /**
+ * Fire the Meta "StartTrial" standard event. In Glide the free trial begins at signup, so this
+ * fires alongside CompleteRegistration on the register page. value:1 is a placeholder for Meta
+ * bidding; `eventId` (the new user's id) is the Meta eventID for CAPI de-dup. Fail-safe.
+ */
+export function fireMetaStartTrial(eventId?: string): void {
+  try {
+    whenFbqReady((fbq) => {
+      try {
+        if (eventId) {
+          fbq("track", "StartTrial", { value: 1 }, { eventID: eventId });
+        } else {
+          fbq("track", "StartTrial", { value: 1 });
+        }
+      } catch {
+        /* never interrupt the signup flow */
+      }
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
  * Fire the Meta "Purchase" standard event on a server-verified checkout — the Meta equivalent of the
  * Google Ads purchase conversion. Value + currency come from the verified Stripe session; the Stripe
  * Checkout Session id is used as the Meta eventID for Conversions-API de-duplication. Fail-safe.
