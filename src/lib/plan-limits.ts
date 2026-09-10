@@ -25,6 +25,7 @@ const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
  */
 const UNLIMITED_ACCESS_EMAILS = new Set<string>([
   "aaravsawlani1@gmail.com",
+  "jatinsawlani@gmail.com",
   "austinsargentwm@gmail.com", // TEMPORARY (testing a >10k-tx wallet sync) — remove after
 ]);
 
