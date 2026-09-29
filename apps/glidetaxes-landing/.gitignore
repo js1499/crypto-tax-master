@@ -1,0 +1,21 @@
+# dependencies / build output
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# vercel / env
+.vercel/
+.env*
+!.env.example
+
+# test artefacts
+playwright-report/
+test-results/
+.tmp-qa/
+
+# logs / os
+dev.log
+npm-debug.log*
+.DS_Store

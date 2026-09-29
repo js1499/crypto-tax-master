@@ -1,0 +1,50 @@
+{
+  "name": "glidetaxes-landing",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Glide crypto tax marketing website",
+  "author": "Glide",
+  "keywords": [
+    "glide",
+    "crypto-tax",
+    "nextjs",
+    "tailwindcss",
+    "vercel"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm run build",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install chromium",
+    "audit:prod": "npm audit --omit=dev"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1",
+    "@vercel/speed-insights": "^2.0.0",
+    "motion": "^13.4.4",
+    "next": "^16.3.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "tw-animate-css": "^1.4.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "^16.3.6",
+    "shadcn": "^4.21.0",
+    "tailwindcss": "^4",
+    "typescript": "5.9.3"
+  }
+}
