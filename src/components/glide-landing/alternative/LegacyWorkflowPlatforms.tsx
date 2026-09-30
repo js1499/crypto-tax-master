@@ -16,18 +16,18 @@ import { CheckIcon, ChevronRightIcon } from "@/components/glide-landing/icons";
 import { TrackedLink } from "@/components/glide-landing/TrackedLink";
 
 const platforms = [
-  { name: "Coinbase", Mark: CoinbaseMark, position: "left-[8%] top-[120px] size-[64px]" },
-  { name: "Kraken", Mark: KrakenMark, position: "left-[25%] top-[72px] size-[74px]" },
-  { name: "Hyperliquid", Mark: HyperliquidMark, position: "right-[26%] top-[74px] size-[78px]" },
-  { name: "Base", Mark: BaseMark, position: "right-[8%] top-[128px] size-[72px]" },
-  { name: "Solana", Mark: SolanaMark, position: "left-[15%] top-[305px] size-[86px]" },
-  { name: "Binance", Mark: BinanceMark, position: "right-[15%] top-[320px] size-[84px]" },
-  { name: "Gemini", Mark: GeminiMark, position: "left-[9%] top-[510px] size-[72px]" },
-  { name: "Crypto.com", Mark: CryptoComMark, position: "left-[27%] top-[570px] size-[80px]" },
-  { name: "Ethereum", Mark: EthereumMark, position: "right-[29%] top-[565px] size-[82px]" },
-  { name: "OKX", Mark: OkxMark, position: "right-[9%] top-[525px] size-[72px]" },
-  { name: "Bybit", Mark: BybitMark, position: "left-[4%] top-[335px] size-[58px]" },
-  { name: "KuCoin", Mark: KuCoinMark, position: "right-[4%] top-[350px] size-[58px]" },
+  { name: "Coinbase", Mark: CoinbaseMark, position: "left-[8%] top-[104px] size-[64px]" },
+  { name: "Kraken", Mark: KrakenMark, position: "left-[25%] top-[56px] size-[74px]" },
+  { name: "Hyperliquid", Mark: HyperliquidMark, position: "right-[26%] top-[58px] size-[78px]" },
+  { name: "Base", Mark: BaseMark, position: "right-[8%] top-[112px] size-[72px]" },
+  { name: "Solana", Mark: SolanaMark, position: "left-[15%] top-[262px] size-[86px]" },
+  { name: "Binance", Mark: BinanceMark, position: "right-[15%] top-[276px] size-[84px]" },
+  { name: "Gemini", Mark: GeminiMark, position: "left-[9%] top-[452px] size-[72px]" },
+  { name: "Crypto.com", Mark: CryptoComMark, position: "left-[27%] top-[498px] size-[80px]" },
+  { name: "Ethereum", Mark: EthereumMark, position: "right-[29%] top-[494px] size-[82px]" },
+  { name: "OKX", Mark: OkxMark, position: "right-[9%] top-[466px] size-[72px]" },
+  { name: "Bybit", Mark: BybitMark, position: "left-[4%] top-[292px] size-[58px]" },
+  { name: "KuCoin", Mark: KuCoinMark, position: "right-[4%] top-[306px] size-[58px]" },
 ] as const;
 
 function WorkflowCanvas() {
@@ -123,7 +123,7 @@ export function LegacyWorkflowPlatforms() {
           </div>
         </section>
 
-        <section id="integrations" className="relative scroll-mt-20 overflow-hidden pt-8 pb-16 lg:pt-10 lg:pb-20 xl:min-h-[760px] xl:pt-0 xl:pb-0">
+        <section id="integrations" className="relative scroll-mt-20 overflow-hidden pt-8 pb-16 lg:pt-10 lg:pb-20 xl:min-h-[680px] xl:pt-0 xl:pb-0">
           <div aria-hidden="true" className="absolute inset-0 hidden xl:block">
             {platforms.map(({ name, Mark, position }) => (
               <span key={name} className={`legacy-polish-card absolute flex items-center justify-center rounded-2xl border border-[#dce4ee] bg-white shadow-[0_8px_24px_rgba(27,50,88,0.06)] ${position}`}>
@@ -131,7 +131,7 @@ export function LegacyWorkflowPlatforms() {
               </span>
             ))}
           </div>
-          <div className="relative z-10 mx-auto max-w-[760px] px-4 sm:px-6 xl:max-w-[680px] xl:pt-[220px]">
+          <div className="relative z-10 mx-auto max-w-[760px] px-4 sm:px-6 xl:max-w-[680px] xl:pt-[172px]">
             <div className="flex flex-col items-center text-center">
               <div className="mb-8 grid grid-cols-6 gap-2 sm:gap-3 xl:hidden" aria-label="Supported platform examples">
                 {platforms.slice(0, 6).map(({ name, Mark }) => (
