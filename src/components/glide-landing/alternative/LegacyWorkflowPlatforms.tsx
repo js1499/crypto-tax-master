@@ -97,76 +97,79 @@ function AccountIllustration() {
   );
 }
 
-export function LegacyWorkflowPlatforms() {
+/** The workflow card and the platform ring. Rendered inside the light band, after LegacyAccuracy. */
+export function LegacyWorkflow() {
   return (
     <>
-      <div className="textured textured-light bg-[#f4f7fb]">
-        <section id="how" className="scroll-mt-20 pt-16 pb-10 lg:pt-20 lg:pb-12">
-          <div className="mx-auto max-w-[1200px] px-4 sm:px-6">
-            <div className="legacy-polish-card rounded-[24px] border border-[#dce4ee] bg-white p-6 shadow-[0_12px_36px_rgba(27,50,88,0.06)] sm:p-8 lg:p-10">
-              <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-12">
-                <div className="flex flex-col items-start gap-6">
-                  <h2 className="legacy-heading text-[32px] leading-[1.12] font-normal text-[#0b2447] min-[390px]:text-[34px] lg:text-[48px]">Get taxes off your mind.</h2>
-                  <p className="max-w-[420px] text-lg leading-[1.6] font-medium text-[#536176]">Connect your accounts and Glide organizes your activity and calculates your result. Review the summary, then download your reports when you are ready.</p>
-                  <div className="mt-4 flex items-center gap-4">
-                    <div className="relative flex size-[78px] shrink-0 items-center justify-center rounded-2xl bg-[#2f6df6] text-2xl font-semibold text-white sm:size-[90px]">
-                      <span className="absolute -top-5 left-3 whitespace-nowrap rounded-full bg-[#5ae2aa] px-3 py-1.5 text-[10px] font-bold tracking-[0.05em] text-[#0b2447] uppercase">Help when you want it</span>
-                      G
-                    </div>
-                    <div>
-                      <p className="text-base font-semibold text-[#0b2447]">Real support</p>
-                      <p className="text-sm font-medium text-[#536176]">Answers from a person</p>
-                    </div>
+      <section id="how" className="scroll-mt-20 pt-8 pb-10 lg:pt-10 lg:pb-12">
+        <div className="mx-auto max-w-[1200px] px-4 sm:px-6">
+          <div className="legacy-polish-card rounded-[24px] border border-[#dce4ee] bg-white p-6 shadow-[0_12px_36px_rgba(27,50,88,0.06)] sm:p-8 lg:p-10">
+            <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-12">
+              <div className="flex flex-col items-start gap-6">
+                <h2 className="legacy-heading text-[32px] leading-[1.12] font-normal text-[#0b2447] min-[390px]:text-[34px] lg:text-[48px]">Get taxes off your mind.</h2>
+                <p className="max-w-[420px] text-lg leading-[1.6] font-medium text-[#536176]">Connect your accounts and Glide organizes your activity and calculates your result. Review the summary, then download your reports when you are ready.</p>
+                <div className="mt-4 flex items-center gap-4">
+                  <div className="relative flex size-[78px] shrink-0 items-center justify-center rounded-2xl bg-[#2f6df6] text-2xl font-semibold text-white sm:size-[90px]">
+                    <span className="absolute -top-5 left-3 whitespace-nowrap rounded-full bg-[#5ae2aa] px-3 py-1.5 text-[10px] font-bold tracking-[0.05em] text-[#0b2447] uppercase">Help when you want it</span>
+                    G
+                  </div>
+                  <div>
+                    <p className="text-base font-semibold text-[#0b2447]">Real support</p>
+                    <p className="text-sm font-medium text-[#536176]">Answers from a person</p>
                   </div>
                 </div>
-                <WorkflowCanvas />
               </div>
+              <WorkflowCanvas />
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        <section id="integrations" data-reveal="pending" className="relative scroll-mt-20 overflow-hidden pt-8 pb-16 lg:pt-10 lg:pb-20 xl:min-h-[680px] xl:pt-0 xl:pb-0">
-          <div aria-hidden="true" className="absolute inset-0 hidden xl:block">
-            {platforms.map(({ name, Mark, position }, index) => (
-              <span key={name} data-reveal-item="pop" style={revealStep(index)} className={`legacy-polish-card absolute flex items-center justify-center rounded-2xl border border-[#dce4ee] bg-white shadow-[0_8px_24px_rgba(27,50,88,0.06)] ${position}`}>
-                <Mark size={35} />
-              </span>
-            ))}
-          </div>
-          <div className="relative z-10 mx-auto max-w-[760px] px-4 sm:px-6 xl:max-w-[680px] xl:pt-[172px]">
-            <div className="flex flex-col items-center text-center">
-              <div className="mb-8 grid grid-cols-6 gap-2 sm:gap-3 xl:hidden" aria-label="Supported platform examples">
-                {platforms.slice(0, 6).map(({ name, Mark }, index) => (
-                  <span key={name} title={name} data-reveal-item="pop" style={revealStep(index)} className="legacy-polish-card flex size-10 items-center justify-center rounded-xl border border-[#dce4ee] bg-white shadow-sm min-[360px]:size-11 sm:size-12"><Mark size={23} /><span className="sr-only">{name}</span></span>
-                ))}
-              </div>
-              <h2 className="legacy-heading mb-5 text-[32px] leading-[1.12] font-normal text-[#0b2447] min-[390px]:text-[36px] lg:text-[56px]">One clear result for your whole portfolio.</h2>
-              <p className="max-w-[600px] text-lg leading-[1.6] font-medium text-[#536176]">Bring your supported exchanges, wallets, and chains into one place. See how your whole portfolio adds up, with a clear result to review.</p>
-              <TrackedLink href="/register" event={{ name: "register_click", properties: { location: "legacy_integrations" } }} className="legacy-primary-button mt-8">See my portfolio <ChevronRightIcon aria-hidden="true" className="size-3" /></TrackedLink>
-              <div className="mt-8 grid grid-cols-6 gap-2 sm:gap-3 xl:hidden" aria-hidden="true">
-                {platforms.slice(6).map(({ name, Mark }, index) => (
-                  <span key={name} title={name} data-reveal-item="pop" style={revealStep(index)} className="legacy-polish-card flex size-10 items-center justify-center rounded-xl border border-[#dce4ee] bg-white shadow-sm min-[360px]:size-11 sm:size-12"><Mark size={23} /></span>
-                ))}
-              </div>
+      <section id="integrations" data-reveal="pending" className="relative scroll-mt-20 overflow-hidden pt-8 pb-16 lg:pt-10 lg:pb-20 xl:min-h-[680px] xl:pt-0 xl:pb-0">
+        <div aria-hidden="true" className="absolute inset-0 hidden xl:block">
+          {platforms.map(({ name, Mark, position }, index) => (
+            <span key={name} data-reveal-item="pop" style={revealStep(index)} className={`legacy-polish-card absolute flex items-center justify-center rounded-2xl border border-[#dce4ee] bg-white shadow-[0_8px_24px_rgba(27,50,88,0.06)] ${position}`}>
+              <Mark size={35} />
+            </span>
+          ))}
+        </div>
+        <div className="relative z-10 mx-auto max-w-[760px] px-4 sm:px-6 xl:max-w-[680px] xl:pt-[172px]">
+          <div className="flex flex-col items-center text-center">
+            <div className="mb-8 grid grid-cols-6 gap-2 sm:gap-3 xl:hidden" aria-label="Supported platform examples">
+              {platforms.slice(0, 6).map(({ name, Mark }, index) => (
+                <span key={name} title={name} data-reveal-item="pop" style={revealStep(index)} className="legacy-polish-card flex size-10 items-center justify-center rounded-xl border border-[#dce4ee] bg-white shadow-sm min-[360px]:size-11 sm:size-12"><Mark size={23} /><span className="sr-only">{name}</span></span>
+              ))}
             </div>
-          </div>
-        </section>
-      </div>
-
-      <section id="trial" className="textured textured-navy-alt scroll-mt-20 bg-[#071b39] py-16 lg:py-20">
-        <div className="mx-auto max-w-[1200px] px-4 sm:px-6">
-          <div className="legacy-trial-gradient relative min-h-[430px] overflow-hidden rounded-[24px] border border-white/10 lg:min-h-[450px]">
-            <div className="grid h-full items-center gap-10 p-6 sm:p-8 lg:grid-cols-2 lg:gap-12 lg:p-12">
-              <div className="order-2 flex items-center pt-5 lg:order-1 lg:h-full lg:pt-0"><AccountIllustration /></div>
-              <div className="order-1 flex flex-col items-start justify-center gap-4 text-left lg:order-2">
-                <h2 className="legacy-heading text-[34px] leading-[1.1] font-normal text-white min-[390px]:text-[38px] lg:text-[56px]">See your result free. Pay when you are ready to file.</h2>
-                <p className="max-w-[500px] text-lg leading-[1.6] font-medium text-[#d5e3ff]">See your portfolio result and review it for free. Pay only when you are ready to download your tax reports.</p>
-                <TrackedLink href="/register" event={{ name: "register_click", properties: { location: "legacy_trial", plan: "Trial" } }} className="legacy-primary-button mt-3">See my result <ChevronRightIcon aria-hidden="true" className="size-3" /></TrackedLink>
-              </div>
+            <h2 className="legacy-heading mb-5 text-[32px] leading-[1.12] font-normal text-[#0b2447] min-[390px]:text-[36px] lg:text-[56px]">One clear result for your whole portfolio.</h2>
+            <p className="max-w-[600px] text-lg leading-[1.6] font-medium text-[#536176]">Bring your supported exchanges, wallets, and chains into one place. See how your whole portfolio adds up, with a clear result to review.</p>
+            <TrackedLink href="/register" event={{ name: "register_click", properties: { location: "legacy_integrations" } }} className="legacy-primary-button mt-8">See my portfolio <ChevronRightIcon aria-hidden="true" className="size-3" /></TrackedLink>
+            <div className="mt-8 grid grid-cols-6 gap-2 sm:gap-3 xl:hidden" aria-hidden="true">
+              {platforms.slice(6).map(({ name, Mark }, index) => (
+                <span key={name} title={name} data-reveal-item="pop" style={revealStep(index)} className="legacy-polish-card flex size-10 items-center justify-center rounded-xl border border-[#dce4ee] bg-white shadow-sm min-[360px]:size-11 sm:size-12"><Mark size={23} /></span>
+              ))}
             </div>
           </div>
         </div>
       </section>
     </>
+  );
+}
+
+export function LegacyTrial() {
+  return (
+    <section id="trial" className="textured textured-navy-alt scroll-mt-20 bg-[#071b39] py-16 lg:py-20">
+      <div className="mx-auto max-w-[1200px] px-4 sm:px-6">
+        <div className="legacy-trial-gradient relative min-h-[430px] overflow-hidden rounded-[24px] border border-white/10 lg:min-h-[450px]">
+          <div className="grid h-full items-center gap-10 p-6 sm:p-8 lg:grid-cols-2 lg:gap-12 lg:p-12">
+            <div className="order-2 flex items-center pt-5 lg:order-1 lg:h-full lg:pt-0"><AccountIllustration /></div>
+            <div className="order-1 flex flex-col items-start justify-center gap-4 text-left lg:order-2">
+              <h2 className="legacy-heading text-[34px] leading-[1.1] font-normal text-white min-[390px]:text-[38px] lg:text-[56px]">See your result free. Pay when you are ready to file.</h2>
+              <p className="max-w-[500px] text-lg leading-[1.6] font-medium text-[#d5e3ff]">See your portfolio result and review it for free. Pay only when you are ready to download your tax reports.</p>
+              <TrackedLink href="/register" event={{ name: "register_click", properties: { location: "legacy_trial", plan: "Trial" } }} className="legacy-primary-button mt-3">See my result <ChevronRightIcon aria-hidden="true" className="size-3" /></TrackedLink>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

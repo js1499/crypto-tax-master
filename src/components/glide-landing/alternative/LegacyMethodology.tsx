@@ -56,30 +56,54 @@ function MethodologyPricingVisual() {
   );
 }
 
-// The spreadsheet the reader would have built, beside the one number Glide hands them.
-const sheetRows = [100, 100, 70, 100, 85, 100, 70, 100, 100, 85, 70, 100] as const;
+// The mess the reader would have made, beside the tidy table Glide hands them and its one number.
+const messySheets = [
+  { left: "0%", top: "4%", rotate: "-7deg", rows: [90, 55, 100, 70, 84], red: 1 },
+  { left: "34%", top: "18%", rotate: "5deg", rows: [76, 100, 48, 92, 60], red: 3 },
+  { left: "8%", top: "52%", rotate: "-3deg", rows: [100, 64, 88, 52, 96], red: 0 },
+] as const;
+
+const tidyRows = [
+  { name: "Coinbase", gain: "+$5,420.00" },
+  { name: "Hyperliquid", gain: "+$4,680.60" },
+  { name: "Solana", gain: "+$2,740.00" },
+] as const;
 
 function BeforeAfterStrip() {
   return (
     <figure
-      aria-label="Illustration: a spreadsheet with an unknown total beside Glide's single net capital gain"
+      aria-label="Illustration: scattered spreadsheets with an unknown total beside one tidy table that adds up to a single net capital gain"
       data-reveal="pending"
       className="mx-auto grid w-full max-w-[720px] grid-cols-2 gap-3 px-4 text-left sm:gap-4 sm:px-6"
     >
       <div data-reveal-item className="min-w-0 rounded-2xl bg-white p-4 shadow-[0_18px_40px_-14px_rgba(7,27,57,0.45)] sm:p-5">
         <p className="text-[10.5px] font-extrabold tracking-[0.1em] text-[#536176] uppercase">Before</p>
-        <div aria-hidden="true" className="mt-3 grid gap-1">
-          {sheetRows.map((width, index) => <span key={index} className="block h-1.5 rounded-full bg-[#dbe3ee]" style={{ width: `${width}%` }} />)}
+        <div aria-hidden="true" className="relative mt-3 h-[150px] overflow-hidden rounded-lg bg-[#f7f9fc]">
+          {messySheets.map((sheet, index) => (
+            <div key={index} className="absolute w-[64%] rounded-md border border-[#dbe3ee] bg-white p-2 shadow-[0_8px_18px_-10px_rgba(7,27,57,0.35)]" style={{ left: sheet.left, top: sheet.top, transform: `rotate(${sheet.rotate})` }}>
+              <div className="grid gap-1">
+                {sheet.rows.map((width, row) => <span key={row} className={`block h-1.5 rounded-full ${row === sheet.red ? "bg-[#fca5a5]" : "bg-[#dbe3ee]"}`} style={{ width: `${width}%` }} />)}
+              </div>
+            </div>
+          ))}
+          <span className="absolute top-2 right-1 rotate-[8deg] rounded-md border border-[#fca5a5] bg-[#fff1f2] px-1.5 py-0.5 text-[9px] font-bold text-[#b42318]">#REF!</span>
+          <span className="absolute right-2 bottom-2 -rotate-[5deg] rounded-md border border-[#dbe3ee] bg-white px-1.5 py-0.5 text-[9px] font-semibold text-[#536176]">trades_final_v3.csv</span>
         </div>
         <p className="legacy-heading mt-3 text-[28px] leading-none text-[#b42318]">?</p>
         <p className="mt-1.5 text-xs leading-5 text-[#536176]">4,112 rows. Six tabs. A total you don&apos;t trust.</p>
       </div>
       <div data-reveal-item style={revealStep(2)} className="min-w-0 rounded-2xl bg-[#f1faf6] p-4 shadow-[0_18px_40px_-14px_rgba(7,27,57,0.45)] sm:p-5">
         <p className="text-[10.5px] font-extrabold tracking-[0.1em] text-[#536176] uppercase">After</p>
-        <div aria-hidden="true" className="mt-3 grid gap-1 opacity-35">
-          {sheetRows.slice(0, 3).map((width, index) => <span key={index} className="block h-1.5 rounded-full bg-[#dbe3ee]" style={{ width: `${width}%` }} />)}
+        <div aria-hidden="true" className="mt-3 overflow-hidden rounded-lg border border-[#cfe9dc] bg-white">
+          <div className="grid grid-cols-[1fr_auto] gap-2 border-b border-[#e3f1e9] px-2.5 py-1.5 text-[9px] font-bold tracking-[0.08em] text-[#536176] uppercase"><span>Account</span><span>Gain</span></div>
+          {tidyRows.map((row, index) => (
+            <div key={row.name} data-reveal-item style={revealStep(3 + index)} className="grid grid-cols-[1fr_auto] items-center gap-2 border-b border-[#e3f1e9] px-2.5 py-1.5 text-[11px] last:border-0">
+              <span className="flex min-w-0 items-center gap-1.5 font-semibold text-[#0b2447]"><span className="flex size-3.5 shrink-0 items-center justify-center rounded-full bg-[#dff8ed] text-[#08764b]"><CheckIcon aria-hidden="true" className="size-2" /></span><span className="truncate">{row.name}</span></span>
+              <span className="font-semibold text-[#08764b] tabular-nums">{row.gain}</span>
+            </div>
+          ))}
         </div>
-        <p data-reveal-item="pop" style={revealStep(4)} className="legacy-heading mt-3 text-[22px] leading-none whitespace-nowrap text-[#08764b] min-[390px]:text-[26px] sm:text-[32px]">+$12,840.60</p>
+        <p data-reveal-item="pop" style={revealStep(6)} className="legacy-heading mt-3 text-[22px] leading-none whitespace-nowrap text-[#08764b] min-[390px]:text-[26px] sm:text-[32px]">+$12,840.60</p>
         <p className="mt-1.5 text-xs leading-5 text-[#536176]">One number. Every row still behind it.</p>
       </div>
     </figure>
@@ -212,18 +236,42 @@ function HowAccurateVisual() {
 export function LegacyMethodology() {
   return (
     <>
-      <section id="product-alt" aria-labelledby="methodology-heading" className="textured textured-navy scroll-mt-20 bg-[#071b39] py-16 lg:py-20">
-        <div className="mx-auto w-full max-w-[800px] px-4 text-center sm:px-6">
-          <h2 id="methodology-heading" className="legacy-heading mb-5 text-[32px] leading-[1.15] font-normal text-white min-[390px]:text-[36px] lg:text-[60px] lg:leading-[1.12]">
-            Less time on taxes. More peace of mind.
-          </h2>
-          <p className="mx-auto mb-8 max-w-[620px] text-lg leading-[1.6] font-medium text-[#b8c7dc]">
-            A clear result, a quick review, and tax-ready reports. Glide helps you get on with the rest of your day.
-          </p>
-        </div>
+      {/* The intro band and "Accurate by design" share one navy background. */}
+      <div className="textured textured-navy bg-[#071b39]">
+        <section id="product-alt" aria-labelledby="methodology-heading" className="scroll-mt-20 pt-16 pb-8 lg:pt-20 lg:pb-10">
+          <div className="mx-auto w-full max-w-[800px] px-4 text-center sm:px-6">
+            <h2 id="methodology-heading" className="legacy-heading mb-5 text-[32px] leading-[1.15] font-normal text-white min-[390px]:text-[36px] lg:text-[60px] lg:leading-[1.12]">
+              Less time on taxes. More peace of mind.
+            </h2>
+            <p className="mx-auto mb-8 max-w-[620px] text-lg leading-[1.6] font-medium text-[#b8c7dc]">
+              A clear result, a quick review, and tax-ready reports. Glide helps you get on with the rest of your day.
+            </p>
+          </div>
 
-        <BeforeAfterStrip />
-      </section>
+          <BeforeAfterStrip />
+        </section>
+
+        <section id="methodology-how" aria-labelledby="methodology-how-heading" className="scroll-mt-20 pt-8 pb-16 lg:pt-10 lg:pb-20">
+          <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6">
+            <article className="legacy-polish-card grid w-full overflow-hidden rounded-[24px] border border-white/10 bg-[#0b2447] shadow-[0_12px_36px_rgba(0,0,0,0.12)] lg:min-h-[564px] lg:grid-cols-2">
+              <div className="flex flex-col items-start justify-center gap-4 p-6 text-left sm:p-8 lg:order-2 lg:p-12">
+                <h3 id="methodology-how-heading" className="legacy-heading max-w-[488px] text-[34px] leading-[1.1] font-normal text-white sm:text-[40px] lg:text-[56px]">Accurate by design.</h3>
+                <p className="max-w-[440px] text-lg leading-[1.6] font-medium text-[#b8c7dc]">Glide reads each transaction from its source, prices it at the second it happened, and keeps the link so you can check any number yourself.</p>
+                <ul className="mt-1 flex max-w-[440px] flex-col gap-3">
+                  {accuracyPoints.map(({ title, body }) => (
+                    <li key={title} className="flex items-start gap-3">
+                      <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-[#5ae2aa] text-[#06152d]"><CheckIcon aria-hidden="true" className="size-3" /></span>
+                      <span className="text-[15px] leading-6 text-[#b8c7dc]"><strong className="font-semibold text-white">{title}.</strong> {body}</span>
+                    </li>
+                  ))}
+                </ul>
+                <TrackedLink href="/register" event={{ name: "register_click", properties: { location: "legacy_how_accurate" } }} className="legacy-primary-button mt-3">Get my tax result</TrackedLink>
+              </div>
+              <div className="flex items-center justify-center p-4 pb-8 lg:order-1 lg:h-[564px] lg:p-8"><HowAccurateVisual /></div>
+            </article>
+          </div>
+        </section>
+      </div>
 
       <section id="methodology-pricing" aria-labelledby="methodology-pricing-heading" className="textured textured-light scroll-mt-20 bg-[#f4f7fb] py-16 lg:py-20">
         <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6">
@@ -251,58 +299,43 @@ export function LegacyMethodology() {
         </div>
       </section>
 
-      <section id="methodology-accuracy" aria-labelledby="methodology-accuracy-heading" className="textured textured-light-alt scroll-mt-20 bg-[#f4f7fb] py-16 lg:py-20">
-        <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6">
-          <article className="legacy-polish-card grid w-full overflow-hidden rounded-[24px] border border-[#dce4ee] bg-white shadow-[0_12px_36px_rgba(27,50,88,0.06)] lg:min-h-[564px] lg:grid-cols-2">
-            <div className="flex flex-col items-start justify-center gap-4 p-6 text-left sm:p-8 lg:p-12">
-              <h3 id="methodology-accuracy-heading" className="legacy-heading max-w-[488px] text-[34px] leading-[1.1] font-normal text-[#0b2447] sm:text-[40px] lg:text-[56px]">File with peace of mind.</h3>
-              <p className="max-w-[420px] text-lg leading-[1.6] font-medium text-[#536176]">Glide keeps the calculations and supporting details together, so you can understand your result and feel ready to file.</p>
-              <TrackedLink href="#compare" event={{ name: "pricing_compare_click", properties: { location: "legacy_accuracy" } }} className="legacy-primary-button mt-3">See plans</TrackedLink>
-            </div>
-            <div className="flex items-center justify-center p-4 pb-8 lg:h-[564px] lg:p-8"><QuestionAnsweredVisual /></div>
-          </article>
-        </div>
-        <p className="mx-auto mt-8 max-w-[760px] px-4 text-center text-xs leading-5 text-[#536176] sm:px-6">
-          Dollar figures are illustrative. Actual results vary by asset, market conditions, transaction history, and selected methodology. Glide does not provide legal or tax advice.
-        </p>
-        <nav aria-label="Methodology sections" className="mx-auto mt-10 w-fit max-w-[calc(100%-24px)] rounded-full border border-[#d7e0eb] bg-white p-1 shadow-[0_12px_30px_rgba(27,50,88,0.12)]">
-          <div className="flex items-center justify-center gap-1 sm:gap-2">
-            {methodTabs.map(({ href, label, Icon }, index) => (
-              <a
-                key={href}
-                href={href}
-                className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6df6] sm:text-sm ${index === 0 ? "bg-[#e8f0ff] text-[#174ea6]" : "text-[#536176] hover:bg-[#f1f5fb] hover:text-[#0b2447]"}`}
-              >
-                {label}
-                <span className={`ml-1.5 hidden size-6 items-center justify-center rounded-full sm:flex ${index === 0 ? "bg-[#5ae2aa]" : "bg-[#e8edf5]"}`}>
-                  <Icon aria-hidden="true" className={`size-3.5 ${index === 0 ? "text-[#06152d]" : "text-[#536176]"}`} />
-                </span>
-              </a>
-            ))}
-          </div>
-        </nav>
-      </section>
-
-      <section id="methodology-how" aria-labelledby="methodology-how-heading" className="textured textured-navy-alt scroll-mt-20 bg-[#071b39] py-16 lg:py-20">
-        <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6">
-          <article className="legacy-polish-card grid w-full overflow-hidden rounded-[24px] border border-white/10 bg-[#0b2447] shadow-[0_12px_36px_rgba(0,0,0,0.12)] lg:min-h-[564px] lg:grid-cols-2">
-            <div className="flex flex-col items-start justify-center gap-4 p-6 text-left sm:p-8 lg:order-2 lg:p-12">
-              <h3 id="methodology-how-heading" className="legacy-heading max-w-[488px] text-[34px] leading-[1.1] font-normal text-white sm:text-[40px] lg:text-[56px]">Accurate by design.</h3>
-              <p className="max-w-[440px] text-lg leading-[1.6] font-medium text-[#b8c7dc]">Glide reads each transaction from its source, prices it at the second it happened, and keeps the link so you can check any number yourself.</p>
-              <ul className="mt-1 flex max-w-[440px] flex-col gap-3">
-                {accuracyPoints.map(({ title, body }) => (
-                  <li key={title} className="flex items-start gap-3">
-                    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-[#5ae2aa] text-[#06152d]"><CheckIcon aria-hidden="true" className="size-3" /></span>
-                    <span className="text-[15px] leading-6 text-[#b8c7dc]"><strong className="font-semibold text-white">{title}.</strong> {body}</span>
-                  </li>
-                ))}
-              </ul>
-              <TrackedLink href="/register" event={{ name: "register_click", properties: { location: "legacy_how_accurate" } }} className="legacy-primary-button mt-3">Get my tax result</TrackedLink>
-            </div>
-            <div className="flex items-center justify-center p-4 pb-8 lg:order-1 lg:h-[564px] lg:p-8"><HowAccurateVisual /></div>
-          </article>
-        </div>
-      </section>
     </>
+  );
+}
+
+/** "File with peace of mind", followed by the three section tabs. Rendered inside the light band. */
+export function LegacyAccuracy() {
+  return (
+    <section id="methodology-accuracy" aria-labelledby="methodology-accuracy-heading" className="scroll-mt-20 pt-16 pb-8 lg:pt-20 lg:pb-10">
+      <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6">
+        <article className="legacy-polish-card grid w-full overflow-hidden rounded-[24px] border border-[#dce4ee] bg-white shadow-[0_12px_36px_rgba(27,50,88,0.06)] lg:min-h-[564px] lg:grid-cols-2">
+          <div className="flex flex-col items-start justify-center gap-4 p-6 text-left sm:p-8 lg:p-12">
+            <h3 id="methodology-accuracy-heading" className="legacy-heading max-w-[488px] text-[34px] leading-[1.1] font-normal text-[#0b2447] sm:text-[40px] lg:text-[56px]">File with peace of mind.</h3>
+            <p className="max-w-[420px] text-lg leading-[1.6] font-medium text-[#536176]">Glide keeps the calculations and supporting details together, so you can understand your result and feel ready to file.</p>
+            <TrackedLink href="#compare" event={{ name: "pricing_compare_click", properties: { location: "legacy_accuracy" } }} className="legacy-primary-button mt-3">See plans</TrackedLink>
+          </div>
+          <div className="flex items-center justify-center p-4 pb-8 lg:h-[564px] lg:p-8"><QuestionAnsweredVisual /></div>
+        </article>
+      </div>
+      <p className="mx-auto mt-8 max-w-[760px] px-4 text-center text-xs leading-5 text-[#536176] sm:px-6">
+        Dollar figures are illustrative. Actual results vary by asset, market conditions, transaction history, and selected methodology. Glide does not provide legal or tax advice.
+      </p>
+      <nav aria-label="Methodology sections" className="mx-auto mt-10 w-fit max-w-[calc(100%-24px)] rounded-full border border-[#d7e0eb] bg-white p-1 shadow-[0_12px_30px_rgba(27,50,88,0.12)]">
+        <div className="flex items-center justify-center gap-1 sm:gap-2">
+          {methodTabs.map(({ href, label, Icon }, index) => (
+            <a
+              key={href}
+              href={href}
+              className={`inline-flex min-h-11 items-center rounded-full px-3 text-xs font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2f6df6] sm:text-sm ${index === 0 ? "bg-[#e8f0ff] text-[#174ea6]" : "text-[#536176] hover:bg-[#f1f5fb] hover:text-[#0b2447]"}`}
+            >
+              {label}
+              <span className={`ml-1.5 hidden size-6 items-center justify-center rounded-full sm:flex ${index === 0 ? "bg-[#5ae2aa]" : "bg-[#e8edf5]"}`}>
+                <Icon aria-hidden="true" className={`size-3.5 ${index === 0 ? "text-[#06152d]" : "text-[#536176]"}`} />
+              </span>
+            </a>
+          ))}
+        </div>
+      </nav>
+    </section>
   );
 }
