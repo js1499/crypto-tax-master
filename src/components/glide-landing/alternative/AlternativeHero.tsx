@@ -28,9 +28,10 @@ export function AlternativeHero() {
             <TrackedLink
               href="/register"
               event={{ name: "register_click", properties: { location: "alternative_hero" } }}
-              className="inline-flex min-h-[52px] w-full items-center justify-center gap-2.5 whitespace-nowrap rounded-xl bg-[#2f6df6] px-7 text-[17px] font-bold text-white shadow-[0_12px_26px_-12px_rgba(19,64,156,0.4)] transition-colors hover:bg-[#225bd9] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#174ea6] sm:w-auto lg:min-h-[56px] lg:px-8 lg:text-[18px]"
+              className="inline-flex min-h-[64px] w-full flex-col items-center justify-center gap-0.5 whitespace-nowrap rounded-xl bg-[#2f6df6] px-7 py-2.5 text-[17px] leading-tight font-bold text-white shadow-[0_12px_26px_-12px_rgba(19,64,156,0.4)] transition-colors hover:bg-[#225bd9] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#174ea6] sm:w-auto lg:min-h-[70px] lg:px-8 lg:text-[18px]"
             >
-              Calculate my taxes for free <ChevronRightIcon aria-hidden="true" className="size-4" />
+              <span className="inline-flex items-center gap-2.5">Calculate my taxes for free <ChevronRightIcon aria-hidden="true" className="size-4" /></span>
+              <span className="text-[13px] font-medium text-[#d5e3ff] lg:text-sm">(3 simple steps)</span>
             </TrackedLink>
           </div>
         </div>
