@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Hanken_Grotesk } from "next/font/google";
 import { AlternativeHeader } from "@/components/glide-landing/alternative/AlternativeHeader";
 import { AlternativeLanding } from "@/components/glide-landing/alternative/AlternativeLanding";
+import { RevealOnView } from "@/components/glide-landing/RevealOnView";
 import "@/components/glide-landing/glide-landing.css";
 
 // Unlinked landing-page cell /lp/d: the React port of the standalone glidetaxes-landing site
@@ -26,6 +27,7 @@ export default function LandingCellD() {
     <div className={`glide-landing ${brandFont.variable}`}>
       <AlternativeHeader />
       <AlternativeLanding />
+      <RevealOnView />
     </div>
   );
 }

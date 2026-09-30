@@ -6,12 +6,12 @@ import { CheckIcon } from "@/components/glide-landing/icons";
 import { useWorkflowPlayback, type WorkflowTrack } from "./useWorkflowPlayback";
 import styles from "./FilingWorkflowAnimation.module.css";
 
-const storyDuration = 9_000;
-const holdDuration = 3_000;
+const storyDuration = 5_700;
+const holdDuration = 1_300;
 const resetDuration = 400;
 const duration = storyDuration + holdDuration + resetDuration;
 const resetStart = (storyDuration + holdDuration) / duration;
-// Keep the nine-second story intact, then let the finished reports linger.
+// Each of the three scenes gets 1.9 s of story; the finished reports then hold for 1.3 s more.
 const storyboardSeconds = 24;
 const ease = "cubic-bezier(0.4, 0, 0.2, 1)";
 const offset = (seconds: number) => (seconds / storyboardSeconds) * (storyDuration / duration);
@@ -24,8 +24,6 @@ const accounts = [
   { name: "Ethereum", type: "Wallet", Mark: EthereumMark, activity: "ETH / USDC", action: "Swap", tone: "lilac", amount: "$1,956.30" },
   { name: "Base", type: "Wallet", Mark: BaseMark, activity: "USDC transfer", action: "Transfer", tone: "green", amount: "$560.00" },
 ] as const;
-
-const reports = ["Form 8949", "Schedule D", "Income report"] as const;
 
 function reveal(selector: string, start: number, length = 0.444, scale?: number, resetAfterAccounts = false): WorkflowTrack {
   return {
@@ -116,8 +114,7 @@ const tracks: readonly WorkflowTrack[] = [
     ],
   },
   reveal("[data-report-heading]", 16.8, 0.6),
-  ...reports.map((_, index) => reveal(`[data-report-row='${index}']`, 17.35 + index * 0.444, 0.6)),
-  reveal("[data-download]", 19.1, 0.7, 0.96),
+  reveal("[data-download]", 17.6, 0.7, 0.96),
   ...[0, 1, 2].map((index) => ({
     selector: `[data-step-progress='${index}']`,
     keyframes: [
@@ -197,16 +194,6 @@ export function FilingWorkflowAnimation() {
                 </div>
                 <div className={styles.reportHeading} data-report-heading>
                   <strong>Your reports are ready.</strong>
-                  <p>All together. Ready to file.</p>
-                </div>
-                <div className={styles.reportList}>
-                  {reports.map((report, index) => (
-                    <div className={styles.reportRow} data-report-row={index} key={report}>
-                      <span className={styles.documentIcon}><svg viewBox="0 0 24 24" fill="none"><path d="M6 3h8l4 4v14H6V3Zm8 0v5h4M9 12h6m-6 4h6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
-                      <strong>{report}</strong>
-                      <span className={styles.reportReady}><CheckIcon />Ready</span>
-                    </div>
-                  ))}
                 </div>
                 <div className={styles.download} data-download><DownloadGlyph />Download reports</div>
               </div>

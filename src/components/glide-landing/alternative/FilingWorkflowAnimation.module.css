@@ -8,7 +8,7 @@
 .heading {
   position: relative;
   flex-shrink: 0;
-  padding: clamp(8px, 1.3cqw, 10px) clamp(10px, 2cqw, 16px);
+  padding: clamp(12px, 2cqw, 22px) clamp(14px, 2.4cqw, 26px);
   border: 1px solid #ffffff20;
   border-radius: 12px;
   background: #0b2b59eb;
@@ -24,20 +24,21 @@
   display: grid;
   gap: 4px;
   margin: 0;
-  color: #fff;
-  font-size: clamp(22px, 6cqw, 36px);
+  color: #c8dcff;
+  font-size: clamp(22px, 3.6cqw, 40px);
   font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: -0.025em;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
   opacity: 0;
 }
 
-.titles p > span:first-child { color: #c8dcff; font-size: clamp(14px, 2.7cqw, 18px); font-weight: 600; letter-spacing: 0; }
-.titles strong { font-weight: 650; }
+/* The step number is the largest thing in the frame; the scene name sits under it. */
+.titles p > span:first-child { color: #fff; font-size: clamp(40px, 6.6cqw, 72px); font-weight: 800; line-height: 1; letter-spacing: -0.03em; }
+.titles strong { font-weight: 600; }
 .titles .firstTitle { opacity: 1; }
 
-.progress { position: absolute; top: clamp(14px, 2.4cqw, 18px); right: clamp(10px, 2cqw, 16px); display: flex; gap: 7px; width: 84px; }
-.progress > span { flex: 1; height: 3px; overflow: hidden; background: #ffffff30; border-radius: 4px; }
+.progress { position: absolute; top: clamp(16px, 2.4cqw, 24px); right: clamp(14px, 2.4cqw, 26px); display: flex; gap: 7px; width: clamp(84px, 11cqw, 120px); }
+.progress > span { flex: 1; height: 4px; overflow: hidden; background: #ffffff30; border-radius: 4px; }
 .progress i { display: block; width: 100%; height: 100%; background: #5ae2aa; transform: scaleX(0); transform-origin: left; }
 
 .stage {
@@ -128,26 +129,16 @@
 .connected { font-size: clamp(12px, 3.45cqw, 18px); font-weight: 600; color: #08764b; }
 
 .reports { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 5cqw 6cqw; }
-.successDisc { display: flex; width: 12cqw; height: 12cqw; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 50%; color: #08764b; background: #dff8ed; }
+.successDisc { display: flex; width: 18cqw; height: 18cqw; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 50%; color: #08764b; background: #dff8ed; }
 .successDisc svg { width: 100%; height: 100%; }
 .successDisc path { stroke-dasharray: 1; stroke-dashoffset: 1; }
-.reportHeading { margin-top: 2.7cqw; text-align: center; }
-.reportHeading strong { color: #13345d; font-size: clamp(19px, 4.3cqw, 30px); font-weight: 600; line-height: 1.2; letter-spacing: -0.035em; }
-.reportHeading p { margin-top: 1cqw; color: #617188; font-size: clamp(11px, 2.1cqw, 15px); }
+.reportHeading { margin-top: 3.5cqw; text-align: center; }
+.reportHeading strong { color: #13345d; font-size: clamp(22px, 5cqw, 40px); font-weight: 600; line-height: 1.2; letter-spacing: -0.035em; }
 
-.reportList { display: flex; flex-direction: column; width: 100%; margin-top: 4cqw; }
-.reportRow { display: flex; align-items: center; gap: 2cqw; min-height: 8cqw; border-bottom: 1px solid #ecebeb; }
-.reportRow:last-child { border-bottom: 0; }
-.documentIcon { display: flex; align-items: center; justify-content: center; width: 5cqw; height: 5.5cqw; border-radius: 6px; background: #edf3ff; color: #3366cf; }
-.documentIcon svg { width: 3.4cqw; height: 3.4cqw; }
-.reportRow strong { flex: 1; font-size: clamp(11px, 2.5cqw, 17px); font-weight: 500; color: #183658; }
-.reportReady { display: inline-flex; align-items: center; gap: 0.7cqw; color: #08764b; font-size: clamp(10px, 2cqw, 14px); }
-.reportReady svg { width: 2.2cqw; height: 2.2cqw; }
+.download { display: flex; align-items: center; justify-content: center; gap: 1.5cqw; width: min(100%, 52cqw); min-height: 10cqw; margin-top: 5cqw; border-radius: 2.2cqw; color: #fff; background: #2f6df6; box-shadow: 0 10px 24px -12px #0b244766; font-size: clamp(15px, 3.2cqw, 24px); font-weight: 600; }
+.download svg { width: 4cqw; height: 4cqw; }
 
-.download { display: flex; align-items: center; justify-content: center; gap: 1.5cqw; width: 100%; min-height: 8cqw; margin-top: 4cqw; border-radius: 1.8cqw; color: #fff; background: #2f6df6; box-shadow: 0 2px 4px #0b24471a; font-size: clamp(13px, 2.65cqw, 19px); font-weight: 500; }
-.download svg { width: 3.25cqw; height: 3.25cqw; }
-
-.player [data-account-mark], .player [data-account-name], .player [data-account-synced], .player [data-account-connected], .player [data-transaction-name], .player [data-transaction-pill], .player [data-transaction-amount], .player [data-success-disc], .player [data-report-heading], .player [data-report-row], .player [data-download] { opacity: 0; }
+.player [data-account-mark], .player [data-account-name], .player [data-account-synced], .player [data-account-connected], .player [data-transaction-name], .player [data-transaction-pill], .player [data-transaction-amount], .player [data-success-disc], .player [data-report-heading], .player [data-download] { opacity: 0; }
 
 @media (max-width: 639px) {
   .stage { border-radius: 18px; }
@@ -157,23 +148,21 @@
 }
 
 @media (min-width: 390px) {
-  .titles p { font-size: clamp(24px, 6cqw, 36px); }
+  .titles p { font-size: clamp(24px, 3.6cqw, 40px); }
 }
 
 @media (min-width: 640px) {
   .stage { aspect-ratio: 14 / 10; }
   .reports { padding: 2cqw 6cqw; }
-  .successDisc { width: 7cqw; height: 7cqw; }
-  .reportHeading { margin-top: 1.3cqw; }
-  .reportHeading strong { font-size: clamp(22px, 3.5cqw, 28px); }
-  .reportList { margin-top: 1.2cqw; }
-  .reportRow { min-height: 6cqw; }
-  .download { min-height: 6cqw; margin-top: 1.8cqw; }
+  .successDisc { width: 13cqw; height: 13cqw; }
+  .reportHeading { margin-top: 2.4cqw; }
+  .reportHeading strong { font-size: clamp(24px, 4cqw, 44px); }
+  .download { min-height: 7.5cqw; margin-top: 3cqw; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .accounts, .transactions, .titles p { opacity: 0 !important; }
-  .reports, .titles p[data-step-title='reports'], .player [data-success-disc], .player [data-report-heading], .player [data-report-row], .player [data-download] { opacity: 1 !important; transform: none !important; }
+  .reports, .titles p[data-step-title='reports'], .player [data-success-disc], .player [data-report-heading], .player [data-download] { opacity: 1 !important; transform: none !important; }
   .successDisc path { stroke-dashoffset: 0 !important; }
   .progress i { transform: scaleX(1) !important; }
 }

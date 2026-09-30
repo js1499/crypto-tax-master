@@ -1,6 +1,7 @@
 import { CheckIcon, ShieldIcon, TargetIcon, TaxesIcon } from "@/components/glide-landing/icons";
 import { PortfolioReviewGraphic } from "@/components/glide-landing/alternative/PortfolioReviewGraphic";
 import { TrackedLink } from "@/components/glide-landing/TrackedLink";
+import { revealStep } from "@/components/glide-landing/reveal";
 
 const methodTabs = [
   { href: "#methodology-pricing", label: "Finish faster", Icon: TaxesIcon },
@@ -12,10 +13,11 @@ function MethodologyPricingVisual() {
   return (
     <figure
       aria-label="Illustrative trade valuation showing an accurate result"
+      data-reveal="pending"
       className="legacy-method-visual-one flex min-h-[330px] w-full max-w-[520px] items-center rounded-[20px] p-3 min-[360px]:p-4 sm:min-h-[420px] sm:rounded-[24px] sm:p-8 lg:min-h-[500px]"
     >
-      <div className="w-full overflow-hidden rounded-2xl bg-white shadow-[0_18px_40px_-14px_rgba(7,27,57,0.45)]">
-        <div className="flex items-center justify-between gap-3 border-b border-[#dce4ee] px-4 py-4 sm:px-5">
+      <div data-reveal-item className="w-full overflow-hidden rounded-2xl bg-white shadow-[0_18px_40px_-14px_rgba(7,27,57,0.45)]">
+        <div data-reveal-item style={revealStep(1)} className="flex items-center justify-between gap-3 border-b border-[#dce4ee] px-4 py-4 sm:px-5">
           <div className="flex items-center gap-3">
             <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#e8f0ff] text-sm font-semibold text-[#174ea6]">◎</span>
             <div>
@@ -25,7 +27,7 @@ function MethodologyPricingVisual() {
           </div>
           <span className="shrink-0 rounded-full bg-[#e4f8ef] px-3 py-1 text-xs font-semibold text-[#08764b]">Accurate</span>
         </div>
-        <div className="flex items-center justify-between gap-3 border-b border-[#dce4ee] px-4 py-4 sm:px-5">
+        <div data-reveal-item style={revealStep(2)} className="flex items-center justify-between gap-3 border-b border-[#dce4ee] px-4 py-4 sm:px-5">
           <div>
             <p className="text-sm font-semibold text-[#0b2447]">Market estimate</p>
             <p className="mt-0.5 text-xs text-[#536176]">Broad hourly value</p>
@@ -35,7 +37,7 @@ function MethodologyPricingVisual() {
             <span className="hidden rounded-full bg-red-600/10 px-2.5 py-1 text-[10px] font-semibold text-red-700 sm:block">Estimate</span>
           </div>
         </div>
-        <div className="flex items-center justify-between gap-3 border-b border-[#dce4ee] px-4 py-4 sm:px-5">
+        <div data-reveal-item style={revealStep(3)} className="flex items-center justify-between gap-3 border-b border-[#dce4ee] px-4 py-4 sm:px-5">
           <div>
             <p className="text-sm font-semibold text-[#0b2447]">Glide value</p>
             <p className="mt-0.5 text-xs text-[#536176]">Matched to the trade</p>
@@ -45,7 +47,7 @@ function MethodologyPricingVisual() {
             <span className="hidden shrink-0 rounded-full bg-[#e4f8ef] px-2.5 py-1 text-xs font-semibold text-[#08764b] min-[390px]:inline-flex">✓ Accurate</span>
           </div>
         </div>
-        <div className="flex items-center justify-between bg-[#f4f7fb] px-4 py-4 sm:px-5">
+        <div data-reveal-item style={revealStep(4)} className="flex items-center justify-between bg-[#f4f7fb] px-4 py-4 sm:px-5">
           <p className="text-sm font-medium text-[#536176]">Value difference</p>
           <p className="legacy-heading text-2xl text-[#08764b]">$62.00</p>
         </div>
@@ -60,10 +62,11 @@ function AccuracyVisual() {
   return (
     <figure
       aria-label="Illustrative price check supporting an accurate tax result"
+      data-reveal="pending"
       className="legacy-method-visual-three relative flex min-h-[410px] w-full max-w-[520px] items-center rounded-[20px] px-3 py-8 min-[360px]:px-5 sm:min-h-[460px] sm:rounded-[24px] sm:px-8 lg:min-h-[500px]"
     >
       <div className="relative w-full max-w-[420px]">
-        <div data-testid="sol-hourly-chart" className="rounded-2xl bg-white p-5 shadow-[0_18px_40px_-14px_rgba(7,27,57,0.45)]">
+        <div data-testid="sol-hourly-chart" data-reveal-item className="rounded-2xl bg-white p-5 shadow-[0_18px_40px_-14px_rgba(7,27,57,0.45)]">
           <div className="flex items-center justify-between gap-3">
             <p className="text-sm font-semibold text-[#0b2447]">SOL / USDC</p>
             <span className="rounded-full bg-[#f4f7fb] px-3 py-1 text-xs font-semibold text-[#536176]">1h candles</span>
@@ -80,7 +83,7 @@ function AccuracyVisual() {
             <circle cx="199" cy="66" r="3.2" fill="#dc2626" />
           </svg>
         </div>
-        <div data-testid="exact-second-card" className="relative z-10 -mt-6 ml-auto w-[200px] rounded-2xl bg-white p-4 shadow-[0_18px_40px_-10px_rgba(7,27,57,0.45)] ring-4 ring-[#5ae2aa]/35 min-[360px]:w-[220px] sm:-mt-8 sm:w-[240px]">
+        <div data-testid="exact-second-card" data-reveal-item="pop" style={revealStep(3)} className="relative z-10 -mt-6 ml-auto w-[200px] rounded-2xl bg-white p-4 shadow-[0_18px_40px_-10px_rgba(7,27,57,0.45)] ring-4 ring-[#5ae2aa]/35 min-[360px]:w-[220px] sm:-mt-8 sm:w-[240px]">
           <div className="flex items-center justify-between gap-2 text-[11px]">
             <span className="flex items-center gap-1.5 font-semibold text-[#08764b]"><TargetIcon aria-hidden="true" className="size-3.5" />Price confirmed</span>
             <span className="font-medium text-[#536176]">Checked</span>
@@ -94,7 +97,7 @@ function AccuracyVisual() {
           </svg>
           <p className="mt-1 text-center text-xs font-semibold text-[#0b2447]">14:32:08 · $147.88</p>
         </div>
-        <span className="absolute -top-4 right-3 inline-flex items-center gap-1.5 rounded-full bg-[#0b2447] px-3 py-1.5 text-[11px] font-medium text-white shadow-lg sm:right-5">
+        <span data-reveal-item="pop" style={revealStep(5)} className="absolute -top-4 right-3 inline-flex items-center gap-1.5 rounded-full bg-[#0b2447] px-3 py-1.5 text-[11px] font-medium text-white shadow-lg sm:right-5">
           Source matched <span className="flex size-4 items-center justify-center rounded-full bg-[#5ae2aa] text-[9px] font-bold text-[#0b2447]">✓</span>
         </span>
       </div>
@@ -120,9 +123,10 @@ function HowAccurateVisual() {
   return (
     <figure
       aria-label="Illustration: the block a trade landed in is matched to the market price at that exact moment, giving a cost basis that links back to its source"
+      data-reveal="pending"
       className="legacy-method-visual-one flex min-h-[330px] w-full max-w-[520px] items-center rounded-[20px] p-3 min-[360px]:p-4 sm:min-h-[420px] sm:rounded-[24px] sm:p-8 lg:min-h-[500px]"
     >
-      <div className="w-full overflow-hidden rounded-2xl bg-white shadow-[0_18px_40px_-14px_rgba(7,27,57,0.45)]">
+      <div data-reveal-item className="w-full overflow-hidden rounded-2xl bg-white shadow-[0_18px_40px_-14px_rgba(7,27,57,0.45)]">
         <div className="flex items-center justify-between gap-3 px-4 pt-4 sm:px-5">
           <p className="text-sm font-semibold text-[#0b2447]">From block to price</p>
           <span className="shrink-0 rounded-full bg-[#f4f7fb] px-3 py-1 text-xs font-semibold text-[#536176]">Illustrative</span>
@@ -148,7 +152,7 @@ function HowAccurateVisual() {
               </g>
             );
           })}
-          <text x={tradeX} y="70" textAnchor="middle" fontSize="10" fontWeight="700" fill="#0b2447">14:32:08</text>
+          <text data-reveal-item style={revealStep(3)} x={tradeX} y="70" textAnchor="middle" fontSize="10" fontWeight="700" fill="#0b2447">14:32:08</text>
 
           {/* The market at that moment. */}
           {[108, 140, 172, 204].map((y) => <line key={y} x1="12" y1={y} x2="348" y2={y} stroke="#e9eef5" strokeWidth="1" />)}
@@ -156,17 +160,21 @@ function HowAccurateVisual() {
           <polyline points="12,168 40,160 68,172 96,150 124,158 152,138 180,146 208,126 228,132 256,118 284,128 312,110 348,120" fill="none" stroke="#2f6df6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
 
           {/* Block meets price. */}
-          <line x1={tradeX} y1="76" x2={tradeX} y2="204" stroke="#0b2447" strokeWidth="1.4" strokeDasharray="3 4" />
-          <circle cx={tradeX} cy={tradeY} r="11" fill="#5ae2aa" fillOpacity="0.28" />
-          <circle cx={tradeX} cy={tradeY} r="6" fill="#ffffff" stroke="#0b2447" strokeWidth="2" />
-          <circle cx={tradeX} cy={tradeY} r="2.4" fill="#0b2447" />
-          <rect x="244" y="84" width="82" height="28" rx="14" fill="#0b2447" />
-          <text x="285" y="102.5" textAnchor="middle" fontSize="13" fontWeight="700" fill="#ffffff">$147.88</text>
+          <line data-reveal-drop style={revealStep(5)} x1={tradeX} y1="76" x2={tradeX} y2="204" stroke="#0b2447" strokeWidth="1.4" strokeDasharray="3 4" />
+          <g data-reveal-item="pop" style={revealStep(9)}>
+            <circle cx={tradeX} cy={tradeY} r="11" fill="#5ae2aa" fillOpacity="0.28" />
+            <circle cx={tradeX} cy={tradeY} r="6" fill="#ffffff" stroke="#0b2447" strokeWidth="2" />
+            <circle cx={tradeX} cy={tradeY} r="2.4" fill="#0b2447" />
+          </g>
+          <g data-reveal-item="pop" style={revealStep(11)}>
+            <rect x="244" y="84" width="82" height="28" rx="14" fill="#0b2447" />
+            <text x="285" y="102.5" textAnchor="middle" fontSize="13" fontWeight="700" fill="#ffffff">$147.88</text>
+          </g>
           <text x="12" y="224" fontSize="9" fontWeight="600" fill="#8a97a8">SOL / USDC</text>
         </svg>
 
         {/* Wraps rather than widening the card: the chain and clock steps only appear once there is room. */}
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 bg-[#f4f7fb] px-4 py-4 sm:px-5">
+        <div data-reveal-item style={revealStep(12)} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 bg-[#f4f7fb] px-4 py-4 sm:px-5">
           <div className="flex items-center gap-1.5 text-[#0b2447]">
             <span className="hidden size-8 items-center justify-center rounded-full border border-[#dce4ee] bg-white sm:flex">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l2.6-2.6a4 4 0 0 0-5.7-5.7l-1.1 1.1" /><path d="M14 10a4 4 0 0 0-5.7 0l-2.6 2.6a4 4 0 0 0 5.7 5.7l1.1-1.1" /></svg>

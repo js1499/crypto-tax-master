@@ -14,6 +14,7 @@ import {
 } from "@/components/glide-landing/PlatformMarks";
 import { CheckIcon, ChevronRightIcon } from "@/components/glide-landing/icons";
 import { TrackedLink } from "@/components/glide-landing/TrackedLink";
+import { revealStep } from "@/components/glide-landing/reveal";
 
 const platforms = [
   { name: "Coinbase", Mark: CoinbaseMark, position: "left-[8%] top-[104px] size-[64px]" },
@@ -34,6 +35,7 @@ function WorkflowCanvas() {
   return (
     <figure
       aria-label="Illustrative Glide workflow from connected accounts to accurate reports"
+      data-reveal="pending"
       className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#071b39] lg:aspect-[209/135]"
     >
       <div aria-hidden="true" className="absolute inset-0 flex flex-col p-3 lg:p-4">
@@ -51,12 +53,12 @@ function WorkflowCanvas() {
             {[0, 1, 2, 3].map((item) => <span key={item} className="h-2.5 rounded bg-white/[0.07]" />)}
             <div className="mt-auto flex flex-col gap-1.5">
               <span className="text-[10px] font-medium leading-none text-white/75">Preparing your reports</span>
-              <span className="block h-1.5 overflow-hidden rounded-full bg-white/10"><span className="block h-full w-[76%] rounded-full bg-[#5ae2aa]" /></span>
+              <span className="block h-1.5 overflow-hidden rounded-full bg-white/10"><span data-reveal-bar className="block h-full w-[76%] rounded-full bg-[#5ae2aa]" /></span>
             </div>
           </div>
         </div>
       </div>
-      <div className="relative z-10 mx-4 rounded-2xl border border-[#8db7ff]/25 bg-[#0b2447]/95 px-5 py-4 text-center shadow-xl backdrop-blur-sm">
+      <div data-reveal-item="pop" style={revealStep(2)} className="relative z-10 mx-4 rounded-2xl border border-[#8db7ff]/25 bg-[#0b2447]/95 px-5 py-4 text-center shadow-xl backdrop-blur-sm">
         <span className="mx-auto flex size-10 items-center justify-center rounded-full bg-[#5ae2aa] text-[#0b2447]"><CheckIcon aria-hidden="true" className="size-5" /></span>
         <p className="mt-3 text-sm font-semibold text-white">From accounts to reports, faster</p>
         <p className="mt-1 text-xs text-[#b8c7dc]">Connected · calculated · ready</p>
@@ -73,13 +75,13 @@ function AccountIllustration() {
   ] as const;
 
   return (
-    <figure aria-label="Illustrative connected account list" className="relative mx-auto w-full max-w-[420px]">
+    <figure aria-label="Illustrative connected account list" data-reveal="pending" className="relative mx-auto w-full max-w-[420px]">
       <div aria-hidden="true" className="absolute inset-x-8 -top-5 h-full rotate-[-3deg] rounded-2xl bg-white/75" />
-      <div className="relative rounded-2xl bg-white p-5 shadow-[0_12px_32px_rgba(7,27,57,0.18)] sm:p-6">
+      <div data-reveal-item className="relative rounded-2xl bg-white p-5 shadow-[0_12px_32px_rgba(7,27,57,0.18)] sm:p-6">
         <p className="text-sm font-semibold text-[#0b2447]">Your accounts</p>
         <div className="mt-4 space-y-3.5 sm:mt-5 sm:space-y-4">
-          {accounts.map((account) => (
-            <div key={account.address} className="flex items-center gap-3">
+          {accounts.map((account, index) => (
+            <div key={account.address} data-reveal-item style={revealStep(1 + index)} className="flex items-center gap-3">
               <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-[#e8f0ff] text-xs font-semibold text-[#174ea6]">{account.symbol}</span>
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-medium text-[#0b2447]">{account.address}</span>
@@ -89,7 +91,7 @@ function AccountIllustration() {
             </div>
           ))}
         </div>
-        <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#e8edf5]"><div className="h-full w-2/3 rounded-full bg-[#2f6df6]" /></div>
+        <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#e8edf5]"><div data-reveal-bar style={revealStep(3)} className="h-full w-2/3 rounded-full bg-[#2f6df6]" /></div>
       </div>
     </figure>
   );
@@ -123,10 +125,10 @@ export function LegacyWorkflowPlatforms() {
           </div>
         </section>
 
-        <section id="integrations" className="relative scroll-mt-20 overflow-hidden pt-8 pb-16 lg:pt-10 lg:pb-20 xl:min-h-[680px] xl:pt-0 xl:pb-0">
+        <section id="integrations" data-reveal="pending" className="relative scroll-mt-20 overflow-hidden pt-8 pb-16 lg:pt-10 lg:pb-20 xl:min-h-[680px] xl:pt-0 xl:pb-0">
           <div aria-hidden="true" className="absolute inset-0 hidden xl:block">
-            {platforms.map(({ name, Mark, position }) => (
-              <span key={name} className={`legacy-polish-card absolute flex items-center justify-center rounded-2xl border border-[#dce4ee] bg-white shadow-[0_8px_24px_rgba(27,50,88,0.06)] ${position}`}>
+            {platforms.map(({ name, Mark, position }, index) => (
+              <span key={name} data-reveal-item="pop" style={revealStep(index)} className={`legacy-polish-card absolute flex items-center justify-center rounded-2xl border border-[#dce4ee] bg-white shadow-[0_8px_24px_rgba(27,50,88,0.06)] ${position}`}>
                 <Mark size={35} />
               </span>
             ))}
@@ -134,16 +136,16 @@ export function LegacyWorkflowPlatforms() {
           <div className="relative z-10 mx-auto max-w-[760px] px-4 sm:px-6 xl:max-w-[680px] xl:pt-[172px]">
             <div className="flex flex-col items-center text-center">
               <div className="mb-8 grid grid-cols-6 gap-2 sm:gap-3 xl:hidden" aria-label="Supported platform examples">
-                {platforms.slice(0, 6).map(({ name, Mark }) => (
-                  <span key={name} title={name} className="legacy-polish-card flex size-10 items-center justify-center rounded-xl border border-[#dce4ee] bg-white shadow-sm min-[360px]:size-11 sm:size-12"><Mark size={23} /><span className="sr-only">{name}</span></span>
+                {platforms.slice(0, 6).map(({ name, Mark }, index) => (
+                  <span key={name} title={name} data-reveal-item="pop" style={revealStep(index)} className="legacy-polish-card flex size-10 items-center justify-center rounded-xl border border-[#dce4ee] bg-white shadow-sm min-[360px]:size-11 sm:size-12"><Mark size={23} /><span className="sr-only">{name}</span></span>
                 ))}
               </div>
               <h2 className="legacy-heading mb-5 text-[32px] leading-[1.12] font-normal text-[#0b2447] min-[390px]:text-[36px] lg:text-[56px]">One clear result for your whole portfolio.</h2>
               <p className="max-w-[600px] text-lg leading-[1.6] font-medium text-[#536176]">Bring your supported exchanges, wallets, and chains into one place. See how your whole portfolio adds up, with a clear result to review.</p>
               <TrackedLink href="/register" event={{ name: "register_click", properties: { location: "legacy_integrations" } }} className="legacy-primary-button mt-8">See my portfolio <ChevronRightIcon aria-hidden="true" className="size-3" /></TrackedLink>
               <div className="mt-8 grid grid-cols-6 gap-2 sm:gap-3 xl:hidden" aria-hidden="true">
-                {platforms.slice(6).map(({ name, Mark }) => (
-                  <span key={name} title={name} className="legacy-polish-card flex size-10 items-center justify-center rounded-xl border border-[#dce4ee] bg-white shadow-sm min-[360px]:size-11 sm:size-12"><Mark size={23} /></span>
+                {platforms.slice(6).map(({ name, Mark }, index) => (
+                  <span key={name} title={name} data-reveal-item="pop" style={revealStep(index)} className="legacy-polish-card flex size-10 items-center justify-center rounded-xl border border-[#dce4ee] bg-white shadow-sm min-[360px]:size-11 sm:size-12"><Mark size={23} /></span>
                 ))}
               </div>
             </div>

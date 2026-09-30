@@ -279,6 +279,37 @@
   }
 }
 
+/* One-time entrance for the graphics below the hero. Items hide only once RevealOnView has marked
+   <html> with reveal-js, so without JavaScript the page is complete at rest. --i staggers items. */
+.reveal-js .glide-landing [data-reveal="pending"] [data-reveal-item] { opacity: 0; }
+.glide-landing [data-reveal="in"] [data-reveal-item] { animation: reveal-rise 460ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 70ms); }
+.glide-landing [data-reveal="in"] [data-reveal-item="pop"] { animation-name: reveal-pop; }
+.glide-landing svg [data-reveal-item] { transform-box: fill-box; transform-origin: center; }
+.reveal-js .glide-landing [data-reveal="pending"] [data-reveal-bar] { transform: scaleX(0); transform-origin: left; }
+.glide-landing [data-reveal="in"] [data-reveal-bar] { transform-origin: left; animation: reveal-bar 720ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 70ms + 240ms); }
+.reveal-js .glide-landing [data-reveal="pending"] [data-reveal-drop] { transform: scaleY(0); transform-box: fill-box; transform-origin: top; }
+.glide-landing [data-reveal="in"] [data-reveal-drop] { transform-box: fill-box; transform-origin: top; animation: reveal-drop 420ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(var(--i, 0) * 70ms); }
+
+@keyframes reveal-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes reveal-pop {
+  from { opacity: 0; transform: scale(0.86); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes reveal-bar {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes reveal-drop {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

@@ -1,6 +1,7 @@
 import { CoinbaseMark, HyperliquidMark, SolanaMark } from "@/components/glide-landing/PlatformMarks";
 import { CheckIcon } from "@/components/glide-landing/icons";
 import styles from "./PortfolioReviewGraphic.module.css";
+import { revealStep } from "@/components/glide-landing/reveal";
 
 const accounts = [
   { name: "Coinbase", amount: "+$5,420.00", Mark: CoinbaseMark },
@@ -13,9 +14,10 @@ export function PortfolioReviewGraphic() {
     <figure
       aria-label="Illustrative portfolio summary ready for a quick review"
       data-testid="portfolio-review-graphic"
+      data-reveal="pending"
       className={`legacy-method-visual-two ${styles.frame}`}
     >
-      <div className={styles.card}>
+      <div data-reveal-item className={styles.card}>
         <div className={styles.header}>
           <div>
             <p className={styles.title}>Portfolio review</p>
@@ -24,7 +26,7 @@ export function PortfolioReviewGraphic() {
           <span className={styles.ready}><CheckIcon aria-hidden="true" />Ready</span>
         </div>
 
-        <div className={styles.summary}>
+        <div data-reveal-item style={revealStep(1)} className={styles.summary}>
           <dl>
             <dt>Net capital gain</dt>
             <dd data-testid="portfolio-review-total">+$12,840.60</dd>
@@ -39,8 +41,8 @@ export function PortfolioReviewGraphic() {
             <span>Account</span><span>Net gain</span>
           </div>
           <ul aria-label="Illustrative net gains by account">
-            {accounts.map(({ name, amount, Mark }) => (
-              <li key={name} data-portfolio-account={name}>
+            {accounts.map(({ name, amount, Mark }, index) => (
+              <li key={name} data-portfolio-account={name} data-reveal-item style={revealStep(2 + index)}>
                 <span className={styles.accountName}>
                   <span className={styles.mark} aria-hidden="true"><Mark size={30} /></span>
                   <span>{name}</span>
@@ -51,7 +53,7 @@ export function PortfolioReviewGraphic() {
           </ul>
         </div>
 
-        <div className={styles.footer}>
+        <div data-reveal-item style={revealStep(5)} className={styles.footer}>
           <span className={styles.complete} aria-hidden="true"><CheckIcon /></span>
           <p><strong>3 accounts. One clear result.</strong><span>Ready for a quick review.</span></p>
         </div>
