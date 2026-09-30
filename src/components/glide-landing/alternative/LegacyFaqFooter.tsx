@@ -20,7 +20,7 @@ const legalLinks = [
 export function LegacyFaqFooter() {
   return (
     <>
-      <section id="faq" aria-labelledby="legacy-faq-heading" className="textured textured-light scroll-mt-20 bg-[#f4f7fb] py-16 lg:py-20">
+      <section id="faq" aria-labelledby="legacy-faq-heading" className="textured textured-light scroll-mt-20 border-t border-[#dce4ee] bg-[#f4f7fb] py-16 lg:py-20">
         <div className="mx-auto w-full max-w-[900px] px-4 sm:px-6">
           <h2 id="legacy-faq-heading" className="legacy-heading mb-10 text-center text-[32px] leading-[1.15] font-normal text-[#0b2447] min-[390px]:text-[36px] md:mb-12 md:text-[48px]">Questions before you connect?</h2>
           <div className="border-b border-[#d6dee9]">
