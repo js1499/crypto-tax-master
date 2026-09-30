@@ -1,5 +1,6 @@
 import { MoneyBackGuarantee } from "@/components/glide-landing/alternative/MoneyBackGuarantee";
 import { ChevronRightIcon } from "@/components/glide-landing/icons";
+import { PlanCheckoutButton, type PlanKey } from "@/components/glide-landing/PlanCheckoutButton";
 import { TrackedLink } from "@/components/glide-landing/TrackedLink";
 import { featureGroups, pricingTiers, tierNames } from "@/components/glide-landing/data/pricing";
 
@@ -71,7 +72,7 @@ export function LegacyPricing() {
                     </li>
                   ))}
                 </ul>
-                <TrackedLink href="/register" event={{ name: "register_click", properties: { location: "legacy_pricing_card", plan: tier.name } }} className={`mt-auto inline-flex min-h-11 items-center justify-center gap-1 rounded-xl px-4 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 ${tier.highlighted ? "bg-[#5ae2aa] text-[#06152d] hover:bg-[#80ebbf] focus-visible:outline-white" : "bg-[#2f6df6] text-white hover:bg-[#225bd9] focus-visible:outline-[#2f6df6]"}`}>{tier.cta} <ChevronRightIcon aria-hidden="true" className="size-3" /></TrackedLink>
+                <PlanCheckoutButton planKey={tier.name.toLowerCase() as PlanKey} location="legacy_pricing_card" className={`mt-auto inline-flex min-h-11 items-center justify-center gap-1 rounded-xl px-4 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 disabled:cursor-wait disabled:opacity-80 ${tier.highlighted ? "bg-[#5ae2aa] text-[#06152d] hover:bg-[#80ebbf] focus-visible:outline-white" : "bg-[#2f6df6] text-white hover:bg-[#225bd9] focus-visible:outline-[#2f6df6]"}`}>{tier.cta} <ChevronRightIcon aria-hidden="true" className="size-3" /></PlanCheckoutButton>
               </article>
             ))}
           </div>

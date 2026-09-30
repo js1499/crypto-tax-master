@@ -49,7 +49,9 @@ export default function GlideLogo({
   className?: string;
 }) {
   const sizeClass =
-    size >= 31
+    size >= 40
+      ? "h-[34px] text-[34px] sm:h-10 sm:text-[40px]"
+      : size >= 31
       ? "h-[31px] text-[31px]"
       : size >= 28
         ? "h-7 text-[28px]"

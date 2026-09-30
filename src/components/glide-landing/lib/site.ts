@@ -11,7 +11,7 @@ export const siteConfig = {
     home: "/",
     pricing: "/lp/d#pricing",
     blog: "/blog",
-    guides: "/blog",
+    guides: "/blog/crypto-tax-basics",
     cpaFiling: "/cpa-filing",
     contact: "/contact",
     privacy: "/privacy",

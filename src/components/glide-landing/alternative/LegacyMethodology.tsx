@@ -1,4 +1,4 @@
-import { ShieldIcon, TargetIcon, TaxesIcon } from "@/components/glide-landing/icons";
+import { CheckIcon, ShieldIcon, TargetIcon, TaxesIcon } from "@/components/glide-landing/icons";
 import { PortfolioReviewGraphic } from "@/components/glide-landing/alternative/PortfolioReviewGraphic";
 import { TrackedLink } from "@/components/glide-landing/TrackedLink";
 
@@ -102,6 +102,57 @@ function AccuracyVisual() {
   );
 }
 
+// What Glide does to arrive at a number. Statements about Glide only; no comparisons.
+const accuracyPoints = [
+  { title: "Priced at the exact second", body: "Each trade is valued at its on-chain timestamp." },
+  { title: "Unlisted tokens covered", body: "Valued through the liquid side of the swap." },
+  { title: "Every figure traceable", body: "Each number links back to its transaction hash." },
+] as const;
+
+const pricingSteps = [
+  { step: "1", label: "On-chain record", detail: "Solana · tx 5hK2…9fQa", value: "Read" },
+  { step: "2", label: "Block time", detail: "Timestamp from the chain", value: "14:32:08 UTC" },
+  { step: "3", label: "Price at that second", detail: "SOL / USDC", value: "$147.88" },
+] as const;
+
+function HowAccurateVisual() {
+  return (
+    <figure
+      aria-label="Illustrative walk-through of how one trade is priced: on-chain record, block time, price at that second, then cost basis"
+      className="legacy-method-visual-one flex min-h-[330px] w-full max-w-[520px] items-center rounded-[20px] p-3 min-[360px]:p-4 sm:min-h-[420px] sm:rounded-[24px] sm:p-8 lg:min-h-[500px]"
+    >
+      <div className="w-full overflow-hidden rounded-2xl bg-white shadow-[0_18px_40px_-14px_rgba(7,27,57,0.45)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[#dce4ee] px-4 py-4 sm:px-5">
+          <div>
+            <p className="text-sm font-semibold text-[#0b2447]">How this trade is priced</p>
+            <p className="mt-0.5 text-xs text-[#536176]">Illustrative transaction</p>
+          </div>
+          <span className="shrink-0 rounded-full bg-[#e8f0ff] px-3 py-1 text-xs font-semibold text-[#174ea6]">100 SOL swap</span>
+        </div>
+        {pricingSteps.map(({ step, label, detail, value }) => (
+          <div key={step} className="flex items-center justify-between gap-3 border-b border-[#dce4ee] px-4 py-4 sm:px-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#0b2447] text-xs font-semibold text-white">{step}</span>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-[#0b2447]">{label}</p>
+                <p className="mt-0.5 truncate text-xs text-[#536176]">{detail}</p>
+              </div>
+            </div>
+            <p className="shrink-0 text-sm font-semibold tabular-nums text-[#0b2447]">{value}</p>
+          </div>
+        ))}
+        <div className="flex items-center justify-between gap-3 bg-[#f4f7fb] px-4 py-4 sm:px-5">
+          <div>
+            <p className="text-sm font-medium text-[#536176]">Cost basis recorded</p>
+            <p className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#08764b]"><CheckIcon aria-hidden="true" className="size-3" />Source linked</p>
+          </div>
+          <p className="legacy-heading text-2xl text-[#08764b]">$14,788.00</p>
+        </div>
+      </div>
+    </figure>
+  );
+}
+
 export function LegacyMethodology() {
   return (
     <>
@@ -173,6 +224,27 @@ export function LegacyMethodology() {
         <p className="mx-auto mt-8 max-w-[760px] px-4 text-center text-xs leading-5 text-[#536176] sm:px-6">
           Dollar figures are illustrative. Actual results vary by asset, market conditions, transaction history, and selected methodology. Glide does not provide legal or tax advice.
         </p>
+      </section>
+
+      <section id="methodology-how" aria-labelledby="methodology-how-heading" className="textured textured-navy-alt scroll-mt-20 border-b border-white/10 bg-[#071b39] py-16 lg:py-20">
+        <div className="mx-auto w-full max-w-[1200px] px-4 sm:px-6">
+          <article className="legacy-polish-card grid w-full overflow-hidden rounded-[24px] border border-white/10 bg-[#0b2447] shadow-[0_12px_36px_rgba(0,0,0,0.12)] lg:min-h-[564px] lg:grid-cols-2">
+            <div className="flex flex-col items-start justify-center gap-4 p-6 text-left sm:p-8 lg:order-2 lg:p-12">
+              <h3 id="methodology-how-heading" className="legacy-heading max-w-[488px] text-[34px] leading-[1.1] font-normal text-white sm:text-[40px] lg:text-[56px]">Accurate by design.</h3>
+              <p className="max-w-[440px] text-lg leading-[1.6] font-medium text-[#b8c7dc]">Glide reads each transaction from its source, prices it at the second it happened, and keeps the link so you can check any number yourself.</p>
+              <ul className="mt-1 flex max-w-[440px] flex-col gap-3">
+                {accuracyPoints.map(({ title, body }) => (
+                  <li key={title} className="flex items-start gap-3">
+                    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-[#5ae2aa] text-[#06152d]"><CheckIcon aria-hidden="true" className="size-3" /></span>
+                    <span className="text-[15px] leading-6 text-[#b8c7dc]"><strong className="font-semibold text-white">{title}.</strong> {body}</span>
+                  </li>
+                ))}
+              </ul>
+              <TrackedLink href="/register" event={{ name: "register_click", properties: { location: "legacy_how_accurate" } }} className="legacy-primary-button mt-3">Get my tax result</TrackedLink>
+            </div>
+            <div className="flex items-center justify-center p-4 pb-8 lg:order-1 lg:h-[564px] lg:p-8"><HowAccurateVisual /></div>
+          </article>
+        </div>
       </section>
     </>
   );
