@@ -6,12 +6,13 @@ import { CheckIcon } from "@/components/glide-landing/icons";
 import { useWorkflowPlayback, type WorkflowTrack } from "./useWorkflowPlayback";
 import styles from "./FilingWorkflowAnimation.module.css";
 
-const storyDuration = 5_700;
-const holdDuration = 1_300;
+const storyDuration = 7_500;
+const holdDuration = 3_500;
 const resetDuration = 400;
 const duration = storyDuration + holdDuration + resetDuration;
 const resetStart = (storyDuration + holdDuration) / duration;
-// Each of the three scenes gets 1.9 s of story; the finished reports then hold for 1.3 s more.
+// Each of the three scenes gets 2.5 s of story; the finished reports then hold for 3.5 s more,
+// so the download sits on screen for about six seconds before the loop restarts.
 const storyboardSeconds = 24;
 const ease = "cubic-bezier(0.4, 0, 0.2, 1)";
 const offset = (seconds: number) => (seconds / storyboardSeconds) * (storyDuration / duration);

@@ -2,12 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 
-export const rotatingWords = ["simple", "fast", "easy", "accurate"] as const;
+// "right" stands in for "accurately": at 76px it is 375px wide against 215px for "today", and the
+// fixed slot would push it off the right edge of a phone screen.
+export const rotatingWords = ["today", "simply", "fast", "easily", "right"] as const;
 
 // The slot is sized by an invisible in-flow copy of this word — the median width of the set —
-// and never resizes, so the static part of the headline stays put. Shorter words leave a little
-// air on the right and "accurate" runs a little long; the line's centring drifts by a few pixels.
-const anchorWord: (typeof rotatingWords)[number] = "simple";
+// and never resizes, so the static part of the headline stays put. "fast" leaves a little air on
+// the right and "simply" runs a little long; the line's centring drifts by a few pixels.
+const anchorWord: (typeof rotatingWords)[number] = "today";
 
 const holdDuration = 2_000;
 

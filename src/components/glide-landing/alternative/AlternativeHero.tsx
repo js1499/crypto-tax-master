@@ -13,15 +13,15 @@ export function AlternativeHero() {
             <MoneyBackGuarantee placement="hero" />
           </div>
           <h1 className="max-w-[1100px] text-[40px] leading-[1.02] font-bold tracking-[-0.025em] text-balance text-[#0b2447] min-[360px]:text-[44px] sm:text-[48px] md:text-[56px] lg:text-[64px] lg:leading-none xl:text-[76px]">
-            Crypto taxes, made{" "}
-            <span className="sr-only">simple.</span>
+            Finally, crypto taxes done{" "}
+            <span className="sr-only">today.</span>
             <RotatingWord />
           </h1>
           <p
             data-testid="hero-supporting-copy"
-            className="mt-4 max-w-[640px] text-[20px] leading-[1.4] font-semibold text-[#0b2447] sm:mt-5 sm:text-[23px] lg:mt-6 lg:max-w-[820px] lg:text-[27px] lg:leading-[1.4] xl:max-w-[980px] xl:text-[32px] xl:leading-[1.3]"
+            className="mt-4 max-w-[640px] text-[20px] leading-[1.4] font-medium text-[#0b2447] sm:mt-5 sm:text-[23px] lg:mt-6 lg:max-w-[820px] lg:text-[27px] lg:leading-[1.4] xl:max-w-[980px] xl:text-[32px] xl:leading-[1.3]"
           >
-            Spend up to 95% less time on crypto taxes, accurately.
+            Looking for a solution to your crypto taxes that's accurate and easy? <strong className="font-bold">You've come to the right place.</strong>
           </p>
 
           <div className="mt-7 w-full sm:mt-8 sm:w-auto lg:mt-9">
@@ -30,7 +30,7 @@ export function AlternativeHero() {
               event={{ name: "register_click", properties: { location: "alternative_hero" } }}
               className="inline-flex min-h-[52px] w-full items-center justify-center gap-2.5 whitespace-nowrap rounded-xl bg-[#2f6df6] px-7 text-[17px] font-bold text-white shadow-[0_12px_26px_-12px_rgba(19,64,156,0.4)] transition-colors hover:bg-[#225bd9] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#174ea6] sm:w-auto lg:min-h-[56px] lg:px-8 lg:text-[18px]"
             >
-              Get started free <ChevronRightIcon aria-hidden="true" className="size-4" />
+              Calculate my taxes for free <ChevronRightIcon aria-hidden="true" className="size-4" />
             </TrackedLink>
           </div>
         </div>
