@@ -9,7 +9,7 @@ export const siteConfig = {
   },
   marketingRoutes: {
     home: "/",
-    pricing: "/lp/d#pricing",
+    pricing: "/#pricing",
     blog: "/blog",
     guides: "/blog/crypto-tax-basics",
     cpaFiling: "/cpa-filing",

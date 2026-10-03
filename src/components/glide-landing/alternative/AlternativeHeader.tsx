@@ -49,7 +49,7 @@ export function AlternativeHeader() {
   return (
     <header className="legacy-navigation sticky top-0 z-[100] border-b border-[#7ca8ff]/15 bg-[#071b39]/95 text-white backdrop-blur-xl">
       <div className="mx-auto flex h-[76px] max-w-[1200px] sm:h-[88px] items-center justify-between px-4 sm:px-6">
-        <Link href="/lp/d" aria-label="Glide home" className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#8db7ff]">
+        <Link href="/" aria-label="Glide home" className="rounded-md focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#8db7ff]">
           <GlideLogo variant="light" size={40} />
         </Link>
 
